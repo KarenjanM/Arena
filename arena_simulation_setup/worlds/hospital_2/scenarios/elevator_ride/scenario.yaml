@@ -1,0 +1,6 @@
+robots:
+- start: [10.0, 2.5, -1.5708]
+  start_floor: "0"
+  goal_floor: "1"
+  phases:
+  - goto: [10.0, 3.0, 1.5708]

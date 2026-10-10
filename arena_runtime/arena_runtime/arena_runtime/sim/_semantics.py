@@ -183,7 +183,7 @@ def _coerce(inst: SemanticKind, field: str, value: str) -> str | float | bool:
 
 @semantic_kind('door')
 class DoorSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'flatsim'})
 
     DISCRETE = ('state',)
     CONTINUOUS = ('progress',)
@@ -228,7 +228,7 @@ class DoorSemantics(SemanticKind):
 
 @semantic_kind('elevator')
 class ElevatorSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'flatsim'})
 
     DISCRETE = ('cabin_door',)
     CONTINUOUS = ('arriving_eta', 'occupants', 'cabin_door_progress')
@@ -301,7 +301,7 @@ class _Phase:
 
 @semantic_kind('signal')
 class SignalSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy', 'flatsim'})
 
     DISCRETE = ('state',)
     CONTINUOUS = ('phase_remaining',)
@@ -409,7 +409,7 @@ class _Window:
 
 @semantic_kind('schedule')
 class ScheduleSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy', 'flatsim'})
 
     DISCRETE = ('state',)
     CONTINUOUS = ('window_remaining',)
@@ -510,7 +510,7 @@ class ScheduleSemantics(SemanticKind):
 
 @semantic_kind('gate')
 class GateSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'flatsim'})
 
     PREDICATES = ('locked', 'blocked')
     WRITABLE = frozenset({'locked'})
@@ -591,7 +591,7 @@ class GateSemantics(SemanticKind):
 
 @semantic_kind('pressure_plate')
 class PressurePlateSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'flatsim'})
 
     PREDICATES = ('pressed',)
     WRITABLE = frozenset({'pressed'})
@@ -704,7 +704,7 @@ class PressurePlateSemantics(SemanticKind):
 
 @semantic_kind('sound')
 class SoundSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy', 'flatsim'})
 
     CONTINUOUS = ('volume_db',)
     PREDICATES = ('sounding',)
@@ -905,7 +905,7 @@ class LightSemantics(SemanticKind):
 
 @semantic_kind('occupancy_cap')
 class OccupancyCapSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'flatsim'})
 
     CONTINUOUS = ('occupancy', 'cap')
     PREDICATES = ('over_cap',)

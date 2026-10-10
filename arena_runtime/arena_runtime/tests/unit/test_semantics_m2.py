@@ -1021,12 +1021,12 @@ def test_fire_alarm_cascade_through_regime_bus():
 
 
 def test_support_matrix_new_kinds():
-    assert SignalSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy"})
-    assert ScheduleSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy"})
-    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy"})
+    assert SignalSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy", "flatsim"})
+    assert ScheduleSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy", "flatsim"})
+    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "flatsim"})
+    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "flatsim"})
+    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "flatsim"})
+    assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy", "flatsim"})
 
 
 def test_signal_schedule_attach_on_dummy():

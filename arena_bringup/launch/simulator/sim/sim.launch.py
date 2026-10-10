@@ -3,9 +3,17 @@ import launch.substitutions
 
 import launch
 import launch_ros.actions
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_bringup.substitutions import LaunchArgument, SelectAction
 
 from arena_runtime.constants import SimSimulator
+
+
+def _require_flatsim(context: launch.LaunchContext) -> None:
+    try:
+        get_package_share_directory('flatsim')
+    except PackageNotFoundError as exc:
+        raise RuntimeError('sim:=flatsim needs the flatsim package, install it with `arena feature flatsim install`') from exc
 
 
 def generate_launch_description():
@@ -30,6 +38,13 @@ def generate_launch_description():
 
     world = LaunchArgument(
         name='world'
+    )
+
+    dynamics = LaunchArgument(
+        name='sim.flatsim.dynamics',
+        default_value='rigid',
+        choices=['rigid', 'kinematic'],
+        description='sim flatsim only. rigid = walls, obstacles and pedestrians stop or push the robot, kinematic = the robot passes through and only the collision tracker reports.',
     )
 
     viewport = {
@@ -60,6 +75,21 @@ def generate_launch_description():
                 arguments=['--frame-id', 'map', '--child-frame-id', 'dummy'],
             ),
         ])
+    )
+
+    launch_simulator.add(SimSimulator.FLATSIM.value, launch.actions.OpaqueFunction(function=_require_flatsim))
+    launch_simulator.add(
+        SimSimulator.FLATSIM.value,
+        launch.actions.ExecuteProcess(
+            cmd=['bash', '-c', [
+                launch.substitutions.TextSubstitution(text='exec env PYTHONPATH="${ARENA_DIR:?run source arena first}/_meta${PYTHONPATH:+:$PYTHONPATH}" python3 -m arena_cli feature flatsim launch dynamics:='),
+                dynamics.substitution,
+            ]],
+            sigterm_timeout=launch.substitutions.LaunchConfiguration('sigterm_timeout', default='20'),
+            sigkill_timeout=launch.substitutions.LaunchConfiguration('sigkill_timeout', default='5'),
+            on_exit=[launch.actions.Shutdown()],
+            output='screen',
+        )
     )
 
     launch_simulator.add(

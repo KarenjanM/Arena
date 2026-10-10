@@ -27,10 +27,11 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `robot.hearing.<param>` | node param | node default | Every other `robot.hearing.<param>:=<val>` reaches the hearing nodes as ROS param `<param>`. The launch-facing ones (`robot.hearing.seld.device`, `robot.hearing.srp.hop_s`, ...) are declared by arena_hearing's `hearing.launch.py`, empty = node default. Never forwarded to the robot adapters. |
 | `robot.mobile.<key>:=<val>` | adapter-scoped | - | Override any kwarg the bound mobile adapter accepts. Lands as ROS param `robot.mobile.<key>` and overlays the cap-file YAML. Examples: `robot.mobile.local_planner:=teb`, `robot.mobile.global_planner:=smac`, `robot.mobile.agent:=jackal_pretrained`. |
 | `robot.arm.<key>:=<val>` | adapter-scoped | - | Same shape for the arm cap. |
-| `sim` | string | `gazebo` | Physics simulator: `dummy`, `gazebo`, or `isaac`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
+| `sim` | string | `gazebo` | Physics simulator: `dummy`, `flatsim`, `gazebo`, or `isaac`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
+| `sim.flatsim.dynamics` | string | `rigid` | `sim:=flatsim` only, a runtime argument. `rigid` = walls, obstacles and pedestrians stop or push the robot, `kinematic` = the robot passes through. |
 | `headless` | bool string | `False` | `true` = hide sim GUI (server-only). `arena launch` also suppresses rviz unless `rviz:=true` is explicit. |
 | `viz` | bool string | `true` | `arena launch` only: run `arena viz --all` after envs are up. Forced `false` when `headless:=true` unless overridden. |
-| `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `gazebo`/`isaac` | Human-simulator backend |
+| `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `flatsim`/`gazebo`/`isaac` | Human-simulator backend |
 | `human.robots.visible` | bool string | `true` | `false` = the `arena` human backend does not tell its pedestrians where the robots are, so they walk as if none were there. Possessed pedestrians stay visible to the crowd. Other backends ignore it. |
 | `complexity` | string | `1` | `1` map+position known; `2` map known AMCL; `3` SLAM |
 | `record.dir` | string | `` (empty) | Directory for data recording; empty disables |
@@ -98,7 +99,7 @@ without clobbering it.
 
 ## Simulator dispatch
 
-- [simulator/sim/README.md](simulator/sim/README.md) - physics simulator backends (`dummy`, `gazebo`, `isaac`).
+- [simulator/sim/README.md](simulator/sim/README.md) - physics simulator backends (`dummy`, `flatsim`, `gazebo`, `isaac`).
 - Human-simulation backends: see `task_generator/launch/human/README.md`
   (moved alongside their `BaseHumanSimulator` adapters).
 

@@ -139,7 +139,10 @@ Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 The dummy host adds the delta to its synthetic clock, so `sim:=dummy` runs the
-whole control plane without a physics engine. That is what
+whole control plane without a physics engine. The flatsim host sends
+`control_world` with `multi_step` to its server and awaits `/clock` reaching
+the time the server returns (see [flatsim backend](#flatsim-backend)). The
+dummy host is what
 [`tests/ros/`](../../tests/ros/) exercises, the gate math itself is
 [`lockstep_gates.py`](../lockstep_gates.py) and has ROS-free unit tests.
 
@@ -242,12 +245,78 @@ controller activation lives inside the robot bring-up unpause window.
 | Key | Class | File | Notes |
 | --- | --- | --- | --- |
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
+| `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/simulator.py`](flatsim_simulator/simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
 | `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
 
 Flatland and Unity have stubs (commented out) in `__init__.py`; they are not
 active. The active simulator is selected by `node.conf.Arena.SIM` and
 instantiated via `SimulatorRegistry.get(key, **kwargs)`.
+
+## flatsim backend
+
+`sim:=flatsim` runs the [flatsim](../../../../flatsim/README.md) server, one
+process for the whole runtime, started by `sim.launch.py` through
+`arena feature flatsim launch`. It is an optional feature
+(`arena feature flatsim install`): arena_runtime does not depend on it, and
+selecting the sim without it fails with the install hint. The server owns
+`/clock`, steps one world that holds every env at its realizer offset, as
+Gazebo and Isaac do, and publishes each robot's
+`map -> odom`, `odom -> base`, Odometry, zero joint states and sensor
+messages. Its interface is documented in the flatsim README, the notes here
+are what Arena sends it.
+
+- [`FlatsimHost`](flatsim_simulator/host.py): `pause` and `unpause` are
+  `control_world` calls. `step_seconds` sends `multi_step` in chunks of at
+  most one sim second, the server takes the steps before it answers, and the
+  call returns once arena_node's own clock carries the returned time.
+  `cleanup_namespace` deletes every entity, floor and robot whose name starts
+  with the env prefix `env_<id>/`.
+- [`FlatsimSimulator`](flatsim_simulator/simulator.py): the per-env client. It
+  keeps no world of its own. Spawns and deletes are service calls, pedestrians
+  go out on `/flatsim/discs` and door and cabin moves on `/flatsim/poses`
+  without waiting for an answer, as Gazebo's `move_box` does, since the
+  mechanism moves every door on every tick.
+- Geometry: wall segments and obstacle footprints are static outlines, sent in
+  one call per spawn. Doors are boxes behind the four mechanism primitives,
+  pedestrians are discs fed by `pedestrian_update`.
+- Levels: floors define level slabs. A robot collides and casts rays only
+  against the level containing its z. The shipped multi-level worlds lay their
+  levels side by side in xy at one z, so an elevator ride there is an xy
+  teleport within one level. An entity that ends within 0.05 m above its level
+  floor, such as an elevator cabin floor, is no obstacle.
+- Robots: body from the mobile cap footprint, driven by the Twist on
+  `<robot>/cmd_vel` through a [drive model](flatsim_simulator/planar.py) read from
+  the `planar` block of the robot's `caps/mobile.yaml`, the same keys for every
+  robot: per-axis (linear, lateral, angular) velocity bounds, acceleration and
+  gain, a first-order `lag`, a `traction` cap on planar acceleration, the
+  `pivot` x the body turns about and the command `timeout`. A diff drive has
+  lateral bounds `[0, 0]`. A robot without the block is unbounded and moves
+  sideways only when `is_holonomic`. No controller_manager runs. The adapter
+  launches `robot_state_publisher`, the server gets the URDF and the tf topic
+  of the env.
+- Odometry: the pose is the exact body pose. The twist is the wheel reading,
+  the body twist divided by the gain and taken at the pivot, so it tracks the
+  command like a wheel-odometry twist does while the IMU reports the body rate.
+- `sim.flatsim.dynamics:=rigid|kinematic`: a runtime argument, the same for
+  every env. `rigid` (default) lets walls, obstacles and pedestrians stop or
+  push the robot, `kinematic` lets it pass through. Collision events come from
+  the task generator's collision tracker in both.
+- Sensors: `laserscan`, `pointcloud`, `imu` and `contact` specs, each at its
+  own update rate rounded to whole physics steps, and every sensor publishes
+  once more when an episode reset ends (`republish`). Lidar and camera geometry
+  comes from the URDF `<sensor>` block backing the spec (the mobile cap's
+  `laser` block when there is none), the mount from the joint chain. Rays
+  respect height: a beam hits an entity only where the entity's z extent
+  holds it, so one cast per azimuth yields the scan and every ring of a 3D
+  lidar cloud. A downward beam that meets nothing first returns its level
+  floor, so a costmap raytraces through the voxels it crosses as it would on a
+  real floor. Depth and RGB-D cameras yield a decimated cloud, images are not
+  produced. The IMU reports yaw, yaw rate and the body acceleration of the
+  last step plus gravity. Contacts list the entities the footprint touches.
+- Lockstep: no channel is registered, so the other producers set the strides.
+  A step is complete when the service answers, every message of it is already
+  published.
 
 ## Adding a new simulator
 

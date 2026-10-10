@@ -11,7 +11,7 @@ maps them to live ROS parameters.
 | --- | --- | --- |
 | `DEFAULT_PEDESTRIAN_MODEL` | `str` | `"arenian"` |
 | `TASK_GENERATOR_SERVER_NODE` | `Namespace` | `"task_generator_server"` |
-| `SimSimulator` | `Enum` | `dummy`, `flatland`, `gazebo`, `unity`, `isaac` |
+| `SimSimulator` | `Enum` | `dummy`, `flatsim`, `flatland`, `gazebo`, `unity`, `isaac` |
 | `ArenaType` | `Enum` | `training`, `deployment` |
 | `HumanSimulator` | `Enum` | `dummy`, `none`, `isaac`, `hunav`, `arena` |
 | `TaskMode.TM_Obstacles` | `Enum` | `parametrized`, `random`, `scenario`, `environment`, `prompt` |
@@ -44,7 +44,7 @@ Config.General.RNG.stream("obstacles", "random")   # independent numpy Generator
 | `HUMAN` | `human` | `dummy` | `Constants.HumanSimulator` |
 | `WORLD` | `world` | *(required)* | `str` |
 
-`HUMAN`'s `dummy` default is only the bare ROS-param fallback (offline/test contexts). `task_generator.launch.py` always resolves `human` per sim first (`gazebo`/`isaac` -> `arena`, `dummy` -> `dummy`).
+`HUMAN`'s `dummy` default is only the bare ROS-param fallback (offline/test contexts). `task_generator.launch.py` always resolves `human` per sim first (`flatsim`/`gazebo`/`isaac` -> `arena`, `dummy` -> `dummy`).
 
 ### `Config.General`
 

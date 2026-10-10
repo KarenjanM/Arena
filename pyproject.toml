@@ -119,6 +119,7 @@ known-first-party = [
     "arena_hearing",
     "arena_isaac",
     "arena_training",
+    "flatsim",
     "isaac_utils",
 ]
 
