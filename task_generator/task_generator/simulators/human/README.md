@@ -294,8 +294,9 @@ to exist). Backends observe possession through synchronous no-op hooks
 `DummyHumanSimulator` ([`dummy.py`](dummy.py)) has no locomotion engine,
 the possession stream is the sole source of motion. It seeds a roster cache
 at spawn (sim_path names, IDLE poses) and republishes it through
-`publish_arena_peds` at 2 Hz so the topic never goes stale, letting the
-possession substitution overlay driven peds on the way out.
+`publish_arena_peds` at 30 Hz of sim time, letting the possession
+substitution overlay driven peds on the way out. A paused sim repeats no
+roster, only a merge or a move publishes then.
 
 Its hooks keep the cache honest: a merge publishes the full roster, a
 release adopts the last driven pose with an empty `joint_state` so the
