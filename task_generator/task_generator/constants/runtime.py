@@ -161,6 +161,9 @@ def Configuration(server: ROSParamServer) -> type:
                 'none',
             )
 
+        class Human:
+            ROBOTS_VISIBLE = server.ROSParam[bool]('human.robots.visible', True)
+
         class TaskMode:
             TM_ROBOTS = server.ROSParam[Constants.TaskMode.TM_Robots](
                 'task.robots',

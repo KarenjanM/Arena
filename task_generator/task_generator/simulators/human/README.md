@@ -330,6 +330,10 @@ robot of any model through an attention ref such as `point: robot:robot_0`.
 An index name that is already a robot's own name is left out. In a fleet
 `robot_0` is the first spawned robot, not the one nearest to the ped.
 
+With `human.robots.visible:=false` the loop leaves every robot out of the feed
+and publishes the possessed peds alone. The engine then holds no robot agent,
+its pedestrians neither avoid a robot nor resolve a `robot:` attention ref.
+
 `PARAM_NAMESPACE` is `humansim`, and a `humansim.<param>` launch arg sets the same engine param for the whole
 run. At every episode reset `_configure_impl` sends the staged `humansim.*` names of
 `QueueEpisode.human_params` to the engine node as one `set_parameters_atomically` batch and then calls the

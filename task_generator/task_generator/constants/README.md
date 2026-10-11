@@ -81,6 +81,12 @@ Every `task.episode.*` param is also a launch arg (empty = node default), listed
 
 Adapter-specific tunables (planners, RL agent, ...) live in `caps/<cap>.yaml` and can be overridden at launch time via `<cap>.<key>:=<val>` flags. Each `<cap>.<key>:=<val>` lands on the task-generator node as ROS param `robot.<cap>.<key>` and is merged into the adapter's kwargs on top of the cap-file YAML.
 
+### `Config.Human`
+
+| Attribute | ROS param | Default | Notes |
+| --- | --- | --- | --- |
+| `ROBOTS_VISIBLE` | `human.robots.visible` | `True` | `False` = the human backend leaves the robots out of what it tells its pedestrians, honored by `ArenaHumanSimulator`, read once when the backend is built |
+
 ### Node-level runtime params (declared with `ParameterDescriptor`)
 
 Declared directly on `TaskGenerator` at construction time, not via `Configuration`:

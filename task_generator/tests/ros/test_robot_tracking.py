@@ -35,7 +35,7 @@ def _robot(x: float, y: float, name: str = "rob"):
     return Robot(name=name, pose=Pose(Position(x=x, y=y)), model=RobotIdentifier.parse("jackal"), adapters={"mobile": "nav2"}, extra={})
 
 
-def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop", offset: tuple[float, float] = (0.0, 0.0)) -> None:
+def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop", offset: tuple[float, float] = (0.0, 0.0), robots_visible: bool = True) -> None:
     import tf2_ros
     from arena_rclpy_mixins.Async import AsyncNode
     from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
@@ -70,7 +70,7 @@ def _with_human(scenario: Callable[..., Awaitable[None]], backend: str = "noop",
             realizer = Realizer(Realizer._Configuration(x=offset[0], y=offset[1], prefix=""))
             simulator = DummySimulator(node=node, namespace=ns, realizer=realizer)
             acoustics = NoopAcousticsSimulator(node=node, namespace=ns)
-            human = Human(node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics)
+            human = Human(node=node, namespace=ns, simulator=simulator, realizer=realizer, acoustics=acoustics, robots_visible=robots_visible)
             await scenario(human, node.tf_buffer)
         finally:
             node.destroy_node()
@@ -212,6 +212,67 @@ def test_arena_adapter_skips_an_index_alias_that_is_a_robot_name(rclpy_context):
         assert [(a.name, a.agent_id) for a in received[-1].agents] == [("robot_1", first), ("rob", second), ("robot_0", first)]
 
     _with_human(scenario, backend="arena")
+
+
+def _possess(human, name: str, x: float, y: float) -> None:
+    from arena_people_msgs.msg import Pedestrian
+
+    ped = Pedestrian(name=name)
+    ped.pose.position.x = x
+    ped.pose.position.y = y
+    ped.pose.orientation.w = 1.0
+    ped.twist.linear.x = 0.6
+    accepted, _, _, _ = human._possession.merge([ped], known_names={name}, gate_open=True, now=human._now_s())
+    assert [p.name for p in accepted] == [name]
+
+
+def _world_state_after_publish(human):
+    import rclpy
+    from arena_humansim_msgs.msg import AgentStates
+
+    received: list[AgentStates] = []
+    subscription = human.node.create_subscription(AgentStates, str(human.node.service_namespace("world_state")), received.append, 10)
+    for _ in range(10):
+        rclpy.spin_once(human.node, timeout_sec=0.02)
+    received.clear()
+    human._publish_world_state()
+    for _ in range(50):
+        rclpy.spin_once(human.node, timeout_sec=0.02)
+        if received:
+            break
+    human.node.destroy_subscription(subscription)
+    return received[-1] if received else None
+
+
+def test_arena_adapter_with_hidden_robots_streams_only_the_possessed_pedestrians(rclpy_context):
+    async def scenario(human, tf_buffer) -> None:
+        del tf_buffer
+        await human.spawn_robot((_robot(11.0, -3.0), _robot(14.0, -3.0, name="rob_1")))
+        assert [tracked.robot.name for tracked in human.tracked_robots()] == ["rob", "rob_1"]
+        assert _world_state_after_publish(human) is None
+
+        _possess(human, "ped_1", 12.0, -1.0)
+        msg = _world_state_after_publish(human)
+        assert msg is not None
+        (agent,) = msg.agents
+        assert agent.name == "ped_1"
+        assert (agent.pose.x, agent.pose.y) == pytest.approx((2.0, 4.0))
+        assert (agent.velocity.x, agent.radius) == pytest.approx((0.6, 0.35))
+
+    _with_human(scenario, backend="arena", offset=(10.0, -5.0), robots_visible=False)
+
+
+def test_arena_adapter_with_visible_robots_streams_robots_and_possessed_pedestrians(rclpy_context):
+    async def scenario(human, tf_buffer) -> None:
+        del tf_buffer
+        await human.spawn_robot((_robot(11.0, -3.0),))
+        _possess(human, "ped_1", 12.0, -1.0)
+        msg = _world_state_after_publish(human)
+        assert msg is not None
+        assert [agent.name for agent in msg.agents] == ["rob", "robot_0", "ped_1"]
+        assert [agent.radius for agent in msg.agents] == pytest.approx([0.3, 0.3, 0.35])
+
+    _with_human(scenario, backend="arena", offset=(10.0, -5.0))
 
 
 def test_engine_binds_the_index_alias_to_the_robot(rclpy_context):

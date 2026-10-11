@@ -723,8 +723,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"Error in feedback loop: {e}\n{traceback.format_exc()}")
 
     def _publish_world_state(self):
-        """Publish robot and possessed pedestrian poses and velocities as AgentStates on world_state topic, each robot also as `robot_<i>` by spawn order."""
-        robots = self.tracked_robots()
+        """Publish robot and possessed pedestrian poses and velocities as AgentStates on world_state topic, each robot also as `robot_<i>` by spawn order, no robots when they are not visible."""
+        robots = self.tracked_robots() if self._robots_visible else []
         possessed = self.possessed_peds()
         if not robots and not possessed:
             return
