@@ -874,42 +874,6 @@ zones:
       model: Hospital/SM_MedicalCabinet_01a
     - pose:
         position:
-          x: 2.3
-          y: 12.0
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: ward_supply_cart_1
-      model: Hospital/SM_SupplyCart_03a
-    - pose:
-        position:
-          x: 2.3
-          y: 18.0
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: ward_supply_cart_2
-      model: Hospital/SM_SupplyCart_03a
-    - pose:
-        position:
-          x: 6.5
-          y: 11.6
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: ward_gurney_1
-      model: Hospital/SM_Gurney_01b
-    - pose:
-        position:
           x: 0.7
           y: 18.2
           z: 0.0
@@ -1177,18 +1141,6 @@ zones:
       model: Hospital/SM_SupplyCart_01e
     - pose:
         position:
-          x: 7.5
-          y: 25.8
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: pharmacy_supply_cart_2
-      model: Hospital/SM_SupplyCart_03a
-    - pose:
-        position:
           x: 7.3
           y: 29.8
           z: 0.0
@@ -1363,18 +1315,6 @@ zones:
       model: Hospital/SM_Chair_01a
     - pose:
         position:
-          x: 17.2
-          y: 3.3
-          z: 0.825
-        orientation:
-          w: 0.7071090180427968
-          x: 0.0
-          y: 0.0
-          z: 0.7071045443232221
-      name: nurse_resting_computer_1
-      model: Hospital/SM_Computer_02a
-    - pose:
-        position:
           x: 17.3
           y: 5.2
           z: 0.0
@@ -1397,18 +1337,6 @@ zones:
           z: -0.7071045443232221
       name: nurse_resting_desk_chair_2
       model: Hospital/SM_Chair_01a
-    - pose:
-        position:
-          x: 17.2
-          y: 5.2
-          z: 0.825
-        orientation:
-          w: 0.7071090180427968
-          x: 0.0
-          y: 0.0
-          z: 0.7071045443232221
-      name: nurse_resting_computer_2
-      model: Hospital/SM_Computer_02a
     - pose:
         position:
           x: 12.4
@@ -1787,18 +1715,6 @@ zones:
           z: 0.0
       name: waiting_trashcan_2
       model: Hospital/SM_TrashCan
-    - pose:
-        position:
-          x: 24.7
-          y: 0.7
-          z: 0.0
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: waiting_mop_set_1
-      model: Hospital/SM_MopSet_01a
     - pose:
         position:
           x: 24.7
@@ -3344,18 +3260,6 @@ zones:
           z: 0.0
       name: doctors_resting_room_cabinet_1
       model: Hospital/SM_MedicalCabinet_01a
-    - pose:
-        position:
-          x: 15.0
-          y: 31.2
-          z: 0.825
-        orientation:
-          w: 1.0
-          x: 0.0
-          y: 0.0
-          z: 0.0
-      name: doctors_resting_room_computer_1
-      model: Hospital/SM_Computer_02a
     - pose:
         position:
           x: 15.0
