@@ -110,11 +110,11 @@ def build_main(argv: list[str]) -> int:
 
     ws = workspace()
 
-    python_root = subprocess.run(["uv", "python", "find"], cwd=_env("ARENA_DIR"), capture_output=True, text=True, check=False).stdout.strip()
-    cmake_arg_value = f"-DPython3_ROOT_DIR={python_root} -DBUILD_TESTING=OFF"
+    python = subprocess.run(["uv", "python", "find"], cwd=_env("ARENA_DIR"), capture_output=True, text=True, check=False).stdout.strip()
+    cmake_args = [f"-DPython3_EXECUTABLE={python}"] if python else []
 
-    display_args = ["--symlink-install", "--continue-on-error", f"--cmake-args '{cmake_arg_value}'"]
-    exec_args = ["--symlink-install", "--continue-on-error", "--cmake-args", cmake_arg_value]
+    display_args = ["--symlink-install", "--continue-on-error", "--cmake-args", *cmake_args]
+    exec_args = ["--symlink-install", "--continue-on-error", "--cmake-args", *cmake_args]
 
     print(f"Using base paths: {' '.join(ws.base_paths)}")
     display_args += ["--base-paths", *ws.base_paths]
