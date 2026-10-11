@@ -65,6 +65,10 @@ LIMITS: tuple[tuple[float, float], ...] = (
     (-0.9, 0.6),  # l_ankle
     (-0.6, 0.6),  # r_y_ankle
     (-0.9, 0.6),  # r_ankle
+    (-1.4, 1.4),  # l_r_wrist
+    (-1.4, 1.2),  # l_wrist
+    (-1.4, 1.4),  # r_r_wrist
+    (-1.4, 1.2),  # r_wrist
 )
 
 
@@ -102,7 +106,7 @@ class GaitGenerator:
         phase: float | None = None,
         profile: PoseProfile | None = None,
     ) -> dict[str, float]:
-        """Return base-joint-name -> angle for all 36 joints, clamped to limits.
+        """Return base-joint-name -> angle for all 40 joints, clamped to limits.
 
         Phase advances by dt each call and is keyed per agent_id, unless `phase` supplies it.
         animation_state: int matching Pedestrian.msg constants (IDLE=0, WALKING=1, RUNNING=2).

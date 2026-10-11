@@ -38,4 +38,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 
 ament_export_dependencies(rosidl_default_runtime)
 
+install(FILES bone_map.json DESTINATION share/${PROJECT_NAME})
+
 ament_package()

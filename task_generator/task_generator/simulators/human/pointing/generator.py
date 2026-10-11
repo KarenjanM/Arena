@@ -100,7 +100,10 @@ class Template:
 
 def _load_frames(path: str) -> list[dict]:
     raw = np.load(path, allow_pickle=True)
-    return [dict(f) for f in raw]
+    frames = [dict(f) for f in raw]
+    for frame in frames:
+        frame["angles"] = {**dict.fromkeys(C.ROS_JOINT_ORDER, 0.0), **frame["angles"]}
+    return frames
 
 
 def _elbow_swivel(sh: np.ndarray, el: np.ndarray, aim_dir: np.ndarray) -> float:

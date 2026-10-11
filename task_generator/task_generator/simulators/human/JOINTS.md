@@ -2,11 +2,12 @@
 
 Frozen interface shared by the gait generator (`GaitGenerator`), the HRI producer node,
 and every pedestrian renderer (RViz, Gazebo, Isaac). `Pedestrian.joint_state` is the
-animation single source of truth (SSOT): it carries the 36 base joint names from
+animation single source of truth (SSOT): it carries the 40 base joint names from
 `GaitGenerator.JOINT_NAMES`, and every renderer resolves its own convention from that
 one field. (Contract v2: the single torso triple became the three-triple spine stack
 of the Spine stack section. Every pre-stack recording carries 24 names and needs the
-zero-fill migration described there.)
+zero-fill migration described there. Contract v4 added the two-DOF wrists, every pre-v4
+recording carries 36 names and loads with the wrists at 0.0.)
 
 ## 1. Wire contract (normative)
 
@@ -16,10 +17,10 @@ Every joint/link carries a `_<ID>` suffix where **`<ID> = str(pedestrian.id)`**.
 `sensor_msgs/JointState.name[i]` MUST be the full suffixed name (e.g. `l_r_hip_7`) so it
 matches the body's generated URDF. The gait generator takes the agent id and suffixes it.
 
-### Publish all 36
+### Publish all 40
 
-Publish a position for all 36 base joints each tick (unanimated -> 0.0) so
-`robot_state_publisher` does not warn. Fixed joints (`torso`, `head`, `l/r_wrist`) are
+Publish a position for all 40 base joints each tick (unanimated -> 0.0) so
+`robot_state_publisher` does not warn. Fixed joints (`torso`, `head`) are
 not part of the contract and never appear in `JointState`. Per-joint advisory limits
 live in `GaitGenerator.LIMITS`: generators may clamp their output to them, the stream
 and presentation layers never enforce them. Outside the shoulder triples they match the
@@ -30,7 +31,7 @@ Section 2 table.
 For every joint except the two shoulder triples, wire values are identical to the
 ros4hri `human_description` URDF interpretation of that joint's axis (Section 2 states
 each joint's raw meaning). This includes the whole spine stack (`r/y_waist`,
-`r/y_spine`, `spine`, `r/y_chest`, `chest`) and `l/r_ankle`: their body-aligned URDF
+`r/y_spine`, `spine`, `r/y_chest`, `chest`), `l/r_ankle` and the wrists: their body-aligned URDF
 axes already coincide with the wire semantic.
 
 The shoulder triples (`l/r_y_shoulder`, `l/r_p_shoulder`, `l/r_r_shoulder`) are the one
@@ -113,10 +114,20 @@ axis family as `y_hip`, applied BEFORE the sagittal ankle in the chain
 `(0,-1,0)`, same sagittal family as knees and elbows. Positive lifts the toes
 (dorsiflexion).
 
+### Wrists (v4)
+
+Rest pose has the palms facing the thighs. `l/r_r_wrist` is forearm twist about the
+limb axis, positive pronation (the palm turns backward), applied BEFORE the flexion in
+the chain (`elbow -> r_wrist -> wrist`). `l/r_wrist` is flexion/extension, positive
+extension (the hand swings outward). Both are mirrored in the URDF like `p_hip`
+(twist `(0,0,-1)` left / `(0,0,1)` right, flexion `(1,0,0)` left / `(-1,0,0)` right),
+so the raw URDF meaning coincides with the wire semantic on both sides. The `wrist`
+link keeps its ros4hri name and carries the hand.
+
 ### Driven joints
 
 A ped whose model ships a `rig.yaml` with a `drivers:` section carries those joints
-after the 36, named by the driver keys (wheelchair bundles: `l_wheel`, `r_wheel`). A
+after the 40, named by the driver keys (wheelchair bundles: `l_wheel`, `r_wheel`). A
 driven joint is turned by the ped's motion, not by the gait phase. A
 `from: distance` driver is a wheel of `radius` meters, `lateral` meters left of the
 root, that rolls without slipping over the path of its own contact point: a turn
@@ -127,7 +138,7 @@ frames.
 
 The publisher integrates them from successive ped poses ([`drivers.py`](drivers.py))
 and sets them on every ped of such a model, possessed ones included. The possession
-stream itself carries only the 36. Renderers resolve them through `BONE_MAP` like
+stream itself carries only the 40. Renderers resolve them through `BONE_MAP` like
 any other wire joint and skip them on a skeleton without the bone. The ros4hri URDF
 has no such joints, so the RViz skeleton ignores them.
 
@@ -164,7 +175,7 @@ Per-agent phase keyed by id, cleared on despawn. Seed initial `phi` from `id`
 
 The ros4hri `human_description` package is a vendored fork at
 `src/deps/human_description` (branch `arena-v2`) carrying the spine stack, the
-collars, and the two-DOF ankles. It preserves the stock ros4hri link/frame set.
+collars, and the two-DOF ankles and wrists. It preserves the stock ros4hri link/frame set.
 
 ### URDF generation (per body)
 
@@ -191,13 +202,14 @@ So the raw URDF meaning of `p_shoulder` is **lateral abduction** (rotation about
 body-forward X), positive = outward on both sides, not a sagittal swing.
 
 Leg sagittal joints are not reflected: `l_r_hip`/`r_r_hip` are both `(0,-1,0)`,
-positive = forward. Knees, elbows, and ankles are `(0,-1,0)` on both sides. `l_p_hip`/
+positive = forward. Knees, elbows, and ankles are `(0,-1,0)` on both sides. The wrist pair is mirrored,
+see the Wrists section. `l_p_hip`/
 `r_p_hip` are mirrored (`(1,0,0)`/`(-1,0,0)`), positive = abduct outward on both sides,
 which coincides with the semantic meaning (gait idles both at `0.0`), so only the
 shoulder triples need the Section 1 exception. The spine stack is not reflected
 either: single links on the midline, same axes as the head triple.
 
-### Articulated joints (36 revolute, all others fixed)
+### Articulated joints (40 revolute, all others fixed)
 
 | # | base name | axis | limits [lo, hi] (rad) | role |
 |---|---|---|---|---|
@@ -237,6 +249,10 @@ either: single links on the midline, same axes as the head triple.
 | 34 | `l_ankle` | (0,-1,0) | [-0.9, 0.6] | **L ankle sagittal (dorsiflexion)** |
 | 35 | `r_y_ankle` | (0,0,-1) | [-0.6, 0.6] | R foot yaw (toe direction) |
 | 36 | `r_ankle` | (0,-1,0) | [-0.9, 0.6] | **R ankle sagittal (dorsiflexion)** |
+| 37 | `l_r_wrist` | (0,0,-1) | [-1.4, 1.4] | L forearm twist, positive pronation |
+| 38 | `l_wrist` | (1,0,0) | [-1.4, 1.2] | L wrist, positive extension |
+| 39 | `r_r_wrist` | (0,0,1) | [-1.4, 1.4] | R forearm twist, positive pronation |
+| 40 | `r_wrist` | (-1,0,0) | [-1.4, 1.2] | R wrist, positive extension |
 
 The spine/chest limits are per-segment halves of the lumped waist range: the stack's
 advisory sum intentionally exceeds the old lumped range (real spines bend further
@@ -254,7 +270,7 @@ ZXZ-extraction outputs, not passthrough of the wire `y`/`r`.
 URDF frame before `robot_state_publisher` sees them, via `rviz_utils/hri/rig.py`.
 `rig.py` stays stateless. Its obligations per DOF group:
 
-- **Spine stack (all nine DOFs), collars, and ankles (both DOFs)**: passthrough,
+- **Spine stack (all nine DOFs), collars, ankles and wrists (both DOFs each)**: passthrough,
   the raw URDF axis meaning already coincides with the wire semantic (see Spine
   stack / Collars / Ankles above and Mirror convention).
 - **Shoulder triples**: the only math. `rig.py` composes `R_arm` from the wire triple
@@ -283,11 +299,11 @@ URDF frame before `robot_state_publisher` sees them, via `rviz_utils/hri/rig.py`
   spine stack 1:1 onto the LowerBack/Spine/Spine1 chain (waist triple -> LowerBack,
   spine triple -> Spine, chest triple -> Spine1 -- the pre-stack 0.5/0.3/0.2 weighted
   spread of the lumped waist is retired), head DOFs over neck plus head, ankles on the
-  Foot bones. Axes come from the measured-probe procedure, not eyeballing.
+  Foot bones, wrists on the Hand bones. Axes come from the measured-probe procedure, not eyeballing.
   `ExternalPoseProvider` replaces mapped bones with the wire pose instead of composing
   it over the walking clip.
 - **Gazebo**: `arena_gz_plugins` `PedSkeletonPlugin` renders the wire `joint_state`
-  per bone through `utils/arena_peds_pose/bone_map.json` (the JSON twin of
+  per bone through `utils/msgs/arena_people_msgs/bone_map.json` (the JSON twin of
   `BONE_MAP`, kept equal by `test_bone_map_parity.py`) onto the bundle's neutral
   stance (first frame of its `neutral` clip, else of its `idle` clip), via the
   `BoneTransforms` actor component of the gz-sim overlay. Without the overlay or the

@@ -49,6 +49,10 @@ JOINT_NAMES: tuple[str, ...] = (
     "l_ankle",
     "r_y_ankle",
     "r_ankle",
+    "l_r_wrist",
+    "l_wrist",
+    "r_r_wrist",
+    "r_wrist",
 )
 
 LIBRARY_DIR = Path(__file__).resolve().parent / "profiles"

@@ -50,6 +50,13 @@ def test_state_map_defaults():
         assert set(angles) == set(JOINT_NAMES)
 
 
+def test_stored_clips_zero_fill_missing_contract_joints():
+    m = AnimationManager(ANIMATIONS, logger=StubLogger(), fps=FPS)
+    frames = m.animations["wave"].frames
+    assert all(set(JOINT_NAMES) <= set(frame["angles"]) for frame in frames)
+    assert all(frame["angles"][joint] == 0.0 for frame in frames for joint in ("l_r_wrist", "l_wrist", "r_r_wrist", "r_wrist"))
+
+
 def test_transient_register_drop_forget(mgr):
     anim = mgr.register_transient("t1", const_frames(0.5, 10), owner=7)
     assert isinstance(anim, Animation)
