@@ -183,7 +183,7 @@ def _coerce(inst: SemanticKind, field: str, value: str) -> str | float | bool:
 
 @semantic_kind('door')
 class DoorSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco'})
 
     DISCRETE = ('state',)
     CONTINUOUS = ('progress',)
@@ -228,7 +228,7 @@ class DoorSemantics(SemanticKind):
 
 @semantic_kind('elevator')
 class ElevatorSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco'})
 
     DISCRETE = ('cabin_door',)
     CONTINUOUS = ('arriving_eta', 'occupants', 'cabin_door_progress')
@@ -510,7 +510,7 @@ class ScheduleSemantics(SemanticKind):
 
 @semantic_kind('gate')
 class GateSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco'})
 
     PREDICATES = ('locked', 'blocked')
     WRITABLE = frozenset({'locked'})
@@ -591,7 +591,7 @@ class GateSemantics(SemanticKind):
 
 @semantic_kind('pressure_plate')
 class PressurePlateSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco'})
 
     PREDICATES = ('pressed',)
     WRITABLE = frozenset({'pressed'})
@@ -905,7 +905,7 @@ class LightSemantics(SemanticKind):
 
 @semantic_kind('occupancy_cap')
 class OccupancyCapSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco'})
 
     CONTINUOUS = ('occupancy', 'cap')
     PREDICATES = ('over_cap',)

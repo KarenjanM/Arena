@@ -431,8 +431,8 @@ def test_manager_detach_removes_instance_and_cache():
 
 
 def test_support_matrix_values():
-    assert DoorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert ElevatorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
+    assert DoorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco"})
+    assert ElevatorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco"})
 
 
 def test_manager_skips_unsupported_sim():

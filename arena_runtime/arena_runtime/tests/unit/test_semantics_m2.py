@@ -1023,9 +1023,9 @@ def test_fire_alarm_cascade_through_regime_bus():
 def test_support_matrix_new_kinds():
     assert SignalSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy"})
     assert ScheduleSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy"})
-    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
+    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco"})
+    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco"})
+    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco"})
     assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy"})
 
 
