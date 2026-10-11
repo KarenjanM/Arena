@@ -116,7 +116,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         task modes specific to their simulator (e.g. TM_Prompt).
         """
 
-    def __init__(self, *args: object, namespace: Namespace, simulator: BaseSim, realizer: Realizer, acoustics: BaseAcousticsSimulator, **kwargs: object) -> None:
+    def __init__(self, *args: object, namespace: Namespace, simulator: BaseSim, realizer: Realizer, acoustics: BaseAcousticsSimulator, robots_visible: bool = True, **kwargs: object) -> None:
         """
         Initialize human simulator.
 
@@ -125,12 +125,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             simulator: Simulator instance
             realizer: per-env Realizer (used to stamp sim_path on runtime-spawned obstacles)
             acoustics: acoustics simulator, the source of pedestrian hearing
+            robots_visible: whether the backend tells its pedestrians where the robots are
         """
         super().__init__(*args, **kwargs)
         self._register_task_modes()
         self._simulator = simulator
         self._namespace = namespace
         self._realizer = realizer
+        self._robots_visible = robots_visible
 
         self._known_obstacles = KnownObstacles[Obstacle]()
         self._known_walls = KnownObstacles[Wall]()

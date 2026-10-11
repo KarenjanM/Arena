@@ -52,6 +52,26 @@ def test_route_semantics_splits_plate_off_elevator() -> None:
     assert {c.name for c in extras["pressure_plate"]} == {"pressed"}
 
 
+def test_plate_position_and_driven_door_are_realized_and_other_kinds_stay() -> None:
+    from arena_simulation_setup.shared.semantics import parse_semantics
+
+    from task_generator.manager.environment_manager import _attachments, _route_semantics
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(x=5.0, y=-3.0, prefix="env_2"))
+    cfgs = parse_semantics(
+        [
+            {"preset": "gate", "params": {"authorized": [], "unlock_on": "alarm"}},
+            {"preset": "pressure_plate", "params": {"position": [1.0, 2.0], "radius": 0.5, "drives": "lab_door"}},
+        ],
+    )
+    attached = dict(_attachments(realizer, _route_semantics(cfgs, "door"), ""))
+    assert [c.params["position"] for c in attached["pressure_plate"]] == [[6.0, -1.0]]
+    assert [c.params["drives"] for c in attached["pressure_plate"]] == [realizer.prefix("lab_door", "")]
+    assert [c.params["radius"] for c in attached["pressure_plate"]] == [0.5]
+    assert attached["gate"] == _route_semantics(cfgs, "door")["gate"]
+
+
 def test_route_semantics_base_vocabulary_field_on_door_raises() -> None:
     """Door state publishes intrinsically now: annotating a door-vocabulary field is stale."""
     from arena_simulation_setup.shared.semantics import parse_semantics

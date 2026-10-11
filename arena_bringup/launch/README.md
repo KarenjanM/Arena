@@ -31,6 +31,7 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `headless` | bool string | `False` | `true` = hide sim GUI (server-only). `arena launch` also suppresses rviz unless `rviz:=true` is explicit. |
 | `viz` | bool string | `true` | `arena launch` only: run `arena viz --all` after envs are up. Forced `false` when `headless:=true` unless overridden. |
 | `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `gazebo`/`isaac`/`mujoco` | Human-simulator backend |
+| `human.robots.visible` | bool string | `true` | `false` = the `arena` human backend does not tell its pedestrians where the robots are, so they walk as if none were there. Possessed pedestrians stay visible to the crowd. Other backends ignore it. |
 | `complexity` | string | `1` | `1` map+position known; `2` map known AMCL; `3` SLAM |
 | `record.dir` | string | `` (empty) | Directory for data recording; empty disables |
 | `record.auto` | bool string | `true` | `false` = do not auto-start the recorder even when `record.dir` is set (the benchmark runner starts its own) |

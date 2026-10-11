@@ -48,7 +48,7 @@ from arena_simulation_setup.tree.assets.Material import (
     MaterialIdentifier,
 )
 from arena_simulation_setup.utils.cattrs import ArenaConverter, converter
-from arena_simulation_setup.utils.geometry import PointResolver, Position
+from arena_simulation_setup.utils.geometry import PointResolver, Pose, Position
 
 from .Map import Map
 from .Scenario import RegionAssignment, ScenarioView
@@ -86,27 +86,18 @@ async def entity_lights(entity: Obstacle) -> list[Light]:
 
 
 def _place_on(light: Light, entity: Obstacle) -> Light:
-    """Place a light at its offset on a static entity, offset scaled and turned with the entity."""
-    pose = entity.pose
+    """Place a light at its offset on a static entity, the offset scaled and carried by the entity pose."""
+    offset = light.offset
     scale = entity.scale
-    yaw = float(pose.orientation.to_yaw())
-    cos_yaw = math.cos(yaw)
-    sin_yaw = math.sin(yaw)
-    ox, oy, oz = light.offset.x, light.offset.y, light.offset.z
     if scale is not None:
-        ox, oy, oz = ox * scale.x, oy * scale.y, oz * scale.z
-    dx, dy, dz = light.direction
+        offset = Pose(position=Position(offset.position.x * scale.x, offset.position.y * scale.y, offset.position.z * scale.z), orientation=offset.orientation)
+    placed = entity.pose * offset
     return attrs.evolve(
         light,
         entity_ref='',
         owner=entity.name,
-        position=Position(
-            x=pose.position.x + cos_yaw * ox - sin_yaw * oy,
-            y=pose.position.y + sin_yaw * ox + cos_yaw * oy,
-            z=pose.position.z + oz,
-        ),
-        offset=Position(0.0, 0.0, 0.0),
-        direction=(cos_yaw * dx - sin_yaw * dy, sin_yaw * dx + cos_yaw * dy, dz),
+        pose=placed if light.spec.directed else Pose(position=placed.position),
+        offset=Pose(),
     )
 
 
@@ -380,8 +371,8 @@ class LevelDescription:
             if microphone.frame.strip('/') == 'map':
                 microphone.position = microphone.position + diff
         for light in [*self.lights, *(light for zone in self.zones for light in zone.lights)]:
-            if light.position is not None:
-                light.position = light.position + diff
+            if light.pose is not None and not light.spec.ambient:
+                light.pose.position = light.pose.position + diff
 
     def validate_microphones(self) -> None:
         zones = {zone.name: zone for zone in self.zones}

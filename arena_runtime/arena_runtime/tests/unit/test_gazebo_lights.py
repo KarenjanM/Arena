@@ -22,7 +22,7 @@ from arena_runtime.sim.gazebo_simulator.gazebo_simulator import (  # noqa: E402
     _sdf_file,
 )
 from arena_simulation_setup.shared import Light  # noqa: E402
-from arena_simulation_setup.utils.geometry import Position  # noqa: E402
+from arena_simulation_setup.utils.geometry import Orientation, Pose, Position  # noqa: E402
 
 
 def _requests(light: Light, level: float, alive: list[bool], position: Position | None = None) -> list[light_pb2.Light]:
@@ -35,7 +35,7 @@ def _rig() -> Light:
 
 
 def _strip() -> Light:
-    return Light(name="exit_strip", fixture="tube", position=Position(7.8, 3.0, 2.2), lumens=300.0, cct_K=6500.0)
+    return Light(name="exit_strip", fixture="tube", pose=Pose(position=Position(7.8, 3.0, 2.2)), lumens=300.0, cct_K=6500.0)
 
 
 def test_rig_cells_group_neighboring_fixtures() -> None:
@@ -98,7 +98,7 @@ def test_fixture_request_carries_color_temperature_and_range() -> None:
 
 
 def test_frame_light_request_keeps_its_tracked_position() -> None:
-    headlight = Light(name="headlight", fixture="spot", frame="env_0/turtlebot/base_link", offset=Position(0.15, 0.0, 0.25), lumens=1500.0)
+    headlight = Light(name="headlight", fixture="spot", frame="env_0/turtlebot/base_link", offset=Pose(position=Position(0.15, 0.0, 0.25)), lumens=1500.0)
     (placeholder,) = _requests(headlight, 1.0, [])
     (tracked,) = _requests(headlight, 1.0, [], Position(6.6, 8.0, 0.25))
     assert (placeholder.pose.position.x, placeholder.pose.position.y) == pytest.approx((0.15, 0.0))
@@ -106,13 +106,13 @@ def test_frame_light_request_keeps_its_tracked_position() -> None:
 
 
 def test_narrow_cone_concentrates_the_same_lumens() -> None:
-    wide = Light(name="wide", fixture="downlight", position=Position(0.0, 0.0, 2.5), lumens=1000.0)
-    narrow = Light(name="narrow", fixture="spot", position=Position(0.0, 0.0, 2.5), lumens=1000.0)
+    wide = Light(name="wide", fixture="downlight", pose=Pose(position=Position(0.0, 0.0, 2.5)), lumens=1000.0)
+    narrow = Light(name="narrow", fixture="spot", pose=Pose(position=Position(0.0, 0.0, 2.5)), lumens=1000.0)
     assert _requests(narrow, 1.0, [])[0].intensity > 5.0 * _requests(wide, 1.0, [])[0].intensity
 
 
 def test_spot_request_carries_its_cone() -> None:
-    spot = Light(name="lamp", fixture="spot", position=Position(1.0, 1.0, 2.0), lumens=500.0)
+    spot = Light(name="lamp", fixture="spot", pose=Pose(position=Position(1.0, 1.0, 2.0)), lumens=500.0)
     (msg,) = _requests(spot, 1.0, [])
     assert msg.type == light_pb2.Light.SPOT
     assert msg.spot_outer_angle == pytest.approx(math.radians(40.0), abs=1e-3)
@@ -120,7 +120,7 @@ def test_spot_request_carries_its_cone() -> None:
 
 
 def test_sun_request_is_directional() -> None:
-    sun = Light(name="sun", fixture="sun", lux=400.0, direction=(1.0, 0.0, -1.0))
+    sun = Light(name="sun", fixture="sun", lux=400.0, pose=Pose(orientation=Orientation.from_euler((0.0, -math.pi / 4, 0.0))))
     (msg,) = _requests(sun, 1.0, [])
     assert msg.type == light_pb2.Light.DIRECTIONAL
     assert (msg.direction.x, msg.direction.z) == pytest.approx((2**-0.5, -(2**-0.5)))
@@ -145,7 +145,7 @@ def test_rig_sdf_is_one_point_light_per_cell_and_a_bounce_fill() -> None:
 
 
 def test_fixture_sdf_is_a_spot_with_its_cone() -> None:
-    spot = Light(name="lamp", fixture="spot", position=Position(1.0, 1.0, 2.0), lumens=500.0, direction=(1.0, 0.0, -1.0))
+    spot = Light(name="lamp", fixture="spot", pose=Pose(position=Position(1.0, 1.0, 2.0), orientation=Orientation.from_euler((0.0, -math.pi / 4, 0.0))), lumens=500.0)
     (params,) = _light_params(spot, 1.0, [])
     light = ET.fromstring(_generate_light_sdf("lamp", params).strip()).find("light")
     assert light.get("type") == "spot"
@@ -153,9 +153,9 @@ def test_fixture_sdf_is_a_spot_with_its_cone() -> None:
 
 
 def test_bulb_request_is_a_point_light_spreading_its_lumens_over_the_sphere() -> None:
-    bulb = Light(name="desk_lamp_bulb", fixture="bulb", position=Position(2.0, 1.0, 1.2), lumens=800.0, intrinsic=True)
+    bulb = Light(name="desk_lamp_bulb", fixture="bulb", pose=Pose(position=Position(2.0, 1.0, 1.2)), lumens=800.0, intrinsic=True)
     (msg,) = _requests(bulb, 1.0, [])
-    (spot,) = _requests(Light(name="lamp", fixture="spot", position=Position(2.0, 1.0, 1.2), lumens=800.0), 1.0, [])
+    (spot,) = _requests(Light(name="lamp", fixture="spot", pose=Pose(position=Position(2.0, 1.0, 1.2)), lumens=800.0), 1.0, [])
     assert msg.type == light_pb2.Light.POINT
     assert (msg.pose.position.x, msg.pose.position.y, msg.pose.position.z) == pytest.approx((2.0, 1.0, 1.2))
     assert msg.attenuation_quadratic > 0.0
@@ -163,7 +163,7 @@ def test_bulb_request_is_a_point_light_spreading_its_lumens_over_the_sphere() ->
 
 
 def test_spot_cone_override_reaches_the_request() -> None:
-    wide = Light(name="lamp", fixture="spot", position=Position(0.0, 0.0, 1.0), lumens=300.0, cone_deg=90.0)
+    wide = Light(name="lamp", fixture="spot", pose=Pose(position=Position(0.0, 0.0, 1.0)), lumens=300.0, cone_deg=90.0)
     (msg,) = _requests(wide, 1.0, [])
     assert msg.spot_outer_angle == pytest.approx(math.radians(90.0))
 

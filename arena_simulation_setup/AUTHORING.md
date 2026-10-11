@@ -241,22 +241,32 @@ declared, so a lamp adds its light on top of the default lighting.
 
 | Where | Fixtures | Placement |
 | --- | --- | --- |
-| level `lights:` | `dome`, `sun` | none, `sun` takes `direction` |
-| zone `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `position`, `entity_ref` or `frame`, plus `offset`, as for a `sound` |
+| level `lights:` | `dome`, `sun` | none, a `pose` aims the `sun` |
+| zone `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `pose`, `entity_ref` or `frame`, the latter two with an `offset` |
 | zone `ceiling_lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
-| object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `offset` in the object frame, moved, turned and scaled with every placement |
+| object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `pose` in the object frame, moved, turned and scaled with every placement |
 
 `Light` fields: `name`, `fixture`, `lumens` (local fixtures, per fixture for a
 rig) or `lux` (`dome`, `sun`), `cct_K` (default 6500), `cast_shadows` (default
-false), `direction` (all but `bulb` and `dome`, default straight down),
-`cone_deg` (`spot` only, default 40), and one
+false), `cone_deg` (`spot` only, default 40), and one
 of `light_on` (a regime, `!` negates) or `lit` (initial value, default true),
 plus `level` (default 1.0). `ceiling_lights:` takes `fixture` (default
 `panel`), `spacing` (default 2.4), `lumens`, `cct_K`, `cast_shadows`,
 `light_on`/`lit`, `level` and `dead_fraction`, needs a ceiling, and its rig is
 named after the zone. The same fixtures of a rig die at the same
-`dead_fraction` in every run, and raising it only adds dead ones. A frame
-light follows its TF frame, so `frame: jackal/base_link` is a headlight.
+`dead_fraction` in every run, and raising it only adds dead ones.
+
+`pose` and `offset` take the forms of `Pose.parse` in
+[utils/geometry.py](src/arena_simulation_setup/utils/geometry.py), with a
+height, since a light sits above the floor. `pose` places a fixture in the
+level frame, `offset` in the frame of its `entity_ref` or its TF `frame`. A
+fixture emits along the local -z axis of that pose, a `panel` or `tube`
+lying along its local x and y, so a pose without an orientation shines
+straight down and `yaw` turns a tube about the vertical. `bulb` and `dome`
+take no orientation, a `sun` takes a `pose` whose position is zero. A frame
+light follows its TF frame, so `frame: jackal/base_link` with `offset: {x:
+0.2, y: 0, z: 0.3, pitch: -1.42}` is a headlight that looks ahead and
+slightly down.
 
 A world without lights can still run lit: `world.lighting:=auto` gives every
 zone that has a ceiling and no `lights:` or `ceiling_lights:` of its own a rig
@@ -270,7 +280,7 @@ zones:
 - name: central_hallway
   ceiling_lights: {fixture: panel, spacing: 2.4, lumens: 3600, light_on: "!blackout"}
   lights:
-  - {name: exit_strip, position: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, cct_K: 6500, light_on: blackout}
+  - {name: exit_strip, pose: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, cct_K: 6500, light_on: blackout}
   schedules:
   - name: power
     semantics:
@@ -278,7 +288,7 @@ zones:
 ```
 
 An object's `annotation.yaml` can carry `lights:` entries with `name` (default
-`light`), `fixture` (default `bulb`), `offset`, `direction`, `lumens`, `cct_K`,
+`light`), `fixture` (default `bulb`), `pose`, `lumens`, `cct_K`,
 `cone_deg` and `glow`. `arena_assets` writes them when it builds an object whose
 source model contains lights (hand-written entries win, and the built models
 carry no light themselves). `glow` names the material that glows with the

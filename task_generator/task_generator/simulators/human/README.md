@@ -294,8 +294,9 @@ to exist). Backends observe possession through synchronous no-op hooks
 `DummyHumanSimulator` ([`dummy.py`](dummy.py)) has no locomotion engine,
 the possession stream is the sole source of motion. It seeds a roster cache
 at spawn (sim_path names, IDLE poses) and republishes it through
-`publish_arena_peds` at 2 Hz so the topic never goes stale, letting the
-possession substitution overlay driven peds on the way out.
+`publish_arena_peds` at 30 Hz of sim time, letting the possession
+substitution overlay driven peds on the way out. A paused sim repeats no
+roster, only a merge or a move publishes then.
 
 Its hooks keep the cache honest: a merge publishes the full roster, a
 release adopts the last driven pose with an empty `joint_state` so the
@@ -329,6 +330,10 @@ engine binds both names to the same agent, so an agent-type file reaches the
 robot of any model through an attention ref such as `point: robot:robot_0`.
 An index name that is already a robot's own name is left out. In a fleet
 `robot_0` is the first spawned robot, not the one nearest to the ped.
+
+With `human.robots.visible:=false` the loop leaves every robot out of the feed
+and publishes the possessed peds alone. The engine then holds no robot agent,
+its pedestrians neither avoid a robot nor resolve a `robot:` attention ref.
 
 `PARAM_NAMESPACE` is `humansim`, and a `humansim.<param>` launch arg sets the same engine param for the whole
 run. At every episode reset `_configure_impl` sends the staged `humansim.*` names of

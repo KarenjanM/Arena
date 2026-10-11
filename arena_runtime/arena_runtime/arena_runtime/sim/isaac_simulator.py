@@ -609,7 +609,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             y_length=spec.y_length,
             radius=spec.radius,
             cone_deg=spec.cone_deg,
-            positions=[position.to_msg() for position in (light.fixtures if light.rig else [light.position if light.position is not None else light.offset])],
+            positions=[position.to_msg() for position in (light.fixtures if light.rig else [light.position])],
             direction=geometry_msgs.msg.Vector3(x=light.direction[0], y=light.direction[1], z=light.direction[2]),
             intensity=_ISAAC_EXPOSURE_GAIN * intensity,
             cct_k=light.cct_K,

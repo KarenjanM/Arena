@@ -130,6 +130,12 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="",
         description="empty = derive from arena_sim ({dummy: manual, gazebo|isaac|mujoco: arena})",
     )
+    human_robots_visible = LaunchArgument(
+        name="human.robots.visible",
+        choices=["true", "false"],
+        default_value="true",
+        description="false = pedestrians of the arena human backend are not told where the robots are and walk as if none were there. Possessed pedestrians stay visible to the crowd.",
+    )
     acoustics = LaunchArgument(
         name="acoustics",
         choices=["none", "arena"],
@@ -441,6 +447,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "use_sim_time": True,
                     "sim": arena_sim,
                     "human": human_val,
+                    "human.robots.visible": human_robots_visible.param_value(bool),
                     "acoustics": acoustics_val,
                     "robot.mobile_adapter": mobile_val,
                     "robot.hearing": hearing_val,

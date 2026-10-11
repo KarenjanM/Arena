@@ -294,7 +294,7 @@ class Pose(Parseable, Idempotent):
     def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, object]) -> Self:
         """
         parse value into Pose
-        formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,yaw]}, zone ref name
+        formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,roll][,pitch][,yaw]}, zone ref name
         """
         if isinstance(value, str):
             return cls(position=resolve_zone_point(value), orientation=Orientation.identity())
@@ -303,11 +303,11 @@ class Pose(Parseable, Idempotent):
             return cls.from_msg(value)
 
         if isinstance(value, Mapping) and not {"position", "orientation"} & set(value):
-            if not {"x", "y"} <= set(value) or not set(value) <= {"x", "y", "z", "yaw"}:
-                raise ValueError(f"Pose mapping must have keys x, y[, z][, yaw], got {value}")
+            if not {"x", "y"} <= set(value) or not set(value) <= {"x", "y", "z", "roll", "pitch", "yaw"}:
+                raise ValueError(f"Pose mapping must have keys x, y[, z][, roll][, pitch][, yaw], got {value}")
             return cls(
                 position=Position(x=value["x"], y=value["y"], z=value.get("z", 0.0)),
-                orientation=Orientation.from_yaw(value["yaw"]) if "yaw" in value else Orientation.identity(),
+                orientation=Orientation.from_euler((value.get("roll", 0.0), value.get("pitch", 0.0), value.get("yaw", 0.0))) if {"roll", "pitch", "yaw"} & set(value) else Orientation.identity(),
             )
 
         # direct sequence
@@ -348,6 +348,22 @@ class Pose(Parseable, Idempotent):
         return self as (x, y, yaw)
         """
         return (self.position.x, self.position.y, self.orientation.to_yaw())
+
+    @typing.overload
+    def __mul__(self, other: Pose) -> Pose: ...
+
+    @typing.overload
+    def __mul__(self, other: Vector3) -> Position: ...
+
+    def __mul__(self, other: Pose | Vector3) -> Pose | Position:
+        """
+        compose with a pose given in this pose's frame, or carry a point out of this pose's frame
+        """
+        if isinstance(other, Pose):
+            return Pose(position=self * other.position, orientation=self.orientation * other.orientation)
+        if isinstance(other, Vector3):
+            return self.position + self.orientation * other
+        raise ValueError(f"cannot multiply Pose with {other}")
 
 
 @attrs.define

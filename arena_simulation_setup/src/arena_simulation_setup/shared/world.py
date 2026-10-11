@@ -9,7 +9,7 @@ import numpy as np
 
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.utils.cattrs import Parseable, Serializable, converter
-from arena_simulation_setup.utils.geometry import Position
+from arena_simulation_setup.utils.geometry import Orientation, Pose, Position, Vector3
 
 from .entities import Named
 from .light_state import ObjectLightSettings, check_light_state
@@ -167,6 +167,10 @@ class LightFixture:
         return self.shape in ('dome', 'distant')
 
     @property
+    def directed(self) -> bool:
+        return self.shape not in ('dome', 'sphere')
+
+    @property
     def area(self) -> float:
         if self.shape == 'rect':
             return self.x_length * self.y_length
@@ -187,8 +191,7 @@ LIGHT_FIXTURES: dict[str, LightFixture] = {
     'sun': LightFixture(shape='distant'),
 }
 
-_LIGHT_DOWN = (0.0, 0.0, -1.0)
-_UNDIRECTED_FIXTURES = ('bulb', 'dome')
+_LIGHT_AXIS = Vector3(0.0, 0.0, -1.0)
 
 
 def cct_to_rgb(cct_K: float) -> tuple[float, float, float]:
@@ -219,9 +222,14 @@ def _optional_float(value: float | None) -> float | None:
     return float(value)
 
 
-def _direction_converter(value: typing.Sequence[float]) -> tuple[float, float, float]:
-    x, y, z = value
-    return (float(x), float(y), float(z))
+def _pose(value: object) -> Pose:
+    return Pose.instance_or(lambda raw: converter.structure(raw, Pose))(value)
+
+
+def _optional_pose(value: object) -> Pose | None:
+    if value is None:
+        return None
+    return _pose(value)
 
 
 @attrs.define
@@ -229,11 +237,10 @@ class Light(Named):
     """Standalone light semantic entity (kind = light): one fixture, an ambient light or a ceiling rig."""
 
     fixture: str = attrs.field(converter=lambda value: str(value).strip())
-    position: Position | None = attrs.field(converter=_optional_position, default=None)
+    pose: Pose | None = attrs.field(converter=_optional_pose, default=None)
     entity_ref: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     frame: str = attrs.field(converter=lambda value: str(value).strip().strip('/'), default='')
-    offset: Position = attrs.field(converter=Position.converter, factory=lambda: Position(0.0, 0.0, 0.0))
-    direction: tuple[float, float, float] = attrs.field(converter=_direction_converter, default=_LIGHT_DOWN)
+    offset: Pose = attrs.field(converter=_pose, factory=Pose)
     lumens: float | None = attrs.field(converter=_optional_float, default=None)
     lux: float | None = attrs.field(converter=_optional_float, default=None)
     cct_K: float = attrs.field(converter=float, default=6500.0)
@@ -250,15 +257,30 @@ class Light(Named):
     fixtures: list[Position] = attrs.field(factory=list)
     fixture_ranks: list[float] = attrs.field(factory=list)
 
+    @classmethod
+    def parse(cls, value: dict) -> Light:
+        unknown = sorted(set(value) - {field.name for field in attrs.fields(cls)} - {'pos'})
+        if unknown:
+            raise ValueError(f"light {value.get('name')!r} has unknown keys {unknown}")
+        return super().parse(value)
+
     def __attrs_post_init__(self) -> None:
         if not self.name or ':' in self.name:
             raise ValueError(f"light name {self.name!r} must be non-empty and contain no ':'")
         if self.fixture not in LIGHT_FIXTURES:
             raise ValueError(f'light {self.name!r} has unknown fixture {self.fixture!r}, expected one of {sorted(LIGHT_FIXTURES)}')
-        anchors = sum((self.position is not None, bool(self.entity_ref), bool(self.frame)))
-        if self.spec.ambient:
+        ambient = self.spec.ambient
+        anchors = sum((self.pose is not None and not ambient, bool(self.entity_ref), bool(self.frame)))
+        if self.offset != Pose() and not (self.entity_ref or self.frame):
+            raise ValueError(f'light {self.name!r} takes an offset only on an entity_ref or a frame')
+        for placed in (self.pose, self.offset):
+            if placed is not None and not math.isclose(math.sqrt(sum(component * component for component in placed.orientation)), 1.0, abs_tol=1e-3):
+                raise ValueError(f'light {self.name!r} orientation must be a unit quaternion')
+        if ambient:
             if anchors:
-                raise ValueError(f'light {self.name!r} ({self.fixture}) takes no position, entity_ref or frame')
+                raise ValueError(f'light {self.name!r} ({self.fixture}) takes no entity_ref or frame')
+            if self.pose is not None and any(self.pose.position):
+                raise ValueError(f'light {self.name!r} ({self.fixture}) takes no position, a pose only aims it')
             if self.rig:
                 raise ValueError(f'light {self.name!r} ({self.fixture}) cannot be a rig')
             if self.lumens is not None:
@@ -272,27 +294,37 @@ class Light(Named):
                 raise ValueError(f'light {self.name!r} ({self.fixture}) requires lumens >= 0')
             if self.rig:
                 if anchors:
-                    raise ValueError(f'rig light {self.name!r} takes no position, entity_ref or frame')
+                    raise ValueError(f'rig light {self.name!r} takes no pose, entity_ref or frame')
                 if not self.fixtures:
                     raise ValueError(f'rig light {self.name!r} requires at least one fixture position')
                 if len(self.fixture_ranks) != len(self.fixtures):
                     raise ValueError(f'rig light {self.name!r} requires one fixture rank per fixture position')
             elif anchors != 1:
-                raise ValueError(f'light {self.name!r} requires exactly one of position, entity_ref or frame')
+                raise ValueError(f'light {self.name!r} requires exactly one of pose, entity_ref or frame')
         if not self.rig and (self.fixtures or self.fixture_ranks):
             raise ValueError(f'light {self.name!r} takes fixture positions only as a rig')
-        x, y, z = self.direction
-        norm = math.sqrt(x * x + y * y + z * z)
-        if not norm > 0.0:
-            raise ValueError(f'light {self.name!r} direction must be non-zero')
-        self.direction = (x / norm, y / norm, z / norm)
-        if self.direction != _LIGHT_DOWN and self.fixture in _UNDIRECTED_FIXTURES:
-            raise ValueError(f'light {self.name!r} ({self.fixture}) takes no direction')
+        if not self.spec.directed and self._placement.orientation != Orientation.identity():
+            raise ValueError(f'light {self.name!r} ({self.fixture}) takes no orientation')
         if self.cone_deg is not None and (self.fixture != 'spot' or not 0.0 < self.cone_deg < 180.0):
             raise ValueError(f'light {self.name!r} takes cone_deg only as a spot, within 0..180 exclusive')
         check_light_state(f'light {self.name!r}', self.cct_K, self.level, self.dead_fraction, self.light_on, self.lit)
         if self.dead_fraction and not self.rig:
             raise ValueError(f'light {self.name!r} takes dead_fraction only as a rig')
+
+    @property
+    def _placement(self) -> Pose:
+        return self.pose if self.pose is not None else self.offset
+
+    @property
+    def position(self) -> Position:
+        """Where the fixture sits: in the level frame, or in the frame of its anchor while it sits on one."""
+        return self._placement.position
+
+    @property
+    def direction(self) -> tuple[float, float, float]:
+        """Unit vector the fixture emits along, the local -z axis of its pose, or of its offset while it sits on an anchor."""
+        along = self._placement.orientation * _LIGHT_AXIS
+        return (along.x, along.y, along.z)
 
     @property
     def spec(self) -> LightFixture:
@@ -315,7 +347,7 @@ class Light(Named):
         return [rank >= dead_fraction for rank in self.fixture_ranks]
 
 
-_OBJECT_LIGHT_KEYS = frozenset({'name', 'fixture', 'offset', 'direction', 'lumens', 'cct_K', 'cone_deg', 'glow'})
+_OBJECT_LIGHT_KEYS = frozenset({'name', 'fixture', 'pose', 'lumens', 'cct_K', 'cone_deg', 'glow'})
 
 
 def object_light(owner: str, entry: dict, settings: ObjectLightSettings | None) -> Light:
@@ -326,14 +358,13 @@ def object_light(owner: str, entry: dict, settings: ObjectLightSettings | None) 
     fixture = str(entry.get('fixture', 'bulb'))
     if fixture not in LIGHT_FIXTURES or LIGHT_FIXTURES[fixture].ambient:
         raise ValueError(f'object light of {owner!r} has fixture {fixture!r}, expected one of {sorted(name for name, spec in LIGHT_FIXTURES.items() if not spec.ambient)}')
-    x, y, z = entry.get('offset', (0.0, 0.0, 0.0))
+    offset = _pose(entry['pose']) if 'pose' in entry else Pose()
     settings = settings if settings is not None else ObjectLightSettings()
     return Light(
         name=f"{owner}_{entry.get('name', 'light')}",
         fixture=fixture,
         entity_ref=owner,
-        offset=Position(x, y, z),
-        direction=_LIGHT_DOWN if fixture in _UNDIRECTED_FIXTURES else entry.get('direction', _LIGHT_DOWN),
+        offset=offset if LIGHT_FIXTURES[fixture].directed else Pose(position=offset.position),
         lumens=entry.get('lumens'),
         cct_K=entry.get('cct_K', 6500.0),
         cone_deg=entry.get('cone_deg') if fixture == 'spot' else None,

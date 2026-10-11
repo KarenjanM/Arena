@@ -288,14 +288,24 @@ def test_realize_signal_prefixes_name(realizer):
 
 def test_realize_light_translates_position_and_prefixes_name(realizer):
     from arena_simulation_setup.shared import Light
-    from arena_simulation_setup.utils.geometry import Position
+    from arena_simulation_setup.utils.geometry import Pose, Position
 
-    light = Light(name="exit_strip", fixture="tube", position=Position(7.8, 3.0, 2.2), lumens=300.0, light_on="blackout")
+    light = Light(name="exit_strip", fixture="tube", pose=Pose(position=Position(7.8, 3.0, 2.2)), lumens=300.0, light_on="blackout")
     result = realizer.realize(light)
     assert "exit_strip" in result.name
     assert "world" in result.name
     assert (result.position.x, result.position.y, result.position.z) == (8.8, 5.0, 2.2)
     assert result.light_on == "blackout"
+
+
+def test_realize_light_twice_from_the_same_source(realizer):
+    from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.geometry import Pose, Position
+
+    light = Light(name="exit_strip", fixture="tube", pose=Pose(position=Position(7.8, 3.0, 2.2)), lumens=300.0)
+    first = realizer.realize(light)
+    second = realizer.realize(light)
+    assert (first.name, first.position) == (second.name, second.position)
 
 
 def test_realize_light_rig_translates_every_fixture(realizer):
@@ -306,7 +316,7 @@ def test_realize_light_rig_translates_every_fixture(realizer):
     result = realizer.realize(rig)
     assert [(p.x, p.y, p.z) for p in result.fixtures] == [(2.0, 3.0, 2.58), (4.4, 3.0, 2.58)]
     assert result.fixture_ranks == [0.2, 0.7]
-    assert result.position is None
+    assert result.pose is None
 
 
 def test_realize_light_prefixes_its_frame_once(realizer):
@@ -320,10 +330,13 @@ def test_realize_light_prefixes_its_frame_once(realizer):
 
 def test_realize_ambient_light_keeps_no_position(realizer):
     from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.geometry import Orientation, Pose
 
     result = realizer.realize(Light(name="ambient", fixture="dome", lux=5.0))
-    assert result.position is None
+    assert result.pose is None
     assert result.fixtures == []
+    aim = Pose(orientation=Orientation.from_euler((0.0, -0.5, 0.0)))
+    assert realizer.realize(Light(name="sun", fixture="sun", lux=400.0, pose=aim)).pose == aim
 
 
 def test_realize_polygon_translates_corners(realizer):
