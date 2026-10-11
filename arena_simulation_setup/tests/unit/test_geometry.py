@@ -254,6 +254,42 @@ def test_pose_parse_nested():
     assert p.position.x == pytest.approx(1.0)
 
 
+def test_pose_parse_mapping_with_yaw_only():
+    p = Pose.parse({"x": 1.0, "y": 2.0, "yaw": 1.5})
+    assert (p.position.x, p.position.y, p.position.z) == pytest.approx((1.0, 2.0, 0.0))
+    assert p.orientation.to_euler() == pytest.approx((0.0, 0.0, 1.5), abs=1e-6)
+    assert Pose.parse({"x": 1.0, "y": 2.0, "z": 0.5}).orientation == Orientation.identity()
+
+
+def test_pose_parse_mapping_with_roll_and_pitch():
+    p = Pose.parse({"x": 1.0, "y": 2.0, "z": 3.0, "roll": 0.1, "pitch": 0.2, "yaw": 0.3})
+    assert p == Pose.parse([1.0, 2.0, 3.0, 0.1, 0.2, 0.3])
+    assert Pose.parse({"x": 0.0, "y": 0.0, "pitch": 0.2}).orientation.to_euler() == pytest.approx((0.0, 0.2, 0.0), abs=1e-6)
+
+
+@pytest.mark.parametrize("value", [{"x": 1.0}, {"x": 1.0, "y": 2.0, "heading": 0.3}, {"y": 2.0, "pitch": 0.3}])
+def test_pose_parse_mapping_rejects_missing_and_unknown_keys(value):
+    with pytest.raises(ValueError, match="Pose mapping must have keys"):
+        Pose.parse(value)
+
+
+def test_pose_times_pose_composes_in_the_left_frame():
+    base = Pose(Position(4.0, 2.0, 0.0), Orientation.from_yaw(math.pi / 2))
+    rel = Pose(Position(1.0, 0.0, 0.8), Orientation.from_euler((0.0, -math.pi / 4, 0.0)))
+    out = base * rel
+    assert (out.position.x, out.position.y, out.position.z) == pytest.approx((4.0, 3.0, 0.8))
+    forward = out.orientation * Position(1.0, 0.0, 0.0)
+    assert (forward.x, forward.y, forward.z) == pytest.approx((0.0, 2**-0.5, 2**-0.5))
+    assert base * Pose() == base
+
+
+def test_pose_times_point_carries_it_out_of_the_frame():
+    base = Pose(Position(4.0, 2.0, 1.0), Orientation.from_yaw(math.pi / 2))
+    point = base * Position(1.0, 0.0, 0.5)
+    assert isinstance(point, Position)
+    assert (point.x, point.y, point.z) == pytest.approx((4.0, 3.0, 1.5))
+
+
 def test_pose_parse_idempotent():
     from arena_simulation_setup.utils.cattrs import converter
 

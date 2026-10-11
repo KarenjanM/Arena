@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import zlib
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from arena_simulation_setup.shared import CeilingLights, Light
 from arena_simulation_setup.shared.walls import Wall
 from arena_simulation_setup.tree.World.World import AUTO_CEILING_LIGHTS, Level, LevelDescription, MultiLevelWorldView, WorldDescription
 from arena_simulation_setup.utils.cattrs import converter
-from arena_simulation_setup.utils.geometry import Position
+from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 _L_SHAPE = [(0.0, 0.0), (6.0, 0.0), (6.0, 2.0), (2.0, 2.0), (2.0, 6.0), (0.0, 6.0)]
 
@@ -25,7 +26,7 @@ zones:
   ceiling_height: 2.5
   ceiling_lights: {fixture: panel, spacing: 2.4, lumens: 3600, cct_K: 4000, light_on: "!blackout"}
   lights:
-  - {name: exit_strip, position: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, light_on: blackout}
+  - {name: exit_strip, pose: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, light_on: blackout}
 """
 
 
@@ -48,7 +49,7 @@ def _lit_zone(name: str = 'office', corners: list[Position] | None = None, ceili
 
 
 def _strip(name: str = 'exit_strip', **kwargs) -> Light:
-    fields = {'name': name, 'fixture': 'tube', 'position': Position(1.0, 1.0, 2.2), 'lumens': 300.0}
+    fields = {'name': name, 'fixture': 'tube', 'pose': Pose(position=Position(1.0, 1.0, 2.2)), 'lumens': 300.0}
     fields.update(kwargs)
     return Light(**fields)
 
@@ -136,7 +137,7 @@ def test_ceiling_rig_is_one_rig_light_named_after_the_zone():
     assert rig.lit is None
     assert rig.level == pytest.approx(0.8)
     assert rig.dead_fraction == pytest.approx(0.25)
-    assert rig.position is None
+    assert rig.pose is None
     assert rig.entity_ref == ''
     assert rig.frame == ''
     assert len(rig.fixture_ranks) == len(rig.fixtures)
@@ -331,8 +332,8 @@ def test_world_validate_runs_validate_lights():
 
 
 def test_shift_all_positions_moves_positioned_lights_only():
-    positioned = _strip('positioned', position=Position(1.0, 1.0, 2.2))
-    attached = _strip('attached', position=None, entity_ref='desk')
+    positioned = _strip('positioned', pose=Pose(position=Position(1.0, 1.0, 2.2)))
+    attached = _strip('attached', pose=None, entity_ref='desk')
     ambient = Light(name='ambient', fixture='dome', lux=50.0)
     level = LevelDescription(zones=[LevelDescription.Zone(name='hall', corners=_rect(4.0, 4.0), lights=[positioned, attached])], lights=[ambient])
 
@@ -341,9 +342,17 @@ def test_shift_all_positions_moves_positioned_lights_only():
     assert positioned.position.x == pytest.approx(4.0)
     assert positioned.position.y == pytest.approx(-1.0)
     assert positioned.position.z == pytest.approx(2.2)
-    assert attached.position is None
-    assert attached.offset == Position(0.0, 0.0, 0.0)
-    assert ambient.position is None
+    assert attached.pose is None
+    assert attached.offset == Pose()
+    assert ambient.pose is None
+
+
+def test_shift_all_positions_leaves_the_sun_aim_alone():
+    aim = Pose(orientation=Orientation.from_euler((0.0, -0.5, 0.0)))
+    level = LevelDescription(lights=[Light(name='sun', fixture='sun', lux=10000.0, pose=aim)])
+    level.shift_all_positions(3.0, -2.0)
+    assert level.lights[0].pose == Pose(orientation=Orientation.from_euler((0.0, -0.5, 0.0)))
+    level.validate_lights()
 
 
 def test_shift_all_positions_moves_rig_fixtures_with_the_zone():
@@ -365,7 +374,7 @@ def test_level_from_level_description_carries_lights():
 
 def test_compact_world_carries_and_shifts_lights():
     ambient = Light(name='ambient', fixture='dome', lux=50.0)
-    zone = LevelDescription.Zone(name='hall', corners=_rect(4.0, 4.0), lights=[_strip(position=Position(1.0, 1.0, 2.2))])
+    zone = LevelDescription.Zone(name='hall', corners=_rect(4.0, 4.0), lights=[_strip(pose=Pose(position=Position(1.0, 1.0, 2.2)))])
     world = WorldDescription.from_levels(LevelDescription(zones=[zone], lights=[ambient]))
 
     compacted = world.compact_world({'0': (5.0, 7.0)})
@@ -433,7 +442,7 @@ def test_level_unstructure_omits_derived_light_fields():
     (zone,) = unstructured['zones']
     assert zone['ceiling_lights'] == {'cct_K': 4000.0, 'light_on': '!blackout'}
     (strip,) = zone['lights']
-    assert set(strip) == {'name', 'fixture', 'position', 'lumens', 'light_on'}
+    assert set(strip) == {'name', 'fixture', 'pose', 'lumens', 'light_on'}
     assert 'rig' not in strip
     assert 'fixtures' not in strip
     assert 'fixture_ranks' not in strip
@@ -482,9 +491,7 @@ def _desk_zone(lights: list[Light], yaw: float = 0.0, desks: int = 1) -> LevelDe
 
 
 def test_entity_ref_light_sits_on_its_static_entity_with_turned_offset() -> None:
-    import math
-
-    lamp = Light(name='desk_lamp', fixture='spot', entity_ref='desk', offset=Position(1.0, 0.0, 0.8), direction=(1.0, 0.0, -1.0), lumens=400.0)
+    lamp = Light(name='desk_lamp', fixture='spot', entity_ref='desk', offset=Pose(position=Position(1.0, 0.0, 0.8), orientation=Orientation.from_euler((0.0, -math.pi / 4, 0.0))), lumens=400.0)
     (light,) = asyncio.run(LevelDescription(zones=[_desk_zone([lamp], yaw=math.pi / 2)]).all_lights())
     assert light.entity_ref == ''
     assert (light.position.x, light.position.y, light.position.z) == pytest.approx((4.0, 3.0, 0.8))
@@ -502,11 +509,11 @@ def test_entity_ref_light_rejects_unresolvable_entities(desks: int, word: str) -
 
 
 def test_frame_light_keeps_its_frame_and_offset() -> None:
-    headlight = Light(name='headlight', fixture='spot', frame='jackal/base_link', offset=Position(0.2, 0.0, 0.3), lumens=800.0)
+    headlight = Light(name='headlight', fixture='spot', frame='jackal/base_link', offset=Pose(position=Position(0.2, 0.0, 0.3)), lumens=800.0)
     (light,) = asyncio.run(LevelDescription(zones=[_desk_zone([headlight])]).all_lights())
     assert light.frame == 'jackal/base_link'
-    assert light.position is None
-    assert (light.offset.x, light.offset.z) == (0.2, 0.3)
+    assert light.pose is None
+    assert (light.offset.position.x, light.offset.position.z) == (0.2, 0.3)
 
 
 _LAMP_ANNOTATION = {
@@ -514,8 +521,8 @@ _LAMP_ANNOTATION = {
     'path': 'Object/Desk_Lamp',
     'bounding_box': [[-0.1, 0.1], [-0.1, 0.1], [0.0, 0.5]],
     'lights': [
-        {'name': 'bulb', 'fixture': 'bulb', 'offset': [0.1, 0.0, 0.45], 'lumens': 800.0, 'cct_K': 2700.0, 'glow': 'Shade'},
-        {'name': 'reading', 'fixture': 'spot', 'offset': [0.0, 0.0, 0.4], 'direction': [1.0, 0.0, -1.0], 'lumens': 300.0, 'cone_deg': 60.0},
+        {'name': 'bulb', 'fixture': 'bulb', 'pose': [[0.1, 0.0, 0.45], [1.0, 0.0, 0.0, 0.0]], 'lumens': 800.0, 'cct_K': 2700.0, 'glow': 'Shade'},
+        {'name': 'reading', 'fixture': 'spot', 'pose': [0.0, 0.0, 0.4, 0.0, -math.pi / 4, 0.0], 'lumens': 300.0, 'cone_deg': 60.0},
     ],
 }
 
@@ -547,8 +554,6 @@ def _lamp_zone(*statics: dict) -> LevelDescription.Zone:
 
 
 def test_object_lights_follow_their_entity_pose_and_scale(world_assets: Path) -> None:
-    import math
-
     lamp = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [2.0, 1.0, 0.7], 'orientation': {'x': 0.0, 'y': 0.0, 'z': math.sin(math.pi / 4), 'w': math.cos(math.pi / 4)}}, 'scale': [2.0, 2.0, 2.0]}
     bulb, reading = asyncio.run(LevelDescription(zones=[_lamp_zone(lamp)]).all_lights())
     assert (bulb.name, reading.name) == ('desk_lamp_bulb', 'desk_lamp_reading')
@@ -596,7 +601,7 @@ def test_validate_lights_leaves_object_lights_to_spawn_time(world_assets: Path) 
 
 def _auto_level() -> LevelDescription:
     own = CeilingLights(lumens=3000.0)
-    lamp = Light(name='lamp', fixture='bulb', position=Position(1.0, 1.0, 1.0), lumens=800.0)
+    lamp = Light(name='lamp', fixture='bulb', pose=Pose(position=Position(1.0, 1.0, 1.0)), lumens=800.0)
     return LevelDescription(
         zones=[
             LevelDescription.Zone(name='bare', corners=_rect(4.0, 4.0)),

@@ -1419,7 +1419,7 @@ def _light_params(light: Light, level: float, alive: Sequence[bool], position: P
             result.append(params | {'type': 'point', 'pose': (x, y, light.fixtures[cell[0]].z), 'intensity': intensity, 'range': _GZ_FIXTURE_RANGE, 'constant': 1.0, 'quadratic': 1.0, 'cone': None})
         return [*result, params | _rig_bounce(light, level, alive)]
     if position is None:
-        position = light.position if light.position is not None else light.offset
+        position = light.position
     if light.spec.shape == 'sphere':
         return [params | {'type': 'point', 'pose': (position.x, position.y, position.z), 'intensity': _GZ_LUX_GAIN * (light.lumens or 0.0) * level / (4.0 * math.pi), 'range': _GZ_FIXTURE_RANGE, 'constant': 1.0, 'quadratic': 1.0, 'cone': None}]
     cone = math.radians(light.spec.cone_deg) if light.spec.cone_deg < 180.0 else _GZ_FIXTURE_CONE

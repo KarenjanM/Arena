@@ -211,7 +211,7 @@ class Realizer:
             light,
             name=self._prefix(light.name, level_id),
             frame=frame,
-            position=self._realize_position(light.position, level_id) if light.position is not None else None,
+            pose=self._realize_pose(light.pose, level_id) if light.pose is not None and not light.spec.ambient else light.pose,
             fixtures=[self._realize_position(fixture, level_id) for fixture in light.fixtures],
         )
 

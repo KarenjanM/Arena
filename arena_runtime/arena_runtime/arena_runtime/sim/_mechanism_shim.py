@@ -566,13 +566,7 @@ LIGHT_MOVE_EPSILON = 0.02
 
 def light_anchor(frame_position: Position, frame_yaw: float, offset: Position) -> Position:
     """Map position of an offset given in a frame with the given map position and yaw."""
-    cos_yaw = math.cos(frame_yaw)
-    sin_yaw = math.sin(frame_yaw)
-    return Position(
-        x=frame_position.x + cos_yaw * offset.x - sin_yaw * offset.y,
-        y=frame_position.y + sin_yaw * offset.x + cos_yaw * offset.y,
-        z=frame_position.z + offset.z,
-    )
+    return Pose(position=frame_position, orientation=Orientation.from_yaw(frame_yaw)) * offset
 
 
 def _light_moved(last: tuple[Position, float] | None, position: Position, yaw: float) -> bool:
@@ -591,7 +585,7 @@ async def _apply_lights(mech: MechanismITF) -> None:
         pose = mech.frame_pose(light.frame)
         if pose is None:
             continue
-        position = light_anchor(pose[0], pose[1], light.offset)
+        position = light_anchor(pose[0], pose[1], light.position)
         if _light_moved(mech._light_poses.get(entity), position, pose[1]):
             await mech._move_light(light, position, pose[1])
             mech._light_poses[entity] = (position, pose[1])
