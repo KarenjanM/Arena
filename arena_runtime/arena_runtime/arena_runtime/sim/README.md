@@ -81,7 +81,7 @@ Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` kee
 | `_apply_light` | `(light, level, alive) -> None` | render at `level` in 0..1 with the per-fixture alive mask |
 | `_move_light` | `(light, position, yaw) -> None` | place a frame-anchored light, its direction turned by `yaw` |
 
-A light with `glow` also makes that material of its `owner` entity emit the light's color at `level`: Gazebo recolors the model's `glow_<material>` visual over `/world/default/material_color`, Isaac sets the material's emissive color on the session layer.
+A light with `glow` also makes that material of its `owner` entity emit the light's color at `level`: Gazebo recolors the model's `glow_<material>` visual over `/world/default/material_color`, Isaac sets the material's emissive color on the session layer. MuJoCo renders the lights without the glow.
 
 The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 
@@ -249,6 +249,7 @@ controller activation lives inside the robot bring-up unpause window.
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
 | `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
+| `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
 
 Flatland and Unity have stubs (commented out) in `__init__.py`; they are not
 active. The active simulator is selected by `node.conf.Arena.SIM` and

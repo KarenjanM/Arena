@@ -12,22 +12,28 @@ import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
 import arena_simulation_setup.tree.assets.Material
+import geometry_msgs.msg
 import launch
 import launch_ros
 import std_srvs.srv
 from arena_mujoco_msgs.msg import (
     Ceiling,
     Floor,
+    Light,
+    LightState,
     Material,
     Prim,
     Scale,
     Wall,
 )
 from arena_mujoco_msgs.srv import (
+    DeleteLights,
     DeletePrims,
     EditPrims,
+    SetLights,
     SpawnCeilings,
     SpawnFloors,
+    SpawnLights,
     SpawnPrims,
     SpawnUrdf,
     SpawnWalls,
@@ -43,7 +49,9 @@ from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
+from arena_simulation_setup.shared import Light as LightDefinition
 from arena_simulation_setup.shared import Obstacle as ObstacleDefinition
+from arena_simulation_setup.shared import cct_to_rgb
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
 from task_generator.shared import Ceiling as CeilingDefinition
@@ -53,6 +61,7 @@ from task_generator.shared import (
     ModelType,
     Obstacle,
     Pose,
+    Position,
     Robot,
 )
 from task_generator.shared import Floor as FloorDefinition
@@ -183,12 +192,15 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self.wall_counter = itertools.count()
         self.floor_counter = itertools.count()
         self._clients = types.SimpleNamespace(
+            DeleteLights=self.node.create_client_wrapper(DeleteLights, "/mujoco/DeleteLights"),
             DeletePedestrians=self.node.create_client_wrapper(DeletePedestrians, "/mujoco/DeletePedestrians"),
             DeletePrims=self.node.create_client_wrapper(DeletePrims, "/mujoco/DeletePrims"),
             EditPrims=self.node.create_client_wrapper(EditPrims, "/mujoco/EditPrims"),
             MovePedestrians=self.node.create_client_wrapper(MovePedestrians, "/mujoco/MovePedestrians"),
+            SetLights=self.node.create_client_wrapper(SetLights, "/mujoco/SetLights"),
             SpawnCeilings=self.node.create_client_wrapper(SpawnCeilings, "/mujoco/SpawnCeilings"),
             SpawnFloors=self.node.create_client_wrapper(SpawnFloors, "/mujoco/SpawnFloors"),
+            SpawnLights=self.node.create_client_wrapper(SpawnLights, "/mujoco/SpawnLights"),
             SpawnPedestrians=self.node.create_client_wrapper(SpawnPedestrians, "/mujoco/SpawnPedestrians", timeout=_SPAWN_ASSETS_TIMEOUT_S),
             SpawnPrims=self.node.create_client_wrapper(SpawnPrims, "/mujoco/SpawnPrims", timeout=_SPAWN_ASSETS_TIMEOUT_S),
             SpawnUrdf=self.node.create_client_wrapper(SpawnUrdf, "/mujoco/SpawnUrdf"),
@@ -582,6 +594,44 @@ class MujocoSimulator(BaseSim, NodeInterface):
         res = bool(ceilings_res) and all(ceilings_res.ret)
         self._logger.debug("All ceilings spawned successfully.")
         return res
+
+    def _light_msg(self, light: LightDefinition) -> Light:
+        spec = light.spec
+        fixtures = [] if spec.ambient else (light.fixtures if light.rig else [light.position if light.position is not None else light.offset])
+        return Light(
+            name=light.name,
+            shape=spec.shape,
+            cone_deg=spec.cone_deg,
+            positions=[position.to_msg() for position in fixtures],
+            direction=geometry_msgs.msg.Vector3(x=light.direction[0], y=light.direction[1], z=light.direction[2]),
+            flux=light.lux if spec.ambient else light.lumens,
+            color=cct_to_rgb(light.cct_K),
+            cast_shadows=light.cast_shadows,
+            level=0.0 if light.lit is False else light.level,
+            alive=light.alive(light.dead_fraction),
+            intrinsic=light.intrinsic,
+            rig=light.rig,
+        )
+
+    async def _spawn_lights(self, lights: Sequence[LightDefinition]) -> bool:
+        res = await self._clients.SpawnLights.call_timeout(SpawnLights.Request(env_id=self._env_id, lights=[self._light_msg(light) for light in lights]))
+        return res is not None and all(res.ret)
+
+    async def _remove_lights(self, lights: Sequence[LightDefinition]) -> bool:
+        res = await self._clients.DeleteLights.call_timeout(DeleteLights.Request(env_id=self._env_id, names=[light.name for light in lights]))
+        return res is not None and all(res.ret)
+
+    async def _move_light(self, light: LightDefinition, position: Position, yaw: float) -> None:
+        state = LightState(name=light.name, move=True, position=position.to_msg(), yaw=yaw)
+        res = await self._clients.SetLights.call_timeout(SetLights.Request(env_id=self._env_id, states=[state]))
+        if res is None or not all(res.ret):
+            raise RuntimeError(f"light {light.name!r} did not move")
+
+    async def _apply_light(self, light: LightDefinition, level: float, alive: Sequence[bool]) -> None:
+        state = LightState(name=light.name, level=level, alive=list(alive))
+        res = await self._clients.SetLights.call_timeout(SetLights.Request(env_id=self._env_id, states=[state]))
+        if res is None or not all(res.ret):
+            raise RuntimeError(f"light {light.name!r} did not take its state")
 
     async def spawn_box(self, name: str, size: tuple[float, float, float], pose: Pose, material: MaterialIdentifier | None = None) -> bool:
         """Spawn an axis-aligned box as a single primitive Prim (empty mesh, scale = size), in its material when one is given."""

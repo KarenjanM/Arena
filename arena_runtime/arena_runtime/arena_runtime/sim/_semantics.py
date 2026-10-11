@@ -301,7 +301,7 @@ class _Phase:
 
 @semantic_kind('signal')
 class SignalSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'dummy'})
 
     DISCRETE = ('state',)
     CONTINUOUS = ('phase_remaining',)
@@ -409,7 +409,7 @@ class _Window:
 
 @semantic_kind('schedule')
 class ScheduleSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'dummy'})
 
     DISCRETE = ('state',)
     CONTINUOUS = ('window_remaining',)
@@ -704,7 +704,7 @@ class PressurePlateSemantics(SemanticKind):
 
 @semantic_kind('sound')
 class SoundSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'dummy'})
 
     CONTINUOUS = ('volume_db',)
     PREDICATES = ('sounding',)
@@ -797,7 +797,7 @@ class SoundSemantics(SemanticKind):
 
 @semantic_kind('light')
 class LightSemantics(SemanticKind):
-    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'dummy'})
+    SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'dummy'})
 
     CONTINUOUS = ('level', 'dead_fraction')
     PREDICATES = ('lit',)
