@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import traceback
+import typing
 
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
@@ -70,6 +71,37 @@ async def lazy_dummy_lifecycle(physics_dt: float = 0.0333, **kwargs: object) -> 
     from .dummy_simulator import DummyHost
 
     return DummyHost(physics_dt)
+
+
+def _flatsim_missing(e: ModuleNotFoundError) -> typing.NoReturn:
+    """Re-raise a failed adapter import, naming the feature when its packages are absent."""
+    if e.name is not None and e.name.split('.')[0] in ('flatsim', 'flatsim_msgs'):
+        raise SimUnavailable('sim:=flatsim needs the flatsim package, install it with `arena feature flatsim install`') from e
+    raise e
+
+
+@SimulatorRegistry.register(SimSimulator.FLATSIM)
+async def lazy_flatsim(**kwargs: object) -> BaseSim:
+    try:
+        from .flatsim_simulator.simulator import FlatsimSimulator
+    except ModuleNotFoundError as e:
+        _flatsim_missing(e)
+
+    return await FlatsimSimulator.create(**kwargs)
+
+
+@LifecycleRegistry.register(SimSimulator.FLATSIM)
+async def lazy_flatsim_lifecycle(node: object, physics_dt: float = 0.0333, **kwargs: object) -> SimLifecycle:
+    from arena_rclpy_mixins import ArenaMixinNode
+
+    try:
+        from .flatsim_simulator.host import FlatsimHost
+    except ModuleNotFoundError as e:
+        _flatsim_missing(e)
+
+    del kwargs
+    assert isinstance(node, ArenaMixinNode)
+    return FlatsimHost(physics_dt, node)
 
 
 # @SimulatorRegistry.register(SimSimulator.FLATLAND)

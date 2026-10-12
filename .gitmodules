@@ -55,3 +55,8 @@
 	url = https://github.com/voshch/arena-mujoco.git
 	branch = jazzy
 	update = checkout
+[submodule "flatsim"]
+	path = flatsim
+	url = https://github.com/voshch/flatsim.git
+	branch = jazzy
+	update = checkout

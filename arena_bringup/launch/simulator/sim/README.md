@@ -15,6 +15,7 @@ a `GroupAction` or `ExecuteProcess`.
 simulator key  ->  action
 ──────────────────────────────────────────────────────────────────
 dummy          ->  static_transform_publisher (map -> dummy TF only)
+flatsim        ->  ExecuteProcess: `arena feature flatsim launch`
 gazebo         ->  ExecuteProcess: `arena feature gazebo launch`
 isaac          ->  ExecuteProcess: `arena feature isaac  launch`
 ```
@@ -26,18 +27,21 @@ validation error.
 
 ## Feature-gated delegation
 
-Both real simulators run via their feature `launch` verb: `sim.launch.py`
+The real simulators run via their feature `launch` verb: `sim.launch.py`
 delegates with an `ExecuteProcess` (`bash -c 'arena feature <sim> launch ...'`,
 `on_exit=Shutdown`). The verb refuses unless the feature is installed
 (`arena feature <sim> install`), so the dispatcher is the single live entry and
 the verb is never a dead path. Forwarded args: gazebo gets
-`use_sim_time`/`headless`/`world`, isaac gets `headless`/`log_level`.
+`use_sim_time`/`headless`/`world`, isaac gets `headless`/`log_level`, flatsim
+gets `sim.flatsim.dynamics` as `dynamics`. `sim:=flatsim` without the flatsim
+package fails at launch with the install hint.
 
 The real bringup files live wherever the feature owns them:
 
 ```
 arena_bringup: launch/simulator/sim/gazebo/gazebo.launch.py   (gz-sim 8 + clock bridge)
 arena_isaac:   run_isaacsim.launch.py                         (Isaac Sim app)
+flatsim:       launch/flatsim.launch.py                       (flatsim server)
 ```
 
 ### gazebo.launch.py (arena_bringup)

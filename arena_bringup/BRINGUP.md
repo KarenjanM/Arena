@@ -356,7 +356,14 @@ Default is `gazebo`. Valid values:
 |---|---|
 | `gazebo` (default) | gz-sim 8, dart physics, ogre renderer. `human` defaults to `arena` (arena_humansim). |
 | `isaac` | Isaac Sim via `arena feature isaac launch`. `mobile` defaults to `nav2`. |
+| `flatsim` | [flatsim](../flatsim/README.md) server, 2D Box2D with no renderer, one world for every env. Needs `arena feature flatsim install`. Odom, tf, laserscans, point clouds, IMU and contacts are computed from geometry, camera images are absent. `human` defaults to `arena`, `mobile` to `nav2`. |
 | `dummy` | No physics engine; a static `map->dummy` TF is published. For plumbing-only checks (no GPU, no controllers). Must be passed explicitly. |
+
+### sim.flatsim.*
+
+| Key | Default | Meaning |
+|---|---|---|
+| `sim.flatsim.dynamics` | `rigid` | Runtime argument. `rigid`: walls, obstacles and pedestrians stop or push the robot. `kinematic`: the robot passes through and only the collision tracker reports. |
 
 ### sim.isaac.*
 

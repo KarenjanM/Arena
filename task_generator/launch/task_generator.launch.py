@@ -114,7 +114,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     sim = LaunchArgument(
         name="sim",
         default_value="",
-        description="empty = adopt the runtime's sim; explicit [dummy, gazebo, isaac, mujoco] must match the runtime",
+        description="empty = adopt the runtime's sim; explicit [dummy, flatsim, gazebo, isaac, mujoco] must match the runtime",
     )
     env_tf = LaunchArgument(
         name="env.tf",
@@ -128,7 +128,7 @@ def generate_launch_description() -> launch.LaunchDescription:
     human = LaunchArgument(
         name="human",
         default_value="",
-        description="empty = derive from arena_sim ({dummy: manual, gazebo|isaac|mujoco: arena})",
+        description="empty = derive from arena_sim ({dummy: manual, flatsim|gazebo|isaac|mujoco: arena})",
     )
     human_robots_visible = LaunchArgument(
         name="human.robots.visible",
