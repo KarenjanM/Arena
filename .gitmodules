@@ -50,6 +50,11 @@
 	url = https://github.com/voshch/arena-hearing.git
 	branch = jazzy
 	update = checkout
+[submodule "arena_mujoco"]
+	path = arena_mujoco
+	url = https://github.com/voshch/arena-mujoco.git
+	branch = jazzy
+	update = checkout
 [submodule "flatsim"]
 	path = flatsim
 	url = https://github.com/voshch/flatsim.git

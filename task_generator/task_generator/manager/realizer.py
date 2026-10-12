@@ -223,6 +223,11 @@ class Realizer:
             ring.append((realized.x, realized.y))
         return ring
 
+    def realize_xy(self, x: float, y: float, level_id: str = "") -> tuple[float, float]:
+        """Env-realized xy of a world point, for semantic params authored in world coordinates."""
+        realized = self._realize_position(Position(x=x, y=y, z=0.0), level_id)
+        return realized.x, realized.y
+
     def realize(self, target: object = None, level_id: str = "") -> object:
         if target is None:
             return self._prefix(level_id)

@@ -10,7 +10,6 @@ members = [
     "arena_simulation_setup/src",
     "task_generator",
     "utils/arena_cam",
-    "utils/arena_peds_pose",
     "utils/arena_rclpy_mixins",
     "utils/arena_viz",
     "utils/human_steering",
@@ -90,7 +89,6 @@ src = [
     "utils/rviz_utils/rviz_utils",
     "utils/human_steering/human_steering",
     "utils/arena_cam/arena_cam",
-    "utils/arena_peds_pose/arena_peds_pose",
 ]
 extend-exclude = [
     "arena_tools",
@@ -118,6 +116,7 @@ known-first-party = [
     "arena_evaluation",
     "arena_hearing",
     "arena_isaac",
+    "arena_mujoco",
     "arena_training",
     "flatsim",
     "isaac_utils",

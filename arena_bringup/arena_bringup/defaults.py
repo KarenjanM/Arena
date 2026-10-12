@@ -5,6 +5,7 @@ DEFAULT_HUMAN: dict[str, str] = {
     "flatsim": "arena",
     "gazebo": "arena",
     "isaac": "arena",
+    "mujoco": "arena",
 }
 
 

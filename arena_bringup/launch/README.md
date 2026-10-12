@@ -27,11 +27,11 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `robot.hearing.<param>` | node param | node default | Every other `robot.hearing.<param>:=<val>` reaches the hearing nodes as ROS param `<param>`. The launch-facing ones (`robot.hearing.seld.device`, `robot.hearing.srp.hop_s`, ...) are declared by arena_hearing's `hearing.launch.py`, empty = node default. Never forwarded to the robot adapters. |
 | `robot.mobile.<key>:=<val>` | adapter-scoped | - | Override any kwarg the bound mobile adapter accepts. Lands as ROS param `robot.mobile.<key>` and overlays the cap-file YAML. Examples: `robot.mobile.local_planner:=teb`, `robot.mobile.global_planner:=smac`, `robot.mobile.agent:=jackal_pretrained`. |
 | `robot.arm.<key>:=<val>` | adapter-scoped | - | Same shape for the arm cap. |
-| `sim` | string | `gazebo` | Physics simulator: `dummy`, `flatsim`, `gazebo`, or `isaac`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
+| `sim` | string | `gazebo` | Physics simulator: `dummy`, `flatsim`, `gazebo`, `isaac`, or `mujoco`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
 | `sim.flatsim.dynamics` | string | `rigid` | `sim:=flatsim` only, a runtime argument. `rigid` = walls, obstacles and pedestrians stop or push the robot, `kinematic` = the robot passes through. |
 | `headless` | bool string | `False` | `true` = hide sim GUI (server-only). `arena launch` also suppresses rviz unless `rviz:=true` is explicit. |
 | `viz` | bool string | `true` | `arena launch` only: run `arena viz --all` after envs are up. Forced `false` when `headless:=true` unless overridden. |
-| `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `flatsim`/`gazebo`/`isaac` | Human-simulator backend |
+| `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `flatsim`/`gazebo`/`isaac`/`mujoco` | Human-simulator backend |
 | `human.robots.visible` | bool string | `true` | `false` = the `arena` human backend does not tell its pedestrians where the robots are, so they walk as if none were there. Possessed pedestrians stay visible to the crowd. Other backends ignore it. |
 | `complexity` | string | `1` | `1` map+position known; `2` map known AMCL; `3` SLAM |
 | `record.dir` | string | `` (empty) | Directory for data recording; empty disables |
@@ -60,6 +60,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `auditory.motor.enabled` | bool string | `true` | Robots emit drivetrain audio. |
 | `auditory.motor.model` | `procedural` \| `wav` | `procedural` | Robot motor audio source. |
 | `auditory.motor.trim_db` | float string | `0.0` | Live offset on the motor asset `level_db`, which sets the motor level everywhere (the procedural drivetrain at 1 m/s). |
+| `auditory.motor.structural_share` | float string | `0.2` | Live share of a robot's own drivetrain power at each of its array microphones that arrives structure-borne, incoherent across the microphones. `0` leaves the airborne field from the drive points. |
+| `auditory.motor.drive_points_m` | float list string | `[0.0, 0.1878, 0.0345, 0.0, -0.1878, 0.0345]` | Points the left and right drivetrain of a robot radiate from to its own array, x y z left then right in the array mount frame. |
 | `auditory.listener.id` | string | `` (empty) | Microphone listener id of the listener renderer, the RViz auditory panel switches it at run time. |
 | `auditory.viewport.height_m` | float string | `1.6` | Listening height of the viewport down-projection microphone. |
 | `auditory.array.spec` | `stereo` \| `four_mic` \| `mono` \| path | `stereo`, `four_mic` when `robot.hearing` is `srp` or `seld` | Robot microphone array rendered by `array_renderer`. |
@@ -99,7 +101,7 @@ without clobbering it.
 
 ## Simulator dispatch
 
-- [simulator/sim/README.md](simulator/sim/README.md) - physics simulator backends (`dummy`, `flatsim`, `gazebo`, `isaac`).
+- [simulator/sim/README.md](simulator/sim/README.md) - physics simulator backends (`dummy`, `flatsim`, `gazebo`, `isaac`, `mujoco`).
 - Human-simulation backends: see `task_generator/launch/human/README.md`
   (moved alongside their `BaseHumanSimulator` adapters).
 

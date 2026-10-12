@@ -61,6 +61,20 @@ def _route_semantics(cfgs: Sequence[SemanticCfg], host_kind: str) -> dict[str, l
     return extras
 
 
+def _realized_plate(realizer: Realizer, cfg: SemanticCfg, level_id: str) -> SemanticCfg:
+    """A plate cfg with its authored position in the map frame agents are tracked in and its driven door under its realized name."""
+    params = dict(cfg.params)
+    if 'position' in params:
+        params['position'] = list(realizer.realize_xy(*params['position'][:2], level_id))
+    if params.get('drives'):
+        params['drives'] = realizer.prefix(params['drives'], level_id)
+    return attrs.evolve(cfg, params=params)
+
+
+def _attachments(realizer: Realizer, extras: dict[str, list[SemanticCfg]], level_id: str) -> list[tuple[str, list[SemanticCfg]]]:
+    return [(kind, [_realized_plate(realizer, cfg, level_id) for cfg in cfgs] if kind == 'pressure_plate' else cfgs) for kind, cfgs in extras.items()]
+
+
 _OCCUPANCY_CAP_VOCAB = _kind_vocab(_SEMANTIC_KINDS["occupancy_cap"])
 
 
@@ -274,7 +288,7 @@ class EnvironmentManager(NodeInterface):
                 self.node._register_semantic_entity(d.name, realized.name)
                 extras = _route_semantics(realized.semantics, "door")
                 doors_list.append(realized)
-                pending.extend((kind, realized.name, cfgs, None) for kind, cfgs in extras.items())
+                pending.extend((kind, realized.name, cfgs, None) for kind, cfgs in _attachments(self._realizer, extras, fid))
         doors = tuple(doors_list)
         floors = tuple(self._realizer.realize(f, fid) for fid, level in _world.levels.items() if _match_level_id(fid) for f in level.all_floors)
         ceilings: list[Ceiling] = []
@@ -302,7 +316,7 @@ class EnvironmentManager(NodeInterface):
                 self.node._register_semantic_entity(e.name, realized_e.name)
                 extras = _route_semantics(realized_e.semantics, "elevator")
                 elevators_list.append(realized_e)
-                pending.extend((kind, realized_e.name, cfgs, None) for kind, cfgs in extras.items())
+                pending.extend((kind, realized_e.name, cfgs, None) for kind, cfgs in _attachments(self._realizer, extras, fid))
             for sched in level.all_schedules:
                 realized_s = self._realizer.realize(sched, fid)
                 self.node._register_semantic_entity(sched.name, realized_s.name)

@@ -1,4 +1,4 @@
-"""URDF-faithful forward kinematics + collision proxies for the 36-DOF human.
+"""URDF-faithful forward kinematics + collision proxies for the 40-DOF human.
 
 Mirrors ``human_description/urdf/human-tpl.xacro`` (branch ``arena-v2``)
 exactly: same bone lengths as a function of ``height``, same joint axes, same

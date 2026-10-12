@@ -296,11 +296,34 @@ def _swept_slab_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs
     return False
 
 
+def _sliding_entry_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
+    """True when the pocket band a sliding slab enters past the door end between the two progress values overlaps any agent disc."""
+    door = runtime.door
+    sx, sy = door.start.x, door.start.y
+    ex, ey = door.end.x, door.end.y
+    length = math.hypot(ex - sx, ey - sy)
+    if length <= 0.0 or not discs or p_to <= p_from:
+        return False
+    ux, uy = (ex - sx) / length, (ey - sy) / length
+    along_center = length * (1.0 + (p_from + p_to) / 2.0)
+    cx, cy = sx + ux * along_center, sy + uy * along_center
+    half_l = (p_to - p_from) * length / 2.0
+    half_w = door.width / 2.0
+    for _name, (x, y), radius in discs:
+        dx, dy = x - cx, y - cy
+        along = abs(dx * ux + dy * uy)
+        across = abs(-dx * uy + dy * ux)
+        if math.hypot(max(along - half_l, 0.0), max(across - half_w, 0.0)) <= radius:
+            return True
+    return False
+
+
 def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence[Disc]) -> None:
     """Advance door state machine one tick: linear T-delta for sliding, instant snap for teleport.
     The slab never moves through an agent: a blocked close re-triggers the door (it reverses,
-    tested against the full remaining path so nobody in the slot is approached), a blocked
-    opening step holds in place. Vertical kinds open away from agents and are never open-blocked."""
+    tested against the full remaining path so nobody in the slot is approached), an opening step
+    holds only when the slab would enter an agent in the wall pocket past the door end. Vertical
+    kinds open away from agents and are never open-blocked."""
     door = runtime.door
     fresh = (now - runtime.last_trigger_sim_time) <= door.hold_time
     if runtime.effective_kind == 'teleport':
@@ -316,7 +339,7 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
     if target > runtime.progress:
         runtime.state = _DoorState.OPENING
         next_progress = min(1.0, runtime.progress + step)
-        if runtime.effective_kind == 'sliding' and _swept_slab_blocked(runtime, runtime.progress, next_progress, discs):
+        if runtime.effective_kind == 'sliding' and _sliding_entry_blocked(runtime, runtime.progress, next_progress, discs):
             return
         runtime.progress = next_progress
         if runtime.progress >= 1.0:

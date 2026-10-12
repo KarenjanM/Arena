@@ -192,6 +192,9 @@ class AnimationManager:
             assert path.is_file(), f"Animation {name} does not appear at {str(path)}"
 
             anim_frames = np.load(path, allow_pickle=True)
+            for frame in anim_frames:
+                for joint in JOINT_NAMES:
+                    frame["angles"].setdefault(joint, 0.0)
             n_frames = len(anim_frames)
             duration = n_frames / self._fps
             annotation = annotations.get(name, {})

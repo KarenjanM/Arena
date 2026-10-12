@@ -1021,12 +1021,12 @@ def test_fire_alarm_cascade_through_regime_bus():
 
 
 def test_support_matrix_new_kinds():
-    assert SignalSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy", "flatsim"})
-    assert ScheduleSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy", "flatsim"})
-    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "flatsim"})
-    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "flatsim"})
-    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "flatsim"})
-    assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy", "flatsim"})
+    assert SignalSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy", "flatsim"})
+    assert ScheduleSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy", "flatsim"})
+    assert GateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
+    assert PressurePlateSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
+    assert OccupancyCapSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
+    assert SoundSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy", "flatsim"})
 
 
 def test_signal_schedule_attach_on_dummy():
@@ -1288,10 +1288,11 @@ def test_light_unknown_cfg_name_raises():
         _attach_light(mech, [*_light_cfgs(), _MCfg("state", "color")])
 
 
-def test_light_attaches_on_dummy():
+@pytest.mark.parametrize("sim", ["dummy", "mujoco"])
+def test_light_attaches_on_sims_without_gazebo_or_isaac(sim: str):
     mech = _Mech()
-    mgr = _manager(mech, sim="dummy")
-    assert LightSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "dummy"})
+    mgr = _manager(mech, sim=sim)
+    assert LightSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "dummy"})
     assert mgr.attach("light", "lamp", _light_cfgs()) is True
     assert [snap.kind for snap in mgr.snapshot()] == ["light"]
     assert mgr.light_outputs() == {"lamp": (1.0, 0.0)}
