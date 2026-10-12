@@ -9,7 +9,6 @@ import typing
 
 import numpy as np
 import pytest
-import yaml
 
 if typing.TYPE_CHECKING:
     from flatsim.world import FlatWorld, ScanSpec
@@ -28,11 +27,12 @@ def _fan() -> ScanSpec:
 
 
 def _hospital() -> tuple[np.ndarray, np.ndarray]:
-    with open(WORLDS / 'hospital_1' / '0' / 'world.yaml') as f:
-        data = yaml.safe_load(f)
-    segments = np.array([[w['start']['x'], w['start']['y'], w['end']['x'], w['end']['y']] for zone in data['zones'] for w in zone.get('walls') or []])
-    hallway = next(zone for zone in data['zones'] if zone['name'] == 'central_hallway')
-    return segments, np.mean([[c['x'], c['y']] for c in hallway['corners']], axis=0)
+    from arena_simulation_setup.tree.World import WorldView
+
+    level = WorldView(WORLDS / 'hospital_1').load().all_levels[0]
+    segments = np.array([[w.start.x, w.start.y, w.end.x, w.end.y] for w in level.all_walls])
+    hallway = next(zone for zone in level.zones if zone.name == 'central_hallway')
+    return segments, np.mean([[p.x, p.y] for p in hallway.polygon], axis=0)
 
 
 def _intersections(origin: np.ndarray, segments: np.ndarray, spec: ScanSpec) -> np.ndarray:

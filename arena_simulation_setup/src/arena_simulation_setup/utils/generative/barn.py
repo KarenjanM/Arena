@@ -7,9 +7,11 @@ import shapely.affinity
 import yaml
 
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+from arena_simulation_setup.tree.World import Level, World, Zone
+from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
 
-from . import BaseConfiguration, LevelDescription, WorldGeneratorImpl
-from .utils import to_corners, to_walls
+from . import BaseConfiguration, WorldGeneratorImpl
+from .utils import to_corners, to_walls, world_of
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,7 @@ class BarnBase(WorldGeneratorImpl):
     """Shared scaffolding for BARN-style generators.
 
     Owns the build lifecycle, the boundary walls, the scenario file and the scenario
-    episode binding. Subclasses implement _build() to populate self._level and self._scenario.
+    episode binding. Subclasses implement _build() to populate self._world and self._scenario.
     """
 
     SCENARIO: typing.ClassVar[str]
@@ -34,9 +36,9 @@ class BarnBase(WorldGeneratorImpl):
         self._built = False
         logger.info(self.config)
 
-    def compute(self) -> LevelDescription:
+    def compute(self) -> World:
         self._build()
-        return self._level
+        return self._world
 
     def files(self) -> dict[str, bytes]:
         self._build()
@@ -53,16 +55,17 @@ class BarnBase(WorldGeneratorImpl):
         return arena, to_walls(arena.exterior)
 
     def _set_level(self, name: str, arena: shapely.Geometry, walls: list, description: str):
-        self._level = LevelDescription(zones=[LevelDescription.Zone(name=name, corners=to_corners(arena), walls=walls, description=description)])
+        self._world = world_of(Level(zones=[Zone(name=name, polygon=to_corners(arena))], walls=walls), {name: description})
 
     def _set_scenario(self, start: tuple[float, float, float], goto: tuple[float, float, float]):
         self._scenario = {
+            'format': SCENARIO_FORMAT,
             'robots': [
                 {
                     'start': [round(start[0], 3), round(start[1], 3), round(start[2], 3)],
                     'phases': [{'goto': [round(goto[0], 3), round(goto[1], 3), round(goto[2], 3)]}],
                 }
-            ]
+            ],
         }
 
 

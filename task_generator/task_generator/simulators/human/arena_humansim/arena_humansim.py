@@ -649,8 +649,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     def _seat_poses(self, obstacle: Obstacle, annotated: Sequence[Mapping[str, float]]) -> list[Pose2DMsg]:
         """Scenario seats override the annotation's, including an empty list. A bad seat costs the seats, not the object."""
-        extra = obstacle.extra
-        raw = extra["seats"] if "seats" in extra else annotated
+        humansim = obstacle.humansim
+        raw = humansim["seats"] if "seats" in humansim else annotated
         try:
             return [self._seat_pose(obstacle.pose, seat) for seat in raw]
         except (AttributeError, KeyError, TypeError, ValueError) as e:
@@ -932,7 +932,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         Each obstacle is also registered as a WorldObject with optional overrides
         (capacity / satisfies / interaction_radius / formation / type) read from
-        ``obstacle.extra``.
+        ``obstacle.humansim``.
         """
         if not obstacles:
             return obstacles
@@ -974,19 +974,19 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 except Exception as e:
                     self._logger.warning(f"Failed to build obstacle bbox for '{obstacle.sim_path}': {e}")
 
-                extra = obstacle.extra
+                humansim = obstacle.humansim
                 info = WorldObjectInfoMsg()
                 info.object_id = obstacle.sim_path
-                info.type = str(extra.get("type", obstacle_type))
+                info.type = str(humansim.get("type", obstacle_type))
                 info.pose = pose
-                info.capacity = int(extra.get("capacity", 1))
-                satisfies: dict = extra.get("satisfies") or {}
+                info.capacity = int(humansim.get("capacity", 1))
+                satisfies: dict = humansim.get("satisfies") or {}
                 info.satisfies_keys = list(satisfies.keys())
                 info.satisfies_values = [float(v) for v in satisfies.values()]
-                interaction_radius = extra.get("interaction_radius")
+                interaction_radius = humansim.get("interaction_radius")
                 info.interaction_radius = float(interaction_radius) if interaction_radius is not None else 0.0
                 info.seats = self._seat_poses(obstacle, seats)
-                formation: dict = extra.get("formation") or {}
+                formation: dict = humansim.get("formation") or {}
                 formation_type = formation.get("type", "")
                 if formation_type:
                     formation_params: dict = formation.get("params") or {}

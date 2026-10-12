@@ -1,6 +1,6 @@
 # Generative worlds
 
-World generators build a `LevelDescription` from parameters. Every front end compiles to the same geometry IR, so a new one only says where its walls go.
+World generators build a one-level format 2 `World` from parameters. Every front end compiles to the same geometry IR, so a new one only says where its walls go.
 
 The ROS node is [`world_generator_ros.py`](world_generator_ros.py), its interfaces are [`world_generator_msgs`](../../../../../utils/msgs/world_generator_msgs/README.md), and its front end is the World Generator panel in [`task_generator_gui`](../../../../../utils/task_generator_gui/).
 
@@ -17,8 +17,8 @@ The ROS node is [`world_generator_ros.py`](world_generator_ros.py), its interfac
 Registration in [`__init__.py`](__init__.py) is lazy, so importing the package does not import every generator. An implementation subclasses `WorldGeneratorImpl` with:
 
 - a nested `Configuration` extending `BaseConfiguration`, or `PedestrianConfiguration` to inherit the pedestrian count,
-- `configure(dict)` and `compute() -> LevelDescription`, which sets `self.diagnostics` and appends to `self.warnings`,
-- optionally `files()` for extra artifacts packed into the world tar, `params()` for the episode binding, and `normalize(str)` for a canonical form of a textual input.
+- `configure(dict)` and `compute() -> World`, which sets `self.diagnostics` and appends to `self.warnings`,
+- optionally `files()` for extra artifacts written into the world directory by `save_generated`, `params()` for the episode binding, and `normalize(str)` for a canonical form of a textual input.
 
 `Configuration` fields become ROS parameters under `algorithm.<generator>.<field>` through [`schema.py`](schema.py). Only `bool`, `int`, `float`, `str` and 2-tuples of numbers are supported; `ge`/`le` become the widget's range, and `json_schema_extra={"widget": "sketch"}` asks the panel for the grid editor.
 

@@ -1,0 +1,18 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: corridor_south, polygon: [[0.0, 0.0], [10.0, 0.0], [10.0, 3.0], [0.0, 3.0]], floor: Oak_Planks, ceiling: false}
+  - {name: link_west, polygon: [[0.0, 3.0], [3.0, 3.0], [3.0, 5.0], [0.0, 5.0]], floor: Oak_Planks, ceiling: false}
+  - {name: corridor_middle, polygon: [[0.0, 5.0], [10.0, 5.0], [10.0, 8.0], [0.0, 8.0]], floor: Oak_Planks, ceiling: false}
+  - {name: link_east, polygon: [[7.0, 8.0], [10.0, 8.0], [10.0, 10.0], [7.0, 10.0]], floor: Oak_Planks, ceiling: false}
+  - {name: corridor_north, polygon: [[0.0, 10.0], [10.0, 10.0], [10.0, 13.0], [0.0, 13.0]], floor: Oak_Planks, ceiling: false}
+  walls:
+  - {path: [[0.0, 0.0], [10.0, 0.0]]}
+  - {path: [[3.0, 3.0], [10.0, 3.0]]}
+  - {path: [[10.0, 0.0], [10.0, 13.0]]}
+  - {path: [[0.0, 0.0], [0.0, 13.0]]}
+  - {path: [[3.0, 3.0], [3.0, 5.0], [10.0, 5.0]]}
+  - {path: [[0.0, 8.0], [7.0, 8.0], [7.0, 10.0]]}
+  - {path: [[0.0, 10.0], [7.0, 10.0]]}
+  - {path: [[0.0, 13.0], [10.0, 13.0]]}

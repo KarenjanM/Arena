@@ -48,6 +48,13 @@ def generate_launch_description():
     )
 
     LaunchArgument(
+        name='kg.derive',
+        default_value='auto',
+        choices=['auto', 'all', 'off'],
+        description='auto: zone membership and door connections derived from geometry where the world semantics state none. all: derived from geometry for everything, the stated ones ignored. off: the stated ones only.',
+    )
+
+    LaunchArgument(
         name='record.dir',
         default_value='',
         description='Directory for episode recording; empty disables.',

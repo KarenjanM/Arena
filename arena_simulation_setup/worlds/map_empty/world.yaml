@@ -1,0 +1,23 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: empty_zone, polygon: [[0.0, 0.0], [30.0, 0.0], [30.0, 23.0], [0.0, 23.0]]}
+  walls:
+  - {path: [[0.0, 0.0], [14.0, 0.0]], kind: painting}
+  - {path: [[16.0, 0.0], [30.0, 0.0]], kind: painting}
+  - {path: [[30.0, 0.0], [30.0, 4.0]]}
+  - {path: [[30.0, 6.0], [30.0, 17.0]]}
+  - {path: [[30.0, 19.0], [30.0, 23.0], [18.0, 23.0]]}
+  - {path: [[12.0, 23.0], [0.0, 23.0]]}
+  - {path: [[0.0, 23.0], [0.0, 13.0]], material: [Marble, {tint: 'rgba(0,255,255,0.2)'}]}
+  - {path: [[0.0, 10.0], [0.0, 0.0]], material: [Marble, {tint: 'rgba(255,255,0,0.2)'}]}
+  doors:
+  - {name: north_door, span: [[12.0, 23.0], [18.0, 23.0]], material: [Aluminum_Anodized, {tint: 'rgba(255,0,0,0.2)'}]}
+  - {name: west_door, span: [[0.0, 10.0], [0.0, 13.0]], material: [Aluminum_Anodized, {tint: 'rgba(0,0,255,0.2)'}]}
+  - {name: south_door, span: [[14.0, 0.0], [16.0, 0.0]], material: [Aluminum_Anodized, {tint: 'rgba(0,255,255,0.2)'}]}
+  elevators:
+  - {name: elevator_ground, position: [31.0, 5.0], door_side: -x, destinations: [elevator_top]}
+  - {name: elevator_top, position: [31.0, 18.0], door_side: -x, destinations: [elevator_ground]}
+  objects:
+  - {name: table_0, pose: [7.0, 5.0], model: table}

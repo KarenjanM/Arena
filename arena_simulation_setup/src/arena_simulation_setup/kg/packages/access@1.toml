@@ -1,0 +1,13 @@
+# Package "access": entry restrictions
+name = "access"
+version = 1
+requires = ["social@1"]
+
+[verbs.restricted_to]
+from = ["room", "region"]
+to = ["role"]
+
+[constraints.no_entry]
+arity = 2
+desc = "agents holding role A must not enter B: scope order (role, room|region)"
+params = []

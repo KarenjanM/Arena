@@ -233,7 +233,7 @@ def generate_launch_description():
             print(f'[gazebo.launch] light check of world {world_name!r} failed: {exc}', file=sys.stderr)
             return False
         return any(
-            level.lights or any(zone.lights or zone.ceiling_lights is not None for zone in level.zones)
+            level.lights or any(zone.ceiling is not None and zone.ceiling.lights is not None for zone in level.zones)
             for level in (level.with_lighting(lighting) for level in description.levels.values())
         )
 

@@ -1,23 +1,37 @@
 from __future__ import annotations
 
-import pytest
+import asyncio
+import io
+import math
 
-from arena_simulation_setup.shared.world import Door
-from arena_simulation_setup.shared.walls import Wall
-from arena_simulation_setup.tree.World.World import LevelDescription as WorldDescription, WorldMicrophone
-from arena_simulation_setup.tree.World.World import Schedule, Signal, Sound
+import PIL.Image
+import pytest
+import yaml
+
+from arena_simulation_setup.shared.world import Door, Elevator, Schedule, Signal, Sound
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldMicrophone, Zone, ZoneCeiling, parse_world, write_world
+from arena_simulation_setup.tree.World.legacy import upgrade
+from arena_simulation_setup.tree.World.write import dump_zone
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Position
 
 
-def _make_zone(name: str = "zone", corners=None, walls=None, doors=None, elevators=None) -> WorldDescription.Zone:
-    return WorldDescription.Zone(
-        name=name,
-        corners=corners or [],
-        walls=walls or [],
-        doors=doors or [],
-        elevators=elevators or [],
-    )
+def _make_zone(name: str = "zone", corners=None) -> Zone:
+    return Zone(name=name, polygon=corners or [])
+
+
+def _world(**level: object) -> World:
+    return parse_world({"format": FORMAT, "levels": [{"id": "0", **level}]})
+
+
+def _legacy_level(*zones: dict) -> Level:
+    data, _, _ = upgrade({"0": {"zones": list(zones)}})
+    return parse_world(data).levels["0"]
+
+
+def _segments(walls: list) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    return [((wall.start.x, wall.start.y), (wall.end.x, wall.end.y)) for wall in walls]
 
 
 def test_zone_floor_rectangle():
@@ -30,7 +44,7 @@ def test_zone_floor_rectangle():
             Position(0.0, 3.0),
         ],
     )
-    floor = zone.floor
+    floor = zone.floor_patch
     assert floor.x_length == pytest.approx(4.0)
     assert floor.y_length == pytest.approx(3.0)
     assert floor.pos.x == pytest.approx(2.0)
@@ -46,36 +60,29 @@ def test_zone_floor_triangular():
             Position(1.0, 2.0),
         ],
     )
-    floor = zone.floor
+    floor = zone.floor_patch
     assert floor.x_length == pytest.approx(2.0)
     assert floor.y_length == pytest.approx(2.0)
 
 
 def test_zone_floor_empty_corners_raises():
     zone = _make_zone(name="empty")
-    with pytest.raises((ValueError, Exception)):
-        _ = zone.floor
+    with pytest.raises(ValueError):
+        _ = zone.floor_patch
 
 
 def test_all_walls_empty():
-    wd = WorldDescription(zones=[])
-    assert list(wd.all_walls) == []
+    assert Level().all_walls == []
 
 
 def test_all_walls_populated():
-    w = Wall(start=Position(0, 0), end=Position(1, 0))
-    zone = _make_zone(walls=[w])
-    wd = WorldDescription(zones=[zone])
-    assert list(wd.all_walls) == [w]
+    level = Level(walls=[WallPath(path=[Position(0, 0), Position(1, 0)])])
+    assert _segments(level.all_walls) == [((0, 0), (1, 0))]
 
 
-def test_all_walls_multiple_zones():
-    w1 = Wall(start=Position(0, 0), end=Position(1, 0))
-    w2 = Wall(start=Position(2, 0), end=Position(3, 0))
-    z1 = _make_zone("z1", walls=[w1])
-    z2 = _make_zone("z2", walls=[w2])
-    wd = WorldDescription(zones=[z1, z2])
-    assert len(list(wd.all_walls)) == 2
+def test_all_walls_multiple_paths():
+    level = Level(walls=[WallPath(path=[Position(0, 0), Position(1, 0)]), WallPath(path=[Position(2, 0), Position(3, 0)])])
+    assert len(level.all_walls) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -83,50 +90,53 @@ def test_all_walls_multiple_zones():
 # ---------------------------------------------------------------------------
 
 
-def test_zone_semantics_default_emitted_as_empty_list():
+def test_zone_semantics_default_omitted_on_write():
     zone = _make_zone()
-    unstructured = converter.unstructure(zone)
-    assert unstructured['semantics'] == []
+    assert zone.semantics == []
+    assert "semantics" not in dump_zone(zone, {})
 
 
 def test_zone_semantics_primitives_round_trip():
-    raw = {
-        'name': 'lobby',
-        'corners': [],
-        'semantics': [
-            {'state': 'max_speed', 'value': 1.5},
-            {'predicate': 'quiet', 'value': True},
-            {'predicate': 'restricted', 'value': False},
-        ],
-    }
-    zone = converter.structure(raw, WorldDescription.Zone)
-    assert [c.name for c in zone.semantics] == ['max_speed', 'quiet', 'restricted']
+    world = _world(
+        zones=[
+            {
+                "name": "lobby",
+                "semantics": [
+                    {"state": "max_speed", "value": 1.5},
+                    {"predicate": "quiet", "value": True},
+                    {"predicate": "restricted", "value": False},
+                ],
+            }
+        ]
+    )
+    zone = world.levels["0"].zones[0]
+    assert [c.name for c in zone.semantics] == ["max_speed", "quiet", "restricted"]
     assert [c.value for c in zone.semantics] == [1.5, True, False]
-    unstructured = converter.unstructure(zone)
-    zone2 = converter.structure(unstructured, WorldDescription.Zone)
-    assert zone2.semantics == zone.semantics
+    reparsed = parse_world(yaml.safe_load(write_world(world)))
+    assert reparsed.levels["0"].zones[0].semantics == zone.semantics
 
 
 def test_zone_semantics_author_defined_name_accepted():
-    zone = converter.structure({'name': 'z', 'semantics': [{'predicate': 'custom_flag'}]}, WorldDescription.Zone)
-    assert zone.semantics[0].name == 'custom_flag'
+    zone = _world(zones=[{"name": "z", "semantics": [{"predicate": "custom_flag"}]}]).levels["0"].zones[0]
+    assert zone.semantics[0].name == "custom_flag"
 
 
 def test_all_doors_empty():
-    wd = WorldDescription(zones=[])
-    assert list(wd.all_doors) == []
+    assert Level().all_doors == []
 
 
 def test_all_doors_populated():
     d = Door(name="d", start=Position(0, 0), end=Position(1, 0))
-    zone = _make_zone(doors=[d])
-    wd = WorldDescription(zones=[zone])
-    assert list(wd.all_doors) == [d]
+    assert Level(doors=[d]).all_doors == [d]
 
 
 def test_all_elevators_empty():
-    wd = WorldDescription(zones=[])
-    assert list(wd.all_elevators) == []
+    assert Level().all_elevators == []
+
+
+def test_all_elevators_populated():
+    elevator = Elevator(name="lift", position=Position(1, 1))
+    assert Level(elevators=[elevator]).all_elevators == [elevator]
 
 
 # ---------------------------------------------------------------------------
@@ -175,26 +185,21 @@ def test_schedule_default_semantics_empty():
     assert schedule.semantics == []
 
 
-def test_zone_schedules_and_signals_default_empty():
-    zone = _make_zone()
-    assert zone.schedules == []
-    assert zone.signals == []
+def test_world_schedules_and_signals_default_empty():
+    world = World()
+    assert world.schedules == []
+    assert world.signals == []
 
 
-def test_all_schedules_populated():
-    schedule = Schedule(name='fire_alarm')
-    zone = _make_zone()
-    zone.schedules = [schedule]
-    wd = WorldDescription(zones=[zone])
-    assert list(wd.all_schedules) == [schedule]
+def test_world_schedules_populated():
+    world = parse_world({"format": FORMAT, "schedules": [{"name": "fire_alarm"}], "levels": [{"id": "0"}]})
+    assert [schedule.name for schedule in world.schedules] == ["fire_alarm"]
+    assert world.schedules == [Schedule(name="fire_alarm")]
 
 
-def test_all_signals_populated():
-    signal = Signal(name='crosswalk_light')
-    zone = _make_zone()
-    zone.signals = [signal]
-    wd = WorldDescription(zones=[zone])
-    assert list(wd.all_signals) == [signal]
+def test_world_signals_populated():
+    world = parse_world({"format": FORMAT, "signals": [{"name": "crosswalk_light"}], "levels": [{"id": "0"}]})
+    assert world.signals == [Signal(name="crosswalk_light")]
 
 
 # ---------------------------------------------------------------------------
@@ -230,11 +235,11 @@ def test_sound_round_trip():
         {'name': 'a:b', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0]},
         {'name': 'siren', 'asset_id': '', 'position': [0.0, 0.0]},
         {'name': 'siren', 'asset_id': 'alarm_loop'},
-        {'name': 'siren', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0], 'entity_ref': 'cabinet'},
-        {'name': 'siren', 'asset_id': 'alarm_loop', 'entity_ref': 'cabinet', 'level': '1'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0], 'attach': 'cabinet'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'attach': 'cabinet', 'level': '1'},
         {'name': 'siren', 'asset_id': 'alarm_loop', 'position': [0.0, 0.0], 'reference_distance_m': 0.0},
         {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'position': [0.0, 0.0]},
-        {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'entity_ref': 'cabinet'},
+        {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'attach': 'cabinet'},
         {'name': 'siren', 'asset_id': 'alarm_loop', 'frame': 'jackal/base_link', 'level': '1'},
     ],
 )
@@ -270,89 +275,58 @@ def test_sound_rejects_unknown_semantics_key():
         converter.structure(raw, Sound)
 
 
-def test_zone_sounds_default_empty():
-    zone = _make_zone()
-    assert zone.sounds == []
+def test_level_sounds_default_empty():
+    assert Level().sounds == []
 
 
 def test_all_sounds_populated():
-    sound = Sound(name='hall_siren', asset_id='alarm_loop', position=Position(4.0, 2.3))
-    zone = _make_zone()
-    zone.sounds = [sound]
-    wd = WorldDescription(zones=[zone])
-    assert list(wd.all_sounds) == [sound]
+    sound = Sound(name="hall_siren", asset_id="alarm_loop", position=Position(4.0, 2.3))
+    assert Level(sounds=[sound]).all_sounds == [sound]
 
 
 def test_all_floors_count():
     z1 = _make_zone("z1", corners=[Position(0, 0), Position(2, 0), Position(2, 2), Position(0, 2)])
     z2 = _make_zone("z2", corners=[Position(0, 0), Position(4, 0), Position(4, 4), Position(0, 4)])
-    wd = WorldDescription(zones=[z1, z2])
-    assert len(list(wd.all_floors)) == 2
+    assert len(Level(zones=[z1, z2]).all_floors) == 2
 
 
 def test_all_static_entities_empty():
-    wd = WorldDescription(zones=[_make_zone()])
-    assert list(wd.all_static_entities) == []
+    assert Level(zones=[_make_zone()]).all_static_entities == []
 
 
 def test_all_dynamic_entities_empty():
-    wd = WorldDescription(zones=[_make_zone()])
-    assert list(wd.all_dynamic_entities) == []
+    assert Level(zones=[_make_zone()]).all_dynamic_entities == []
 
 
-def _make_square_zone(name: str = "room", size: float = 10.0) -> WorldDescription.Zone:
-    return _make_zone(
-        name=name,
-        corners=[
-            Position(0.0, 0.0),
-            Position(size, 0.0),
-            Position(size, size),
-            Position(0.0, size),
-        ],
-        walls=[
-            Wall(start=Position(0.0, 0.0), end=Position(size, 0.0)),
-        ],
-    )
+def _make_square_level(name: str = "room", size: float = 10.0) -> Level:
+    zone = _make_zone(name=name, corners=[Position(0.0, 0.0), Position(size, 0.0), Position(size, size), Position(0.0, size)])
+    return Level(zones=[zone], walls=[WallPath(path=[Position(0.0, 0.0), Position(size, 0.0)])])
 
 
 def test_render_returns_bytes_and_origin_tuple():
-    wd = WorldDescription(zones=[_make_square_zone()])
-    result = wd.render()
+    result = _make_square_level().render()
     assert isinstance(result, tuple)
     assert len(result) == 2
 
 
 def test_render_bytes_is_valid_png():
-    import io
-    import PIL.Image
-
-    wd = WorldDescription(zones=[_make_square_zone()])
-    png_bytes, _ = wd.render()
+    png_bytes, _ = _make_square_level().render()
     assert isinstance(png_bytes, bytes)
     img = PIL.Image.open(io.BytesIO(png_bytes))
-    assert img.format == 'PNG'
+    assert img.format == "PNG"
 
 
 def test_render_image_mode_is_rgb():
-    import io
-    import PIL.Image
-
-    wd = WorldDescription(zones=[_make_square_zone()])
-    png_bytes, _ = wd.render()
+    png_bytes, _ = _make_square_level().render()
     img = PIL.Image.open(io.BytesIO(png_bytes))
-    assert img.mode == 'RGB'
+    assert img.mode == "RGB"
 
 
 def test_render_image_size_reflects_zone_aabb():
-    import io
-    import math
-    import PIL.Image
-
     size = 10.0
     resolution = 0.05
     padding = 5
-    wd = WorldDescription(zones=[_make_square_zone(size=size)])
-    png_bytes, _ = wd.render(resolution=resolution)
+    png_bytes, _ = _make_square_level(size=size).render(resolution=resolution)
     img = PIL.Image.open(io.BytesIO(png_bytes))
     expected_px = math.ceil(size / resolution) + 2 * padding
     assert img.width == expected_px
@@ -363,172 +337,95 @@ def test_render_origin_reflects_padding():
     size = 10.0
     resolution = 0.05
     padding = 5
-    wd = WorldDescription(zones=[_make_square_zone(size=size)])
-    _, origin = wd.render(resolution=resolution)
-    expected_origin_x = 0.0 - padding * resolution
-    expected_origin_y = 0.0 - padding * resolution
-    assert origin[0] == pytest.approx(expected_origin_x)
-    assert origin[1] == pytest.approx(expected_origin_y)
+    _, origin = _make_square_level(size=size).render(resolution=resolution)
+    assert origin[0] == pytest.approx(0.0 - padding * resolution)
+    assert origin[1] == pytest.approx(0.0 - padding * resolution)
 
 
 def _square_corners(size: float = 2.0) -> list[Position]:
     return [Position(0.0, 0.0), Position(size, 0.0), Position(size, size), Position(0.0, size)]
 
 
-def test_all_floors_skips_empty_material():
-    kept = WorldDescription.Zone(name="kept", corners=_square_corners())
-    dropped = WorldDescription.Zone(name="dropped", corners=_square_corners(), material='')
-    wd = WorldDescription(zones=[kept, dropped])
-    assert [f.name for f in wd.all_floors] == ["kept"]
+def test_all_floors_skips_missing_and_empty_material():
+    kept = Zone(name="kept", polygon=_square_corners())
+    dropped = Zone(name="dropped", polygon=_square_corners(), floor=None)
+    blank = Zone(name="blank", polygon=_square_corners(), floor="")
+    assert [f.name for f in Level(zones=[kept, dropped, blank]).all_floors] == ["kept"]
 
 
-def test_all_ceilings_skips_empty_material():
-    import asyncio
-
-    kept = WorldDescription.Zone(name="kept", corners=_square_corners(), ceiling_height=2.5)
-    dropped = WorldDescription.Zone(name="dropped", corners=_square_corners(), ceiling_height=2.5, ceiling_material='')
-    wd = WorldDescription(zones=[kept, dropped])
-    ceilings = asyncio.run(wd.all_ceilings())
+def test_all_ceilings_skips_missing_and_empty_material():
+    kept = Zone(name="kept", polygon=_square_corners(), ceiling=ZoneCeiling(height=2.5))
+    dropped = Zone(name="dropped", polygon=_square_corners(), ceiling=None)
+    blank = Zone(name="blank", polygon=_square_corners(), ceiling=ZoneCeiling(height=2.5, material=""))
+    ceilings = asyncio.run(Level(zones=[kept, dropped, blank]).all_ceilings())
     assert [c.name for c in ceilings] == ["kept"]
 
 
-def test_all_walls_skips_empty_material():
-    from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
-
-    default_wall = Wall(start=Position(0, 0), end=Position(1, 0))
-    named_wall = Wall(start=Position(1, 0), end=Position(2, 0), material=MaterialIdentifier('Marble'))
-    dropped_wall = Wall(start=Position(2, 0), end=Position(3, 0), material=MaterialIdentifier(''))
-    zone = _make_zone(walls=[default_wall, named_wall, dropped_wall])
-    wd = WorldDescription(zones=[zone])
-    assert list(wd.all_walls) == [default_wall, named_wall]
-
-
-def test_zone_mat_key_aliases():
-    from arena_simulation_setup.utils.cattrs import converter
-
-    zone = converter.structure({'name': 'z', 'mat': '', 'ceiling_mat': '', 'wall_mat': ''}, WorldDescription.Zone)
-    assert zone.material.name == ''
-    assert zone.ceiling_material.name == ''
-    assert zone.wall_material.name == ''
+def test_legacy_walls_with_empty_material_are_dropped():
+    walls = [
+        {"start": [0, 0], "end": [1, 0]},
+        {"start": [1, 0], "end": [2, 0], "material": "Marble"},
+        {"start": [2, 0], "end": [3, 0], "material": ""},
+    ]
+    level = _legacy_level({"name": "z", "corners": [], "walls": walls})
+    assert _segments(level.all_walls) == [((0, 0), (1, 0)), ((1, 0), (2, 0))]
+    assert [wall.material for wall in level.all_walls] == [None, MaterialIdentifier("Marble")]
 
 
-def test_zone_canonical_key_wins_over_alias():
-    from arena_simulation_setup.utils.cattrs import converter
+def test_legacy_zone_mat_key_aliases():
+    level = _legacy_level({"name": "z", "mat": "", "ceiling_mat": "", "wall_mat": ""})
+    zone = level.zones[0]
+    assert zone.floor is None
+    assert zone.ceiling is None
+    assert level.pedestrian_walls is False
 
-    zone = converter.structure({'name': 'z', 'material': 'Porcelain_Tile_4', 'mat': ''}, WorldDescription.Zone)
-    assert zone.material.name == 'Porcelain_Tile_4'
+
+def test_legacy_zone_canonical_key_wins_over_alias():
+    level = _legacy_level({"name": "z", "material": "Porcelain_Tile_4", "mat": ""})
+    assert level.zones[0].floor.name == "Porcelain_Tile_4"
 
 
 def test_zone_material_defaults_nonempty():
     zone = _make_zone()
-    assert zone.material.name
-    assert zone.ceiling_material.name
-    assert zone.wall_material.name
+    assert zone.floor.name
+    assert zone.ceiling.material.name
+    assert Level().pedestrian_walls is True
+
+
+def _reception(*microphones: WorldMicrophone) -> Level:
+    return Level(zones=[Zone(name="reception", polygon=_square_corners(10.0), ceiling=ZoneCeiling(height=2.9))], microphones=list(microphones))
 
 
 def test_world_microphones_validate_zone_position_and_indices():
-    world = WorldDescription(
-        zones=[
-            WorldDescription.Zone(
-                name="reception",
-                corners=_square_corners(10.0),
-                ceiling_height=2.9,
-            )
-        ],
-        microphones=[
-            WorldMicrophone(
-                zone="reception",
-                placement="ceiling",
-                position=Position(2.0, 2.0, 2.9),
-                index=1,
-            ),
-            WorldMicrophone(
-                zone="reception",
-                placement="ceiling",
-                position=Position(4.0, 2.0, 2.9),
-                index=2,
-            ),
-        ],
+    level = _reception(
+        WorldMicrophone(zone="reception", placement="ceiling", position=Position(2.0, 2.0, 2.9), index=1),
+        WorldMicrophone(zone="reception", placement="ceiling", position=Position(4.0, 2.0, 2.9), index=2),
     )
-
-    world.validate_microphones()
-    assert [microphone.listener_id for microphone in world.microphones] == [
+    level.validate_microphones()
+    assert [microphone.listener_id for microphone in level.microphones] == [
         "microphone:zone:reception:ceiling:1",
         "microphone:zone:reception:ceiling:2",
     ]
 
 
 def test_world_microphones_structure_from_world_yaml_shape():
-    from arena_simulation_setup.utils.cattrs import converter
-
-    world = converter.structure(
-        {
-            "zones": [
-                {
-                    "name": "reception",
-                    "corners": [[0, 0], [5, 0], [5, 5], [0, 5]],
-                    "ceiling_height": 2.9,
-                }
-            ],
-            "microphones": [
-                {
-                    "zone": "reception",
-                    "placement": "ceiling",
-                    "position": [2, 2, 2.9],
-                    "index": 1,
-                }
-            ],
-        },
-        WorldDescription,
+    world = _world(
+        zones=[{"name": "reception", "polygon": [[0, 0], [5, 0], [5, 5], [0, 5]], "ceiling": {"height": 2.9}}],
+        microphones=[{"zone": "reception", "placement": "ceiling", "position": [2, 2, 2.9], "index": 1}],
     )
-
-    world.validate_microphones()
-    assert world.microphones[0].position == Position(2, 2, 2.9)
+    level = world.levels["0"]
+    level.validate_microphones()
+    assert level.microphones[0].position == Position(2, 2, 2.9)
 
 
 @pytest.mark.parametrize(
     ("microphone", "message"),
     [
-        (
-            WorldMicrophone(
-                zone="missing",
-                placement="ceiling",
-                position=Position(2.0, 2.0, 2.9),
-            ),
-            "unknown zone",
-        ),
-        (
-            WorldMicrophone(
-                zone="reception",
-                placement="ceiling",
-                position=Position(20.0, 2.0, 2.9),
-            ),
-            "outside zone",
-        ),
-        (
-            WorldMicrophone(
-                zone="reception",
-                placement="ceiling",
-                position=Position(2.0, 2.0, 2.0),
-            ),
-            "does not match ceiling height",
-        ),
+        (WorldMicrophone(zone="missing", placement="ceiling", position=Position(2.0, 2.0, 2.9)), "unknown zone"),
+        (WorldMicrophone(zone="reception", placement="ceiling", position=Position(20.0, 2.0, 2.9)), "outside zone"),
+        (WorldMicrophone(zone="reception", placement="ceiling", position=Position(2.0, 2.0, 2.0)), "does not match ceiling height"),
     ],
 )
-def test_world_microphones_reject_invalid_construction(
-    microphone,
-    message,
-):
-    world = WorldDescription(
-        zones=[
-            WorldDescription.Zone(
-                name="reception",
-                corners=_square_corners(10.0),
-                ceiling_height=2.9,
-            )
-        ],
-        microphones=[microphone],
-    )
-
+def test_world_microphones_reject_invalid_construction(microphone, message):
     with pytest.raises(ValueError, match=message):
-        world.validate_microphones()
+        _reception(microphone).validate_microphones()

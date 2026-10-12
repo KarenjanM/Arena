@@ -81,6 +81,8 @@ def Configuration(server: ROSParamServer) -> type:
 
             WORLD_LIGHTING = server.ROSParam[str]('world.lighting', 'authored')
 
+            KG_DERIVE = server.ROSParam[str]('kg.derive', 'auto')
+
         class General:
             """
             General Task Configuration

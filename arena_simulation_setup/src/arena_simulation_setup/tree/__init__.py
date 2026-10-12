@@ -70,13 +70,20 @@ class DynamicPath(PathContainer):
         super().__init__(path)
 
 
+class DynamicPathList:
+    def __init__(self) -> None:
+        self.paths: list[Path] = []
+
+
 class DynamicPaths:
     WORLD = DynamicPath()
+    LINKED = DynamicPathList()
     ARENA = DynamicPath(Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local')))
 
     @classmethod
-    def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[DynamicPathResolver[IdentifierT]]:
+    def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
         yield DynamicPathResolver(_T, cls.WORLD, fn=lambda p: p / 'assets')
+        yield DynamicPathListResolver(_T, cls.LINKED, fn=lambda p: p / 'assets')
         yield DynamicPathResolver(_T, cls.ARENA)
 
 
@@ -296,6 +303,31 @@ class DynamicPathResolver(PathResolverBase[IdentifierT], typing.Generic[Identifi
     @property
     def path(self) -> Path:
         return self._fn(self._dynamic_path.path)
+
+
+class DynamicPathListResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
+    """
+    Resolve asset paths from a dynamic list of disk locations, the first one holding the asset wins.
+    """
+
+    def __init__(self, _T: type[IdentifierT], /, paths: DynamicPathList, *, fn: typing.Callable[[Path], Path]) -> None:
+        super().__init__(_T)
+        self._paths = paths
+        self._fn = fn
+
+    def _resolvers(self) -> list[SimplePathResolver[IdentifierT]]:
+        return [SimplePathResolver(self._IdentifierT, self._fn(path)) for path in self._paths.paths]
+
+    async def resolve(self, identifier: IdentifierT) -> Path | None:
+        for resolver in self._resolvers():
+            found = await resolver.resolve(identifier)
+            if found is not None:
+                return found
+        return None
+
+    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+        for resolver in self._resolvers():
+            yield from resolver.listall(**kwargs)
 
 
 class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], typing.Generic[IdentifierT]):

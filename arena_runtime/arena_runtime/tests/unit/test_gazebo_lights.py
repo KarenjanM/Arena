@@ -13,6 +13,7 @@ light_pb2 = pytest.importorskip("gz.msgs10.light_pb2")
 
 from arena_runtime.sim.gazebo_simulator.gazebo_simulator import (  # noqa: E402
     _default_light_request,
+    _default_light_scale,
     _generate_light_sdf,
     _glow_request,
     _glow_visuals,
@@ -103,6 +104,17 @@ def test_frame_light_request_keeps_its_tracked_position() -> None:
     (tracked,) = _requests(headlight, 1.0, [], Position(6.6, 8.0, 0.25))
     assert (placeholder.pose.position.x, placeholder.pose.position.y) == pytest.approx((0.15, 0.0))
     assert (tracked.pose.position.x, tracked.pose.position.y, tracked.pose.position.z) == pytest.approx((6.6, 8.0, 0.25))
+
+
+def test_frame_light_request_points_along_its_frame_yaw() -> None:
+    headlight = Light(name="headlight", fixture="spot", frame="env_0/turtlebot/base_link", offset=Pose(orientation=Orientation.from_euler((0.0, -1.4219, 0.0))), lumens=1500.0)
+    (ahead,) = _light_params(headlight, 1.0, [], Position(6.6, 8.0, 0.25))
+    (turned,) = _light_params(headlight, 1.0, [], Position(6.6, 8.0, 0.25), math.pi / 2)
+    dx, dy, dz = headlight.direction
+    assert ahead["direction"] == pytest.approx((dx, dy, dz))
+    assert turned["direction"] == pytest.approx((-dy, dx, dz))
+    msg = _light_request("l0", turned)
+    assert (msg.direction.x, msg.direction.y, msg.direction.z) == pytest.approx((-dy, dx, dz))
 
 
 def test_narrow_cone_concentrates_the_same_lumens() -> None:
@@ -229,3 +241,14 @@ def test_glow_request_emits_the_light_color_dimmed_with_level_and_keeps_the_base
     assert 0.25 < dim.emissive.r / full.emissive.r < 1.0
     assert (off.emissive.r, off.emissive.g, off.emissive.b) == (0.0, 0.0, 0.0)
     assert (off.diffuse.r, off.diffuse.g, off.diffuse.b) == pytest.approx((0.85, 0.8, 0.7))
+
+
+def test_default_light_scale_follows_every_spawned_light() -> None:
+    lamp = Light(name="lamp", fixture="bulb", pose=Pose(position=Position(1.0, 1.0, 1.0)), lumens=800.0)
+    carried = Light(name="headlight", fixture="spot", frame="env_0/jackal/base_link", lumens=1500.0, intrinsic=True)
+    dome = Light(name="ambient", fixture="dome", lux=50.0)
+    assert _default_light_scale([]) is None
+    assert _default_light_scale([carried]) is None
+    assert _default_light_scale([carried, lamp]) == 0.0
+    assert _default_light_scale([dome, carried, lamp]) == _default_light_scale([dome])
+    assert _default_light_scale([dome]) > 0.0

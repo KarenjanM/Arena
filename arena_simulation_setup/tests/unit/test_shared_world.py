@@ -136,8 +136,7 @@ def test_door_semantics_empty_omitted_on_serialize():
 def test_door_semantics_preset_round_trip():
     raw = {
         'name': 'door_edge_1_1',
-        'start': {'x': 4.0, 'y': 1.55, 'z': 0.0},
-        'end': {'x': 4.0, 'y': 2.45, 'z': 0.0},
+        'span': [[4.0, 1.55], [4.0, 2.45]],
         'semantics': [{'preset': 'gate', 'distance': 2.0}],
     }
     d = converter.structure(raw, Door)
@@ -150,8 +149,7 @@ def test_door_semantics_preset_round_trip():
 def test_door_semantics_binding_joint_raises():
     raw = {
         'name': 'door',
-        'start': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-        'end': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+        'span': [[0.0, 0.0], [1.0, 0.0]],
         'semantics': [{'state': 'state', 'binding': 'joint'}],
     }
     with pytest.raises(Exception):
@@ -161,8 +159,7 @@ def test_door_semantics_binding_joint_raises():
 def test_door_semantics_trigger_contact_raises():
     raw = {
         'name': 'door',
-        'start': {'x': 0.0, 'y': 0.0, 'z': 0.0},
-        'end': {'x': 1.0, 'y': 0.0, 'z': 0.0},
+        'span': [[0.0, 0.0], [1.0, 0.0]],
         'semantics': [{'predicate': 'open', 'trigger': 'contact'}],
     }
     with pytest.raises(Exception):
@@ -183,7 +180,7 @@ def test_elevator_semantics_preset_round_trip():
     raw = {
         'name': '1_elevator',
         'position': {'x': 5.0, 'y': 0.0, 'z': 0.0},
-        'destination': '2.2_elevator',
+        'destinations': ['2_elevator'],
         'semantics': [{'preset': 'pressure_plate', 'params': {'position': [5.0, 0.0]}}],
     }
     e = converter.structure(raw, Elevator)
@@ -191,6 +188,7 @@ def test_elevator_semantics_preset_round_trip():
     unstructured = converter.unstructure(e)
     e2 = converter.structure(unstructured, Elevator)
     assert e2.semantics == e.semantics
+    assert (e2.destinations, e2.destination) == (['2_elevator'], '2_elevator')
 
 
 def test_elevator_recall_on_default_none():

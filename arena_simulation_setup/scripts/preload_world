@@ -19,7 +19,7 @@ import yaml
 from arena_simulation_setup.tree import DynamicPaths, Identifier, Verdict
 from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
 from arena_simulation_setup.tree.assets.sound_catalog import SoundLibrary
-from arena_simulation_setup.tree.World import MultiLevelWorldView, WorldIdentifier
+from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
 
 
 async def _resolve_all(identifiers: list[Identifier]) -> tuple[int, int]:
@@ -75,7 +75,7 @@ def main() -> int:
     identifiers: list[Identifier] = []
     if args.world_name is not None:
         try:
-            world: MultiLevelWorldView = WorldIdentifier(args.world_name).resolve_sync()
+            world: WorldView = WorldIdentifier(args.world_name).resolve_sync()
         except FileNotFoundError as exc:
             print(exc, file=sys.stderr)
             return 1
@@ -83,6 +83,7 @@ def main() -> int:
         DynamicPaths.WORLD.path = world.path
 
         try:
+            DynamicPaths.LINKED.paths = list(world.load(validate=False).sources)
             identifiers = list(world.identifiers(scenarios=not args.no_scenarios))
         except Exception:
             print(f'failed to load {world.path}:', file=sys.stderr)

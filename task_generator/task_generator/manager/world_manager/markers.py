@@ -4,9 +4,9 @@ import colorsys
 import typing
 from collections.abc import Iterable, Sequence
 
-import arena_simulation_setup.tree.World as World
 import attrs
 import shapely
+from arena_simulation_setup.tree.World import World
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Point
 from std_msgs.msg import ColorRGBA
@@ -79,7 +79,7 @@ def deleteall_markers() -> list[Marker]:
     return markers
 
 
-def static_markers(world: World.WorldDescription, realizer: Realizer, stamp: Time) -> list[Marker]:
+def static_markers(world: World, realizer: Realizer, stamp: Time) -> list[Marker]:
     """Zones and walls, fixed for the lifetime of a loaded world."""
     zones = _marker("zones", 0, Marker.LINE_LIST, stamp)
     zones.scale.x = 0.12
@@ -88,7 +88,7 @@ def static_markers(world: World.WorldDescription, realizer: Realizer, stamp: Tim
     walls.color = _WALL_COLOR
     labels: list[Marker] = []
 
-    rings = sorted((realizer.prefix(zone.name, level_id), zone.name, realizer.realize_polygon(zone.corners, level_id)) for level_id, level in world.levels.items() for zone in level.zones if len(zone.corners) >= 3)
+    rings = sorted((realizer.prefix(zone.name, level_id), zone.name, realizer.realize_polygon(zone.polygon, level_id)) for level_id, level in world.levels.items() for zone in level.zones if len(zone.polygon) >= 3)
     for index, (_, name, ring) in enumerate(rings):
         color = _zone_color(index)
         polygon = shapely.Polygon(ring)
@@ -137,7 +137,7 @@ def _elevator_color(snapshot: "SemanticEntitySnapshot | None") -> ColorRGBA:
 
 
 def mechanism_markers(
-    world: World.WorldDescription,
+    world: World,
     realizer: Realizer,
     snapshots: "Iterable[SemanticEntitySnapshot]",
     stamp: Time,

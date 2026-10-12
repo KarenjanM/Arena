@@ -1,0 +1,93 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: destination, polygon: [[0.0, 0.0], [45.0, 0.0], [45.0, 30.0], [0.0, 30.0]], floor: Walnut_Planks}
+  walls:
+  - {path: [[0.0, 0.0], [45.0, 0.0]], material: Paint_Gloss}
+  - {path: [[45.0, 30.0], [0.0, 30.0], [0.0, 0.0]], material: Paint_Gloss}
+  - {path: [[45.0, 0.0], [45.0, 30.0]], material: Paint_Gloss}
+  objects:
+  - {name: waiting_chair_01, pose: [40.0, 4.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_02, pose: [37.5, 4.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_03, pose: [35.0, 4.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_04, pose: [32.5, 4.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_05, pose: [30.0, 4.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_06, pose: [40.0, 5.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_07, pose: [37.5, 5.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_08, pose: [35.0, 5.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_09, pose: [32.5, 5.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_10, pose: [30.0, 5.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_11, pose: [40.0, 14.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_12, pose: [37.5, 14.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_13, pose: [35.0, 14.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_14, pose: [32.5, 14.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_15, pose: [30.0, 14.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_16, pose: [40.0, 15.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_17, pose: [37.5, 15.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_18, pose: [35.0, 15.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_19, pose: [32.5, 15.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_20, pose: [30.0, 15.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_21, pose: [40.0, 24.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_22, pose: [37.5, 24.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_23, pose: [35.0, 24.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_24, pose: [32.5, 24.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_25, pose: [30.0, 24.55], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_26, pose: [40.0, 25.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_27, pose: [37.5, 25.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_28, pose: [35.0, 25.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_29, pose: [32.5, 25.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_30, pose: [30.0, 25.55, 3.14], model: Hospital/SM_Chair_02a}
+  - {name: Checkin_Desk_01, pose: [5.0, 6.0], model: Hospital/SM_ReceptionDesk_01a}
+  - {name: Checkin_Desk_02, pose: [5.0, 16.0], model: Hospital/SM_ReceptionDesk_01a}
+  - {name: Checkin_Desk_03, pose: [5.0, 26.0], model: Hospital/SM_ReceptionDesk_01a}
+  - {name: Checkin_chair_01, pose: [5.5, 4.2], model: Office/SM_ChairOffice}
+  - {name: Checkin_chair_02, pose: [5.5, 14.2], model: Office/SM_ChairOffice}
+  - {name: Checkin_chair_03, pose: [5.5, 24.2], model: Office/SM_ChairOffice}
+  - {name: Reception_desk_corner_01, pose: [22.5, 12.0, 3.14], model: Office/SM_ReceptionTableCornerOutside}
+  - {name: Reception_desk_corner_02, pose: [22.5, 18.0, -1.57], model: Office/SM_ReceptionTableCornerOutside}
+  - {name: Reception_desk_straight_01, pose: [23.5, 14.0, 3.14], model: Office/SM_ReceptionTableStraight}
+  - {name: Reception_desk_straight_02, pose: [23.5, 16.0, 3.14], model: Office/SM_ReceptionTableStraight}
+  - {name: Reception_01, pose: [20.0, 15.0], model: Office/SM_Reception}
+  - {name: personel_01, pose: [8.0, 4.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_02, pose: [9.5, 4.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_03, pose: [11.0, 4.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_04, pose: [12.5, 4.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_05, pose: [14.0, 4.2, -1.57], model: Office/SM_Personenleitsystem_A1}
+  - {name: personel_06, pose: [8.0, 5.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_07, pose: [9.5, 5.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_08, pose: [11.0, 5.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_09, pose: [12.5, 5.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_10, pose: [14.0, 5.7, -1.57], model: Office/SM_Personenleitsystem_A1}
+  - {name: personel_11, pose: [8.0, 14.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_12, pose: [9.5, 14.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_13, pose: [11.0, 14.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_14, pose: [12.5, 14.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_15, pose: [14.0, 14.2, -1.57], model: Office/SM_Personenleitsystem_A1}
+  - {name: personel_16, pose: [8.0, 15.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_17, pose: [9.5, 15.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_18, pose: [11.0, 15.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_19, pose: [12.5, 15.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_20, pose: [14.0, 15.7, -1.57], model: Office/SM_Personenleitsystem_A1}
+  - {name: personel_21, pose: [8.0, 24.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_22, pose: [9.5, 24.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_23, pose: [11.0, 24.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_24, pose: [12.5, 24.2, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_25, pose: [14.0, 24.2, -1.57], model: Office/SM_Personenleitsystem_A1}
+  - {name: personel_26, pose: [8.0, 25.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_27, pose: [9.5, 25.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_28, pose: [11.0, 25.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_29, pose: [12.5, 25.7, -1.57], model: Office/SM_Personenleitsystem_A}
+  - {name: personel_30, pose: [14.0, 25.7, -1.57], model: Office/SM_Personenleitsystem_A1}
+  - {name: plant_01, pose: [30.0, 9.7], model: Office/SM_Plant01}
+  - {name: plant_02, pose: [35.0, 9.7], model: Office/SM_Plant01}
+  - {name: plant_03, pose: [40.0, 9.7], model: Office/SM_Plant01}
+  - {name: plant_04, pose: [30.0, 20.7], model: Office/SM_Plant01}
+  - {name: plant_05, pose: [35.0, 20.7], model: Office/SM_Plant01}
+  - {name: plant_06, pose: [40.0, 20.7], model: Office/SM_Plant01}
+  - {name: plant_07, pose: [20.0, 2.0], model: Office/SM_Plant01}
+  - {name: plant_08, pose: [25.0, 2.0], model: Office/SM_Plant01}
+  - {name: plant_09, pose: [20.0, 28.0], model: Office/SM_Plant01}
+  - {name: plant_10, pose: [25.0, 28.0], model: Office/SM_Plant01}
+  - {name: drink_machine_01, pose: [22.5, 2.0, 1.57], model: Hospital/SM_DrinksMachine}
+  - {name: drink_machine_02, pose: [22.5, 28.0, -1.57], model: Hospital/SM_DrinksMachine}

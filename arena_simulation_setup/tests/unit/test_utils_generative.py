@@ -3,6 +3,9 @@ from __future__ import annotations
 import random
 
 import pytest
+from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+from arena_simulation_setup.tree.World import WorldView, describe
+from arena_simulation_setup.tree.World.Scenario import ScenarioView
 from arena_simulation_setup.utils.generative import (
     BaseConfiguration,
     WorldGenerator,
@@ -13,7 +16,8 @@ from arena_simulation_setup.utils.generative.barn_cylinder import WorldGenerator
 from arena_simulation_setup.utils.generative.empty import WorldGeneratorEmpty
 from arena_simulation_setup.utils.generative.hallway import WorldGeneratorHallway
 from arena_simulation_setup.utils.generative.utils import line_pairs, to_corners, to_walls
-from shapely import LineString, MultiLineString, Polygon
+from arena_simulation_setup.utils.generative.world_generator import save_generated
+from shapely import GeometryCollection, LineString, MultiLineString, Point, Polygon
 
 # ---------------------------------------------------------------------------
 # WorldGeneratorType enum
@@ -60,23 +64,22 @@ def test_base_configuration_custom_resolution():
 
 def test_world_generator_empty_compute_single_zone():
     gen = WorldGeneratorEmpty({"width": 10.0, "height": 8.0}, random.Random(0))
-    wd = gen.compute()
-    assert len(wd.zones) == 1
+    world = gen.compute()
+    assert len(world.all_levels[0].zones) == 1
+    assert describe(world.kg, "empty_zone") == "An empty zone"
 
 
 def test_world_generator_empty_compute_4_corners():
     gen = WorldGeneratorEmpty({"width": 10.0, "height": 8.0}, random.Random(0))
-    wd = gen.compute()
-    corners = wd.zones[0].corners
-    # shapely Polygon.exterior.coords includes closing point = 5 for rectangle
-    assert len(corners) >= 4
+    polygon = gen.compute().all_levels[0].zones[0].polygon
+    assert len(polygon) == 4
 
 
 def test_world_generator_empty_compute_has_walls():
     gen = WorldGeneratorEmpty({"width": 10.0, "height": 8.0}, random.Random(0))
-    wd = gen.compute()
-    walls = wd.zones[0].walls
-    assert len(walls) > 0
+    level = gen.compute().all_levels[0]
+    assert [(len(path.path), path.closed) for path in level.walls] == [(4, True)]
+    assert len(level.all_walls) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -114,9 +117,8 @@ def test_hallway_compute_room_count_per_side():
         },
         random.Random(42),
     )
-    wd = gen.compute()
-    # 2 sides, each with (1 hallway + rooms_per_side) zones
-    assert len(wd.zones) == 2 * (1 + 3)
+    level = gen.compute().all_levels[0]
+    assert len(level.zones) == 2 * (1 + 3)
 
 
 def test_hallway_compute_doors_per_room():
@@ -128,9 +130,11 @@ def test_hallway_compute_doors_per_room():
         },
         random.Random(0),
     )
-    wd = gen.compute()
-    door_zones = [z for z in wd.zones if z.doors]
-    assert len(door_zones) > 0
+    world = gen.compute()
+    level = world.all_levels[0]
+    assert [door.name for door in level.doors] == [f"{side}_room_{index}_door" for side in ("top", "bottom") for index in (1, 2)]
+    assert describe(world.kg, "top_room_0") == "hallway"
+    assert describe(world.kg, "top_room_1").startswith("top room 1 of size")
 
 
 # ---------------------------------------------------------------------------
@@ -191,19 +195,44 @@ def test_to_corners_empty():
 def test_to_walls_polygon():
     poly = Polygon([(0, 0), (2, 0), (2, 2), (0, 2)])
     walls = to_walls(poly)
-    assert len(walls) == 4
+    assert [(len(path.path), path.closed) for path in walls] == [(4, True)]
+    assert len([segment for path in walls for segment in path.segments()]) == 4
 
 
 def test_to_walls_linestring():
     ls = LineString([(0, 0), (1, 0), (2, 0)])
     walls = to_walls(ls)
-    assert len(walls) == 2
+    assert [(len(path.path), path.closed) for path in walls] == [(3, False)]
+    assert len(walls[0].segments()) == 2
 
 
 def test_to_walls_multilinestring():
     mls = MultiLineString([[(0, 0), (1, 0)], [(2, 0), (4, 0)]])
     walls = to_walls(mls)
     assert len(walls) == 2
+
+
+def test_to_walls_skips_points_of_a_collection_and_carries_the_material():
+    collection = GeometryCollection([LineString([(0, 0), (1, 0)]), Point(3, 3)])
+    walls = to_walls(collection, material=MaterialIdentifier("Cardboard"))
+    assert [path.material.name for path in walls] == ["Cardboard"]
+
+
+def test_generated_world_saves_as_format_2_with_its_scenario(tmp_path):
+    gen = WorldGeneratorBarn({}, random.Random(0))
+    save_generated(WorldView(tmp_path / "barn"), gen.compute(), gen.files())
+    assert (tmp_path / "barn" / "world.yaml").read_text().startswith("format: arena-world/2")
+    loaded = WorldView(tmp_path / "barn").load()
+    assert [zone.name for zone in loaded.all_levels[0].zones] == ["barn"]
+    assert describe(loaded.kg, "barn").startswith("BARN passage")
+    scenario = ScenarioView(tmp_path / "barn" / "scenarios" / WorldGeneratorBarn.SCENARIO).load()
+    assert len(scenario.robots) == 1
+
+
+def test_generated_files_stay_inside_the_world(tmp_path):
+    gen = WorldGeneratorEmpty({}, random.Random(0))
+    with pytest.raises(ValueError, match="outside the world directory"):
+        save_generated(WorldView(tmp_path / "empty"), gen.compute(), {"../escape.yaml": b""})
 
 
 # ---------------------------------------------------------------------------
@@ -219,10 +248,10 @@ def test_barn_config_pitch_derived():
 
 def test_barn_compute_single_zone_with_walls():
     gen = WorldGeneratorBarn({}, random.Random(0))
-    wd = gen.compute()
-    assert len(wd.zones) == 1
-    assert wd.zones[0].name == "barn"
-    assert len(wd.zones[0].walls) > 0
+    level = gen.compute().all_levels[0]
+    assert [zone.name for zone in level.zones] == ["barn"]
+    assert len(level.walls) > 0
+    assert {path.material.name for path in level.walls if path.material is not None} == {"Cardboard"}
 
 
 def test_barn_too_small_raises():
@@ -241,7 +270,8 @@ def test_barn_files_emit_scenario():
     scenario = yaml.safe_load(files[key])
     robots = scenario["robots"]
     assert len(robots) == 1
-    assert len(robots[0]["start"]) == 3  # [x, y, yaw]
+    assert scenario["format"] == "arena-scenario/2"
+    assert len(robots[0]["start"]) == 3
     goto = robots[0]["phases"][0]["goto"]
     assert len(goto) == 3
 
@@ -249,7 +279,7 @@ def test_barn_files_emit_scenario():
 def test_barn_seed_deterministic():
     a = WorldGeneratorBarn({}, random.Random(42))
     b = WorldGeneratorBarn({}, random.Random(42))
-    assert len(a.compute().zones[0].walls) == len(b.compute().zones[0].walls)
+    assert len(a.compute().all_levels[0].walls) == len(b.compute().all_levels[0].walls)
     assert a.files() == b.files()
 
 
@@ -287,10 +317,9 @@ def test_barn_cylinder_config_defaults():
 
 def test_barn_cylinder_compute_single_zone_with_walls():
     gen = WorldGeneratorBarnCylinder({}, random.Random(0))
-    wd = gen.compute()
-    assert len(wd.zones) == 1
-    assert wd.zones[0].name == "barn_cylinder"
-    assert len(wd.zones[0].walls) > 0
+    level = gen.compute().all_levels[0]
+    assert [zone.name for zone in level.zones] == ["barn_cylinder"]
+    assert len(level.walls) > 0
 
 
 def test_barn_cylinder_connectivity_across_seeds():
@@ -323,7 +352,7 @@ def test_barn_cylinder_files_emit_scenario():
 def test_barn_cylinder_seed_deterministic():
     a = WorldGeneratorBarnCylinder({}, random.Random(7))
     b = WorldGeneratorBarnCylinder({}, random.Random(7))
-    assert len(a.compute().zones[0].walls) == len(b.compute().zones[0].walls)
+    assert len(a.compute().all_levels[0].walls) == len(b.compute().all_levels[0].walls)
     assert a.files() == b.files()
 
 

@@ -1,0 +1,50 @@
+# Package "social": agents, regions, roles and profiles, loaded on demand
+name = "social"
+version = 1
+
+[nodes.agent]
+props = ["pose", "velocity"]
+
+[nodes.region]
+props = ["kind", "boundary", "anchor"]
+
+[nodes.role]
+props = []
+auto = true
+propless = true
+
+[nodes.profile]
+props = []
+auto = true
+propless = true
+
+[verbs.has_role]
+from = ["agent"]
+to = ["role"]
+
+[verbs.has_profile]
+from = ["agent"]
+to = ["profile"]
+
+[verbs.occupies]
+from = ["agent"]
+to = ["region", "room"]
+
+[verbs.assigned_to]
+from = ["obj", "region"]
+to = ["obj", "agent", "role"]
+
+[constraints.keep_clear]
+arity = 1
+desc = "keep `min` m of free space all around A: exactly ONE thing (a door, an exit), never a pair. For a distance between two things use min_clearance"
+params = ["min"]
+
+[constraints.accessible_route]
+arity = 3
+desc = "a route from region B to region C must be traversable by profile A: scope order (profile, from, to)"
+params = []
+
+[constraints.flow]
+arity = 2
+desc = "agents spawned by source region A drain into sink region B: scope order (source, sink)"
+params = ["rate", "max_concurrent"]

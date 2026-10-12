@@ -33,7 +33,7 @@ _DOOR_AXES: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
 
 
 def _door_basis(elevator: Elevator) -> tuple[float, float, tuple[float, float], tuple[float, float], float]:
-    outward, tangent = _DOOR_AXES[elevator.door_side]
+    outward, tangent = _DOOR_AXES[elevator.door_side or '+x']
     hx, hy = elevator.size[0] / 2.0, elevator.size[1] / 2.0
     out_extent = hx if outward[0] != 0 else hy
     tan_extent = hy if outward[0] != 0 else hx

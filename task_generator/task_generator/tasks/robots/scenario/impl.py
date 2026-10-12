@@ -37,29 +37,29 @@ class TM_Scenario(TM_Robots):
             SCENARIO_ROBOTS = SCENARIO_ROBOTS[:setup_robot_length]
             self._logger.warn("Scenario file contains more robots than setup.", once=True)
 
-        # Shift floor-tagged poses from level-local to the flattened map frame.
+        # Shift level-tagged poses from level-local to the flattened map frame.
         level_origins = self._ctx.world_manager.map.level_origins
 
-        def _to_map_frame(pose: Pose, floor: str) -> Pose:
-            if not floor:
+        def _to_map_frame(pose: Pose, level: str) -> Pose:
+            if not level:
                 return pose
-            ox, oy = level_origins.get(floor, (0.0, 0.0))
+            ox, oy = level_origins.get(level, (0.0, 0.0))
             return Pose(
                 position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z),
                 orientation=pose.orientation,
             )
 
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
-            start_pose = _to_map_frame(config.start, config.start_floor)
+            start_pose = _to_map_frame(config.start, config.level)
             self._start_poses[robot.name] = start_pose
 
             phases: list[TaskPhase] = []
             forbidden: list[PositionRadius] = [
                 PositionRadius(x=start_pose.position.x, y=start_pose.position.y, radius=robot.safe_distance),
             ]
-            for phase in config.phase_list():
+            for phase in config.phases:
                 if isinstance(phase, GoToPhase) and phase.pose is not None:
-                    goto_pose = _to_map_frame(phase.pose, config.goal_floor)
+                    goto_pose = _to_map_frame(phase.pose, config.goal_level)
                     phase = attrs.evolve(phase, pose=goto_pose)
                     forbidden.append(PositionRadius(x=goto_pose.position.x, y=goto_pose.position.y, radius=robot.safe_distance))
                 phases.append(phase)

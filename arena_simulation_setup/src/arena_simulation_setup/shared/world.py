@@ -30,9 +30,9 @@ def _activation_distance_converter(x: float | typing.Sequence[float]) -> tuple[f
 class Elevator(Named):
     position: Position = attrs.field(converter=Position.converter)
     size: list[float] = attrs.field(factory=lambda: [2.0, 2.0, 2.0])
-    door_side: typing.Literal['+x', '-x', '+y', '-y'] = '+x'
+    door_side: typing.Literal['+x', '-x', '+y', '-y'] | None = None
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('elevator'))
-    destination: str = attrs.field(default="")
+    destinations: list[str] = attrs.field(factory=list, converter=lambda value: [str(name).strip() for name in value])
     # must cover v_max * transition_time plus latency so the door is fully open before arrival
     activation_distance: float = 3.0
     transition_time: float = 1.0
@@ -41,6 +41,11 @@ class Elevator(Named):
     accept_outside_calls: bool = True
     recall_on: str | None = None
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+    @property
+    def destination(self) -> str:
+        """The cabin a ride goes to, the first of the destinations."""
+        return self.destinations[0] if self.destinations else ''
 
     def boarding_radius(self, agent_radius: float) -> float:
         """Largest distance from the cabin center at which a disc of agent_radius stays inside the cabin and clear of its door."""
@@ -72,6 +77,23 @@ class Door(Named):
     transition_time: float = 1.0
     hold_time: float = 2.0
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+    @classmethod
+    def parse(cls, value: dict) -> Door:
+        value = dict(value)
+        if 'start' in value or 'end' in value:
+            raise ValueError(f"door {value.get('name')!r} takes span: [[x, y], [x, y]], not start and end")
+        span = value.pop('span', None)
+        if not isinstance(span, (list, tuple)) or len(span) != 2:
+            raise ValueError(f"door {value.get('name')!r} requires span: [[x, y], [x, y]]")
+        if isinstance(value.get('activation_distance'), (int, float)):
+            value['activation_distance'] = [value['activation_distance']] * 2
+        return super().parse({**value, 'start': span[0], 'end': span[1]})
+
+    def serialize(self) -> dict:
+        result = super().serialize()
+        result['span'] = [result.pop('start'), result.pop('end')]
+        return result
 
     @property
     def corners(self) -> list[Position]:
@@ -131,7 +153,7 @@ class Sound(Named):
 
     asset_id: str = attrs.field(converter=lambda value: str(value).strip())
     position: Position | None = attrs.field(converter=_optional_position, default=None)
-    entity_ref: str = attrs.field(converter=lambda value: str(value).strip(), default='')
+    attach: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     frame: str = attrs.field(converter=lambda value: str(value).strip().strip('/'), default='')
     offset: Position = attrs.field(converter=Position.converter, factory=lambda: Position(0.0, 0.0, 0.0))
     level: str = attrs.field(converter=lambda value: str(value).strip(), default='')
@@ -144,8 +166,8 @@ class Sound(Named):
             raise ValueError("sound name must be non-empty and contain no ':'")
         if not self.asset_id or ':' in self.asset_id:
             raise ValueError(f"sound {self.name!r} asset_id must be non-empty and contain no ':'")
-        if sum((bool(self.entity_ref), self.position is not None, bool(self.frame))) != 1:
-            raise ValueError(f"sound {self.name!r} requires exactly one of position, entity_ref or frame")
+        if sum((bool(self.attach), self.position is not None, bool(self.frame))) != 1:
+            raise ValueError(f"sound {self.name!r} requires exactly one of position, attach or frame")
         if self.level and self.position is None:
             raise ValueError(f"sound {self.name!r} takes level only with a direct position")
         if self.reference_distance_m <= 0.0:
@@ -238,7 +260,7 @@ class Light(Named):
 
     fixture: str = attrs.field(converter=lambda value: str(value).strip())
     pose: Pose | None = attrs.field(converter=_optional_pose, default=None)
-    entity_ref: str = attrs.field(converter=lambda value: str(value).strip(), default='')
+    attach: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     frame: str = attrs.field(converter=lambda value: str(value).strip().strip('/'), default='')
     offset: Pose = attrs.field(converter=_pose, factory=Pose)
     lumens: float | None = attrs.field(converter=_optional_float, default=None)
@@ -257,28 +279,21 @@ class Light(Named):
     fixtures: list[Position] = attrs.field(factory=list)
     fixture_ranks: list[float] = attrs.field(factory=list)
 
-    @classmethod
-    def parse(cls, value: dict) -> Light:
-        unknown = sorted(set(value) - {field.name for field in attrs.fields(cls)} - {'pos'})
-        if unknown:
-            raise ValueError(f"light {value.get('name')!r} has unknown keys {unknown}")
-        return super().parse(value)
-
     def __attrs_post_init__(self) -> None:
         if not self.name or ':' in self.name:
             raise ValueError(f"light name {self.name!r} must be non-empty and contain no ':'")
         if self.fixture not in LIGHT_FIXTURES:
             raise ValueError(f'light {self.name!r} has unknown fixture {self.fixture!r}, expected one of {sorted(LIGHT_FIXTURES)}')
         ambient = self.spec.ambient
-        anchors = sum((self.pose is not None and not ambient, bool(self.entity_ref), bool(self.frame)))
-        if self.offset != Pose() and not (self.entity_ref or self.frame):
-            raise ValueError(f'light {self.name!r} takes an offset only on an entity_ref or a frame')
+        anchors = sum((self.pose is not None and not ambient, bool(self.attach), bool(self.frame)))
+        if self.offset != Pose() and not (self.attach or self.frame):
+            raise ValueError(f'light {self.name!r} takes an offset only with attach or frame')
         for placed in (self.pose, self.offset):
             if placed is not None and not math.isclose(math.sqrt(sum(component * component for component in placed.orientation)), 1.0, abs_tol=1e-3):
                 raise ValueError(f'light {self.name!r} orientation must be a unit quaternion')
         if ambient:
             if anchors:
-                raise ValueError(f'light {self.name!r} ({self.fixture}) takes no entity_ref or frame')
+                raise ValueError(f'light {self.name!r} ({self.fixture}) takes no attach or frame')
             if self.pose is not None and any(self.pose.position):
                 raise ValueError(f'light {self.name!r} ({self.fixture}) takes no position, a pose only aims it')
             if self.rig:
@@ -294,13 +309,13 @@ class Light(Named):
                 raise ValueError(f'light {self.name!r} ({self.fixture}) requires lumens >= 0')
             if self.rig:
                 if anchors:
-                    raise ValueError(f'rig light {self.name!r} takes no pose, entity_ref or frame')
+                    raise ValueError(f'rig light {self.name!r} takes no pose, attach or frame')
                 if not self.fixtures:
                     raise ValueError(f'rig light {self.name!r} requires at least one fixture position')
                 if len(self.fixture_ranks) != len(self.fixtures):
                     raise ValueError(f'rig light {self.name!r} requires one fixture rank per fixture position')
             elif anchors != 1:
-                raise ValueError(f'light {self.name!r} requires exactly one of pose, entity_ref or frame')
+                raise ValueError(f'light {self.name!r} requires exactly one of pose, attach or frame')
         if not self.rig and (self.fixtures or self.fixture_ranks):
             raise ValueError(f'light {self.name!r} takes fixture positions only as a rig')
         if not self.spec.directed and self._placement.orientation != Orientation.identity():
@@ -363,7 +378,7 @@ def object_light(owner: str, entry: dict, settings: ObjectLightSettings | None) 
     return Light(
         name=f"{owner}_{entry.get('name', 'light')}",
         fixture=fixture,
-        entity_ref=owner,
+        attach=owner,
         offset=offset if LIGHT_FIXTURES[fixture].directed else Pose(position=offset.position),
         lumens=entry.get('lumens'),
         cct_K=entry.get('cct_K', 6500.0),

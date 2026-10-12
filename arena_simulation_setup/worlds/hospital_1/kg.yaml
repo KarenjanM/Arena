@@ -1,0 +1,20 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:central_hallway', props: {description: Main Central Hallway}}
+- {id: 'room:reception', props: {description: Reception and Check-in}}
+- {id: 'room:exam_room_1', props: {description: Examination Room 1}}
+- {id: 'room:patient_ward', props: {description: Patient Ward}}
+- {id: 'room:pharmacy', props: {description: Pharmacy}}
+- {id: 'room:nurse_resting_room', props: {description: Nurse Resting Room}}
+- {id: 'room:waiting_area', props: {description: Main Waiting Area}}
+- {id: 'room:sub_hallway', props: {description: Sub-Hallway}}
+- {id: 'room:operating_room', props: {description: Operating Room}}
+- {id: 'room:laboratory', props: {description: Laboratory}}
+- {id: 'room:wc_pharmacy', props: {description: WC Pharmacy}}
+- {id: 'room:wc_waiting', props: {description: WC Waiting}}
+- {id: 'room:doctors_resting_room', props: {description: Doctor Resting Room}}
+- {id: 'obj:ward_SM_MedicalCabinet_01a_2'}
+facts:
+- {subject: 'room:patient_ward', verb: contains, object: 'obj:ward_SM_MedicalCabinet_01a_2'}
+constraints: []

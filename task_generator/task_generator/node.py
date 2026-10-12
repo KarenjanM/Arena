@@ -665,7 +665,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             return "discrete"
         return "continuous"
 
-    def _iter_zones(self) -> typing.Iterator[tuple[str, World.LevelDescription.Zone]]:
+    def _iter_zones(self) -> typing.Iterator[tuple[str, World.Zone]]:
         """All zones across levels as (realized name, zone)."""
         for level_id, level in self._world_manager.world.levels.items():
             for zone in level.zones:

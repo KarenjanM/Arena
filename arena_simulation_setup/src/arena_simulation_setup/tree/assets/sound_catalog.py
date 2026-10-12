@@ -403,7 +403,10 @@ class SoundLibrary:
             self._world = path
 
     def _point_at(self, path: Path | None) -> None:
+        from arena_simulation_setup.tree.World import WorldView
+
         DynamicPaths.WORLD.path = path if path is not None else Path("/dev/null")
+        DynamicPaths.LINKED.paths = list(WorldView(path).load(validate=False).sources) if path is not None and (path / "world.yaml").exists() else []
         for resolver in SoundIdentifier._resolvers:
             resolver.invalidate()
         self._assets.clear()

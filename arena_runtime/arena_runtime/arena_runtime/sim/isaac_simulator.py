@@ -12,6 +12,7 @@ import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
 import arena_simulation_setup.tree.assets.Material
+import attrs
 import geometry_msgs.msg
 import isaacsim_msgs.msg
 import launch
@@ -204,7 +205,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
         args: dict[str, object] = {
-            **robot.asdict(),
+            **robot.extra,
+            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
             'optim': self.node.rosparam[str].get('optim', ''),
             # no world-scoped topic namespace in Isaac, empty prefix keeps the
             # injected sensor topics namespace-relative

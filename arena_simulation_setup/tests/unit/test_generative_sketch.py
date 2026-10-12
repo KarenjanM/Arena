@@ -3,6 +3,7 @@ import random
 import pytest
 import shapely
 
+from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.utils.generative.sketch import WorldGeneratorSketch, normalize, split_sketch
 
 
@@ -12,8 +13,8 @@ def build(sketch: str, **config) -> WorldGeneratorSketch:
     return generator
 
 
-def free_space(generator: WorldGeneratorSketch, level) -> shapely.Polygon | shapely.MultiPolygon:
-    return shapely.union_all([shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones])
+def free_space(generator: WorldGeneratorSketch, level: Level) -> shapely.Polygon | shapely.MultiPolygon:
+    return shapely.union_all([zone.shape() for zone in level.zones])
 
 
 def test_directives_are_split_from_the_grid():
@@ -45,7 +46,7 @@ def test_letters_stay_reserved():
 
 def test_straight_corridor_geometry():
     generator = build('───', cell=8.0, light=1.5)
-    level = generator.compute()
+    level = generator.compute().all_levels[0]
     assert generator.diagnostics.components == 1
     assert free_space(generator, level).bounds == pytest.approx((3.25, 3.25, 20.75, 4.75))
 
@@ -65,7 +66,7 @@ def test_detached_cells_are_reported():
 
 def test_mixed_junction_box_takes_each_axis_from_its_arms():
     generator = build('  │\n ═╪═\n  │', cell=8.0, light=1.5, double=6.0)
-    level = generator.compute()
+    level = generator.compute().all_levels[0]
     free = free_space(generator, level)
     assert free.intersection(shapely.box(0.0, 16.0, 40.0, 24.0)).bounds == pytest.approx((11.25, 16.0, 12.75, 20.75))
     assert free.intersection(shapely.box(0.0, 0.0, 2.0, 40.0)).bounds == pytest.approx((1.0, 9.0, 2.0, 15.0))
@@ -81,7 +82,7 @@ def test_one_sided_links_warn_but_still_connect():
 def test_legend_symbols_carry_width_and_zone():
     sketch = '!legend:\n!  R: {width: 5.0, zone: ward}\n─R─'
     generator = build(sketch, cell=8.0, light=1.5)
-    level = generator.compute()
+    level = generator.compute().all_levels[0]
     assert 'ward' in [zone.name for zone in level.zones]
     assert free_space(generator, level).bounds == pytest.approx((3.25, 1.5, 20.75, 6.5))
 
@@ -89,27 +90,27 @@ def test_legend_symbols_carry_width_and_zone():
 def test_fill_symbols_merge_into_rooms():
     sketch = '!legend:\n!  R: {fill: true}\nRRR\nRRR'
     generator = build(sketch, cell=4.0)
-    level = generator.compute()
+    level = generator.compute().all_levels[0]
     assert generator.diagnostics.components == 1
     assert free_space(generator, level).area == pytest.approx(12.0 * 8.0)
 
 
 def test_a_trailing_blank_row_does_not_move_the_drawing():
     """Parking the caret below the ink pads the grid, and that must not shift the world."""
-    plain = free_space(build('──'), build('──').compute())
-    padded = free_space(build('──\n  '), build('──\n  ').compute())
+    plain = free_space(build('──'), build('──').compute().all_levels[0])
+    padded = free_space(build('──\n  '), build('──\n  ').compute().all_levels[0])
     assert plain.equals(padded)
     assert build('──\n  ').frame().rows == 2
 
 
 def test_zones_are_rectangles_and_tile_the_free_space():
     generator = build('┌─┐\n│ │\n└─┘')
-    level = generator.compute()
+    level = generator.compute().all_levels[0]
     covered = free_space(generator, level)
     for zone in level.zones:
-        polygon = shapely.Polygon([(corner.x, corner.y) for corner in zone.corners])
+        polygon = zone.shape()
         assert polygon.area == pytest.approx(polygon.envelope.area)
-    assert covered.symmetric_difference(shapely.union_all([shapely.Polygon([(c.x, c.y) for c in z.corners]) for z in level.zones])).area == 0.0
+    assert covered.symmetric_difference(shapely.union_all([z.shape() for z in level.zones])).area == 0.0
 
 
 def test_normalize_maps_ascii_to_canonical_glyphs():
@@ -148,7 +149,7 @@ def test_a_directive_without_a_value_is_ignored():
 
 def ink(sketch: str, **config) -> shapely.Polygon | shapely.MultiPolygon:
     generator = WorldGeneratorSketch({'sketch': sketch, 'cell': 8.0, 'light': 1.5, **config}, random.Random(0))
-    return free_space(generator, generator.compute())
+    return free_space(generator, generator.compute().all_levels[0])
 
 
 def test_a_glyph_with_nothing_to_reach_draws_itself_in_full():
@@ -275,7 +276,7 @@ def test_a_blank_sketch_still_makes_a_world():
     """Every edit path can reach a blank grid, so it draws one full cell at the origin instead of failing."""
     for sketch in ('', '   ', '!light: 2\n', '  \n  '):
         generator = WorldGeneratorSketch({'sketch': sketch, 'cell': 8.0}, random.Random(0))
-        level = generator.compute()
+        level = generator.compute().all_levels[0]
         assert free_space(generator, level).bounds == pytest.approx((0.0, 0.0, 8.0, 8.0))
         assert generator.frame().rows >= 1 and generator.frame().cols >= 1
         assert [note.text for note in generator.warnings] == ['sketch is empty, drew one full cell']

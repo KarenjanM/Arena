@@ -4,54 +4,52 @@ import math
 from pathlib import Path
 
 import pytest
-import yaml
-
+from arena_simulation_setup.kg.scene import Scene
 from arena_simulation_setup.shared.route import crossings, describe_route, instruct, level_nouns, portals, zone_shapes
 from arena_simulation_setup.shared.task import TaskPhase
-from arena_simulation_setup.tree.World.World import LevelDescription
-from arena_simulation_setup.utils.cattrs import converter
+from arena_simulation_setup.tree.World import FORMAT, Level, WorldView, derive, parse_world
 
 WORLDS = Path(__file__).parents[2] / "worlds"
 NORTH = math.pi / 2.0
 EAST = 0.0
 
 
-def _point(x: float, y: float) -> dict:
-    return {"x": x, "y": y, "z": 0.0}
-
-
 def _walls(*segments: tuple[float, float, float, float]) -> list[dict]:
-    return [{"start": _point(x0, y0), "end": _point(x1, y1)} for x0, y0, x1, y1 in segments]
+    return [{"path": [[x0, y0], [x1, y1]]} for x0, y0, x1, y1 in segments]
 
 
-def _box(x0: float, y0: float, x1: float, y1: float) -> list[dict]:
-    return [_point(x0, y0), _point(x1, y0), _point(x1, y1), _point(x0, y1)]
+def _box(x0: float, y0: float, x1: float, y1: float) -> list[list[float]]:
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
 
 
-def _level() -> LevelDescription:
+def _world(level: dict, descriptions: dict[str, str] | None = None) -> tuple[Level, Scene]:
+    world = parse_world({"format": FORMAT, "levels": [{"id": "0", **level}]})
+    world.kg = Scene()
+    for zone, description in (descriptions or {}).items():
+        world.kg.add_entity(f"room:{zone}", {"description": description})
+    return world.levels["0"], derive(world)
+
+
+def _level(*objects: dict) -> tuple[Level, Scene]:
     """A hall under an office (door, 5 cm above the hall) and a lounge (2 m wall opening), plus a walled-off vault."""
-    return converter.structure(
+    return _world(
         {
             "zones": [
-                {"name": "hall", "corners": _box(0.0, 0.0, 12.0, 2.0), "walls": _walls((0.0, 2.0, 2.0, 2.0), (3.0, 2.0, 7.0, 2.0), (9.0, 2.0, 12.0, 2.0))},
-                {
-                    "name": "office",
-                    "description": "Head Office",
-                    "corners": _box(0.0, 2.05, 5.0, 8.0),
-                    "walls": _walls((0.0, 2.05, 2.0, 2.05), (3.0, 2.05, 5.0, 2.05), (5.0, 2.05, 5.0, 8.0)),
-                    "doors": [{"name": "office_door", "start": _point(2.0, 2.05), "end": _point(3.0, 2.05)}],
-                    "entities": {"static": [{"name": "office_desk_1", "model": "desk", "pose": {"position": _point(2.5, 7.0)}}]},
-                },
-                {"name": "lounge", "corners": _box(5.0, 2.0, 12.0, 8.0)},
-                {"name": "vault", "corners": _box(12.0, 0.0, 16.0, 8.0), "walls": _walls((12.0, 0.0, 12.0, 8.0))},
-            ]
+                {"name": "hall", "polygon": _box(0.0, 0.0, 12.0, 2.0)},
+                {"name": "office", "polygon": _box(0.0, 2.05, 5.0, 8.0)},
+                {"name": "lounge", "polygon": _box(5.0, 2.0, 12.0, 8.0)},
+                {"name": "vault", "polygon": _box(12.0, 0.0, 16.0, 8.0)},
+            ],
+            "walls": _walls((0.0, 2.0, 2.0, 2.0), (3.0, 2.0, 7.0, 2.0), (9.0, 2.0, 12.0, 2.0), (0.0, 2.05, 2.0, 2.05), (3.0, 2.05, 5.0, 2.05), (5.0, 2.05, 5.0, 8.0), (12.0, 0.0, 12.0, 8.0)),
+            "doors": [{"name": "office_door", "span": [[2.0, 2.05], [3.0, 2.05]]}],
+            "objects": [{"name": "office_desk_1", "model": "desk", "pose": [2.5, 7.0]}, *objects],
         },
-        LevelDescription,
+        {"office": "Head Office"},
     )
 
 
 def test_portals_are_the_door_and_the_wall_opening():
-    found = {(portal.zones, portal.door): portal for portal in portals(_level())}
+    found = {(portal.zones, portal.door): portal for portal in portals(*_level())}
     assert set(found) == {(("office", "hall"), True), (("hall", "lounge"), False)}
     assert found[(("office", "hall"), True)].mid == pytest.approx((2.5, 2.05))
     opening = found[(("hall", "lounge"), False)]
@@ -60,11 +58,11 @@ def test_portals_are_the_door_and_the_wall_opening():
 
 
 def test_crossings_chain_through_the_hall():
-    level = _level()
-    chain = crossings(portals(level), (2.5, 6.0), "office", (8.0, 6.0), "lounge")
+    found = portals(*_level())
+    chain = crossings(found, (2.5, 6.0), "office", (8.0, 6.0), "lounge")
     assert [(portal.door, entered) for portal, entered in chain] == [(True, "hall"), (False, "lounge")]
-    assert crossings(portals(level), (1.0, 1.0), "hall", (11.0, 1.0), "hall") == []
-    assert crossings(portals(level), (1.0, 1.0), "hall", (14.0, 4.0), "vault") is None
+    assert crossings(found, (1.0, 1.0), "hall", (11.0, 1.0), "hall") == []
+    assert crossings(found, (1.0, 1.0), "hall", (14.0, 4.0), "vault") is None
 
 
 @pytest.mark.parametrize(
@@ -79,18 +77,22 @@ def test_crossings_chain_through_the_hall():
     ],
 )
 def test_describe_route(start, yaw, goal, text):
-    assert describe_route(_level(), start, yaw, goal) == text
+    assert describe_route(*_level(), start, yaw, goal) == text
 
 
-def _corridor() -> LevelDescription:
+def _corridor() -> tuple[Level, Scene]:
     """A hall with three rooms above it and one below, each behind its own door."""
     rooms = [("archive", 0.0, 6.0), ("kitchen", 6.0, 12.0), ("studio", 12.0, 18.0)]
-    zones = [{"name": "hall", "corners": _box(0.0, 0.0, 18.0, 2.0)}]
+    zones = [{"name": "hall", "polygon": _box(0.0, 0.0, 18.0, 2.0)}]
+    walls = _walls((0.0, 0.0, 8.5, 0.0), (9.5, 0.0, 18.0, 0.0))
+    doors = [{"name": "garage_door", "span": [[8.5, 0.0], [9.5, 0.0]]}]
     for name, x0, x1 in rooms:
         mid = (x0 + x1) / 2.0
-        zones.append({"name": name, "corners": _box(x0, 2.0, x1, 8.0), "walls": _walls((x0, 2.0, mid - 0.5, 2.0), (mid + 0.5, 2.0, x1, 2.0), (x0, 2.0, x0, 8.0), (x1, 2.0, x1, 8.0)), "doors": [{"name": f"{name}_door", "start": _point(mid - 0.5, 2.0), "end": _point(mid + 0.5, 2.0)}]})
-    zones.append({"name": "garage", "corners": _box(0.0, -6.0, 18.0, 0.0), "walls": _walls((0.0, 0.0, 8.5, 0.0), (9.5, 0.0, 18.0, 0.0)), "doors": [{"name": "garage_door", "start": _point(8.5, 0.0), "end": _point(9.5, 0.0)}]})
-    return converter.structure({"zones": zones}, LevelDescription)
+        zones.append({"name": name, "polygon": _box(x0, 2.0, x1, 8.0)})
+        walls.extend(_walls((x0, 2.0, mid - 0.5, 2.0), (mid + 0.5, 2.0, x1, 2.0), (x0, 2.0, x0, 8.0), (x1, 2.0, x1, 8.0)))
+        doors.append({"name": f"{name}_door", "span": [[mid - 0.5, 2.0], [mid + 0.5, 2.0]]})
+    zones.append({"name": "garage", "polygon": _box(0.0, -6.0, 18.0, 0.0)})
+    return _world({"zones": zones, "walls": walls, "doors": doors})
 
 
 @pytest.mark.parametrize(
@@ -106,28 +108,34 @@ def _corridor() -> LevelDescription:
     ],
 )
 def test_describe_route_counts_the_doors_passed_on_that_side(start, yaw, goal, crossing):
-    assert describe_route(_corridor(), start, yaw, goal).split(". ")[0] == f"Walk through the hall, then {crossing}"
+    assert describe_route(*_corridor(), start, yaw, goal).split(". ")[0] == f"Walk through the hall, then {crossing}"
 
 
 def test_describe_route_takes_authored_nouns():
-    text = describe_route(_level(), (1.0, 1.0), EAST, (8.0, 6.0), {"lounge": "the staff lounge", "hall": "the corridor"})
+    text = describe_route(*_level(), (1.0, 1.0), EAST, (8.0, 6.0), {"lounge": "the staff lounge", "hall": "the corridor"})
     assert text == "Walk through the corridor, then turn left into the staff lounge. Walk about 4 meters into the staff lounge and stop."
 
 
 def test_describe_route_is_none_off_the_zones_and_across_walls():
-    assert describe_route(_level(), (1.0, 1.0), EAST, (14.0, 4.0)) is None
-    assert describe_route(_level(), (1.0, 1.0), EAST, (30.0, 30.0)) is None
-    assert describe_route(_level(), (-5.0, 1.0), EAST, (1.0, 1.0)) is None
+    assert describe_route(*_level(), (1.0, 1.0), EAST, (14.0, 4.0)) is None
+    assert describe_route(*_level(), (1.0, 1.0), EAST, (30.0, 30.0)) is None
+    assert describe_route(*_level(), (-5.0, 1.0), EAST, (1.0, 1.0)) is None
 
 
 def test_level_nouns_use_descriptions_and_drop_indices():
-    nouns = level_nouns(_level())
+    nouns = level_nouns(*_level())
     assert nouns["office"] == "the head office"
     assert nouns["hall"] == "the hall"
     assert nouns["office_door"] == "the office door"
     assert nouns["office_desk_1"] == "the office desk"
-    assert level_nouns(_level(), "office_")["office_desk_1"] == "the desk"
-    assert level_nouns(_level(), "office_")["office_door"] == "the door"
+    assert level_nouns(*_level(), "office_")["office_desk_1"] == "the desk"
+    assert level_nouns(*_level(), "office_")["office_door"] == "the door"
+
+
+def test_objects_of_the_goal_zone_are_named_and_serve_as_landmarks():
+    level, semantics = _level({"name": "lounge_plant_2", "model": "plant", "pose": [8.5, 6.0]})
+    assert level_nouns(level, semantics)["lounge_plant_2"] == "the lounge plant"
+    assert describe_route(level, semantics, (1.0, 1.0), EAST, (8.0, 6.0)) == "Walk through the hall, then turn left into the lounge. Walk about 4 meters into the lounge and stop next to the lounge plant."
 
 
 HERE = (1.0, 1.0, EAST)
@@ -148,14 +156,16 @@ TO_LOUNGE = "Walk through the hall, then turn left into the lounge. Walk about 4
     ],
 )
 def test_instruct_picks_the_wording_and_names_its_source(phase, here, wording, told):
-    assert instruct(TaskPhase.parse(phase), _level(), here, wording) == told
+    level, semantics = _level()
+    assert instruct(TaskPhase.parse(phase), level, semantics, here, wording) == told
 
 
 @pytest.mark.parametrize("world", ["hospital_1", "office_1"])
 def test_every_room_of_a_shipped_world_is_reachable(world):
-    level = converter.structure(yaml.safe_load((WORLDS / world / "0" / "world.yaml").read_text()), LevelDescription)
+    loaded = WorldView(WORLDS / world).load()
+    level = loaded.all_levels[0]
     shapes = zone_shapes(level)
-    found = portals(level)
+    found = portals(level, loaded.kg)
     first = level.zones[0].name
     start = shapes[first].representative_point().coords[0]
     for name, shape in shapes.items():

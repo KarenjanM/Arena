@@ -1,116 +1,82 @@
-robots:
-  - start: [10.0, 0.5, 1.5708]
-    goal: [4.0, 17.6, 0.0]
-
-dynamic:
-  - name: nurse_1
-    model: Hospital/nurse_female_caucasian_young
-    pose: central_hallway
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.5}
-
-  - name: escort_patient
-    model: worker_male_caucasian_young
-    pose: patient_ward
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 0.9}
-
-  - name: doctor_1
-    model: Hospital/doctor_male_caucasian_middleage
-    pose: exam_room_1
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.4}
-
-  - name: consult_patient
-    model: Office/office_female_caucasian_young
-    pose: waiting_area
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
-
-  - name: queue_patient_1
-    model: worker_male_asian_middleage
-    pose: {x: 9.5, y: 0.5}
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.1}
-
-  - name: queue_patient_2
-    model: Office/office_female_caucasian_young
-    pose: {x: 10.0, y: 0.8}
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 0.9}
-
-  - name: queue_patient_3
-    model: worker_male_african_young
-    pose: {x: 10.5, y: 0.5}
-    agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
-
-  # --- Background flow ---
-  - name: doctor_2
-    model: Hospital/nurse_female_caucasian_young
-    pose: laboratory
-    agent: {agent_type: adult, desired_velocity: 1.3}
-    waypoints:
-      - central_hallway
-      - operating_room
-      - central_hallway
-      - laboratory
-
-static:
-  - name: reception_desk
-    model: Hospital/Reception_Counter
-    pose: reception
-    type: desk
-    capacity: 3
-    interaction_radius: 1.0
-    formation:
-      type: line
-      params: {base_step: 0.8, front_offset: 0.6}
-  
-  - name: gathering_area
+format: arena-scenario/2
+objects:
+- name: reception_desk
+  model: Hospital/Reception_Counter
+  pose: reception
+  humansim: {type: desk, capacity: 3, interaction_radius: 1.0, formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}}
+- name: gathering_area
+  model: Hospital/Waiting_Room_Bench
+  pose: [15.0, 6.0, 0.0]
+  humansim:
     type: gathering_area
-    model: Hospital/Waiting_Room_Bench
-    pose: [15.0, 6.0, 0.0]
     capacity: 0
-    formation:
-      type: f_formation
-      anchor: {kind: object, ref: gathering_area}
-      params: {base_radius: 0.8, radius_per_member: 0.12}
-  
-  - name: fountain
+    formation: {type: f_formation, anchor: {kind: object, ref: gathering_area}, params: {base_radius: 0.8, radius_per_member: 0.12}}
+- name: fountain
+  model: Hospital/SM_WaterDispenser_01a
+  pose: [11.0, 10.0, 1.57]
+  humansim:
     type: fountain
-    model: Hospital/SM_WaterDispenser_01a
-    pose: [11.0, 10.0, 1.57]
     capacity: 1
     satisfies: {thirst: 100.0}
-    formation:
-      type: line
-      params: {base_step: 1.0, front_offset: 0.8}
-
-  - name: exam_chair_1
-    model: Hospital/Patient_Armchair
-    pose: exam_room_1
-    type: chair
-    capacity: 1
-    interaction_radius: 0.8
-
-  - name: patient_bed_1
-    model: Hospital/Isolation_Bed
-    pose: patient_ward
-    type: patient_bed
-    capacity: 1
-    interaction_radius: 1.2
-
+    formation: {type: line, params: {base_step: 1.0, front_offset: 0.8}}
+- name: exam_chair_1
+  model: Hospital/Patient_Armchair
+  pose: exam_room_1
+  humansim: {type: chair, capacity: 1, interaction_radius: 0.8}
+- name: patient_bed_1
+  model: Hospital/Isolation_Bed
+  pose: patient_ward
+  humansim: {type: patient_bed, capacity: 1, interaction_radius: 1.2}
+humans:
+- name: nurse_1
+  model: Hospital/nurse_female_caucasian_young
+  pose: central_hallway
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 1.5}
+- name: escort_patient
+  model: worker_male_caucasian_young
+  pose: patient_ward
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 0.9}
+- name: doctor_1
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: exam_room_1
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 1.4}
+- name: consult_patient
+  model: Office/office_female_caucasian_young
+  pose: waiting_area
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
+- name: queue_patient_1
+  model: worker_male_asian_middleage
+  pose: {x: 9.5, y: 0.5}
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 1.1}
+- name: queue_patient_2
+  model: Office/office_female_caucasian_young
+  pose: {x: 10.0, y: 0.8}
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 0.9}
+- name: queue_patient_3
+  model: worker_male_african_young
+  pose: {x: 10.5, y: 0.5}
+  agent: {agent_type: ./colleague.yaml, desired_velocity: 1.0}
+- name: doctor_2
+  model: Hospital/nurse_female_caucasian_young
+  pose: laboratory
+  agent: {agent_type: adult, desired_velocity: 1.3}
+  waypoints: [central_hallway, operating_room, central_hallway, laboratory]
+robots:
+- start: [10.0, 0.5, 1.5708]
+  phases:
+  - {goto: [4.0, 17.6, 0.0]}
 regions:
   visitor_entrance:
     type: source
     polygon:
-      - {x: 9.25, y: 0.2}
-      - {x: 10.75, y: 0.2}
-      - {x: 10.75, y: 1.2}
-      - {x: 9.25, y: 1.2}
+    - {x: 9.25, y: 0.2}
+    - {x: 10.75, y: 0.2}
+    - {x: 10.75, y: 1.2}
+    - {x: 9.25, y: 1.2}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 4
       max_total: 15
-      agent:
-        agent_type: ./colleague.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./colleague.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}

@@ -52,8 +52,8 @@ class TM_Parametrized(TM_Obstacles):
                     name=f"S_{config.model}_{i + 1}",
                     model=config.model,
                     pose=self._get_pose(rng, polygon=poly),
+                    humansim={"type": config.type},
                 )
-                obstacle.extra["type"] = config.type
                 obstacles.append(obstacle)
 
         # Create interactive obstacles
@@ -64,8 +64,8 @@ class TM_Parametrized(TM_Obstacles):
                     name=f"S_{config.model}_{i + 1}",
                     model=config.model,
                     pose=self._get_pose(rng, polygon=poly),
+                    humansim={"type": config.type},
                 )
-                obstacle.extra["type"] = config.type
                 obstacles.append(obstacle)
 
         # Create dynamic obstacles
@@ -77,8 +77,8 @@ class TM_Parametrized(TM_Obstacles):
                     model=config.model,
                     pose=self._get_pose(rng, polygon=poly),
                     waypoints=self._get_points(2, polygon=poly),
+                    hunav={"type": config.type},
                 )
-                obstacle.extra["type"] = config.type
                 dynamic_obstacles.append(obstacle)
 
         return obstacles, dynamic_obstacles

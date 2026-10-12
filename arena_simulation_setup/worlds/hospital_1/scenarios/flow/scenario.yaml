@@ -1,70 +1,44 @@
+format: arena-scenario/2
+humans:
+- {model: Office/office_female_caucasian_young, name: ped_1, pose: [20.0, 1.0, -2.3562], waypoints: [[23.5, 8.5, -2.3562]]}
+- {model: worker_male_caucasian_young, name: ped_2, pose: [22.5, 7.5, 0.7854], waypoints: [[22.5, 7.5, 0.7854]]}
+- {model: Hospital/nurse_female_caucasian_young, name: ped_3, pose: [4.0, 27.0, 0.0], waypoints: [[4.0, 27.0, 0.0]]}
 robots:
 - start: [10.0, 0.5, 1.5708]
-  goal: [4.0, 26.8, 0.0]
-
-dynamic:
-- model: Office/office_female_caucasian_young
-  name: ped_1
-  pose: [20.0, 1.0, -2.3562]
-  waypoints:
-  - [23.5, 8.5, -2.3562]
-
-- model: worker_male_caucasian_young
-  name: ped_2
-  pose: [22.5, 7.5, 0.7854]
-  waypoints:
-  - [22.5, 7.5, 0.7854]
-
-- model: Hospital/nurse_female_caucasian_young
-  name: ped_3
-  pose: [4.0, 27.0, 0.0]
-  waypoints:
-  - [4.0, 27.0, 0.0]
-
+  phases:
+  - {goto: [4.0, 26.8, 0.0]}
 regions:
   entrance_source:
     type: source
     polygon:
-      - {x: 9.25, y: 0.2}
-      - {x: 10.75, y: 0.2}
-      - {x: 10.75, y: 1.2}
-      - {x: 9.25, y: 1.2}
+    - {x: 9.25, y: 0.2}
+    - {x: 10.75, y: 0.2}
+    - {x: 10.75, y: 1.2}
+    - {x: 9.25, y: 1.2}
     config:
       rate_profile:
-        - t: 0.0
-          rate: 1.5
+      - {t: 0.0, rate: 1.5}
       max_concurrent: 5
       max_total: 50
-      agent:
-        desired_velocity: {min: 1.0, max: 1.5}
-        agent_type: adult
-        sink_affinity:
-          - {sink: reception_sink, weight: 1.0}
-
+      agent: {desired_velocity: {min: 1.0, max: 1.5}, agent_type: adult, sink_affinity: [{sink: reception_sink, weight: 1.0}]}
   reception_sink:
     type: sink
     polygon:
-      - {x: 5.6, y: 1.0}
-      - {x: 7.4, y: 1.0}
-      - {x: 7.4, y: 4.0}
-      - {x: 5.6, y: 4.0}
-    config:
-      capacity: -1
-
+    - {x: 5.6, y: 1.0}
+    - {x: 7.4, y: 1.0}
+    - {x: 7.4, y: 4.0}
+    - {x: 5.6, y: 4.0}
+    config: {capacity: -1}
   hallway_spawn:
     type: source
     polygon:
-      - {x: 21.0, y: 1.0}
-      - {x: 23.0, y: 1.0}
-      - {x: 23.0, y: 2.8}
-      - {x: 21.0, y: 2.8}
+    - {x: 21.0, y: 1.0}
+    - {x: 23.0, y: 1.0}
+    - {x: 23.0, y: 2.8}
+    - {x: 21.0, y: 2.8}
     config:
       rate_profile:
-        - t: 0.0
-          rate: 0.5
+      - {t: 0.0, rate: 0.5}
       max_concurrent: 3
       max_total: 20
-      agent:
-        agent_type: elder
-        sink_affinity:
-          - {sink: reception_sink, weight: 1.0}
+      agent: {agent_type: elder, sink_affinity: [{sink: reception_sink, weight: 1.0}]}

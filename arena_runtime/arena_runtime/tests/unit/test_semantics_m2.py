@@ -122,7 +122,7 @@ def _door_runtime(name="d", **kw):
 
 
 def _elevator(name="e"):
-    return Elevator(name=name, position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], door_side="+x", destination="other")
+    return Elevator(name=name, position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], door_side="+x", destinations=["other"])
 
 
 def _elevator_runtime(name="e"):

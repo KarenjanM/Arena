@@ -1,0 +1,21 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:main_hallway', props: {description: Main Hallway}}
+- {id: 'room:cafeteria', props: {description: Cafeteria}}
+- {id: 'room:sub_hallway', props: {description: Sub Hallway}}
+- {id: 'room:meeting_room_1', props: {description: Meeting Room 1}}
+- {id: 'room:wc_2', props: {description: WC 2}}
+- {id: 'room:reception', props: {description: Reception}}
+- {id: 'room:executive_office_1', props: {description: Executive Office 1}}
+- {id: 'room:executive_office_2', props: {description: Executive Office 2}}
+- {id: 'room:wc_1', props: {description: WC 1}}
+- {id: 'room:main_office', props: {description: Main Office}}
+- {id: 'room:meeting_room_big', props: {description: Meeting Room (big)}}
+- {id: 'room:storage', props: {description: Storage}}
+- {id: 'obj:meet1_tv'}
+- {id: 'obj:meet_big_tv_1'}
+facts:
+- {subject: 'room:meeting_room_1', verb: contains, object: 'obj:meet1_tv'}
+- {subject: 'room:meeting_room_big', verb: contains, object: 'obj:meet_big_tv_1'}
+constraints: []

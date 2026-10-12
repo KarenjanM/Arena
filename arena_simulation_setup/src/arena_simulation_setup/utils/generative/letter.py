@@ -8,7 +8,9 @@ import pydantic
 import shapely
 import shapely.affinity
 
-from . import LevelDescription, PedestrianConfiguration, WithPedestrians
+from arena_simulation_setup.tree.World import World
+
+from . import PedestrianConfiguration, WithPedestrians
 from .layout import Area, Layout, Note, Segment, compile_layout
 
 # Coverage the segment lattice cannot reach is painted from a font instead, the first one that
@@ -203,7 +205,7 @@ class WorldGeneratorLetter(WithPedestrians):
         width = self.config.cell * self.config.ratio
         return origin[0] + node[1] * width / 2, origin[1] + (4 - node[0]) * self.config.cell / 4
 
-    def compute(self) -> LevelDescription:
+    def compute(self) -> World:
         # Composed form, and cased per character: 'ß'.upper() is two characters, which would put
         # every warning after it on the wrong column.
         lines = unicodedata.normalize('NFC', self.config.text).splitlines() or ['']
@@ -243,6 +245,6 @@ class WorldGeneratorLetter(WithPedestrians):
         half = self.config.stroke / 2
         layout.areas.extend(Area(polygon=shapely.box(x - half, y - half, x + half, y + half)) for x, y in joints)
 
-        level, diagnostics = compile_layout(layout)
+        world, diagnostics = compile_layout(layout)
         self.diagnostics = diagnostics
-        return level
+        return world

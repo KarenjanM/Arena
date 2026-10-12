@@ -82,7 +82,7 @@ def _elevator(
         position=Position(*position),
         size=list(size),
         door_side=door_side,
-        destination=destination,
+        destinations=[destination] if destination else [],
         activation_distance=activation_distance,
         transition_time=transition_time,
         hold_time=hold_time,

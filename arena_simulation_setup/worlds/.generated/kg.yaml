@@ -1,0 +1,21 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:top_room_0', props: {description: hallway}}
+- {id: 'room:top_room_1', props: {description: top room 1 of size  17.8 x  15.3}}
+- {id: 'room:top_room_2', props: {description: top room 2 of size  9.6 x  8.6}}
+- {id: 'room:top_room_3', props: {description: top room 3 of size  7.7 x  13.0}}
+- {id: 'room:top_room_4', props: {description: top room 4 of size  6.7 x  11.7}}
+- {id: 'room:top_room_5', props: {description: top room 5 of size  6.9 x  7.8}}
+- {id: 'room:top_room_6', props: {description: top room 6 of size  9.5 x  13.6}}
+- {id: 'room:top_room_7', props: {description: top room 7 of size  21.7 x  14.5}}
+- {id: 'room:bottom_room_0', props: {description: hallway}}
+- {id: 'room:bottom_room_1', props: {description: bottom room 1 of size  20.3 x  14.1}}
+- {id: 'room:bottom_room_2', props: {description: bottom room 2 of size  6.9 x  8.5}}
+- {id: 'room:bottom_room_3', props: {description: bottom room 3 of size  8.1 x  7.1}}
+- {id: 'room:bottom_room_4', props: {description: bottom room 4 of size  5.7 x  9.7}}
+- {id: 'room:bottom_room_5', props: {description: bottom room 5 of size  9.7 x  7.2}}
+- {id: 'room:bottom_room_6', props: {description: bottom room 6 of size  10.2 x  12.5}}
+- {id: 'room:bottom_room_7', props: {description: bottom room 7 of size  19.2 x  14.9}}
+facts: []
+constraints: []

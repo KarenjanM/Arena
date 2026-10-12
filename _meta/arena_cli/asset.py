@@ -13,7 +13,8 @@ from arena_cli.complete import Flags, Manifest, Static, Sub, Union
 if typing.TYPE_CHECKING:
     from pathlib import Path
 
-    from arena_simulation_setup.tree import AssetIdentifier, MultiLevelWorldView, NetResolver
+    from arena_simulation_setup.tree import AssetIdentifier, NetResolver
+    from arena_simulation_setup.tree.World import WorldView
 
     from arena_evaluation.benchmark.config import Suite
 
@@ -224,14 +225,22 @@ def pull(argv: list[str]) -> int:
     return 0
 
 
-def _world_dangling(view: MultiLevelWorldView, source: Path) -> list[str]:
+def _world_dangling(view: WorldView, source: Path) -> list[str]:
     """World references that would dangle once published: resolvable only from a local-only source."""
-    from arena_simulation_setup.tree import DynamicPathResolver, DynamicPaths, NetResolver
+    from arena_simulation_setup import ASS_DIR
+    from arena_simulation_setup.tree import DynamicPathListResolver, DynamicPathResolver, DynamicPaths, NetResolver
+    from arena_simulation_setup.tree.World import WorldIdentifier
 
     # world-local assets only resolve once WORLD points at the world being published
     DynamicPaths.WORLD.path = source
+    world = view.load(validate=False)
+    DynamicPaths.LINKED.paths = list(world.sources)
 
     dangling: list[str] = []
+    for level in world.all_levels:
+        link = level.source.partition(":")[0]
+        if link.startswith(("./", "../")) and not (source / link).resolve().is_relative_to(source.resolve()):
+            dangling.append(f"level {level.id} (links {level.source}, outside the world)")
     for identifier in view.identifiers(strict=True):
         # only the winning resolver matters here, and resolve_source stops at it rather
         # than probing every remaining one over the network
@@ -243,6 +252,10 @@ def _world_dangling(view: MultiLevelWorldView, source: Path) -> list[str]:
         if isinstance(hit.resolver, NetResolver):
             continue
         if isinstance(hit.resolver, DynamicPathResolver) and hit.path.is_relative_to(source):
+            continue
+        if isinstance(hit.resolver, DynamicPathListResolver):
+            continue
+        if isinstance(identifier, WorldIdentifier) and hit.path.is_relative_to(ASS_DIR / "worlds"):
             continue
         dangling.append(f"{identifier.shortname} (only at {hit.path})")
     return dangling

@@ -81,7 +81,7 @@ def test_light_parses_local_fixture(fixture):
     assert light.lumens == 800.0
     assert isinstance(light.lumens, float)
     assert light.lux is None
-    assert light.entity_ref == ''
+    assert light.attach == ''
     assert light.frame == ''
     assert light.offset == Pose()
     assert light.direction == (0.0, 0.0, -1.0)
@@ -161,9 +161,9 @@ def test_light_rejects_an_orientation_that_is_no_unit_quaternion():
         _panel(pose=Pose(position=Position(1.0, 2.0, 2.4), orientation=Orientation(2.0, 0.0, 0.0, 0.0)))
 
 
-def test_light_parses_entity_ref():
-    light = converter.structure({'name': 'desk_lamp', 'fixture': 'downlight', 'entity_ref': ' desk ', 'lumens': 400}, Light)
-    assert light.entity_ref == 'desk'
+def test_light_parses_attach():
+    light = converter.structure({'name': 'desk_lamp', 'fixture': 'downlight', 'attach': ' desk ', 'lumens': 400}, Light)
+    assert light.attach == 'desk'
     assert light.pose is None
 
 
@@ -206,11 +206,11 @@ def test_light_evolve_keeps_validated_state():
         ({'name': ''}, 'must be non-empty'),
         ({'name': 'a:b'}, "contain no ':'"),
         ({'fixture': 'lantern'}, 'unknown fixture'),
-        ({'pose': None}, 'requires exactly one of pose, entity_ref or frame'),
-        ({'entity_ref': 'desk'}, 'requires exactly one of pose, entity_ref or frame'),
-        ({'frame': 'jackal/base_link'}, 'requires exactly one of pose, entity_ref or frame'),
-        ({'pose': None, 'entity_ref': 'desk', 'frame': 'jackal/base_link'}, 'requires exactly one of pose, entity_ref or frame'),
-        ({'offset': _at(0.1, 0.0, 0.0)}, 'takes an offset only on an entity_ref or a frame'),
+        ({'pose': None}, 'requires exactly one of pose, attach or frame'),
+        ({'attach': 'desk'}, 'requires exactly one of pose, attach or frame'),
+        ({'frame': 'jackal/base_link'}, 'requires exactly one of pose, attach or frame'),
+        ({'pose': None, 'attach': 'desk', 'frame': 'jackal/base_link'}, 'requires exactly one of pose, attach or frame'),
+        ({'offset': _at(0.1, 0.0, 0.0)}, 'takes an offset only with attach or frame'),
         ({'lumens': None}, 'requires lumens >= 0'),
         ({'lumens': -1.0}, 'requires lumens >= 0'),
         ({'lux': 50.0}, 'takes lumens, not lux'),
@@ -245,8 +245,8 @@ def test_local_light_rejects_invalid(kwargs, message):
     ('kwargs', 'message'),
     [
         ({'pose': _at(0.0, 0.0, 3.0)}, 'takes no position'),
-        ({'entity_ref': 'desk'}, 'takes no entity_ref or frame'),
-        ({'frame': 'jackal/base_link'}, 'takes no entity_ref or frame'),
+        ({'attach': 'desk'}, 'takes no attach or frame'),
+        ({'frame': 'jackal/base_link'}, 'takes no attach or frame'),
         ({'lux': None}, 'requires lux >= 0'),
         ({'lux': -1.0}, 'requires lux >= 0'),
         ({'lumens': 3600.0}, 'takes lux, not lumens'),
@@ -270,9 +270,9 @@ def test_dome_rejects_an_orientation():
 @pytest.mark.parametrize(
     ('kwargs', 'message'),
     [
-        ({'pose': _at(0.0, 0.0, 2.0)}, 'takes no pose, entity_ref or frame'),
-        ({'entity_ref': 'desk'}, 'takes no pose, entity_ref or frame'),
-        ({'frame': 'jackal/base_link'}, 'takes no pose, entity_ref or frame'),
+        ({'pose': _at(0.0, 0.0, 2.0)}, 'takes no pose, attach or frame'),
+        ({'attach': 'desk'}, 'takes no pose, attach or frame'),
+        ({'frame': 'jackal/base_link'}, 'takes no pose, attach or frame'),
         ({'fixtures': [], 'fixture_ranks': []}, 'at least one fixture position'),
         ({'fixture_ranks': [0.25]}, 'one fixture rank per fixture position'),
         ({'fixture_ranks': [0.25, 0.5, 0.75]}, 'one fixture rank per fixture position'),
@@ -546,7 +546,7 @@ def test_bulb_sits_at_its_position():
 def test_object_light_is_named_after_its_entity_and_anchored_on_it():
     light = object_light('desk_lamp_3', {'name': 'bulb', 'fixture': 'bulb', 'pose': [[0.1, 0.0, 0.45], [1.0, 0.0, 0.0, 0.0]], 'lumens': 800.0, 'cct_K': 2700.0}, None)
     assert light.name == 'desk_lamp_3_bulb'
-    assert light.entity_ref == 'desk_lamp_3'
+    assert light.attach == 'desk_lamp_3'
     assert light.pose is None
     assert light.offset == _at(0.1, 0.0, 0.45)
     assert light.intrinsic

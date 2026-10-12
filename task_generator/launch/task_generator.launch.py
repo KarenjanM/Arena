@@ -176,6 +176,12 @@ def generate_launch_description() -> launch.LaunchDescription:
         choices=["authored", "auto"],
         description="authored: the lights the world declares. auto: also a calibrated ceiling rig in every zone with a ceiling and no lights of its own.",
     )
+    kg_derive = LaunchArgument(
+        name="kg.derive",
+        default_value="auto",
+        choices=["auto", "all", "off"],
+        description="auto: derive zone membership and door connections from geometry where the world's kg.yaml states none. all: derive them from geometry for everything, ignoring the stated ones. off: only what kg.yaml states.",
+    )
     mobile = LaunchArgument(
         name="robot.mobile",
         default_value="",
@@ -268,16 +274,10 @@ def generate_launch_description() -> launch.LaunchDescription:
             context,
             launch.utilities.normalize_to_list_of_substitutions(tm_modules.substitution),
         )
-        configured_modules = [
-            value.strip()
-            for value in tm_modules_val.split(",")
-            if value.strip()
-        ]
+        configured_modules = [value.strip() for value in tm_modules_val.split(",") if value.strip()]
         static_sounds_val = launch.utilities.perform_substitutions(
             context,
-            launch.utilities.normalize_to_list_of_substitutions(
-                auditory_static_sounds.substitution
-            ),
+            launch.utilities.normalize_to_list_of_substitutions(auditory_static_sounds.substitution),
         ).strip()
         static_sounds = static_sounds_val not in ("", "[]")
         if (acoustics_val != "none" or static_sounds) and "sounds" not in configured_modules:
@@ -459,6 +459,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "task.modules": tm_modules_val,
                     **world.str_param,
                     "world.lighting": world_lighting.param_value(str),
+                    "kg.derive": kg_derive.param_value(str),
                     "auditory.static_sounds": auditory_static_sounds.param_value(str),
                     "robot.train": train_mode.param_value(bool),
                     "env_id": allocated_id,
@@ -499,6 +500,10 @@ def generate_launch_description() -> launch.LaunchDescription:
                 'use_sim_time:=true',
                 '-p',
                 ['record_data_dir:=', record_dir.substitution],
+                '-p',
+                ['world.lighting:=', world_lighting.substitution],
+                '-p',
+                ['kg.derive:=', kg_derive.substitution],
                 '-r',
                 ['__ns:=/', allocated_ns],
                 *(arg for topic in ("/tf", "/tf_static") if tf_namespace for arg in ('-r', f'{topic}:={tf_namespace}{topic}')),

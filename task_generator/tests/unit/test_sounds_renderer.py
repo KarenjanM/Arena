@@ -47,12 +47,12 @@ def test_index_static_entities_indexes_by_level(sounds) -> None:
     assert indexed == {"desk": [("a", desk)]}
 
 
-def test_index_static_entities_includes_scenario_statics(sounds) -> None:
+def test_index_static_entities_includes_scenario_objects(sounds) -> None:
     desk = _entity("desk", 1.0, 2.0, 0.0, 0.0)
     crate = _entity("crate", 3.0, 3.0, 0.0, 0.0)
-    crate.level_id = "a"
+    crate.level = "a"
     loose = _entity("loose", 0.0, 0.0, 0.0, 0.0)
-    loose.level_id = None
+    loose.level = ""
     indexed = sounds._index_static_entities(_world(a=_level([desk])), [crate, loose])
     assert indexed == {"desk": [("a", desk)], "crate": [("a", crate)], "loose": [("", loose)]}
 
@@ -70,10 +70,10 @@ def test_index_static_entities_tracks_duplicate_names_across_levels(sounds) -> N
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_sound_placement_entity_ref_rotates_offset_by_entity_yaw(sounds) -> None:
+def test_resolve_sound_placement_attach_rotates_offset_by_entity_yaw(sounds) -> None:
     desk = _entity("desk", 1.0, 2.0, 0.5, math.pi / 2)
     indexed = {"desk": [("a", desk)]}
-    sound = Sound(name="chime", asset_id="radio_loop", entity_ref="desk", offset=Position(1.0, 0.0, 0.25))
+    sound = Sound(name="chime", asset_id="radio_loop", attach="desk", offset=Position(1.0, 0.0, 0.25))
     world = _world(a=_level([desk]))
 
     position, yaw, level_id = sounds._resolve_sound_placement(sound, world, indexed, "a")
@@ -85,18 +85,18 @@ def test_resolve_sound_placement_entity_ref_rotates_offset_by_entity_yaw(sounds)
     assert position.z == pytest.approx(0.75)
 
 
-def test_resolve_sound_placement_entity_ref_unknown_raises(sounds) -> None:
-    sound = Sound(name="chime", asset_id="radio_loop", entity_ref="missing")
+def test_resolve_sound_placement_attach_unknown_raises(sounds) -> None:
+    sound = Sound(name="chime", asset_id="radio_loop", attach="missing")
     world = _world(a=_level([]))
     with pytest.raises(ValueError, match="unknown static entity"):
         sounds._resolve_sound_placement(sound, world, {}, "a")
 
 
-def test_resolve_sound_placement_entity_ref_ambiguous_raises(sounds) -> None:
+def test_resolve_sound_placement_attach_ambiguous_raises(sounds) -> None:
     desk_a = _entity("desk", 0.0, 0.0, 0.0, 0.0)
     desk_b = _entity("desk", 5.0, 5.0, 0.0, 0.0)
     indexed = {"desk": [("a", desk_a), ("b", desk_b)]}
-    sound = Sound(name="chime", asset_id="radio_loop", entity_ref="desk")
+    sound = Sound(name="chime", asset_id="radio_loop", attach="desk")
     world = _world(a=_level([desk_a]), b=_level([desk_b]))
     with pytest.raises(ValueError, match="ambiguous static entity"):
         sounds._resolve_sound_placement(sound, world, indexed, "a")
