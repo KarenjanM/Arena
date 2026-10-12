@@ -508,8 +508,13 @@ renders in front of the wall. The
 kind, the [arena_assets README](../arena_assets/README.md) how to build the asset.
 A captured object (`arena-assets splat --object`) is placed like any other
 static object. Isaac renders it and its sensors see it. It is visual only, so
-robots drive through it, unless the bundle was built with a collider mesh
-(`--collider-mesh`).
+robots drive through it, unless the bundle carries a collider.
+
+Any object bundle can carry a collider mesh that `annotation.yaml` names under
+`collider:`. It is baked into the bundle's USD and SDF models, where it takes
+the place of the visual meshes as the collision. Without one, objects collide
+with their visual meshes in Isaac and Gazebo alike. `arena-assets collider` attaches one to any object bundle, see
+[Colliders](../arena_assets/README.md#colliders).
 
 ## 6. Generate with the AI pipeline (alternative)
 
