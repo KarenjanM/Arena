@@ -23,6 +23,7 @@ from arena_mujoco_msgs.msg import (
     LightState,
     Material,
     Prim,
+    PrimVisual,
     Scale,
     Wall,
 )
@@ -155,17 +156,15 @@ _SPAWN_ASSETS_TIMEOUT_S = 300.0
 _RESEND_AFTER_S = 10.0
 
 
-def _mesh_file(model: Model) -> str:
-    """Mesh file behind an obstacle model: the OBJ itself or an SDF's visual mesh, empty without one."""
+def _mesh_files(model: Model) -> list[tuple[str, str]]:
+    """(visual name, mesh file) behind an obstacle model: the OBJ itself or every mesh visual of an SDF, empty without one."""
     if model.path is None:
-        return ""
+        return []
     if model.type is ModelType.OBJ:
-        return str(model.path)
+        return [("visual", str(model.path))]
     if model.type is ModelType.SDF:
-        uri = ET.fromstring(model.description).findtext(".//visual//mesh/uri")
-        if uri:
-            return str(model.path.parent / uri.removeprefix("file://"))
-    return ""
+        return [(visual.get("name", ""), str(model.path.parent / uri.removeprefix("file://"))) for visual in ET.fromstring(model.description).iter("visual") if (uri := visual.findtext(".//mesh/uri"))]
+    return []
 
 
 def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Material) -> arena_mujoco_msgs.msg.Material:
@@ -393,27 +392,27 @@ class MujocoSimulator(BaseSim, NodeInterface):
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         level = obstacles_optim_level(self.node)
 
-        async def plan(obstacle: Obstacle) -> tuple[str, tuple | None]:
-            """(mesh file, bbox) to spawn from, both empty without a usable asset."""
+        async def plan(obstacle: Obstacle) -> tuple[list[tuple[str, str]], tuple | None]:
+            """(visual name, mesh file) list and bbox to spawn from, both empty without a usable asset."""
             box = await resolve_obstacle_box(obstacle)
             if level is ObstaclesOptim.BBOX and box is not None:
-                return "", box
+                return [], box
             try:
-                mesh_path = _mesh_file(await (await obstacle.model.resolve()).model.get(_MESH_MODEL_TYPES))
+                meshes = _mesh_files(await (await obstacle.model.resolve()).model.get(_MESH_MODEL_TYPES))
             except Exception:
                 self._logger.debug(traceback.format_exc())
-                mesh_path = ""
-            return (mesh_path, None) if mesh_path else ("", box)
+                meshes = []
+            return (meshes, None) if meshes else ([], box)
 
         plans = await asyncio.gather(*map(plan, obstacles))
 
         req = SpawnPrims.Request(env_id=self._env_id)
         indices: list[int] = []
         skipped: list[str] = []
-        for i, (obstacle, (mesh_path, box)) in enumerate(zip(obstacles, plans, strict=True)):
+        for i, (obstacle, (meshes, box)) in enumerate(zip(obstacles, plans, strict=True)):
             scale = (1.0, 1.0, 1.0) if obstacle.scale is None else (obstacle.scale.x, obstacle.scale.y, obstacle.scale.z)
             pose = obstacle.pose
-            if not mesh_path:
+            if not meshes:
                 if box is None:
                     skipped.append(obstacle.name)
                     continue
@@ -425,7 +424,8 @@ class MujocoSimulator(BaseSim, NodeInterface):
                     name=self._NS_PRIM(obstacle.name),
                     pose=pose.to_msg(),
                     scale=Scale(x=scale[0], y=scale[1], z=scale[2]),
-                    mesh_path=mesh_path,
+                    mesh_path=meshes[0][1] if meshes else "",
+                    visuals=[PrimVisual(name=name, mesh_path=path) for name, path in meshes[1:]],
                 )
             )
             indices.append(i)
@@ -512,8 +512,10 @@ class MujocoSimulator(BaseSim, NodeInterface):
             obstacle, model = item
             try:
                 prim_name = self._realizer.realize(f"obstacle_{next(self.wall_counter)}")
+                meshes = _mesh_files(model)
                 prim = Prim()
-                prim.mesh_path = _mesh_file(model)
+                prim.mesh_path = meshes[0][1] if meshes else ""
+                prim.visuals = [PrimVisual(name=name, mesh_path=path) for name, path in meshes[1:]]
                 prim.name = self._NS_WALL(prim_name)
                 prim.pose = obstacle.pose.to_msg()
                 prim.scale = Scale(x=1.0, y=1.0, z=1.0)
@@ -611,6 +613,8 @@ class MujocoSimulator(BaseSim, NodeInterface):
             alive=light.alive(light.dead_fraction),
             intrinsic=light.intrinsic,
             rig=light.rig,
+            glow=light.glow,
+            owner=self._NS_PRIM(light.owner) if light.glow else "",
         )
 
     async def _spawn_lights(self, lights: Sequence[LightDefinition]) -> bool:

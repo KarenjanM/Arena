@@ -292,8 +292,8 @@ An object's `annotation.yaml` can carry `lights:` entries with `name` (default
 `cone_deg` and `glow`. `arena_assets` writes them when it builds an object whose
 source model contains lights (hand-written entries win, and the built models
 carry no light themselves). `glow` names the material that glows with the
-light, a lamp shade for instance: Isaac and Gazebo make it emit the light's
-color scaled by its level, and it is dark while the light is off (MuJoCo does not render it). Every placement of the object, in a zone's
+light, a lamp shade for instance: Isaac, Gazebo and MuJoCo make it emit the light's
+color scaled by its level, and it is dark while the light is off. Every placement of the object, in a zone's
 `static:` list, a scenario's `static:` list or by an obstacle mode, then gets
 the light `<entity>_<name>` for as long as the placement exists, and a
 `light:` key on the placement sets its `lit`, `light_on` or `level`:
