@@ -35,10 +35,28 @@ def _install_virtualgl() -> int:
 
 
 def _update() -> int:
-    """Install VirtualGL and the arena_mujoco python deps into the venv, then rebuild."""
+    """Pull the arena_mujoco submodule, install its rosdep deps, VirtualGL and its python deps, and rebuild."""
     import subprocess
 
     arena_dir = common._env("ARENA_DIR")
+
+    rc = subprocess.run(
+        ["git", "submodule", "update", "--init", "--rebase", "--depth", "1", "arena_mujoco"],
+        cwd=arena_dir,
+        check=False,
+    ).returncode
+    if rc:
+        return rc
+
+    rc = subprocess.run(["sudo", "apt-get", "update"], check=False).returncode
+    if rc:
+        return rc
+    rc = subprocess.run(
+        ["rosdep", "install", "--ignore-src", "-r", "-y", "--rosdistro", common._env("ARENA_ROS_DISTRO"), "--from-paths", os.path.join(arena_dir, "arena_mujoco")],
+        check=False,
+    ).returncode
+    if rc:
+        return rc
 
     rc = _install_virtualgl()
     if rc:
@@ -67,7 +85,7 @@ def launch(argv: list[str]) -> None:
 COMMANDS: dict[str, Verb] = {
     v.name: v
     for v in [
-        *lifecycle_verbs(NAME, _update),
+        *lifecycle_verbs(NAME, _update, deinit="arena_mujoco"),
         make_verb("launch", launch, passthrough=True, complete=LaunchArgs("arena_mujoco", "run_mujoco.launch.py")),
         source_verb(lambda: _FORMATS_SOURCE),
     ]

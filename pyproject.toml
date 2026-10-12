@@ -6,7 +6,6 @@ default-groups = ["dev", "arena_humansim", "arena_text_crowd", "arena_hunav_sim_
 members = [
     "_meta/arena_cli",
     "arena_bringup",
-    "arena_mujoco/arena_mujoco",
     "arena_runtime/arena_runtime",
     "arena_simulation_setup/src",
     "task_generator",
@@ -117,6 +116,7 @@ known-first-party = [
     "arena_evaluation",
     "arena_hearing",
     "arena_isaac",
+    "arena_mujoco",
     "arena_training",
     "isaac_utils",
 ]
