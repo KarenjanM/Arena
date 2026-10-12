@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import typing
+
+import attrs
 import pytest
 
 from arena_simulation_setup.shared.conditions import EpisodeCondition, parse_atom
@@ -39,6 +42,13 @@ def test_render_atom_text(atom, text):
         ({"gesture": "random"}, "Perform a gesture."),
         ({"reach": "stow"}, "Move your arm to the stow position."),
         ({"reach": "random"}, "Reach to a point in your workspace."),
+        ({"reach": [0.5, 0.2, 0.0]}, "Reach to the given pose."),
+        ({"goto": "sofa", "conditions": [{"op": "always", "p": "robot within 3 of alice"}]}, "Go to the sofa, making sure that you are within 3 m of the visitor the whole time."),
+        ({"goto": "sofa", "conditions": [{"op": "eventually", "p": "robot in kitchen"}]}, "Go to the sofa, making sure that at some point you are in the kitchen."),
+        ({"goto": "sofa", "conditions": [{"op": "before", "p": "robot in kitchen", "q": "robot in hallway"}]}, "Go to the sofa, making sure that you are in the kitchen before you are in the hallway."),
+        ({"goto": "sofa", "conditions": [{"op": "never_during", "p": "robot in hallway", "q": "door_1.open == false"}]}, "Go to the sofa, never letting it happen that you are in the hallway while door 1 open is false."),
+        ({"goto": "sofa", "conditions": [{"op": "never", "p": "robot in hallway", "text": "keeping out of the hallway"}]}, "Go to the sofa, keeping out of the hallway."),
+        ({"goto": "sofa", "conditions": [{"op": "never", "p": "robot in hallway"}, {"op": "eventually", "p": "alice in kitchen"}]}, "Go to the sofa, never letting it happen that you are in the hallway, making sure that at some point the visitor is in the kitchen."),
         ({"goto": "sofa", "text": "Head over to the couch."}, "Head over to the couch."),
     ],
 )
@@ -73,3 +83,13 @@ def test_render_request_joins_phases_and_conditions():
 
 def test_render_without_nouns_uses_names():
     assert render_phase(TaskPhase.parse({"goto": "ward_a"})) == "Go to ward a."
+
+
+@attrs.define
+class _DockPhase(TaskPhase):
+    kind: typing.ClassVar[str] = "dock"
+
+
+def test_render_phase_of_unknown_kind_uses_the_generic_sentence():
+    assert render_phase(_DockPhase(), NOUNS) == "Carry out the step."
+    assert render_phase(_DockPhase(until="robot in kitchen"), NOUNS) == "Carry out the step and wait until you are in the kitchen."

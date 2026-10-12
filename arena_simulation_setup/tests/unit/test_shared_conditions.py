@@ -6,6 +6,7 @@ from arena_simulation_setup.shared.conditions import (
     EntityAtom,
     EpisodeCondition,
     MembershipAtom,
+    atom_subjects,
     parse_atom,
 )
 from arena_simulation_setup.utils.cattrs import converter
@@ -38,6 +39,11 @@ def test_parse_atom_membership_form_ped():
 def test_parse_atom_strips_outer_whitespace():
     atom = parse_atom("  robot in pharmacy  ")
     assert atom == MembershipAtom(subject="robot", zone="pharmacy")
+
+
+def test_atom_subjects_of_membership_is_its_subject():
+    assert atom_subjects(parse_atom("blocker_1 in ward_a_doorway")) == {"blocker_1"}
+    assert atom_subjects(parse_atom("not robot in pharmacy")) == {"robot"}
 
 
 # ---------------------------------------------------------------------------
