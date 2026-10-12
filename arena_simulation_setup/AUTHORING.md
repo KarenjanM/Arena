@@ -292,7 +292,7 @@ An object's `annotation.yaml` can carry `lights:` entries with `name` (default
 `cone_deg` and `glow`. `arena_assets` writes them when it builds an object whose
 source model contains lights (hand-written entries win, and the built models
 carry no light themselves). `glow` names the material that glows with the
-light, a lamp shade for instance: both simulators make it emit the light's
+light, a lamp shade for instance: Isaac, Gazebo and MuJoCo make it emit the light's
 color scaled by its level, and it is dark while the light is off. Every placement of the object, in a zone's
 `static:` list, a scenario's `static:` list or by an obstacle mode, then gets
 the light `<entity>_<name>` for as long as the placement exists, and a
@@ -311,6 +311,9 @@ Gazebo renders a rig as one shadowless point light per 2 by 2 block of
 fixtures, plus one unattenuated fill at the room center for the light the
 room surfaces reflect (40 % reflectance), since its renderer traces no
 indirect light.
+MuJoCo shades with at most seven lights per view and without shadows from
+fixtures, so each camera gets the fixtures merged the coarser the smaller they
+look from where it stands, plus the fill of the rig whose room it stands in.
 Dome and sun light the whole stage, so the first env's world sets them for
 every env of a runtime, and an env whose world declares other ones logs a
 warning naming both.

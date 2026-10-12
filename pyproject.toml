@@ -116,6 +116,7 @@ known-first-party = [
     "arena_evaluation",
     "arena_hearing",
     "arena_isaac",
+    "arena_mujoco",
     "arena_training",
     "isaac_utils",
 ]

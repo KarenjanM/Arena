@@ -81,7 +81,7 @@ Lights follow the same pattern. `spawn_lights(lights)` and `remove_lights()` kee
 | `_apply_light` | `(light, level, alive) -> None` | render at `level` in 0..1 with the per-fixture alive mask |
 | `_move_light` | `(light, position, yaw) -> None` | place a frame-anchored light, its direction turned by `yaw` |
 
-A light with `glow` also makes that material of its `owner` entity emit the light's color at `level`: Gazebo recolors the model's `glow_<material>` visual over `/world/default/material_color`, Isaac sets the material's emissive color on the session layer.
+A light with `glow` also makes that material of its `owner` entity emit the light's color at `level`: Gazebo recolors the model's `glow_<material>` visual over `/world/default/material_color`, Isaac sets the material's emissive color on the session layer, MuJoCo sets the emission and color of the placement's own glow materials before each render.
 
 The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 
@@ -138,6 +138,11 @@ default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
+MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
+publishes `/clock` and drains its sensor and control pumps every 20 ms of sim
+time inside the call) and awaits `/clock` the same way. Its pause, unpause
+and namespace cleanup calls are idempotent and are resent every 10 s until
+answered, so a request or reply lost in transit cannot hold an env forever.
 The dummy host adds the delta to its synthetic clock, so `sim:=dummy` runs the
 whole control plane without a physics engine. That is what
 [`tests/ros/`](../../tests/ros/) exercises, the gate math itself is
@@ -244,6 +249,7 @@ controller activation lives inside the robot bring-up unpause window.
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
 | `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
+| `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
 
 Flatland and Unity have stubs (commented out) in `__init__.py`; they are not
 active. The active simulator is selected by `node.conf.Arena.SIM` and
