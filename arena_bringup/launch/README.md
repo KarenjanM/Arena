@@ -59,6 +59,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `auditory.motor.enabled` | bool string | `true` | Robots emit drivetrain audio. |
 | `auditory.motor.model` | `procedural` \| `wav` | `procedural` | Robot motor audio source. |
 | `auditory.motor.trim_db` | float string | `0.0` | Live offset on the motor asset `level_db`, which sets the motor level everywhere (the procedural drivetrain at 1 m/s). |
+| `auditory.motor.structural_share` | float string | `0.2` | Live share of a robot's own drivetrain power at each of its array microphones that arrives structure-borne, incoherent across the microphones. `0` leaves the airborne field from the drive points. |
+| `auditory.motor.drive_points_m` | float list string | `[0.0, 0.1878, 0.0345, 0.0, -0.1878, 0.0345]` | Points the left and right drivetrain of a robot radiate from to its own array, x y z left then right in the array mount frame. |
 | `auditory.listener.id` | string | `` (empty) | Microphone listener id of the listener renderer, the RViz auditory panel switches it at run time. |
 | `auditory.viewport.height_m` | float string | `1.6` | Listening height of the viewport down-projection microphone. |
 | `auditory.array.spec` | `stereo` \| `four_mic` \| `mono` \| path | `stereo`, `four_mic` when `robot.hearing` is `srp` or `seld` | Robot microphone array rendered by `array_renderer`. |

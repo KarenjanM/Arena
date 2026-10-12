@@ -51,7 +51,7 @@ cosmetic.
 `PedSkeletonPlugin` (package `arena_gz_plugins`) is the gz-sim 8 C++ plugin that
 subscribes `arena_peds`, positions each actor via `TrajectoryPose`, and poses its
 skeleton per bone via `BoneTransforms` from the wire `joint_state`, through the
-same bone map as the Isaac provider (`utils/arena_peds_pose/bone_map.json`), so
+same bone map as the Isaac provider (`utils/msgs/arena_people_msgs/bone_map.json`), so
 both simulators render the same articulated gait.  `BoneTransforms` is an Arena
 addition to gz-sim carried by the `gz-sim` overlay in `_meta/repos/gazebo.repos`
 and built by `arena feature gazebo update`.  Without the overlay or a bone map the

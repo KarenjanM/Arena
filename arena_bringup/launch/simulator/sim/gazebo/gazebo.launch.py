@@ -172,10 +172,9 @@ def generate_launch_description():
     )
 
     def _bone_map_path() -> str | None:
-        """Absolute path of arena_peds_pose's installed bone_map.json, None when unresolvable."""
+        """Absolute path of arena_people_msgs' installed bone_map.json, None when unresolvable."""
         try:
-            spec = importlib.util.find_spec('arena_peds_pose')
-            path = os.path.join(next(iter(spec.submodule_search_locations)), 'bone_map.json')
+            path = os.path.join(get_package_share_directory('arena_people_msgs'), 'bone_map.json')
         except Exception as exc:
             print(f'[gazebo.launch] bone_map.json resolution failed: {exc}', file=sys.stderr)
             return None

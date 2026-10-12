@@ -87,6 +87,11 @@ def test_template(name):
     assert all(abs(t.base[i][d] + t.w[i] * (t.frames[t.peak]["angles"][d] - t.frames[0]["angles"][d]) - t.frames[i]["angles"][d]) < 1e-12 for i in (0, t.peak, len(t.frames) - 1) for d in C.arm_dofs(t.side))
 
 
+def test_template_frames_carry_every_contract_joint():
+    t = load_template("point_to_right")
+    assert all(set(C.ROS_JOINT_ORDER) <= set(f["angles"]) for f in t.frames)
+
+
 def test_identity(gen):
     t = gen.template
     clip = gen.point_at(azimuth=np.degrees(gen.tpl_az), elevation=np.degrees(gen.tpl_el))
