@@ -82,7 +82,7 @@ def _elevator(
         position=Position(*position),
         size=list(size),
         door_side=door_side,
-        destination=destination,
+        destinations=[destination] if destination else [],
         activation_distance=activation_distance,
         transition_time=transition_time,
         hold_time=hold_time,
@@ -208,6 +208,29 @@ def test_advance_closing_reverses_on_fresh_trigger():
     _advance_state(r, dt=0.1, now=10.0, discs=())
     assert r.state == _DoorState.OPENING
     assert pytest.approx(r.progress) == 0.5
+
+
+def test_sliding_opening_slides_past_an_agent_against_the_slab():
+    d = _door(start=(2.0, 10.0, 0.0), end=(4.0, 10.0, 0.0))
+    r = _door_runtime(d, kind="sliding")
+    r.state = _DoorState.OPENING
+    r.progress = 0.4
+    r.last_trigger_sim_time = 10.0
+    against_slab = [("robot", (3.5, 9.8), 0.35)]
+    _advance_state(r, dt=0.1, now=10.0, discs=against_slab)
+    assert r.progress == pytest.approx(0.5)
+
+
+def test_sliding_opening_holds_for_an_agent_in_the_wall_pocket():
+    d = _door(start=(2.0, 10.0, 0.0), end=(4.0, 10.0, 0.0))
+    r = _door_runtime(d, kind="sliding")
+    r.state = _DoorState.OPENING
+    r.progress = 0.4
+    r.last_trigger_sim_time = 10.0
+    in_pocket = [("ped", (4.9, 10.0), 0.2)]
+    _advance_state(r, dt=0.1, now=10.0, discs=in_pocket)
+    assert r.progress == pytest.approx(0.4)
+    assert r.state == _DoorState.OPENING
 
 
 def test_advance_teleport_snaps_open_on_fresh():

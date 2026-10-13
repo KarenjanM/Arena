@@ -5,7 +5,7 @@ import typing
 
 import pydantic
 
-from arena_simulation_setup.tree.World import LevelDescription
+from arena_simulation_setup.tree.World import World
 
 from .layout import Diagnostics, GridFrame, Note
 
@@ -59,7 +59,7 @@ class WorldGeneratorImpl(abc.ABC):
     def configure(self, configuration: dict): ...
 
     @abc.abstractmethod
-    def compute(self) -> LevelDescription: ...
+    def compute(self) -> World: ...
 
     def files(self) -> dict[str, bytes]:
         """Auxiliary artifacts packed into the world tar by relative path, none by default."""
@@ -97,7 +97,7 @@ class WorldGenerator:
             raise ValueError(f"Generator {generator} has no implementation")
         return cls.__registry[generator]().Configuration
 
-    def compute(self) -> LevelDescription:
+    def compute(self) -> World:
         return self._active.compute()
 
     def files(self) -> dict[str, bytes]:

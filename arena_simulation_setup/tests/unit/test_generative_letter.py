@@ -11,8 +11,8 @@ from arena_simulation_setup.utils.generative.letter import GLYPHS, SEGMENTS, Wor
 
 def build(text: str, **config) -> tuple[WorldGeneratorLetter, shapely.Polygon | shapely.MultiPolygon]:
     generator = WorldGeneratorLetter({'text': text, **config}, random.Random(0))
-    level = generator.compute()
-    free = shapely.union_all([shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones])
+    level = generator.compute().all_levels[0]
+    free = shapely.union_all([zone.shape() for zone in level.zones])
     return generator, free
 
 

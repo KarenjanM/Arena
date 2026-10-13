@@ -27,6 +27,7 @@ cd ~/arena_ws # replace with your actual workspace path
 source arena
 arena feature isaac install # optional
 arena feature gazebo install # optional
+arena feature flatsim install # optional: 2D simulator without a renderer (sim:=flatsim)
 arena feature training install # optional
 arena feature auditory install # optional: sound simulation (acoustics:=arena)
 arena feature hearing install # optional: robot hearing (robot.hearing)

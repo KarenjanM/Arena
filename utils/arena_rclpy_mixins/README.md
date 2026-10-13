@@ -121,7 +121,8 @@ After a signal or a request, `SIGINT` stays ignored until the process exits.
 `spin_node(node)` is the simpler sync equivalent for non-async nodes, and
 `spin_node(node, executor=create_executor())` runs one on the events executor.
 On `SIGINT`/`SIGTERM` it shuts the executor down from a helper thread, destroys
-the node, then shuts rclpy down. After a signal, `SIGINT` stays ignored.
+the node, then shuts rclpy down. Its own shutdown and the helper's run one at a
+time. After a signal, `SIGINT` stays ignored.
 `spin_context()` is a context manager that suppresses `KeyboardInterrupt` /
 `ExternalShutdownException` and shuts down the executor and rclpy on exit.
 

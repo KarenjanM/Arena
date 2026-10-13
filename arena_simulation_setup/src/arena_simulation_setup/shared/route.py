@@ -15,8 +15,9 @@ from arena_simulation_setup.shared.render import Nouns, noun, render_phase
 if typing.TYPE_CHECKING:
     import shapely
 
+    from arena_simulation_setup.kg import Scene
     from arena_simulation_setup.shared.task import GoToPhase
-    from arena_simulation_setup.tree.World import LevelDescription
+    from arena_simulation_setup.tree.World import Level
 
 Point = tuple[float, float]
 
@@ -53,40 +54,39 @@ class Portal:
         return self.zones[1] if zone == self.zones[0] else self.zones[0]
 
 
-def level_nouns(level: LevelDescription, entity_prefix: str = "") -> dict[str, str]:
+def level_nouns(level: Level, semantics: Scene, entity_prefix: str = "") -> dict[str, str]:
     """Spoken names of a level's zones, doors and static entities: `the` plus the zone description when it is a plain phrase, else the spaced name without `entity_prefix` and trailing indices."""
+    from arena_simulation_setup.tree.World import describe
+
     nouns: dict[str, str] = {}
     for zone in level.zones:
-        nouns[zone.name] = f"the {(zone.description if _SPEAKABLE.fullmatch(zone.description) else zone.name.replace('_', ' ')).lower()}"
-        for named in (*zone.doors, *zone.entities.static):
-            nouns[named.name] = f"the {_INDEX.sub('', named.name.removeprefix(entity_prefix)).replace('_', ' ')}"
+        description = describe(semantics, zone.name)
+        nouns[zone.name] = f"the {(description if _SPEAKABLE.fullmatch(description) else zone.name.replace('_', ' ')).lower()}"
+    for named in (*level.doors, *level.objects):
+        nouns[named.name] = f"the {_INDEX.sub('', named.name.removeprefix(entity_prefix)).replace('_', ' ')}"
     return nouns
 
 
-def zone_shapes(level: LevelDescription) -> dict[str, shapely.Polygon]:
+def zone_shapes(level: Level) -> dict[str, shapely.Polygon]:
     """Floor polygon of every zone, keyed by name."""
+    return {zone.name: zone.shape() for zone in level.zones if len(zone.polygon) >= 3}
+
+
+def portals(level: Level, semantics: Scene) -> list[Portal]:
+    """Every door the semantics connect two zones of the level with, and every unwalled stretch of a shared zone boundary at least `MIN_OPENING_M` long."""
     import shapely
 
-    return {zone.name: shapely.Polygon([(c.x, c.y) for c in zone.corners]) for zone in level.zones if len(zone.corners) >= 3}
-
-
-def portals(level: LevelDescription) -> list[Portal]:
-    """Every door between two zones and every unwalled stretch of a shared zone boundary at least `MIN_OPENING_M` long."""
-    import shapely
+    from arena_simulation_setup.tree.World import connections
 
     shapes = zone_shapes(level)
+    doors = {door.name: door for door in level.doors}
     found: list[Portal] = []
-    solid: list[shapely.LineString] = []
-    for zone in level.zones:
-        for door in zone.doors:
-            line = shapely.LineString([(door.start.x, door.start.y), (door.end.x, door.end.y)])
-            solid.append(line)
-            beyond = [(shape.distance(line.centroid), name) for name, shape in shapes.items() if name != zone.name and shape.distance(line.centroid) < SNAP_M]
-            if beyond:
-                found.append(Portal((zone.name, min(beyond)[1]), line.coords[0], line.coords[1], True))
-        for wall in zone.walls:
-            if (wall.material is None or wall.material.name) and (wall.start.x, wall.start.y) != (wall.end.x, wall.end.y):
-                solid.append(shapely.LineString([(wall.start.x, wall.start.y), (wall.end.x, wall.end.y)]))
+    solid = [shapely.LineString([(door.start.x, door.start.y), (door.end.x, door.end.y)]) for door in level.doors]
+    for a, b, name in connections(semantics):
+        door = doors.get(name)
+        if door is not None and a in shapes and b in shapes:
+            found.append(Portal((a, b), (door.start.x, door.start.y), (door.end.x, door.end.y), True))
+    solid.extend(shapely.LineString([(wall.start.x, wall.start.y), (wall.end.x, wall.end.y)]) for wall in level.all_walls if (wall.material is None or wall.material.name) and (wall.start.x, wall.start.y) != (wall.end.x, wall.end.y))
     blocked = shapely.unary_union(solid).buffer(SNAP_M)
     names = list(shapes)
     for i, a in enumerate(names):
@@ -132,17 +132,19 @@ def crossings(found: typing.Sequence[Portal], start: Point, start_zone: str, goa
     return chain[::-1]
 
 
-def describe_route(level: LevelDescription, start: Point, yaw: float, goal: Point, nouns: Nouns | None = None, found: typing.Sequence[Portal] | None = None) -> str | None:
+def describe_route(level: Level, semantics: Scene, start: Point, yaw: float, goal: Point, nouns: Nouns | None = None, found: typing.Sequence[Portal] | None = None) -> str | None:
     """Turn-by-turn walking directions from `start` facing `yaw` to `goal`, None when either lies outside the zones or they do not connect, `found` being the level's portals when already computed."""
     import shapely
 
+    from arena_simulation_setup.tree.World import contents
+
     shapes = zone_shapes(level)
-    names = {**level_nouns(level), **(nouns or {})}
+    names = {**level_nouns(level, semantics), **(nouns or {})}
     start_zone = _zone_at(shapes, start)
     goal_zone = _zone_at(shapes, goal)
     if start_zone is None or goal_zone is None:
         return None
-    found = portals(level) if found is None else found
+    found = portals(level, semantics) if found is None else found
     chain = crossings(found, start, start_zone, goal, goal_zone)
     if chain is None:
         return None
@@ -162,7 +164,8 @@ def describe_route(level: LevelDescription, start: Point, yaw: float, goal: Poin
 
     distance = math.dist(here, goal)
     stop = "stop"
-    statics = next(z.entities.static for z in level.zones if z.name == goal_zone)
+    members = set(contents(semantics, goal_zone))
+    statics = [entity for entity in level.objects if f"obj:{entity.name}" in members]
     reach = shapely.Point(goal).buffer(LANDMARK_RADIUS_M)
     near = [entity for entity in statics if entity.name.islower() and reach.covers(shapely.Point(entity.pose.position.x, entity.pose.position.y))]
     if near:
@@ -177,13 +180,13 @@ def describe_route(level: LevelDescription, start: Point, yaw: float, goal: Poin
     return " ".join(sentence[0].upper() + sentence[1:] for sentence in sentences)
 
 
-def instruct(phase: GoToPhase, level: LevelDescription, here: tuple[float, float, float] | None, wording: str = "", entity_prefix: str = "", found: typing.Sequence[Portal] | None = None) -> dict[str, str]:
+def instruct(phase: GoToPhase, level: Level, semantics: Scene, here: tuple[float, float, float] | None, wording: str = "", entity_prefix: str = "", found: typing.Sequence[Portal] | None = None) -> dict[str, str]:
     """`source` and `text` of a goto's instruction from pose `here`: authored text, else walking directions (`route`) or the named target (`goal`) per `wording`, unset meaning route for a bare pose, else the goal coordinates."""
     if phase.text:
         return {"source": "authored", "text": phase.text}
-    nouns = level_nouns(level, entity_prefix)
+    nouns = level_nouns(level, semantics, entity_prefix)
     if here is not None and phase.pose is not None and (wording == "route" or (phase.target is None and wording != "goal")):
-        route = describe_route(level, here[:2], here[2], (phase.pose.position.x, phase.pose.position.y), nouns, found)
+        route = describe_route(level, semantics, here[:2], here[2], (phase.pose.position.x, phase.pose.position.y), nouns, found)
         if route is not None:
             return {"source": "route", "text": route}
     return {"source": "coordinates" if phase.target is None else "target", "text": render_phase(phase, nouns)}

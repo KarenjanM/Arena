@@ -10,7 +10,7 @@ try:
     import shapely
     from arena_rclpy_mixins.Time import Time
     from arena_simulation_setup.shared.task import GoToPhase
-    from arena_simulation_setup.tree.World.World import Level, LevelDescription, WorldDescription
+    from arena_simulation_setup.tree.World import Level, World, Zone
     from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
     from task_generator.constants.rng import EpisodeRng
@@ -34,7 +34,7 @@ def _manager(blocked: tuple[float, float, float, float] | None, seed: int = 0) -
     world_manager._map.level_origins = {}
     world_manager._multi_map = None
     world_manager._zone_masks = {}
-    world_manager._world = WorldDescription(levels={"0": Level(zones=[LevelDescription.Zone(name="room", corners=ROOM)])})
+    world_manager._world = World(levels={"0": Level(id="0", zones=[Zone(name="room", polygon=ROOM)])})
     rng = EpisodeRng()
     rng.reseed(seed)
     node = SimpleNamespace(_world_manager=world_manager, conf=SimpleNamespace(General=SimpleNamespace(RNG=rng)))

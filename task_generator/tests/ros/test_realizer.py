@@ -201,18 +201,50 @@ def test_realize_elevator_no_destination(realizer):
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
 
-    e = Elevator(position=Position(0, 0), destination="", name="elev2", extra={})
+    e = Elevator(position=Position(0, 0), name="elev2", extra={})
     result = realizer.realize(e)
-    assert result.destination == ""
+    assert (result.destinations, result.destination) == ([], "")
 
 
-def test_realize_elevator_with_destination_prefixed(realizer):
+def test_realize_elevator_destination_names_the_cabin_on_its_level():
     from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.utils.geometry import Position
 
-    e = Elevator(position=Position(0, 0), destination="floor2", name="elev3", extra={})
-    result = realizer.realize(e)
-    assert "floor2" in result.destination
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(prefix="env_0"), level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    realizer.reset_elevator_levels({"lift_0": "0", "lift_1": "1"})
+    result = realizer.realize(Elevator(position=Position(0, 0), name="lift_0", destinations=["lift_1"]), "0")
+    assert result.name == realizer.prefix("lift_0", "0")
+    assert result.destinations == [realizer.prefix("lift_1", "1")]
+    assert result.destination == realizer.prefix("lift_1", "1")
+
+
+def test_realize_elevator_levels_reset_drops_the_prior_world():
+    from arena_simulation_setup.shared import Elevator
+    from arena_simulation_setup.utils.geometry import Position
+
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(prefix="env_0"))
+    realizer.reset_elevator_levels({"lift_1": "1"})
+    realizer.reset_elevator_levels({})
+    result = realizer.realize(Elevator(position=Position(0, 0), name="lift_0", destinations=["lift_1"]))
+    assert result.destinations == [realizer.prefix("lift_1")]
+
+
+def test_realize_dynamic_obstacle_waypoints_follow_their_own_level():
+    from arena_simulation_setup.shared import DynamicObstacle
+    from arena_simulation_setup.shared.entities import Waypoint
+    from arena_simulation_setup.utils.geometry import Pose, Position
+
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"1": (30.0, 0.0)})
+    human = DynamicObstacle(name="walker", pose=Pose(Position(0, 0)), model="human", waypoints=[Waypoint(x=1.0, y=0.0, level="1"), Waypoint(x=1.0, y=0.0)])
+    result = realizer.realize(human, "1")
+    assert (result.pose.position.x, result.pose.position.y) == (31.0, 2.0)
+    assert [(w.x, w.y) for w in result.waypoints] == [(32.0, 2.0), (2.0, 2.0)]
 
 
 def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
@@ -288,14 +320,24 @@ def test_realize_signal_prefixes_name(realizer):
 
 def test_realize_light_translates_position_and_prefixes_name(realizer):
     from arena_simulation_setup.shared import Light
-    from arena_simulation_setup.utils.geometry import Position
+    from arena_simulation_setup.utils.geometry import Pose, Position
 
-    light = Light(name="exit_strip", fixture="tube", position=Position(7.8, 3.0, 2.2), lumens=300.0, light_on="blackout")
+    light = Light(name="exit_strip", fixture="tube", pose=Pose(position=Position(7.8, 3.0, 2.2)), lumens=300.0, light_on="blackout")
     result = realizer.realize(light)
     assert "exit_strip" in result.name
     assert "world" in result.name
     assert (result.position.x, result.position.y, result.position.z) == (8.8, 5.0, 2.2)
     assert result.light_on == "blackout"
+
+
+def test_realize_light_twice_from_the_same_source(realizer):
+    from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.geometry import Pose, Position
+
+    light = Light(name="exit_strip", fixture="tube", pose=Pose(position=Position(7.8, 3.0, 2.2)), lumens=300.0)
+    first = realizer.realize(light)
+    second = realizer.realize(light)
+    assert (first.name, first.position) == (second.name, second.position)
 
 
 def test_realize_light_rig_translates_every_fixture(realizer):
@@ -306,7 +348,7 @@ def test_realize_light_rig_translates_every_fixture(realizer):
     result = realizer.realize(rig)
     assert [(p.x, p.y, p.z) for p in result.fixtures] == [(2.0, 3.0, 2.58), (4.4, 3.0, 2.58)]
     assert result.fixture_ranks == [0.2, 0.7]
-    assert result.position is None
+    assert result.pose is None
 
 
 def test_realize_light_prefixes_its_frame_once(realizer):
@@ -320,10 +362,13 @@ def test_realize_light_prefixes_its_frame_once(realizer):
 
 def test_realize_ambient_light_keeps_no_position(realizer):
     from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.geometry import Orientation, Pose
 
     result = realizer.realize(Light(name="ambient", fixture="dome", lux=5.0))
-    assert result.position is None
+    assert result.pose is None
     assert result.fixtures == []
+    aim = Pose(orientation=Orientation.from_euler((0.0, -0.5, 0.0)))
+    assert realizer.realize(Light(name="sun", fixture="sun", lux=400.0, pose=aim)).pose == aim
 
 
 def test_realize_polygon_translates_corners(realizer):

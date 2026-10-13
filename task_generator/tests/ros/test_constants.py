@@ -68,6 +68,7 @@ def test_sim_simulator_values_stable():
     from arena_runtime.constants import SimSimulator
 
     assert SimSimulator.DUMMY.value == "dummy"
+    assert SimSimulator.FLATSIM.value == "flatsim"
     assert SimSimulator.FLATLAND.value == "flatland"
     assert SimSimulator.GAZEBO.value == "gazebo"
     assert SimSimulator.UNITY.value == "unity"

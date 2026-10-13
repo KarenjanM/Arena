@@ -3,9 +3,9 @@
 import attrs
 import shapely
 
-from arena_simulation_setup.tree.World.World import LevelDescription
+from arena_simulation_setup.tree.World import Level, World, Zone
 
-from .utils import to_corners, to_walls
+from .utils import to_corners, to_walls, world_of
 
 Point = tuple[float, float]
 
@@ -111,10 +111,10 @@ def _simple(geometry: shapely.Polygon | shapely.MultiPolygon) -> list[shapely.Po
     return simple
 
 
-def diagnostics_of(level: LevelDescription) -> Diagnostics:
+def diagnostics_of(level: Level) -> Diagnostics:
     """Topology of a finished level. Reads the zones, so it holds for generators built by hand
     as well as for those compiled from a layout."""
-    rings = [shapely.Polygon(zone.corners) for zone in level.zones if len(zone.corners) >= 4]
+    rings = [zone.shape() for zone in level.zones if len(zone.polygon) >= 3]
     parts = _polygons(shapely.union_all(rings)) if rings else []
     minx, miny, maxx, maxy = shapely.union_all(parts).bounds if parts else (0.0, 0.0, 0.0, 0.0)
     return Diagnostics(
@@ -125,8 +125,8 @@ def diagnostics_of(level: LevelDescription) -> Diagnostics:
     )
 
 
-def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[LevelDescription, Diagnostics]:
-    """Turn a layout into a LevelDescription plus what the caller should be told about it."""
+def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[World, Diagnostics]:
+    """Turn a layout into a one-level World plus what the caller should be told about it."""
     geometry = layout.geometry()
     parts = _polygons(geometry)
 
@@ -138,7 +138,9 @@ def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[LevelDescript
     claims = [region.polygon for region in layout.regions]
     neighbours = shapely.STRtree(claims) if claims else None
 
-    zones: list[LevelDescription.Zone] = []
+    roof: dict = {} if ceiling else {'ceiling': None}
+    zones: list[Zone] = []
+    descriptions: dict[str, str] = {}
     for order, region in enumerate(layout.regions):
         piece = region.polygon.intersection(geometry)
         earlier = [taken for taken in neighbours.query(region.polygon) if taken < order]
@@ -146,22 +148,15 @@ def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[LevelDescript
             piece = piece.difference(shapely.union_all([claims[taken] for taken in earlier]))
         for index, part in enumerate(_simple(piece)):
             suffix = '' if index == 0 else f'_{index}'
-            fields = {
-                'name': f'{region.name}{suffix}',
-                'description': region.description,
-                'corners': to_corners(part),
-                'ceiling': ceiling,
-            }
+            fields: dict = {'name': f'{region.name}{suffix}', 'polygon': to_corners(part), **roof}
             if region.material is not None:
-                fields['material'] = region.material
-            zones.append(LevelDescription.Zone(**fields))
+                fields['floor'] = region.material
+            zones.append(Zone(**fields))
+            descriptions[zones[-1].name] = region.description
 
     leftover = geometry.difference(shapely.union_all(claims)) if claims else geometry
     for index, part in enumerate(_simple(leftover)):
-        zones.append(LevelDescription.Zone(name=f'area_{index}', corners=to_corners(part), ceiling=ceiling))
+        zones.append(Zone(name=f'area_{index}', polygon=to_corners(part), **roof))
 
-    if zones:
-        zones[0].walls = to_walls(boundary)
-
-    level = LevelDescription(zones=zones)
-    return level, diagnostics_of(level)
+    level = Level(zones=zones, walls=to_walls(boundary) if zones else [])
+    return world_of(level, descriptions), diagnostics_of(level)

@@ -1,10 +1,11 @@
+format: arena-scenario/2
 robots:
-  - start: [1.0, 1.0, 0.0]
-    phases:
-      - {gesture: wave}
-      - {goto: [3.0, 1.0, 0.0]}
-      - {gesture: wave}
-      - {goto: [3.0, 3.0, 1.57]}
-      - {gesture: random}
-      - {goto: [1.0, 1.0, 3.14]}
-      - {gesture: wave}
+- start: [1.0, 1.0, 0.0]
+  phases:
+  - {gesture: wave}
+  - {goto: [3.0, 1.0, 0.0]}
+  - {gesture: wave}
+  - {goto: [3.0, 3.0, 1.57]}
+  - {gesture: random}
+  - {goto: [1.0, 1.0, 3.14]}
+  - {gesture: wave}

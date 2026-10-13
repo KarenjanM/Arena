@@ -92,7 +92,7 @@ def _values() -> tuple[dict[str, list[str]], list[str]]:
     import task_generator.tasks.robots
     from arena_robots.Robot import RobotIdentifier
     from arena_runtime import sim as runtime_sim
-    from arena_simulation_setup.tree.World.World import WorldIdentifier
+    from arena_simulation_setup.tree.World import WorldIdentifier
     from task_generator.simulators import human as human_sim
     from task_generator.tasks import registry
 

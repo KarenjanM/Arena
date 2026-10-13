@@ -30,3 +30,34 @@ def test_sample_params_overrides_speed_and_radius_of_the_resolved_type() -> None
     assert (params.desired_velocity, params.agent_radius) == (0.9, 0.325)
     assert params.locomotion.active and params.interaction_class == "wheelchair"
     assert ArenaHumanDynamicObstacle(agent_type="ghost").sample_params(np.random.default_rng(3)) is None
+
+
+def test_scenario_human_agent_block_and_waypoint_mode_drive_the_spawn(tmp_path: Path) -> None:
+    from arena_humansim_msgs.msg import Waypoints as WaypointsMsg
+
+    from task_generator.shared import DynamicObstacle
+
+    human = DynamicObstacle.parse(
+        {
+            "name": "nurse_1",
+            "model": "arenian",
+            "pose": [1.0, 2.0, 0.0],
+            "waypoints": [[3.0, 4.0]],
+            "waypoint_mode": "once",
+            "agent": {"agent_type": "./doctor.yaml", "desired_velocity": {"min": 0.6, "max": 0.9}, "radius": 0.3},
+        }
+    )
+    human.included_from = tmp_path
+    parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(human)
+    assert parsed is not None
+    assert parsed.agent_type == str((tmp_path / "doctor.yaml").resolve())
+    assert (parsed.desired_velocity_min, parsed.desired_velocity_max, parsed.agent_radius) == (0.6, 0.9, 0.3)
+    assert parsed.waypoint_mode == WaypointsMsg.MODE_ONCE
+    assert [(waypoint.x, waypoint.y) for waypoint in parsed._waypoints] == [(3.0, 4.0)]
+
+
+def test_scenario_human_without_agent_block_is_not_an_arena_humansim_agent() -> None:
+    from task_generator.shared import DynamicObstacle
+
+    human = DynamicObstacle.parse({"name": "ghost", "model": "arenian", "pose": [0.0, 0.0, 0.0]})
+    assert ArenaHumanDynamicObstacle.from_dynamic_obstacle(human) is None

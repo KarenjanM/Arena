@@ -7,7 +7,9 @@ import pydantic
 import shapely
 import yaml
 
-from . import LevelDescription, PedestrianConfiguration, WithPedestrians, alphabet
+from arena_simulation_setup.tree.World import World
+
+from . import PedestrianConfiguration, WithPedestrians, alphabet
 from .layout import Area, GridFrame, Layout, Note, Region, compile_layout
 
 DEFAULT_SKETCH = '┌─┐\n│ │\n└─┘'
@@ -270,7 +272,7 @@ class WorldGeneratorSketch(WithPedestrians):
             regions.append(Region(name=f'corridor_{start + len(regions)}', polygon=shapely.union_all(boxes).envelope))
         return regions
 
-    def compute(self) -> LevelDescription:
+    def compute(self) -> World:
         directives, rows = split_sketch(self.config.sketch)
         if directives.cell is not None:
             self.config.cell = directives.cell
@@ -325,6 +327,6 @@ class WorldGeneratorSketch(WithPedestrians):
         for name, polygons in named.items():
             regions.insert(0, Region(name=name, polygon=shapely.union_all(polygons), material=materials[name]))
 
-        level, diagnostics = compile_layout(Layout(areas=areas, regions=regions))
+        world, diagnostics = compile_layout(Layout(areas=areas, regions=regions))
         self.diagnostics = diagnostics
-        return level
+        return world

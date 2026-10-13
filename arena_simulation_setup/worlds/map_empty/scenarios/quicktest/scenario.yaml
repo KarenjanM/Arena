@@ -1,0 +1,5 @@
+format: arena-scenario/2
+robots:
+- start: [5.0, 5.0, 0.0]
+  phases:
+  - {goto: [10.0, 5.0, 0.0]}

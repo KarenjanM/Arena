@@ -1,0 +1,30 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - name: destination
+    polygon: [[0.0, 0.0], [15.0, 0.0], [15.0, 23.0], [0.0, 23.0]]
+    semantics:
+    - {predicate: restricted, value: true}
+  - name: entrance
+    polygon: [[15.0, 0.0], [30.0, 0.0], [30.0, 23.0], [15.0, 23.0]]
+    semantics:
+    - {predicate: quiet, value: true}
+  walls:
+  - {path: [[0.0, 0.0], [15.0, 0.0]]}
+  - {path: [[15.0, 23.0], [0.0, 23.0], [0.0, 0.0]]}
+  - {path: [[15.0, 0.0], [15.0, 2.0]]}
+  - {path: [[15.0, 5.0], [15.0, 23.0]]}
+  - {path: [[15.0, 0.0], [30.0, 0.0]], kind: painting}
+  - {path: [[15.0, 0.0], [30.0, 0.0]], kind: painting}
+  - {path: [[30.0, 0.0], [30.0, 23.0], [15.0, 23.0]]}
+  doors:
+  - {name: door, span: [[15.0, 2.0], [15.0, 5.0]]}
+  objects:
+  - {name: vending_machine, pose: [7.5, 11.5], model: vending_machine}
+  - {name: nurse_station, pose: [15.0, 11.5, -1.57], model: Hospital/Reception_Counter}
+  - {name: chair1, pose: [20.5, 1.0, 1.57], model: Hospital/Chair}
+  - {name: chair2, pose: [21.5, 1.0, 1.57], model: Hospital/Chair}
+  - {name: chair3, pose: [22.5, 1.0, 1.57], model: Hospital/Chair}
+  - {name: chair4, pose: [23.5, 1.0, 1.57], model: Hospital/Chair}
+  - {name: chair5, pose: [24.5, 1.0, 1.57], model: Hospital/Chair}

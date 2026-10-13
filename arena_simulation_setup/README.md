@@ -28,7 +28,7 @@ pedestrian agents, and environment templates through the types defined here.
 | `model_staging` | `model_staging <install_dir>` | Creates symlinks in `<install_dir>` for all known robot models and writes a `deps` file |
 | `nav_at_r` | `nav_at_r <world name or dir> [--robot NAME\|DIR \| --radius M] [--walls-only] [--start X,Y] [--image PNG] [--json]` | Prints the NAV@r reachability of a world per level for a footprint radius: value, traversable components, largest share and cut-off zones. See [AUTHORING.md](AUTHORING.md#reachability-navr). |
 | `preload_world` | `preload_world [<world_name>] [--no-scenarios] [--dry-run] [--sounds]` | Resolves every identifier the world and its scenarios reference, downloading what is missing. `--dry-run` reports without transferring. `--sounds` adds the default sound of every sound kind, alone or with a world, and `arena launch` passes it under `acoustics:=arena`. Reached from the CLI as `arena preload`. |
-| `touch_world` | `touch_world <world_name> [--all] [--resolution N] [--assets color] ...` | Renders a preview `map.png` + `map.yaml` into the world dir for inspection; `--all` regenerates canonical per-level `world.yaml` + maps. The runtime renders its own map in-process, so this is an authoring aid, not required after editing. |
+| `touch_world` | `touch_world <world_name> [--all \| --migrate] [--resolution N] [--assets color] ...` | Renders a preview `map.png` + `map.yaml` into the world dir for inspection; `--all` re-saves `world.yaml` as canonical format 2 with `kg.yaml` and `map/<level id>.png`, `--migrate` rewrites a format 1 world in place. The runtime renders its own map in-process, so this is an authoring aid, not required after editing. |
 
 Scripts live under [scripts/](scripts). To fetch a single asset by identifier, use `arena asset pull <kind> <name>`.
 
@@ -51,7 +51,7 @@ cosmetic.
 `PedSkeletonPlugin` (package `arena_gz_plugins`) is the gz-sim 8 C++ plugin that
 subscribes `arena_peds`, positions each actor via `TrajectoryPose`, and poses its
 skeleton per bone via `BoneTransforms` from the wire `joint_state`, through the
-same bone map as the Isaac provider (`utils/arena_peds_pose/bone_map.json`), so
+same bone map as the Isaac provider (`utils/msgs/arena_people_msgs/bone_map.json`), so
 both simulators render the same articulated gait.  `BoneTransforms` is an Arena
 addition to gz-sim carried by the `gz-sim` overlay in `_meta/repos/gazebo.repos`
 and built by `arena feature gazebo update`.  Without the overlay or a bone map the
@@ -64,10 +64,10 @@ pulled into the workspace via `_meta/repos/gazebo.repos`.
 
 Key `Identifier` types from `arena_simulation_setup.tree`:
 
-- **`WorldIdentifier`** ([tree/World/World.py](src/arena_simulation_setup/tree/World/World.py)):
+- **`WorldIdentifier`** ([tree/World/view.py](src/arena_simulation_setup/tree/World/view.py)):
   resolves a world name to `ASS_DIR / 'worlds' / <name>`; `.load()` returns
-  a `World` view that exposes `world.load()` → `WorldDescription`,
-  `world.map`, and `world.scenario`.
+  a `WorldView` that exposes `view.load()` (the `World`), `view.map_yaml(level_id)`
+  and `view.scenario`.
 - **`ObjectIdentifier`** ([tree/assets/Object.py](src/arena_simulation_setup/tree/assets/Object.py)):
   resolves `<domain>/Object/<name>` to a `ModelWrapper` (SDF + USD).
 - **`HumanIdentifier`** ([tree/assets/Human.py](src/arena_simulation_setup/tree/assets/Human.py)):

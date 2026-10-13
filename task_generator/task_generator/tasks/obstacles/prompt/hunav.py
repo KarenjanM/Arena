@@ -20,8 +20,10 @@ from task_generator.utils.gpt import genai
 os.environ["PYGLET_HEADLESS"] = "true"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_simulation_setup.tree.World import LevelDescription, WorldIdentifier
-from arena_simulation_setup.utils.cattrs import converter
+from arena_simulation_setup.kg import Scene
+from arena_simulation_setup.shared.entities import WAYPOINT_MODES
+from arena_simulation_setup.tree.World import Level, WorldIdentifier, describe, zones_of
+from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, Scenario, parse_scenario
 from arena_text_crowd.converters.arena_world_to_text_crowd_scenario import (
     arena_world_to_text_crowd_scenario,
 )
@@ -36,6 +38,7 @@ from arena_text_crowd.crowd_generation_pipeline.velocity_field_generation.veloci
 )
 from hunav_msgs.srv import SetArenaWorldBounds, SetVelocityField
 
+from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
 from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
 from task_generator.tasks.obstacles import (
     DynamicObstacle,
@@ -62,12 +65,6 @@ from .prompt_utils import (
 )
 
 DEBUG: bool = os.environ.get("ARENA_DEBUG", "0").lower() in ("1", "true")
-
-
-@attrs.define()
-class _ParsedConfig:
-    static: list[Obstacle]
-    dynamic: list[DynamicObstacle]
 
 
 class GenerationMode(Enum):
@@ -99,42 +96,62 @@ class TM_Prompt(TM_Obstacles):
 
     _config: PromptConfig
 
-    def preprocess_world_description(self, world_description: LevelDescription) -> str:
-        """
-        Preprocesses the floor description, keeps corners and walls only and converts them to 2D format.
+    def preprocess_world_description(self, level: Level, semantics: Scene) -> str:
+        """The compacted level as JSON for the LLM: zones with corners, bordering walls, description and contained entities, then the entities outside every zone."""
 
-        Args:
-            world_description : LevelDescription
-                The level description to preprocess.
-
-        Returns:
-            parsed : str
-                The preprocessed JSON formatted str world description.
-        """
-        parsed = {}
-
-        parsed["zones"] = []
-        for zone in world_description.zones:
-            parsed_zone = {
-                "name": zone.name,
-                "corners": [[corner.x, corner.y] for corner in zone.corners],
-                "walls": [[[wall.start.x, wall.start.y], [wall.end.x, wall.end.y]] for wall in zone.walls],
-                "entities": [
-                    {
-                        "name": entity.name,
-                        "model": entity.model.serialize(),
-                        "pose": [
-                            entity.pose.position.x,
-                            entity.pose.position.y,
-                            math.degrees(entity.pose.orientation.to_yaw()),  # I use degree for yaw for now (look at `context.py``)
-                        ],
-                    }
-                    for entity in zone.entities.static
+        def entity(obstacle: Obstacle) -> dict:
+            return {
+                "name": obstacle.name,
+                "model": obstacle.model.serialize(),
+                "pose": [
+                    obstacle.pose.position.x,
+                    obstacle.pose.position.y,
+                    math.degrees(obstacle.pose.orientation.to_yaw()),  # I use degree for yaw for now (look at `context.py``)
                 ],
             }
+
+        zone_walls: dict[str, list] = {zone.name: [] for zone in level.zones}
+        for wall in level.all_walls:
+            for zone in level.adjacent_zones(wall.start, wall.end):
+                zone_walls[zone.name].append([[wall.start.x, wall.start.y], [wall.end.x, wall.end.y]])
+
+        zone_entities: dict[str, list[dict]] = {zone.name: [] for zone in level.zones}
+        unzoned: list[dict] = []
+        for obstacle in level.objects:
+            rooms = [name for name in zones_of(semantics, f"obj:{obstacle.name.removeprefix(WORLD_ENTITY_PREFIX)}") if name in zone_entities]
+            for room in rooms:
+                zone_entities[room].append(entity(obstacle))
+            if not rooms:
+                unzoned.append(entity(obstacle))
+
+        parsed: dict = {"zones": []}
+        for zone in level.zones:
+            parsed_zone = {
+                "name": zone.name,
+                "corners": [[corner.x, corner.y] for corner in zone.polygon],
+                "walls": zone_walls[zone.name],
+                "entities": zone_entities[zone.name],
+            }
+            if description := describe(semantics, zone.name):
+                parsed_zone["description"] = description
             parsed["zones"].append(parsed_zone)
+        parsed["entities"] = unzoned
 
         return json.dumps(parsed)
+
+    @staticmethod
+    def _arena_human(raw: dict) -> dict:
+        """A format 2 human from an LLM agent entry, the keys the human schema lacks kept for HuNav."""
+        agent = dict(raw)
+        if "pos" in agent:
+            agent["pose"] = agent.pop("pos")
+        human = {key: agent.pop(key) for key in ("name", "model", "pose", "waypoints", "velocity") if key in agent}
+        mode = str(agent.pop("waypoint_mode", "repeat")).lower()
+        if mode in WAYPOINT_MODES:
+            human["waypoint_mode"] = mode
+        if agent:
+            human["hunav"] = agent
+        return human
 
     def llm_bt_output_to_config(
         self,
@@ -144,7 +161,7 @@ class TM_Prompt(TM_Obstacles):
         crowd_pedestrians: None | list[dict],
     ) -> dict:
         if generation_mode == GenerationMode.ARENA.value:
-            return llm_output
+            return {"format": SCENARIO_FORMAT, "humans": [self._arena_human(agent) for agent in (llm_output.get("obstacles") or {}).get("dynamic") or []]}
 
         if generation_mode == GenerationMode.CROWDED_BT.value and crowd_pedestrians is not None:  # TODO: Use scheme/class instead of Dict
             for ped in crowd_pedestrians:
@@ -168,17 +185,18 @@ class TM_Prompt(TM_Obstacles):
                     }
                 )
         try:
-            config = {"obstacles": {"static": [], "dynamic": []}}
+            humans: list[dict] = []
+            config = {"format": SCENARIO_FORMAT, "humans": humans}
 
             parser = Parser(llm_output)
             parser.parse()
             for hunav_agent in parser.agents.values():
                 hunav_config = {
-                    "id": hunav_agent.id,
                     "name": hunav_agent.name,
-                    "pos": hunav_agent.pos,
+                    "pose": hunav_agent.pos,
                     "model": hunav_agent.model,
                     "waypoints": hunav_agent.waypoints,
+                    "hunav": {"id": hunav_agent.id},
                 }
 
                 behavior_tree_xml = hunav_agent.to_xml()
@@ -194,14 +212,14 @@ class TM_Prompt(TM_Obstacles):
                     ).decode("utf-8")
                 )
 
-                hunav_config.update({"behavior_tree": tmp_xml_file.name})
+                hunav_config["hunav"]["behavior_tree"] = tmp_xml_file.name
 
-                config["obstacles"]["dynamic"].append(hunav_config)
+                humans.append(hunav_config)
 
         except Exception as e:
             self._logger.error(f"Failed to parse Behavior tree from LLM response: {e}")
             self._logger.error("Returning empty config!")
-            config = {}
+            config = {"format": SCENARIO_FORMAT}
 
         return config
 
@@ -243,10 +261,10 @@ class TM_Prompt(TM_Obstacles):
         world = self._ctx.world_manager.world_compacted()
         for zones in world.zones:
             x_min, y_min, x_max, y_max = (
-                min(x_min, *(corner.x for corner in zones.corners)),
-                min(y_min, *(corner.y for corner in zones.corners)),
-                max(x_max, *(corner.x for corner in zones.corners)),
-                max(y_max, *(corner.y for corner in zones.corners)),
+                min(x_min, *(corner.x for corner in zones.polygon)),
+                min(y_min, *(corner.y for corner in zones.polygon)),
+                max(x_max, *(corner.x for corner in zones.polygon)),
+                max(y_max, *(corner.y for corner in zones.polygon)),
             )
         arena_world_bounds = [x_min, y_min, x_max, y_max]
 
@@ -264,7 +282,8 @@ class TM_Prompt(TM_Obstacles):
         return response, x_min, y_min, x_max, y_max
 
     async def _prompt_to_config(self, prompt: str, top_p: float, generation_mode: str, local: bool = False) -> dict:
-        world_info = self.preprocess_world_description(self._ctx.world_manager.world_compacted())
+        world = self._ctx.world_manager.world
+        world_info = self.preprocess_world_description(self._ctx.world_manager.world_compacted(), world.kg if world.kg is not None else Scene())
 
         messages = []
         crowd_pedestrians = None
@@ -504,43 +523,26 @@ class TM_Prompt(TM_Obstacles):
 
         return config
 
-    async def _parse_prompt(self, prompt: str, top_p: float, generation_mode: str) -> _ParsedConfig:
+    async def _parse_prompt(self, prompt: str, top_p: float, generation_mode: str) -> Scenario:
         """
         Parses the prompt to generate obstacles config.
 
         Returns:
-            _ParsedConfig: Parsed configuration containing static and dynamic obstacles.
+            Scenario: Parsed scenario holding the generated humans.
         """
         assert GenerationMode.has_value(generation_mode)
         config = await self._prompt_to_config(prompt, top_p, generation_mode)
 
-        static_obstacles: list[Obstacle]
-        dynamic_obstacles: list[DynamicObstacle]
-
-        static_obstacles = [
-            # Obstacle.parse(obs)
-            # for obs
-            # in itertools.chain(
-            #     config.get("obstacles", {}).get("static", []),
-            #     config.get("obstacles", {}).get("interactive", []),
-            # )
-            # This causes bug so temporarily disabled
-        ]
-
-        dynamic_obstacles = [obs for obs in config.get("obstacles", {}).get("dynamic", [])]
-
-        result = converter.structure(dict(static=static_obstacles, dynamic=dynamic_obstacles), _ParsedConfig)
-
-        return result
+        return parse_scenario(config)
 
     async def reset(self, *, seed: int) -> tuple[list[Obstacle], list[DynamicObstacle]]:
-        parsed_config = await self._parse_prompt(
+        scenario = await self._parse_prompt(
             self._config.user_prompt.value,
             self._config.top_p.value,
             self._config.generation_mode.value,
         )
 
-        return parsed_config.static, parsed_config.dynamic
+        return scenario.objects, scenario.humans
 
     def __init__(self, **kwargs: object) -> None:
         TM_Obstacles.__init__(self, **kwargs)

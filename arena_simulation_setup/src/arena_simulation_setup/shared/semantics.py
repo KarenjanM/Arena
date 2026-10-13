@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import typing
 
 import attrs
@@ -99,8 +100,28 @@ _PRESETS: dict[str, list[dict]] = {
 }
 
 
-def parse_semantics(value: list) -> list[SemanticCfg]:
+class SemanticList(list):
+    """Expanded SemanticCfgs that keep the authored items they came from in `source`."""
+
+    source: list
+
+    def __init__(self, items: typing.Iterable[SemanticCfg] = (), source: list | None = None) -> None:
+        super().__init__(items)
+        self.source = list(self) if source is None else source
+
+
+def authored_semantics(value: list) -> list:
+    """The items a semantics list was written as, presets unexpanded."""
+    if isinstance(value, SemanticList):
+        return [item.serialize() if isinstance(item, SemanticCfg) else copy.deepcopy(item) for item in value.source]
+    return [item.serialize() for item in value]
+
+
+def parse_semantics(value: list) -> SemanticList:
     """attrs converter: expand presets, build SemanticCfgs, reject reserved binding/trigger."""
+    if isinstance(value, SemanticList):
+        return value
+    source = copy.deepcopy(list(value))
     result: list[SemanticCfg] = []
     for item in value:
         if isinstance(item, SemanticCfg):
@@ -129,7 +150,7 @@ def parse_semantics(value: list) -> list[SemanticCfg]:
                 result.append(SemanticCfg.parse(merged))
         else:
             result.append(SemanticCfg.parse(item))
-    return result
+    return SemanticList(result, source)
 
 
 converter.register_structure_hook_func(

@@ -1,0 +1,7 @@
+format: arena-scenario/2
+robots:
+- start: [10.0, 2.5, -1.5708]
+  phases:
+  - {goto: [10.0, 3.0, 1.5708]}
+  level: '0'
+  goal_level: '1'

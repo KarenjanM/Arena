@@ -69,10 +69,16 @@ def spin_context(
 
 
 @contextlib.contextmanager
-def _shutdown_executor_on_signal(executor: rclpy.executors.Executor) -> Iterator[None]:
-    """Route SIGINT and SIGTERM to executor.shutdown() from a helper thread, and ignore SIGINT once one arrived."""
+def _shutdown_executor_on_signal(executor: rclpy.executors.Executor) -> Iterator[Callable[[], None]]:
+    """Route SIGINT and SIGTERM to executor.shutdown() from a helper thread, ignore SIGINT once one arrived, and yield a shutdown serialized with the helper's."""
+    lock = threading.Lock()
+
+    def _shutdown() -> None:
+        with lock:
+            executor.shutdown()
+
     if threading.current_thread() is not threading.main_thread():
-        yield
+        yield _shutdown
         return
     rclpy.signals.uninstall_signal_handlers()
     previous = {sig: signal.signal(sig, lambda _signum, _frame: None) for sig in (signal.SIGINT, signal.SIGTERM)}
@@ -85,12 +91,12 @@ def _shutdown_executor_on_signal(executor: rclpy.executors.Executor) -> Iterator
         while (data := reader.recv(1)) != b"\0":
             if data[0] in (signal.SIGINT, signal.SIGTERM):
                 signalled.set()
-                executor.shutdown()
+                _shutdown()
 
     watcher = threading.Thread(target=_watch, name="spin_signal_watch", daemon=True)
     watcher.start()
     try:
-        yield
+        yield _shutdown
     finally:
         signal.set_wakeup_fd(previous_fd)
         writer.send(b"\0")
@@ -106,13 +112,13 @@ def spin_node(node: rclpy.node.Node, **kwargs: object) -> None:
     executor = kwargs.get("executor")
     if executor is None:
         executor = rclpy.get_global_executor()
-    with _shutdown_executor_on_signal(executor), spin_context():
+    with _shutdown_executor_on_signal(executor) as shutdown, spin_context():
         try:
             executor.add_node(node)
             executor.spin()
         finally:
             with contextlib.suppress(KeyboardInterrupt):
-                executor.shutdown()
+                shutdown()
                 executor.remove_node(node)
                 node.destroy_node()
 

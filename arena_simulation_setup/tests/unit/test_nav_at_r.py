@@ -3,73 +3,47 @@ from __future__ import annotations
 import json
 
 import pytest
-from PIL import Image
 import yaml
+from PIL import Image
 
 from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS, SPAWN_CLEARANCE, main, nav_at_r, resolve_world, robot_radius
-from arena_simulation_setup.tree.World.World import MultiLevelWorldView
+from arena_simulation_setup.tree.World import FORMAT, WorldView
 
 R = DEFAULT_RADIUS
 
 
 def _box_walls(x0, y0, x1, y1):
-    return [
-        {'start': [x0, y0], 'end': [x1, y0]},
-        {'start': [x1, y1], 'end': [x0, y1]},
-        {'start': [x0, y1], 'end': [x0, y0]},
-    ]
+    return [{'path': [[x0, y1], [x0, y0], [x1, y0]]}, {'path': [[x1, y1], [x0, y1]]}]
 
 
-def _zone(name, x0, y0, x1, y1, walls, doors=(), static=()):
-    return {
-        'name': name,
-        'corners': [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
-        'walls': walls,
-        'doors': list(doors),
-        'entities': {'static': list(static)},
-    }
+def _zone(name, x0, y0, x1, y1):
+    return {'name': name, 'polygon': [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]}
 
 
 def _two_rooms(gap):
     """Room a is 4 x 4 m, room b 2 x 4 m, joined through a `gap` wide opening centered at y = 2 in the shared wall x = 4."""
     low, high = 2.0 - gap / 2, 2.0 + gap / 2
-    a = _zone(
-        'a',
-        0.0,
-        0.0,
-        4.0,
-        4.0,
-        [
+    return {
+        'zones': [_zone('a', 0.0, 0.0, 4.0, 4.0), _zone('b', 4.0, 0.0, 6.0, 4.0)],
+        'walls': [
             *_box_walls(0.0, 0.0, 4.0, 4.0),
-            {'start': [4.0, 0.0], 'end': [4.0, low]},
-            {'start': [4.0, high], 'end': [4.0, 4.0]},
+            {'path': [[4.0, 0.0], [4.0, low]]},
+            {'path': [[4.0, high], [4.0, 4.0]]},
+            {'path': [[4.0, 0.0], [6.0, 0.0], [6.0, 4.0], [4.0, 4.0]]},
         ],
-        doors=[{'name': 'a_b', 'start': [4.0, low], 'end': [4.0, high]}],
-    )
-    b = _zone(
-        'b',
-        4.0,
-        0.0,
-        6.0,
-        4.0,
-        [
-            {'start': [4.0, 0.0], 'end': [6.0, 0.0]},
-            {'start': [6.0, 0.0], 'end': [6.0, 4.0]},
-            {'start': [6.0, 4.0], 'end': [4.0, 4.0]},
-        ],
-    )
-    return [a, b]
+        'doors': [{'name': 'a_b', 'span': [[4.0, low], [4.0, high]]}],
+    }
 
 
-def _write_level(root, level, zones):
-    (root / level).mkdir(parents=True, exist_ok=True)
-    (root / level / 'world.yaml').write_text(yaml.safe_dump({'zones': zones}))
+def _write_world(root, levels):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / 'world.yaml').write_text(yaml.safe_dump({'format': FORMAT, 'levels': [{'id': level_id, **level} for level_id, level in levels.items()]}))
 
 
-def _world(tmp_path, zones, name='w'):
+def _world(tmp_path, level, name='w'):
     root = tmp_path / name
-    _write_level(root, '0', zones)
-    return MultiLevelWorldView(root)
+    _write_world(root, {'0': level})
+    return WorldView(root)
 
 
 def _asset(world, model, annotation):
@@ -79,7 +53,7 @@ def _asset(world, model, annotation):
 
 
 def _entity(name, model, x, y, z=0.0):
-    return {'name': name, 'model': model, 'pose': {'position': {'x': x, 'y': y, 'z': z}, 'orientation': {'w': 1.0, 'x': 0.0, 'y': 0.0, 'z': 0.0}}}
+    return {'name': name, 'model': model, 'pose': {'x': x, 'y': y, 'z': z}}
 
 
 def _expectation(room_widths, height, clearance):
@@ -90,7 +64,7 @@ def _expectation(room_widths, height, clearance):
 
 
 def test_open_room_is_fully_reachable(tmp_path):
-    view = _world(tmp_path, [_zone('room', 0.0, 0.0, 4.0, 4.0, [*_box_walls(0.0, 0.0, 4.0, 4.0), {'start': [4.0, 0.0], 'end': [4.0, 4.0]}])])
+    view = _world(tmp_path, {'zones': [_zone('room', 0.0, 0.0, 4.0, 4.0)], 'walls': [{'path': [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]], 'closed': True}]})
     result = nav_at_r(view)['0']
     assert result.value == pytest.approx(1.0)
     assert result.components == 1
@@ -134,9 +108,9 @@ def test_walls_only_reports_narrow_door_as_layout_fault(tmp_path):
 
 
 def test_annotated_entity_in_doorway_cuts_room_off(tmp_path):
-    zones = _two_rooms(1.0)
-    zones[0]['entities']['static'] = [_entity('crate_1', 'crate', 4.0, 2.0), _entity('plant_1', 'plant', 1.0, 1.0)]
-    view = _world(tmp_path, zones)
+    level = _two_rooms(1.0)
+    level['objects'] = [_entity('crate_1', 'crate', 4.0, 2.0), _entity('plant_1', 'plant', 1.0, 1.0)]
+    view = _world(tmp_path, level)
     _asset(view, 'crate', {'bounding_box': [[-0.3, 0.3], [-0.6, 0.6], [0.0, 0.8]]})
     _asset(view, 'plant', {'name': 'plant'})
 
@@ -154,9 +128,9 @@ def test_annotated_entity_in_doorway_cuts_room_off(tmp_path):
 
 
 def test_overhead_entity_does_not_block_doorway(tmp_path):
-    zones = _two_rooms(1.0)
-    zones[0]['entities']['static'] = [_entity('sign_1', 'sign', 4.0, 2.0, z=2.2)]
-    view = _world(tmp_path, zones)
+    level = _two_rooms(1.0)
+    level['objects'] = [_entity('sign_1', 'sign', 4.0, 2.0, z=2.2)]
+    view = _world(tmp_path, level)
     _asset(view, 'sign', {'bounding_box': [[-0.3, 0.3], [-0.6, 0.6], [0.0, 0.3]]})
     result = nav_at_r(view)['0']
     assert result.components == 1
@@ -180,9 +154,11 @@ def test_start_off_traversable_space_snaps_to_nearest_cell(tmp_path):
 
 def test_levels_are_scored_separately(tmp_path):
     root = tmp_path / 'stack'
-    _write_level(root, '0', _two_rooms(1.0))
-    _write_level(root, '1', _two_rooms(2 * R - 0.1))
-    view = MultiLevelWorldView(root)
+    narrow = _two_rooms(2 * R - 0.1)
+    narrow['zones'] = [{**zone, 'name': f"{zone['name']}_1"} for zone in narrow['zones']]
+    narrow['doors'] = [{**door, 'name': 'a_b_1'} for door in narrow['doors']]
+    _write_world(root, {'0': _two_rooms(1.0), '1': narrow})
+    view = WorldView(root)
     results = nav_at_r(view)
     assert sorted(results) == ['0', '1']
     assert results['0'].components == 1

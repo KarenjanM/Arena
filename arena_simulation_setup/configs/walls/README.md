@@ -112,7 +112,8 @@ In `world.yaml`, a `walls:` list entry can carry a `kind:` field naming a
 `WallIdentifier`. At simulation time,
 [shared/walls.py:30](../../src/arena_simulation_setup/shared/walls.py#L30)
 calls `WallIdentifier(kind).resolve()`, which searches
-`DynamicPaths.WORLD / 'assets'` then `DynamicPaths.ARENA` then network
+`DynamicPaths.WORLD / 'assets'`, then the `assets/` of every world the active
+world links levels from (`DynamicPaths.LINKED`), then `DynamicPaths.ARENA`, then network
 providers. The `configs/walls/` directory in this package is **not** on that
 path directly, to expose a preset, copy or symlink it into
 `worlds/<name>/assets/Common/Wall/<preset_name>/<preset_name>.yaml` (world-local)

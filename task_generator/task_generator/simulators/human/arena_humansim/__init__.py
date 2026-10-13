@@ -54,15 +54,14 @@ class ArenaHumanDynamicObstacle:
 
     @classmethod
     def from_dynamic_obstacle(cls, obs: DynamicObstacle) -> "ArenaHumanDynamicObstacle | None":
-        extra = getattr(obs, "extra", None) or {}
-        raw = extra.get("agent")
+        raw = obs.agent
         if raw is None:
             return None
         if isinstance(raw, str):
             return cls(
                 agent_type=cls._resolve_agent_type_path(raw, obs),
-                waypoints=list(getattr(obs, "waypoints", [])),
-                waypoint_mode=cls._parse_waypoint_mode(extra),
+                waypoints=list(obs.waypoints),
+                waypoint_mode=cls._parse_waypoint_mode(obs.waypoint_mode),
             )
         if not isinstance(raw, dict):
             return None
@@ -84,17 +83,16 @@ class ArenaHumanDynamicObstacle:
             desired_velocity_min=float(vel_min),
             desired_velocity_max=float(vel_max),
             agent_radius=float(raw.get("radius", 0.35)),
-            waypoints=list(getattr(obs, "waypoints", [])),
-            waypoint_mode=cls._parse_waypoint_mode(extra),
+            waypoints=list(obs.waypoints),
+            waypoint_mode=cls._parse_waypoint_mode(obs.waypoint_mode),
         )
 
     @staticmethod
     def _resolve_agent_type_path(agent_type: str, obs: DynamicObstacle) -> str:
-        return resolve_agent_type_path(agent_type, getattr(obs, "included_from", None))
+        return resolve_agent_type_path(agent_type, obs.included_from)
 
     @staticmethod
-    def _parse_waypoint_mode(extra: dict) -> int:
-        raw = extra.get("waypoint_mode", "repeat")
+    def _parse_waypoint_mode(raw: str) -> int:
         return _WAYPOINT_MODE_MAP.get(str(raw).lower(), WaypointsMsg.MODE_REPEAT)
 
     def sample_params(self, rng: np.random.Generator) -> SampledParams | None:

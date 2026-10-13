@@ -69,7 +69,7 @@ joint angles are committed to the `arena_peds` bus.  For each `Pedestrian` in
 the outgoing message it checks `ped.joint_state.name`:
 
 - **non-empty**: upstream backend supplied its own joint state, published unchanged (override path: an upstream producer that already computes joint angles).
-- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (36 DOF, no body suffix).
+- **empty**: `publish_arena_peds` calls `AnimationManager.compute` (`GaitGenerator` for idle/walk/run, clip playback and overlays for everything else) and fills the field with bare semantic joint names (40 DOF, no body suffix).
 
 The filled field feeds the ROS4HRI skeleton in rviz through `hri_producer` and the Isaac and Gazebo pedestrian rigs.
 
@@ -194,12 +194,12 @@ with the simulator that will animate the resulting agents.
 ## arena_humansim agent types
 
 `ArenaHumanSimulator` derives pedestrian parameters from the `agent:` block of
-each `dynamic:` scenario entry (`ArenaHumanDynamicObstacle`,
+each `humans:` scenario entry (`ArenaHumanDynamicObstacle`,
 [`arena_humansim/__init__.py`](arena_humansim/__init__.py)). `agent:` accepts
 either a bare string or a dict:
 
 ```yaml
-dynamic:
+humans:
   - name: nurse_1
     ...
     agent: adult                 # shorthand for {agent_type: adult}
@@ -225,11 +225,10 @@ A scripted entry renders with its `model:`. A source-spawned agent has none, so 
 
 ### Static world objects
 
-A `static:` scenario entry that pedestrians can interact with (a bench, a
+An `objects:` scenario or world entry that pedestrians can interact with (a bench, a
 reception desk) is registered as a `WorldObject` by `_spawn_obstacles_impl` in
 [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py). The
-keys below are written directly on the entry, as siblings of `name:`/`model:`/`pose:`
-(they land on `Obstacle.extra`, a copy of the entry's full raw dict):
+keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 
 | Key | Meaning |
 | --- | --- |
@@ -240,13 +239,14 @@ keys below are written directly on the entry, as siblings of `name:`/`model:`/`p
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
 
 ```yaml
-static:
+objects:
   - name: reception_desk
     ...
-    type: desk
-    capacity: 3
-    interaction_radius: 1.0
-    formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}
+    humansim:
+      type: desk
+      capacity: 3
+      interaction_radius: 1.0
+      formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}
 ```
 
 ## Possession
@@ -294,8 +294,9 @@ to exist). Backends observe possession through synchronous no-op hooks
 `DummyHumanSimulator` ([`dummy.py`](dummy.py)) has no locomotion engine,
 the possession stream is the sole source of motion. It seeds a roster cache
 at spawn (sim_path names, IDLE poses) and republishes it through
-`publish_arena_peds` at 2 Hz so the topic never goes stale, letting the
-possession substitution overlay driven peds on the way out.
+`publish_arena_peds` at 30 Hz of sim time, letting the possession
+substitution overlay driven peds on the way out. A paused sim repeats no
+roster, only a merge or a move publishes then.
 
 Its hooks keep the cache honest: a merge publishes the full roster, a
 release adopts the last driven pose with an empty `joint_state` so the
@@ -329,6 +330,10 @@ engine binds both names to the same agent, so an agent-type file reaches the
 robot of any model through an attention ref such as `point: robot:robot_0`.
 An index name that is already a robot's own name is left out. In a fleet
 `robot_0` is the first spawned robot, not the one nearest to the ped.
+
+With `human.robots.visible:=false` the loop leaves every robot out of the feed
+and publishes the possessed peds alone. The engine then holds no robot agent,
+its pedestrians neither avoid a robot nor resolve a `robot:` attention ref.
 
 `PARAM_NAMESPACE` is `humansim`, and a `humansim.<param>` launch arg sets the same engine param for the whole
 run. At every episode reset `_configure_impl` sends the staged `humansim.*` names of

@@ -1,46 +1,36 @@
-robots:
-- start: [10.0, 33.5, -1.5708]
-  goal: [4.0, 1.5, 0.0]
-
-dynamic:
+format: arena-scenario/2
+humans:
 - name: hunav_1
   model: worker_male_caucasian_young
   pose: [8.5, 5.0, 0]
   agent: {agent_type: adult, desired_velocity: 0.9}
-  waypoints:
-    - [9.5, 9.5, 0]
-
+  waypoints: [[9.5, 9.5, 0]]
 - name: hunav_2
   model: worker_male_caucasian_young
   pose: [8.5, 6.0, 0]
   agent: {agent_type: adult, desired_velocity: 0.9}
-  waypoints:
-    - [10.5, 9.5, 0]
-
+  waypoints: [[10.5, 9.5, 0]]
 - name: hunav_3
   model: worker_male_caucasian_young
   pose: [8.5, 7.0, 0]
   agent: {agent_type: adult, desired_velocity: 0.9}
-  waypoints:
-    - [9.5, 10.5, 0]
-
+  waypoints: [[9.5, 10.5, 0]]
 - name: hunav_4
   model: worker_male_caucasian_young
   pose: [8.5, 8.0, 0]
   agent: {agent_type: adult, desired_velocity: 0.9}
-  waypoints:
-    - [10.5, 10.5, 0]
-
+  waypoints: [[10.5, 10.5, 0]]
 - name: hunav_5
   model: worker_male_caucasian_young
   pose: [8.5, 9.0, 0]
   agent: {agent_type: adult, desired_velocity: 0.9}
-  waypoints:
-    - [11.0, 10.0, 0]
-
+  waypoints: [[11.0, 10.0, 0]]
 - name: hunav_6
   model: Hospital/nurse_female_caucasian_young
   pose: [3.5, 1.5, 0]
   agent: {agent_type: adult, desired_velocity: 0.9}
-  waypoints:
-    - [9.0, 10.0, 0]
+  waypoints: [[9.0, 10.0, 0]]
+robots:
+- start: [10.0, 33.5, -1.5708]
+  phases:
+  - {goto: [4.0, 1.5, 0.0]}

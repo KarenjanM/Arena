@@ -81,7 +81,7 @@ Declared under `task.scenario.*`:
 
 `TM_Scenario` resolves the scenario via
 `WorldIdentifier(world_name).resolve_sync().scenario(name).resolve_sync().load()`
-and returns `scenario.static` / `scenario.dynamic` unchanged on each reset.
+and returns `scenario.objects` / `scenario.humans` unchanged on each reset.
 
 ### `TM_Environment` params
 

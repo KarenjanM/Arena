@@ -11,7 +11,7 @@ import tf2_ros
 import yaml
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
 from arena_simulation_setup.tree.assets.sound_catalog import AgentKind, SoundLibrary, selection_seed
-from arena_simulation_setup.tree.World import WorldDescription, WorldIdentifier
+from arena_simulation_setup.tree.World import World, WorldIdentifier
 from arena_simulation_setup.tree.World.Scenario import Scenario
 from arena_simulation_setup.utils.cattrs import converter
 from geometry_msgs.msg import Point, Vector3
@@ -30,30 +30,30 @@ if typing.TYPE_CHECKING:
     from arena_simulation_setup.tree.assets.sound_catalog import SoundAsset
 
 
-def _index_static_entities(world: WorldDescription, scenario_static: Sequence[Obstacle] = ()) -> dict[str, list[tuple[str, Obstacle]]]:
+def _index_static_entities(world: World, scenario_objects: Sequence[Obstacle] = ()) -> dict[str, list[tuple[str, Obstacle]]]:
     """Every static entity (world levels plus the episode's scenario), keyed by bare name, alongside its level."""
     indexed: dict[str, list[tuple[str, Obstacle]]] = {}
     for level_id, level in world.levels.items():
         for entity in level.all_static_entities:
             indexed.setdefault(entity.name, []).append((str(level_id), entity))
-    for entity in scenario_static:
-        indexed.setdefault(entity.name, []).append((entity.level_id or "", entity))
+    for entity in scenario_objects:
+        indexed.setdefault(entity.name, []).append((entity.level, entity))
     return indexed
 
 
 def _resolve_sound_placement(
     sound: Sound,
-    world: WorldDescription,
+    world: World,
     indexed_entities: dict[str, list[tuple[str, Obstacle]]],
     context_level_id: str | None,
 ) -> tuple[Position, float, str]:
     """Level-local (position, yaw, level_id) for a Sound: context_level_id pins a world-embedded sound to its structural level, None falls back to sound.level or the world's sole level."""
-    if sound.entity_ref:
-        matches = indexed_entities.get(sound.entity_ref, [])
+    if sound.attach:
+        matches = indexed_entities.get(sound.attach, [])
         if not matches:
-            raise ValueError(f"sound {sound.name!r} references unknown static entity {sound.entity_ref!r}")
+            raise ValueError(f"sound {sound.name!r} references unknown static entity {sound.attach!r}")
         if len(matches) > 1:
-            raise ValueError(f"sound {sound.name!r} references ambiguous static entity {sound.entity_ref!r}")
+            raise ValueError(f"sound {sound.name!r} references ambiguous static entity {sound.attach!r}")
         level_id, entity = matches[0]
         yaw = float(entity.pose.orientation.to_yaw())
         cos_yaw = math.cos(yaw)
@@ -189,9 +189,9 @@ class Mod_Sounds(TM_Module):
         world_name = self._ctx.world_manager.loaded_world
         world_view = WorldIdentifier(world_name).resolve_sync()
         self._library.use_world(world_view.path)
-        world = world_view.load()
+        world = world_view.load(derive=self.node.conf.Arena.KG_DERIVE.value or "auto")
         scenario = self._active_scenario()
-        indexed_entities = _index_static_entities(world, scenario.static if scenario is not None else ())
+        indexed_entities = _index_static_entities(world, scenario.objects if scenario is not None else ())
 
         resolved: dict[str, _ResolvedSound] = {}
         for level_id, level in world.levels.items():
@@ -227,7 +227,7 @@ class Mod_Sounds(TM_Module):
     def _resolve_and_build(
         self,
         snd: Sound,
-        world: WorldDescription,
+        world: World,
         indexed_entities: dict[str, list[tuple[str, Obstacle]]],
         context_level_id: str | None,
         realized_name: str,

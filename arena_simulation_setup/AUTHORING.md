@@ -15,7 +15,6 @@ for the AI-assisted generation pipeline.
 ```bash
 export WORLD=my_world
 mkdir -p \
-    $ARENA_DIR/arena_simulation_setup/worlds/$WORLD/map \
     $ARENA_DIR/arena_simulation_setup/worlds/$WORLD/scenarios/default \
     $ARENA_DIR/arena_simulation_setup/worlds/$WORLD/assets
 ```
@@ -33,104 +32,162 @@ shows which source a name currently resolves against. See
 
 ## 2. Author `world.yaml`
 
-Create `worlds/$WORLD/world.yaml`. The minimum valid file is one zone with
-corners and at least one wall:
+A world is one file, `worlds/$WORLD/world.yaml`, holding every level. The
+minimum valid file is one level with one walled zone:
 
 ```yaml
-zones:
-- name: main_room
-  description: Main room
-  material:
-  - Concrete_Smooth
-  - {}
-  corners:
-  - {x: 0.0, y: 0.0, z: 0.0}
-  - {x: 10.0, y: 0.0, z: 0.0}
-  - {x: 10.0, y: 10.0, z: 0.0}
-  - {x: 0.0, y: 10.0, z: 0.0}
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - name: main_room
+    polygon: [[0, 0], [10, 0], [10, 10], [0, 10]]
+    walls: outline
+```
+
+The full shape, every key optional except `format`, `levels`, a level's `id`
+and a zone's `name`:
+
+```yaml
+format: arena-world/2
+defaults:                                # inherited by every level and item that does not set its own
+  floor: Concrete_Smooth                 # material, or false for no floor
+  ceiling: {height: 2.7, material: Concrete_Smooth}   # or false for open zones
+  wall: {material: Plaster_Wall}         # or {kind: patient_room_walls}
+  door: {kind: sliding, material: Aluminum_Anodized}
+schedules: [...]                         # world scope, see M2 kinds below
+signals: [...]
+levels:
+- id: '0'
+  pedestrian_walls: true                 # false drops the occupancy-detected pedestrian walls
+  zones:
+  - name: central_hallway
+    polygon: [[8, 0], [12, 0], [12, 34.2], [8, 34.2]]
+    floor: Marble
+    ceiling: {height: 3.0, cast_shadows: false, lights: {fixture: panel, spacing: 2.4, lumens: 3600}}
+    walls: outline                       # or {outline: true, open_to: [lobby], material: ..., kind: ...}
+    semantics: [{state: max_speed, value: 1.5}]
   walls:
-  - start: {x: 0.0, y: 0.0, z: 0.0}
-    end:   {x: 10.0, y: 0.0, z: 0.0}
-    material: {name: Plaster_Wall, domain: Common, _modifiers: null}
-  - start: {x: 10.0, y: 0.0, z: 0.0}
-    end:   {x: 10.0, y: 10.0, z: 0.0}
-    material: {name: Plaster_Wall, domain: Common, _modifiers: null}
-  - start: {x: 10.0, y: 10.0, z: 0.0}
-    end:   {x: 0.0, y: 10.0, z: 0.0}
-    material: {name: Plaster_Wall, domain: Common, _modifiers: null}
-  - start: {x: 0.0, y: 10.0, z: 0.0}
-    end:   {x: 0.0, y: 0.0, z: 0.0}
-    material: {name: Plaster_Wall, domain: Common, _modifiers: null}
-  doors: []
-  elevators: []
-  entities:
-    static: []
-    dynamic: []
+  - {path: [[0, 10], [0, 20], [8, 20]], kind: patient_room_walls}
+  - {path: [[20, 0], [24, 0], [24, 4], [20, 4]], closed: true}
+  doors:
+  - {name: main_entrance, span: [[9.25, 0], [10.75, 0]]}
+  elevators:
+  - {name: lift_0, position: [5, 0], destinations: [lift_1]}
+  objects:
+  - {name: desk_1, model: Common/Desk, pose: [2.0, 1.0, 1.5708]}
+  humans: []
+  lights:
+  - {name: exit_strip, fixture: tube, lumens: 300, pose: {x: 10, y: 34, z: 2.2}}
+  sounds:
+  - {name: hall_siren, asset_id: alarm_loop, position: [4.0, 2.3]}
+  microphones:
+  - {zone: central_hallway, placement: ceiling, position: [10, 5, 3.0]}
 ```
 
 Key points:
 
-- `corners` is an ordered polygon; its interior is the navigable floor.
-- Each `walls:` entry needs at least `start`, `end`, and either `material` or
-  `kind`. Use `kind: <name>` to reference a `WallIdentifier` asset; omit
-  `kind` for an inline material.
-- `material` on a zone accepts the same forms as `MaterialIdentifier`: a plain
-  string `Concrete_Smooth`, or a two-element list `[name, modifiers_dict]`.
-- Multiple zones share a single flat `zones` list. Zone boundaries are defined
-  only by their `corners` polygon and their `walls` list, with no explicit
-  parent-child relationship.
-- An empty material opts a surface out entirely: `material: ''` on a zone
-  spawns no floor, `ceiling_material: ''` no ceiling, `material: ''` on a
-  wall entry drops that wall, and `wall_material: ''` on every zone of a
-  level suppresses the occupancy-detected pedestrian collision walls (robot
-  collision tracking reads the map regardless). The short keys
-  `mat`, `ceiling_mat`, `wall_mat` are accepted as aliases.
-- `entities: {static: [...], dynamic: [...]}` on a zone places obstacles and
-  pedestrians that exist in every scenario run against this world. Same
-  `Obstacle`/`DynamicObstacle` schema as a scenario's `static:`/`dynamic:`
-  lists, see [4. Add a scenario](#4-add-a-scenario).
+- A zone is a named region: its `polygon` (an open ring, the interior is
+  navigable floor), its `floor` and `ceiling`, its runtime `semantics`, and
+  optionally walls along its outline. It holds nothing else. Walls, doors,
+  elevators, objects, humans, lights, sounds and microphones are lists of the
+  level, and which zone a thing belongs to is a semantic fact (see
+  [KG](#kg)).
+- Every name (zone, door, elevator, object, human, light, sound, schedule,
+  signal) is unique across the whole world, so a reference never needs a
+  level. Loading fails on a repeated name, on a key the format does not know
+  (the error names the YAML path, e.g. `levels[0].doors[3]: unknown keys
+  ['heigth']`) and on a reference to an unknown name.
+- Positions are `[x, y]`, `[x, y, z]` or `{x, y[, z]}`. Poses take the forms
+  of `Pose.parse` in [utils/geometry.py](src/arena_simulation_setup/utils/geometry.py):
+  `[x, y]`, `[x, y, yaw]` (radians), `{x, y[, z][, roll][, pitch][, yaw]}`,
+  `[x, y, z, roll, pitch, yaw]`, `[x, y, z, w, x, y, z]` or a zone name.
+- A material is `Name` (domain `Common`), `Domain/Name` or `[Name, {modifiers}]`.
+- `defaults` apply to every zone, wall, outline and door that does not set
+  the key itself. Without `defaults`, a zone has a `Concrete_Smooth` floor and
+  ceiling, and walls and doors take the package defaults.
+- `walls:` entries are polylines, `closed: true` joins the last point back to
+  the first, `kind: <name>` references a `WallIdentifier` asset and
+  `material:` an inline material, never both. `walls: outline` on a zone draws
+  a wall along every polygon edge, `open_to:` leaves open the edges it shares
+  with the named zones. Repeated walls are merged, and a door cuts every wall
+  it lies on, so draw walls straight through doorways.
+- `objects:` and `humans:` take the same schema as a scenario's lists (see
+  [4. Add a scenario](#4-add-a-scenario)) and exist in every scenario run
+  against the world.
+
+### Linked levels
+
+A level can come from another world instead of being written out:
+`- {from: <world>[:<level id>], id: <level id>}`. `<world>` is a world name,
+resolved like any world, or a path relative to this world's directory
+(`./floors/2`), so a tall building keeps each floor in its own small format 2
+world under a subfolder:
+
+```yaml
+format: arena-world/2
+levels:
+- from: ./floors/ground            # floors/ground/world.yaml, a one-level world
+- from: ./floors/first
+- {id: '2', from: 'office_1:0'}     # level 0 of the office_1 world, as level 2 here
+```
+
+`id` defaults to the level's id in its source, and the level id may be left
+out when the source has a single level. A linked level is taken as its
+source defines it, defaults included. Its only other key is `prefix:`, put
+before every name of the level and every reference to one, so the same floor
+can repeat (`- {id: '3', from: ./floors/typical, prefix: f3_}`) and two worlds
+sharing a zone name can sit side by side. Names stay
+unique across the composed world, elevator destinations that point outside
+it are dropped with a warning, and a link back into a world already being
+read is an error. Assets local to a linked world (`<world>/assets/`) resolve
+after this world's own. Saving the world writes the links, not the levels
+they name. `arena asset push world` refuses a world whose `./` or `../` link
+leaves its folder, or that links a world only this machine has.
+
+A linked level cannot set the destinations of its elevators, so the
+destinations that leave the composed world are dropped and the linked levels
+whose elevators are then left without one ride between each other: every
+linked level with exactly one such cabin joins a ring in level order (two
+levels ride to each other, three as 0 to 1, 1 to 2, 2 to 0). A level with
+several such cabins stays out of the ring with a warning naming them.
+
+Any world name also takes a comma list, `world:=hospital_1,office_1`, which
+stacks the listed worlds as the levels of one world without writing a file:
+each level of each world links in order with ids from `0`, a level filter
+picks levels (`world:=hospital_2[0],three_storied_residential[1]`), and every
+name gets the world name as prefix (`hospital_1_`, a second listing of the
+same world `hospital_1_2_`). The composed world is written to
+`$ARENA_ASSETS_DIR/_composed/<list>/world.yaml` and loads like any linked
+world, the elevator ring included. It has no scenarios, the worlds' own
+scenarios name the unprefixed entities.
 
 ### Ceilings
 
-Add a ceiling to any zone with these optional keys:
-
-```yaml
-  ceiling: true                # true by default, set false to leave the zone open
-  ceiling_height: 3.0          # top height in metres, omit to derive from wall stack
-  ceiling_cast_shadows: false  # false by default, true to let the ceiling occlude light
-  ceiling_material:            # MaterialIdentifier, defaults to Concrete_Smooth
-  - Concrete_Smooth
-  - {}
-```
-
-With `ceiling_height` absent, the height is the tallest wall top in the zone
-(`max(segment.start.z + segment.height)` over the zone walls), falling back to
-`2.0` m when the zone has no walls.
+`ceiling:` on a zone is `false` for an open zone or a mapping of `height`
+(top height in metres, derived when absent), `material`, `cast_shadows`
+(default false) and `lights` (the ceiling rig, see [Lights](#lights)). With no
+`height`, the ceiling sits on the tallest wall standing on or within 0.3 m of
+the zone polygon, at least 2.0 m.
 
 Ceilings are opaque from below and transparent from above. Isaac hides them
 unless the world declares lights, `sim.isaac.viewport.ceilings:=on|off` forces
-them. The walls of a zone with a ceiling reach it, and a door lower than the
-ceiling gets a visual-only lintel above it. They are visual-only
-(no collision). With `ceiling_cast_shadows` false the ceiling does not occlude
-the sun, so interiors stay lit without global illumination.
+them. The walls a zone with a ceiling borders or holds reach it, and a door
+lower than the ceiling gets a visual-only lintel above it. They are
+visual-only (no collision). With `cast_shadows` false the ceiling does not
+occlude the sun, so interiors stay lit without global illumination.
 
 ### Doors and elevators
 
-A `doors:` entry configures its geometry, kind, timing, and material. Full
-field reference: [Door fields](worlds/README.md#door-fields).
+A `doors:` entry sits on the level: `name`, `span: [[x, y], [x, y]]`, plus
+its kind, timing and material. Full field reference:
+[Door fields](worlds/README.md#door-fields).
 
-An `elevators:` entry configures its cabin, destinations, and call
-behavior. Full field reference:
-[Elevator fields](worlds/README.md#elevator-fields).
-
-A world with more than one storey follows the layout in
-[worlds/README.md, Directory layout](worlds/README.md#directory-layout).
-
-An elevator's `destination` names its counterpart as `<level_id>.<name>`,
-e.g. `destination: "2.2_elevator"` targets the elevator named `2_elevator`
-on level `2`. Several destinations are comma-separated. Elevator names must
-be unique across every level, loading raises if two levels declare the same
-name or a destination points at a level/elevator that does not exist.
+An `elevators:` entry is one cabin on its level: `name`, `position`, `size`,
+`door_side` (inferred from the nearest wall when absent) and `destinations`,
+the names of the cabins a ride goes to, on any level, so a shaft is one cabin
+per level linking the others and two cabins on one level make a teleporting
+pair. Full field reference: [Elevator fields](worlds/README.md#elevator-fields).
 
 ### Microphones
 
@@ -150,7 +207,7 @@ accept an optional `semantics:` list of literal state/predicate primitives:
 ```yaml
 zones:
 - name: lobby
-  corners: [...]
+  polygon: [...]
   semantics:
   - {state: max_speed, value: 1.5}
   - {predicate: quiet, value: true}
@@ -162,12 +219,61 @@ not a semantics annotation:
 ```yaml
 elevators:
 - name: 1_elevator
-  position: {x: 5.0, y: 0.0, z: 0.0}
-  destination: "2.2_elevator"
+  position: [5.0, 0.0]
+  destinations: [2_elevator]
   recall_on: alarm
 ```
 
 Full field reference: [worlds/README.md](worlds/README.md).
+
+### KG
+
+What a world means, as opposed to what the runtime executes, lives in an
+optional `worlds/$WORLD/kg.yaml` beside `world.yaml`: a knowledge-graph
+scene of entities, facts and constraints (`format: arena-kg/1`), typed
+by the vocabulary packages in
+[kg/packages](src/arena_simulation_setup/kg/packages) and shared
+with the airchitect world generator.
+
+```yaml
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: room:reception, props: {type: Main Entrance, description: A spacious reception and waiting hall}}
+- {id: room:triage}
+- {id: obj:desk_1, props: {label: Reception Desk}}
+- {id: obj:kiosk_0, props: {label: Information Kiosk, placed: false}}
+facts:
+- {subject: room:reception, verb: contains, object: obj:desk_1}
+- {subject: room:triage, verb: contains, object: obj:desk_1}
+- {subject: room:emergency, verb: left_of, object: room:triage}
+```
+
+- Ids are `<kind>:<world name>`: `room:<zone>`, `door:<door>`, `obj:<object>`,
+  `light:<light>`, `sound:<sound>`, `elevator:<cabin>`, `floor:<level id>`.
+  Those must name something in `world.yaml`, except an `obj` with
+  `placed: false` (an object a generator asked for but never placed). Roles,
+  regions, agents, profiles and materials live only here.
+- The KG carries no geometry (`boundary`, `line`, `pose`, `model`, ...):
+  `world.yaml` owns it.
+- Membership is `contains` (a thing may sit in several zones), connectivity
+  `room connects room` with `door: door:<name>`. Route instructions, the
+  acoustic room graph and the prompt modes read them.
+- Facts are stated (`source: generated`, the default) or derived (`source:
+  derived`). On load, derived facts are recomputed: a door belongs to the
+  zones whose boundary it lies on and connects them, an object, light, sound
+  or elevator to the zones holding its position. Only things no stated fact
+  covers get derived ones, so a stated `contains` always wins.
+  `kg.derive:=all` ignores the stated memberships and connections of
+  things in `world.yaml` and derives them all, the rest of the KG stays.
+  `kg.derive:=off` keeps the stated facts only, `auto` is the default.
+- A linked level brings the KG of its source world along: its
+  entities, stated facts and constraints join this world's wherever what they
+  name is part of this world, `floor:<id>` follows the level's new id, and
+  this world's own KG wins every conflict. Saving writes only this
+  world's own part back.
+- Nothing in the KG drives the runtime. Mechanism semantics (presets,
+  `light_on`, `recall_on`, zone states) stay in `world.yaml`.
 
 ### M2 kinds, params, and timelines
 
@@ -178,37 +284,34 @@ serialize when empty):
 
 | kind | attaches to | preset expansion | `params` keys |
 | --- | --- | --- | --- |
-| `signal` | a standalone `signals:` entry (zone-level) | `state`, `phase_remaining`, `stop` | `phases` (list of `{name, duration}`), `stop_phases`, `regime` |
-| `schedule` | a standalone `schedules:` entry (zone-level) | `state`, `active`, `window_remaining` | `windows` (list of `{start, end, value}`), `default`, `regime` |
+| `signal` | a world `signals:` entry | `state`, `phase_remaining`, `stop` | `phases` (list of `{name, duration}`), `stop_phases`, `regime` |
+| `schedule` | a world `schedules:` entry | `state`, `active`, `window_remaining` | `windows` (list of `{start, end, value}`), `default`, `regime` |
 | `gate` | a `doors:` entry | `locked`, `blocked` | `authorized` (sim_paths/robot names), `unlock_on`, `locked` (initial value) |
 | `pressure_plate` | a `doors:`/`elevators:` entry (own `position`) | `pressed` | `position` (`[x, y]`), `radius`, `drives`, `latch`, `press_on`, `regime` |
 | `occupancy_cap` | a `zones:` entry | `occupancy`, `cap`, `over_cap` | `cap` |
-| `sound` | a standalone `sounds:` entry (zone- or scenario-level) | `sounding`, `volume_db` | `sound_on`, `regime`, `sounding`/`volume_db` (initial values) |
-| `light` | every `lights:` entry and every zone `ceiling_lights:` rig, attached from the light's own fields | `lit`, `level`, `dead_fraction` (rigs only) | `light_on` |
+| `sound` | a `sounds:` entry (level or scenario) | `sounding`, `volume_db` | `sound_on`, `regime`, `sounding`/`volume_db` (initial values) |
+| `light` | every `lights:` entry and every zone ceiling rig, attached from the light's own fields | `lit`, `level`, `dead_fraction` (rigs only) | `light_on` |
 
-`signal`, `schedule`, and `sound` have no wall/door geometry of their own, so
-a zone carries them as sibling lists to `doors:`/`elevators:`. A `sound`
-still needs a placement: exactly one of `position` (`[x, y]`), `entity_ref`
-(name of a static entity in the same world, whose yaw frame `offset` is
-applied in) or `frame` (a TF frame the sound rides, `offset` local to it, so
-`frame: jackal/base_link` is a speaker bolted to that robot). Other `Sound`
-fields: `asset_id` (required, the audio catalog entry), `loop` (default
-`true`), `reference_distance_m` (default `1.0`, must be positive, sets the
-falloff reference distance), and `level` (the level id a bare `position`
-belongs to, required in a multi-level world).
+`signal` and `schedule` have no geometry, so they sit at world scope beside
+`levels:`. A `sound` needs a placement: exactly one of `position`, `attach`
+(name of an object of the world, whose yaw frame `offset` is applied in) or
+`frame` (a TF frame the sound rides, `offset` local to it, so `frame:
+jackal/base_link` is a speaker bolted to that robot). Other `Sound` fields:
+`asset_id` (required, the audio catalog entry), `loop` (default `true`) and
+`reference_distance_m` (default `1.0`, must be positive, sets the falloff
+reference distance).
 
 ```yaml
-zones:
-- name: lobby
-  corners: [...]
-  schedules:
-  - name: fire_alarm
-    semantics:
-    - {preset: schedule, params: {windows: [], regime: alarm}}
-  signals:
-  - name: crosswalk_light
-    semantics:
-    - {preset: signal, params: {phases: [{name: go, duration: 20.0}, {name: stop, duration: 10.0}]}}
+schedules:
+- name: fire_alarm
+  semantics:
+  - {preset: schedule, params: {windows: [], regime: alarm}}
+signals:
+- name: crosswalk_light
+  semantics:
+  - {preset: signal, params: {phases: [{name: go, duration: 20.0}, {name: stop, duration: 10.0}]}}
+levels:
+- id: '0'
   sounds:
   - name: hall_siren
     asset_id: alarm_loop
@@ -222,11 +325,12 @@ A preset `params:` key that names one of the preset's own primitives
 `value` instead of a shared param, so `{preset: sound, params: {sounding:
 true, volume_db: 62.0}}` is a radio that plays from the start at 62 dB. A
 top-level `value:` on a preset item that expands to more than one primitive
-is rejected at load: there is no single primitive it could mean.
+is rejected at load: there is no single primitive it could mean. Presets are
+written back as authored.
 
 A scenario may carry its own `sounds:` list with the same schema. Those are
-episode-scoped: attached at reset, gone at the next one, and their
-`entity_ref` may also name one of the scenario's own `static:` obstacles.
+episode-scoped: attached at reset, gone at the next one, and their `attach`
+may also name one of the scenario's own `objects:`.
 
 #### Lights
 
@@ -237,60 +341,76 @@ for rigs, `dead_fraction` (share of dead fixtures), all writable through
 Worlds that declare no light render as before. A world that declares any
 light gets no default lighting at all, so what it declares is all there is
 and a blackout is dark. Lights that objects carry (below) do not count as
-declared, so a lamp adds its light on top of the default lighting.
+declared, and neither do the lights a robot carries, so a lamp or a headlight
+adds its light on top of the default lighting.
 
 | Where | Fixtures | Placement |
 | --- | --- | --- |
-| level `lights:` | `dome`, `sun` | none, `sun` takes `direction` |
-| zone `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `position`, `entity_ref` or `frame`, plus `offset`, as for a `sound` |
-| zone `ceiling_lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
-| object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `offset` in the object frame, moved, turned and scaled with every placement |
+| level `lights:` | `dome`, `sun` | none, a `pose` aims the `sun` |
+| level `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `pose`, `attach` or `frame`, the latter two with an `offset` |
+| zone `ceiling: {lights: ...}` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
+| object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `pose` in the object frame, moved, turned and scaled with every placement |
+| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:` |
+| robot `model_params.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `frame` of the robot plus `offset`, see [robots/README.md](../arena_robots/arena_robots/robots/README.md#model_paramsyaml) |
 
 `Light` fields: `name`, `fixture`, `lumens` (local fixtures, per fixture for a
 rig) or `lux` (`dome`, `sun`), `cct_K` (default 6500), `cast_shadows` (default
-false), `direction` (all but `bulb` and `dome`, default straight down),
-`cone_deg` (`spot` only, default 40), and one
+false), `cone_deg` (`spot` only, default 40), and one
 of `light_on` (a regime, `!` negates) or `lit` (initial value, default true),
-plus `level` (default 1.0). `ceiling_lights:` takes `fixture` (default
+plus `level` (default 1.0). A ceiling rig takes `fixture` (default
 `panel`), `spacing` (default 2.4), `lumens`, `cct_K`, `cast_shadows`,
-`light_on`/`lit`, `level` and `dead_fraction`, needs a ceiling, and its rig is
+`light_on`/`lit`, `level` and `dead_fraction`, needs a ceiling, and is
 named after the zone. The same fixtures of a rig die at the same
-`dead_fraction` in every run, and raising it only adds dead ones. A frame
-light follows its TF frame, so `frame: jackal/base_link` is a headlight.
+`dead_fraction` in every run, and raising it only adds dead ones.
+
+`pose` places a fixture in the level frame, with a height, since a light sits
+above the floor, `offset` in the frame of the object it is attached to or of
+its TF `frame`. A fixture emits along the local -z axis of that pose, a
+`panel` or `tube` lying along its local x and y, so a pose without an
+orientation shines straight down and `yaw` turns a tube about the vertical.
+`bulb` and `dome` take no orientation, a `sun` takes a `pose` whose position
+is zero. A frame light follows its TF frame, so `frame: jackal/base_link`
+with `offset: {x: 0.2, y: 0, z: 0.3, pitch: -1.42}` is a headlight that looks
+ahead and slightly down. A scenario, robot or episode object light whose name
+a spawned light already holds is left out with a warning.
 
 A world without lights can still run lit: `world.lighting:=auto` gives every
-zone that has a ceiling and no `lights:` or `ceiling_lights:` of its own a rig
-of 7200 lm panels at 2.4 m spacing, without touching the world file. The
-default `world.lighting:=authored` renders exactly what the world declares.
+zone that has a ceiling, no ceiling rig of its own and no level light placed
+inside its polygon a rig of 7200 lm panels at 2.4 m spacing, without touching
+the world file. The default `world.lighting:=authored` renders exactly what
+the world declares.
 
 ```yaml
-lights:
-- {name: ambient, fixture: dome, lux: 5}
-zones:
-- name: central_hallway
-  ceiling_lights: {fixture: panel, spacing: 2.4, lumens: 3600, light_on: "!blackout"}
+levels:
+- id: '0'
+  zones:
+  - name: central_hallway
+    polygon: [[8, 0], [12, 0], [12, 34.2], [8, 34.2]]
+    ceiling: {lights: {fixture: panel, spacing: 2.4, lumens: 3600, light_on: "!blackout"}}
   lights:
-  - {name: exit_strip, position: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, cct_K: 6500, light_on: blackout}
-  schedules:
-  - name: power
-    semantics:
-    - {preset: schedule, params: {windows: [{start: 60, end: 90, value: out}], regime: blackout}}
+  - {name: ambient, fixture: dome, lux: 5}
+  - {name: exit_strip, pose: {x: 10, y: 34, z: 2.2}, fixture: tube, lumens: 300, light_on: blackout}
+schedules:
+- name: power
+  semantics:
+  - {preset: schedule, params: {windows: [{start: 60, end: 90, value: out}], regime: blackout}}
 ```
 
 An object's `annotation.yaml` can carry `lights:` entries with `name` (default
-`light`), `fixture` (default `bulb`), `offset`, `direction`, `lumens`, `cct_K`,
+`light`), `fixture` (default `bulb`), `pose`, `lumens`, `cct_K`,
 `cone_deg` and `glow`. `arena_assets` writes them when it builds an object whose
 source model contains lights (hand-written entries win, and the built models
 carry no light themselves). `glow` names the material that glows with the
-light, a lamp shade for instance: both simulators make it emit the light's
-color scaled by its level, and it is dark while the light is off. Every placement of the object, in a zone's
-`static:` list, a scenario's `static:` list or by an obstacle mode, then gets
-the light `<entity>_<name>` for as long as the placement exists, and a
-`light:` key on the placement sets its `lit`, `light_on` or `level`:
+light, a lamp shade for instance: Isaac, Gazebo and MuJoCo make it emit the
+light's color scaled by its level, and it is dark while the light is off. Every
+placement of the object, in a level's `objects:`, a scenario's `objects:` or
+by an obstacle mode, then gets the light `<entity>_<name>` for as long as the
+placement exists, and a `light:` key on the placement sets its `lit`,
+`light_on` or `level`:
 
 ```yaml
-static:
-- {name: desk_lamp, model: Residential/Desk_Lamp, pose: {position: [2, 1, 0.75]}, light: {light_on: "!daylight"}}
+objects:
+- {name: desk_lamp, model: Residential/Desk_Lamp, pose: {x: 2, y: 1, z: 0.75}, light: {light_on: "!daylight"}}
 ```
 
 A scenario dims the hall with `{entity: central_hallway, field: level, value:
@@ -301,6 +421,9 @@ Gazebo renders a rig as one shadowless point light per 2 by 2 block of
 fixtures, plus one unattenuated fill at the room center for the light the
 room surfaces reflect (40 % reflectance), since its renderer traces no
 indirect light.
+MuJoCo shades with at most seven lights per view and without shadows from
+fixtures, so each camera gets the fixtures merged the coarser the smaller they
+look from where it stands, plus the fill of the rig whose room it stands in.
 Dome and sun light the whole stage, so the first env's world sets them for
 every env of a runtime, and an env whose world declares other ones logs a
 warning naming both.
@@ -329,8 +452,7 @@ wants the door locked at episode start says so explicitly in its `timeline:`
 ```yaml
 doors:
 - name: door_edge_1_1
-  start: {x: 4.0, y: 1.55, z: 0.0}
-  end:   {x: 4.0, y: 2.45, z: 0.0}
+  span: [[4.0, 1.55], [4.0, 2.45]]
   semantics:
   - {preset: gate, params: {authorized: [], unlock_on: alarm, locked: false}}
   - {preset: pressure_plate, params: {position: [4.0, 2.0], press_on: alarm, drives: door_edge_1_1}}
@@ -384,16 +506,9 @@ for the reference timeline.
 touch_world my_world
 ```
 
-This reads `worlds/my_world/world.yaml`, renders a PNG via
-`WorldDescription.render()`, and writes:
-- `map/map.png`
-- `map/map.yaml`
-
-To regenerate after editing `world.yaml`:
-
-```bash
-touch_world my_world
-```
+This reads `worlds/my_world/world.yaml` and writes a preview map per level,
+`map/<level id>.png` and `map/<level id>.yaml`. The runtime does not need
+them, it renders its own map from `world.yaml`.
 
 To regenerate with visible static obstacle footprints:
 
@@ -404,8 +519,8 @@ touch_world my_world \
     --assets-bbox "((-.5, .5), (-.5, .5))"
 ```
 
-To regenerate all files (including `world.yaml` itself, e.g. after schema
-changes):
+To rewrite `world.yaml` itself in canonical form (short forms, rounded
+numbers, defaults left out) with its `kg.yaml`:
 
 ```bash
 touch_world my_world --all
@@ -413,13 +528,38 @@ touch_world my_world --all
 
 `touch_world` accepts `--resolution <float>` (metres per pixel, default `0.05`).
 
+### Format 1 worlds
+
+Worlds written before format 2 (one `<level id>/world.yaml` of `zones:` per
+level, walls, doors, objects and lights nested in zones) still load, with a
+deprecation warning, through the legacy loader in
+[tree/World/legacy.py](src/arena_simulation_setup/tree/World/legacy.py). It
+hoists zone walls, doors, elevators, entities, sounds and lights to the
+level, schedules and signals to the world, turns `destination: "1.a"` into
+`destinations: [a]`, drops exact repeats, renames different things that share
+a name, and keeps zone descriptions and which zone listed which thing in the
+KG. A `graph.yaml` beside a format 1 world (the airchitect scene
+graph) is lifted into the KG too: a node becomes a room with its
+`type`, `description` and attributes, a wish-list asset an unplaced `obj`, and
+an edge a connection through the door named `door_<edge id>` or
+`door_<a>__<b>` plus its position facts (an edge with neither door states no
+connection, geometry derives it). Migrating writes it into `kg.yaml`
+and removes `graph.yaml`. Format 1 scenarios (`static:`/`dynamic:`, the `obstacles:`
+wrapper, `goal:`, `start_floor`) load the same way. Rewrite a world and its
+scenarios in place with:
+
+```bash
+touch_world my_world --migrate
+```
+
+Nothing writes format 1.
+
 ## 4. Add a scenario
 
 Create `worlds/$WORLD/scenarios/default/scenario.yaml`:
 
 ```yaml
-static: []
-dynamic: []
+format: arena-scenario/2
 robots:
   - start: [1.0, 1.0, 0.0]
     phases:
@@ -434,8 +574,9 @@ holds, after arrival for a goto), `hold_time` (park seconds on a goto), `signal`
 (the robot ends the goto itself by sending that signal, such as `arrived`, and
 is judged against the tolerance at that moment), `conditions:` (clauses judged
 over this phase only), `text:` (the instruction handed to language-conditioned
-planners, `instruction:` is accepted as the same key) and `on_failure`. A robot entry may also carry
-`conditions:` judged over its whole phase list. `goal:` is deprecated.
+planners, `instruction:` is accepted as the same key) and `on_failure`. A robot
+entry may also carry `level` (the level it starts on), `goal_level` (the level
+its goto phases aim at) and `conditions:` judged over its whole phase list.
 
 ```yaml
 robots:
@@ -446,32 +587,35 @@ robots:
       - {goto: sofa, hold_time: 2, conditions: [{op: never, p: "robot in hallway"}]}
 ```
 
-Add static obstacles by
-listing `Obstacle` entries under `static:`, dynamic pedestrians under `dynamic:`.
-A static entry's flat top-level keys `type`, `capacity`, `satisfies`,
-`interaction_radius` and `formation` are forwarded to humansim as its
-WorldObject, so a `go_to` step or an interaction `target:` can name the
-entry by `type`.
+Add static obstacles under `objects:` and pedestrians under `humans:`, with
+the same schema as a world level's lists plus `level` (the level an entry
+stands on, multi-level worlds). An object's `humansim:` block (`type`,
+`capacity`, `satisfies`, `interaction_radius`, `formation`, `seats`) is
+forwarded to humansim as its WorldObject, so a `go_to` step or an interaction
+`target:` can name the entry by `type`.
 
 For HumanSim (arena_humansim) pedestrians include an `agent:` block. The
 `agent_type` is either a built-in type (`adult`, `elder`) or a path-relative
 agent-type YAML file (`./doctor.yaml`) defining scripted behavior
-(sequences, interactions):
+(sequences, interactions). `waypoint_mode` (`repeat`, `reverse`, `once`,
+`random`) sets how the waypoints replay, and a `hunav:` block carries the
+HuNav backend's own keys:
 
 ```yaml
-dynamic:
+humans:
 - name: agent_1
   model: female_adult_medical_01
   agent: {agent_type: adult, desired_velocity: 1.2}
   pose: [2.0, 5.0, 0.0]   # yaw in radians
   waypoints:
-  - [2.0, 5.0, 0.0]
-  - [8.0, 5.0, 0.0]
+  - [2.0, 5.0]
+  - [8.0, 5.0]
 ```
 
 A scenario can also carry `regions:` (named pedestrian source/sink spawners
 for arena_humansim) and `conditions:` (episode success/failure clauses). Its
-`sounds:` and `timeline:` keys are the ones covered above. See
+`sounds:`, `lights:` and `timeline:` keys are the ones covered above. Scenario
+lights count as declared, like the world's, and go at the next reset. See
 [worlds/README.md](worlds/README.md) for the full key list of every
 top-level key.
 
@@ -484,10 +628,10 @@ asset further. Five asset kinds can be shipped this way:
 
 | Type | Directory contents | Referenced as |
 |---|---|---|
-| `Object` | 3D model files (SDF and/or USD), optional `annotation.yaml` with a `bounding_box` | `model:` on a static obstacle entry |
-| `Human` | 3D model files (SDF) | `model:` on a HumanSim pedestrian entry |
-| `Material` | `<name>.mdl` plus its texture files | `material:` on a zone or wall entry |
-| `Wall` | `<name>.yaml`, a `WallDescription` (see [configs/walls/README.md](configs/walls/README.md)) | `kind:` on a `walls:` entry |
+| `Object` | 3D model files (SDF and/or USD), optional `annotation.yaml` with a `bounding_box` | `model:` on an `objects:` entry |
+| `Human` | 3D model files (SDF) | `model:` on a `humans:` entry |
+| `Material` | `<name>.mdl` plus its texture files | a zone `floor`, a ceiling `material`, a wall or door `material` |
+| `Wall` | `<name>.yaml`, a `WallDescription` (see [configs/walls/README.md](configs/walls/README.md)) | `kind:` on a `walls:` entry or a zone outline |
 | `Sound` | `<name>.yaml` (a sound manifest, see [configs/sounds/README.md](configs/sounds/README.md)) plus its wav files | `asset_id:` on a `sounds:` entry |
 
 To ship a custom wall style:
@@ -507,13 +651,14 @@ renders in front of the wall. The
 [splat wall example](configs/walls/README.md#example-splat-wall) shows the wall
 kind, the [arena_assets README](../arena_assets/README.md) how to build the asset.
 A captured object (`arena-assets splat --object`) is placed like any other
-static object. Isaac renders it and its sensors see it. It is visual only, so
-robots drive through it, unless the bundle carries a collider.
+object, as an `objects:` entry. Isaac renders it and its sensors see it. It is
+visual only, so robots drive through it, unless the bundle carries a collider.
 
 Any object bundle can carry a collider mesh that `annotation.yaml` names under
 `collider:`. It is baked into the bundle's USD and SDF models, where it takes
 the place of the visual meshes as the collision. Without one, objects collide
-with their visual meshes in Isaac and Gazebo alike. `arena-assets collider` attaches one to any object bundle, see
+with their visual meshes in Isaac and Gazebo alike. `arena-assets collider`
+attaches one to any object bundle, see
 [Colliders](../arena_assets/README.md#colliders).
 
 ## 6. Generate with the AI pipeline (alternative)
@@ -537,28 +682,29 @@ After generation, run `touch_world my_world` to ensure `map/` is current.
 ## 7. Validate
 
 ```python
-from arena_simulation_setup.tree.World.World import WorldIdentifier
+from arena_simulation_setup.tree.World import WorldIdentifier
 
-world = WorldIdentifier('my_world').resolve_sync()
-desc = world.load()
-print(f"{len(desc.zones)} zone(s), "
-      f"{sum(1 for _ in desc.all_walls)} wall segments")
+world = WorldIdentifier('my_world').resolve_sync().load()
+for level_id, level in world.levels.items():
+    print(level_id, f"{len(level.zones)} zone(s), {len(level.all_walls)} wall segments")
 ```
 
-This will raise `FileNotFoundError` if `world.yaml` is missing, and `ValueError`
-or `cattrs` errors if the YAML is malformed.
+This raises `FileNotFoundError` if `world.yaml` is missing and `ValueError`
+naming the YAML path if it is malformed. The JSON Schema of the KG
+comes from `arena_simulation_setup.kg.schema_for`.
 
 List all scenarios:
 
 ```python
-for scenario_id in world.scenario.listall():
+view = WorldIdentifier('my_world').resolve_sync()
+for scenario_id in view.scenario.listall():
     print(scenario_id.name)
 ```
 
 Load a scenario:
 
 ```python
-scenario = world.scenario('default').resolve_sync()
+scenario = view.scenario('default').resolve_sync()
 print(scenario.load())
 ```
 

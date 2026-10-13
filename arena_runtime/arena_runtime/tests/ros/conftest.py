@@ -1,4 +1,4 @@
-"""In-process ArenaNode on the dummy sim plus a probe node, for lockstep tests without gz."""
+"""In-process ArenaNode on the dummy or flatsim host plus a probe node, for lockstep tests without gz."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class Rig:
         return before
 
 
-async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]]) -> None:
+async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: str) -> None:
     import rclpy.qos
     from arena_rclpy_mixins.Async import AsyncNode
     from arena_rclpy_mixins.spin import create_executor
@@ -117,8 +117,17 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]]) -> None
             assert response is not None and response.success
 
     executor = create_executor()
+    servers: list[typing.Any] = []
+    if sim == "flatsim":
+        import rclpy.parameter
+
+        from flatsim.server import FlatsimServer
+
+        servers.append(FlatsimServer(parameter_overrides=[rclpy.parameter.Parameter("physics_dt", value=DT)]))
+        executor.add_node(servers[0])
     arena = ArenaNode()
     arena.declare_parameter("physics_dt", DT)
+    arena.declare_parameter("sim", sim)
     probe = Probe()
     executor.add_node(arena)
     executor.add_node(probe)
@@ -133,7 +142,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]]) -> None
                 pytest.skip(str(e))
             raise
         assert await probe.start.ensure(timeout_sec=10.0)
-        await rig.until(lambda: probe.clock() > 0.0, 5.0, "dummy /clock")
+        await rig.until(lambda: probe.clock() > 0.0, 5.0, f"{sim} /clock")
         await scenario(rig)
     finally:
         with contextlib.suppress(Exception):
@@ -149,6 +158,9 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]]) -> None
         executor.remove_node(probe)
         arena.destroy_node()
         probe.destroy_node()
+        for server in servers:
+            executor.remove_node(server)
+            server.destroy_node()
 
 
 @pytest.fixture()
@@ -156,6 +168,17 @@ def arena_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None
     """Runs `scenario(rig)` on a fresh event loop against a spinning ArenaNode(sim=dummy)."""
 
     def run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], *, timeout: float = 90.0) -> None:
-        asyncio.run(asyncio.wait_for(_run(scenario), timeout=timeout))
+        asyncio.run(asyncio.wait_for(_run(scenario, "dummy"), timeout=timeout))
+
+    return run
+
+
+@pytest.fixture()
+def flatsim_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None]]], None]:
+    """Runs `scenario(rig)` on a fresh event loop against a spinning ArenaNode(sim=flatsim) and a flatsim server."""
+
+    def run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], *, timeout: float = 90.0) -> None:
+        pytest.importorskip("flatsim_msgs")
+        asyncio.run(asyncio.wait_for(_run(scenario, "flatsim"), timeout=timeout))
 
     return run

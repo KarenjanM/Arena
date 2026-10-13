@@ -340,8 +340,8 @@ class TM_Environment(TM_Obstacles):
         world = self._ctx.world_manager.world_compacted()
 
         if zones := world.zones:
-            rooms = [shapely.Polygon(zone.corners) for zone in zones]
-            zone_name_to_polygon = {zone.name: shapely.Polygon(zone.corners) for zone in zones}
+            rooms = [zone.shape() for zone in zones]
+            zone_name_to_polygon = {zone.name: zone.shape() for zone in zones}
         else:
             rooms = [shapely.Polygon(room) for room in self._create_rooms_from_walls()]
             zone_name_to_polygon = {}

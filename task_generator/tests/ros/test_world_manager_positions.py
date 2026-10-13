@@ -11,8 +11,9 @@ try:
     import shapely
     import shapely.affinity
     from arena_rclpy_mixins.Time import Time
+    from arena_simulation_setup.shared import Elevator
     from arena_simulation_setup.shared.entities import Obstacle
-    from arena_simulation_setup.tree.World.World import Level, LevelDescription, WorldDescription
+    from arena_simulation_setup.tree.World import Level, World, WorldView, Zone
     from arena_simulation_setup.utils.geometry import Pose
     from arena_simulation_setup.utils.geometry import Position as GeoPosition
     from task_generator.manager.world_manager.utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
@@ -22,6 +23,7 @@ try:
         _sample_grid_positions,
         _zone_mask,
     )
+    from task_generator.manager.world_manager.world_manager_ros import WorldManagerROS
     from task_generator.constants.rng import EpisodeRng
     from task_generator.shared import Position, PositionRadius
 except ImportError:
@@ -226,7 +228,7 @@ class TestZoneMask:
 
 class TestRenderedSampling:
     @staticmethod
-    def make_wm_from_level(level: LevelDescription, seed: int = 0) -> WorldManager:
+    def make_wm_from_level(level: Level, seed: int = 0) -> WorldManager:
         wm = WorldManager.__new__(WorldManager)
         wm._map = WorldMap.from_world_description(level, resolution=0.05, time=Time())
         wm._multi_map = None
@@ -238,7 +240,7 @@ class TestRenderedSampling:
 
     def test_positions_land_inside_rendered_zone(self):
         corners = [GeoPosition(10, 5), GeoPosition(30, 5), GeoPosition(30, 15), GeoPosition(10, 15), GeoPosition(10, 5)]
-        level = LevelDescription(zones=[LevelDescription.Zone(name="room", corners=corners)])
+        level = Level(zones=[Zone(name="room", polygon=corners)])
         wm = self.make_wm_from_level(level)
         out = wm.get_positions_on_map(n=10, safe_dist=0.3, forbid=False)
         assert len(out) == 10
@@ -264,9 +266,8 @@ class TestStaticFootprints:
         return wm
 
     @staticmethod
-    def world_with(*obstacles: Obstacle, level_id: str = "0") -> WorldDescription:
-        zone = LevelDescription.Zone(name="z", corners=[], entities=LevelDescription.Zone.WorldEntities(static=list(obstacles)))
-        return WorldDescription(levels={level_id: Level(zones=[zone])})
+    def world_with(*obstacles: Obstacle, level_id: str = "0") -> World:
+        return World(levels={level_id: Level(id=level_id, objects=list(obstacles))})
 
     @staticmethod
     def occupied_bbox(grid: np.ndarray) -> tuple[int, int, int, int]:
@@ -346,3 +347,70 @@ class TestStaticFootprints:
         wm.update_world(wm._map, self.world_with(self.make_obstacle(0.75, 0.75)), static_footprints=[shapely.box(0.5, 0.5, 1.0, 1.0)])
         _, _, c0, c1 = self.occupied_bbox(wm._map.occupancy.grid)
         assert (c0, c1) == (10, 20)
+
+
+class TestElevatorRoute:
+    """elevator_route rides cabin to cabin over the world's elevator destinations."""
+
+    @staticmethod
+    def make_wm(world: World, level_origins: dict[str, tuple[float, float]]) -> WorldManager:
+        wm = WorldManager.__new__(WorldManager)
+        wm._map = make_map(empty_grid(10, 10))
+        wm._map.level_origins = level_origins
+        wm._world = world
+        return wm
+
+    @staticmethod
+    def lift(name: str, x: float, *destinations: str) -> Elevator:
+        return Elevator(name=name, position=GeoPosition(x, 1.0), size=[2.0, 2.0, 2.0], destinations=list(destinations))
+
+    def stacked(self) -> World:
+        return World(
+            levels={
+                "0": Level(id="0", elevators=[self.lift("a_0", 1.0, "a_1")]),
+                "1": Level(id="1", elevators=[self.lift("a_1", 1.0, "a_0"), self.lift("b_1", 5.0, "b_2")]),
+                "2": Level(id="2", elevators=[self.lift("b_2", 5.0, "b_1")]),
+            }
+        )
+
+    def test_route_boards_each_shaft_on_its_source_level(self):
+        wm = self.make_wm(self.stacked(), {"0": (0.0, 0.0), "1": (20.0, 0.0), "2": (40.0, 0.0)})
+        stops = wm.elevator_route("0", "2", agent_radius=0.3)
+        assert [(p.x, p.y) for p, _ in stops] == [(1.0, 1.0), (25.0, 1.0)]
+        assert all(radius == pytest.approx(1.0 - 0.05 - 0.025 - 0.3) for _, radius in stops)
+
+    def test_route_is_empty_on_the_same_level_or_without_a_shaft(self):
+        wm = self.make_wm(self.stacked(), {"0": (0.0, 0.0), "1": (20.0, 0.0), "2": (40.0, 0.0)})
+        assert wm.elevator_route("1", "1", agent_radius=0.3) == []
+        assert wm.elevator_route("0", "3", agent_radius=0.3) == []
+
+    def test_destination_on_an_unloaded_level_is_no_route(self):
+        world = self.stacked()
+        del world.levels["2"]
+        wm = self.make_wm(world, {"0": (0.0, 0.0), "1": (20.0, 0.0)})
+        assert wm.elevator_route("1", "2", agent_radius=0.3) == []
+
+
+class TestLevelOfPoint:
+    def test_point_maps_to_the_level_whose_zones_hold_it(self):
+        room = [GeoPosition(0, 0), GeoPosition(4, 0), GeoPosition(4, 3), GeoPosition(0, 3)]
+        wm = WorldManager.__new__(WorldManager)
+        wm._map = make_map(empty_grid(10, 10))
+        wm._map.level_origins = {"0": (0.0, 0.0), "1": (10.0, 0.0)}
+        wm._world = World(levels={"0": Level(id="0", zones=[Zone(name="a", polygon=room)]), "1": Level(id="1", zones=[Zone(name="b", polygon=room)])})
+        assert wm.level_of_point(2.0, 1.0) == "0"
+        assert wm.level_of_point(12.0, 1.0) == "1"
+        assert wm.level_of_point(7.0, 1.0) == ""
+
+
+class TestPreviewMaps:
+    def test_level_maps_load_from_the_world_preview_maps(self, tmp_path):
+        room = [GeoPosition(0, 0), GeoPosition(4, 0), GeoPosition(4, 3), GeoPosition(0, 3)]
+        view = WorldView(tmp_path / "one_room")
+        view.save(World(levels={"0": Level(id="0", zones=[Zone(name="room", polygon=room)])}))
+        maps = WorldManagerROS._load_multi_level_map(SimpleNamespace(), view, ["0", "1"])
+        assert maps is not None
+        assert list(maps.level_ids) == ["0"]
+        level_map = maps.select_map("0")
+        assert level_map.shape[0] > 0 and level_map.shape[1] > 0
+        assert level_map.origin.x < 0.0 and level_map.origin.y < 0.0

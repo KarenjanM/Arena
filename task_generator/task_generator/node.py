@@ -160,7 +160,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     _hearing: BaseHearing
     _environment_manager: EnvironmentManager
     _robots_manager: RobotsManager | None = None
-    _simulator: BaseSim
+    _simulator: BaseSim | None = None
     _realizer: Realizer
     _arena_hold_client: ClientWrapper
     _arena_unpause_window_client: ClientWrapper
@@ -496,6 +496,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             await self._task.teardown()
         if self._robots_manager is not None:
             await self._robots_manager.teardown()
+        if self._simulator is not None:
+            await self._simulator.shutdown()
 
     async def hold(self, reason: str) -> None:
         req = arena_runtime_msgs.srv.LifecycleHold.Request()
@@ -568,6 +570,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             simulator=self._simulator,
             realizer=realizer,
             acoustics=self._acoustics_simulator,
+            robots_visible=self.conf.Human.ROBOTS_VISIBLE.value,
         )
 
         self._logger.info("Setting up environment manager")
@@ -662,7 +665,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             return "discrete"
         return "continuous"
 
-    def _iter_zones(self) -> typing.Iterator[tuple[str, World.LevelDescription.Zone]]:
+    def _iter_zones(self) -> typing.Iterator[tuple[str, World.Zone]]:
         """All zones across levels as (realized name, zone)."""
         for level_id, level in self._world_manager.world.levels.items():
             for zone in level.zones:

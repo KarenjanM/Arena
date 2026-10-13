@@ -33,7 +33,7 @@ _DOOR_AXES: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
 
 
 def _door_basis(elevator: Elevator) -> tuple[float, float, tuple[float, float], tuple[float, float], float]:
-    outward, tangent = _DOOR_AXES[elevator.door_side]
+    outward, tangent = _DOOR_AXES[elevator.door_side or '+x']
     hx, hy = elevator.size[0] / 2.0, elevator.size[1] / 2.0
     out_extent = hx if outward[0] != 0 else hy
     tan_extent = hy if outward[0] != 0 else hx
@@ -296,11 +296,34 @@ def _swept_slab_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs
     return False
 
 
+def _sliding_entry_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
+    """True when the pocket band a sliding slab enters past the door end between the two progress values overlaps any agent disc."""
+    door = runtime.door
+    sx, sy = door.start.x, door.start.y
+    ex, ey = door.end.x, door.end.y
+    length = math.hypot(ex - sx, ey - sy)
+    if length <= 0.0 or not discs or p_to <= p_from:
+        return False
+    ux, uy = (ex - sx) / length, (ey - sy) / length
+    along_center = length * (1.0 + (p_from + p_to) / 2.0)
+    cx, cy = sx + ux * along_center, sy + uy * along_center
+    half_l = (p_to - p_from) * length / 2.0
+    half_w = door.width / 2.0
+    for _name, (x, y), radius in discs:
+        dx, dy = x - cx, y - cy
+        along = abs(dx * ux + dy * uy)
+        across = abs(-dx * uy + dy * ux)
+        if math.hypot(max(along - half_l, 0.0), max(across - half_w, 0.0)) <= radius:
+            return True
+    return False
+
+
 def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence[Disc]) -> None:
     """Advance door state machine one tick: linear T-delta for sliding, instant snap for teleport.
     The slab never moves through an agent: a blocked close re-triggers the door (it reverses,
-    tested against the full remaining path so nobody in the slot is approached), a blocked
-    opening step holds in place. Vertical kinds open away from agents and are never open-blocked."""
+    tested against the full remaining path so nobody in the slot is approached), an opening step
+    holds only when the slab would enter an agent in the wall pocket past the door end. Vertical
+    kinds open away from agents and are never open-blocked."""
     door = runtime.door
     fresh = (now - runtime.last_trigger_sim_time) <= door.hold_time
     if runtime.effective_kind == 'teleport':
@@ -316,7 +339,7 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
     if target > runtime.progress:
         runtime.state = _DoorState.OPENING
         next_progress = min(1.0, runtime.progress + step)
-        if runtime.effective_kind == 'sliding' and _swept_slab_blocked(runtime, runtime.progress, next_progress, discs):
+        if runtime.effective_kind == 'sliding' and _sliding_entry_blocked(runtime, runtime.progress, next_progress, discs):
             return
         runtime.progress = next_progress
         if runtime.progress >= 1.0:
@@ -566,13 +589,7 @@ LIGHT_MOVE_EPSILON = 0.02
 
 def light_anchor(frame_position: Position, frame_yaw: float, offset: Position) -> Position:
     """Map position of an offset given in a frame with the given map position and yaw."""
-    cos_yaw = math.cos(frame_yaw)
-    sin_yaw = math.sin(frame_yaw)
-    return Position(
-        x=frame_position.x + cos_yaw * offset.x - sin_yaw * offset.y,
-        y=frame_position.y + sin_yaw * offset.x + cos_yaw * offset.y,
-        z=frame_position.z + offset.z,
-    )
+    return Pose(position=frame_position, orientation=Orientation.from_yaw(frame_yaw)) * offset
 
 
 def _light_moved(last: tuple[Position, float] | None, position: Position, yaw: float) -> bool:
@@ -591,7 +608,7 @@ async def _apply_lights(mech: MechanismITF) -> None:
         pose = mech.frame_pose(light.frame)
         if pose is None:
             continue
-        position = light_anchor(pose[0], pose[1], light.offset)
+        position = light_anchor(pose[0], pose[1], light.position)
         if _light_moved(mech._light_poses.get(entity), position, pose[1]):
             await mech._move_light(light, position, pose[1])
             mech._light_poses[entity] = (position, pose[1])

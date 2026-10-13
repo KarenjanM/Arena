@@ -108,7 +108,7 @@ def _elevator(name: str = "e") -> Elevator:
         position=Position(0.0, 0.0, 0.0),
         size=[2.0, 2.0, 2.5],
         door_side="+x",
-        destination="other",
+        destinations=["other"],
     )
 
 
@@ -431,8 +431,8 @@ def test_manager_detach_removes_instance_and_cache():
 
 
 def test_support_matrix_values():
-    assert DoorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
-    assert ElevatorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac"})
+    assert DoorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
+    assert ElevatorSemantics.SUPPORTED_SIMS == frozenset({"gazebo", "isaac", "mujoco", "flatsim"})
 
 
 def test_manager_skips_unsupported_sim():

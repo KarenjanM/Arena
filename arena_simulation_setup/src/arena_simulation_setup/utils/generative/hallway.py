@@ -1,12 +1,12 @@
 import logging
-from collections.abc import Iterable
 
 import shapely
 
-from arena_simulation_setup.shared import Door, Position, Wall
+from arena_simulation_setup.shared import Door, Position
+from arena_simulation_setup.tree.World import Level, WallPath, World, Zone
 
-from . import BaseConfiguration, LevelDescription, WorldGeneratorImpl
-from .utils import to_corners, to_walls
+from . import BaseConfiguration, WorldGeneratorImpl
+from .utils import to_corners, to_walls, world_of
 
 logger = logging.getLogger(__name__)
 
@@ -47,34 +47,31 @@ class WorldGeneratorHallway(WorldGeneratorImpl):
         self.config = self.Configuration.model_validate(configuration)
         logger.info(self.config)
 
-    def compute(self) -> LevelDescription:
-        top_rooms = self._impl("top", self.config.rooms_per_side)
-        bottom_rooms = self._impl("bottom", self.config.rooms_per_side)
+    def compute(self) -> World:
+        level = Level()
+        descriptions: dict[str, str] = {}
+        self._impl("top", self.config.rooms_per_side, level, descriptions)
+        self._impl("bottom", self.config.rooms_per_side, level, descriptions)
+        return world_of(level, descriptions)
 
-        return LevelDescription(zones=[*top_rooms, *bottom_rooms])
-
-    def _impl(self, side: str, num_rooms: int) -> Iterable[LevelDescription.Zone]:
-        rooms: list[LevelDescription.Zone] = []
+    def _impl(self, side: str, num_rooms: int, level: Level, descriptions: dict[str, str]) -> None:
+        rooms: list[Zone] = []
 
         widths: list[float] = []
         heights: list[float] = []
 
         rooms.append(
-            LevelDescription.Zone(
+            Zone(
                 name=f"{side}_room_{len(rooms)}",
-                corners=[Position(x=0, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_top), Position(x=0, y=self.config.hallway_top)],
-                walls=[
-                    Wall(
-                        start=Position(x=self.config.wall_gap / 2, y=self.config.hallway_top),
-                        end=Position(x=self.config.wall_gap / 2, y=self.config.hallway_bottom),
-                    ),
-                    Wall(
-                        start=Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_bottom),
-                        end=Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_top),
-                    ),
-                ],
-                description="hallway",
+                polygon=[Position(x=0, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_bottom), Position(x=self.config.width, y=self.config.hallway_top), Position(x=0, y=self.config.hallway_top)],
             )
+        )
+        descriptions[rooms[-1].name] = "hallway"
+        level.walls.extend(
+            [
+                WallPath(path=[Position(x=self.config.wall_gap / 2, y=self.config.hallway_top), Position(x=self.config.wall_gap / 2, y=self.config.hallway_bottom)]),
+                WallPath(path=[Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_bottom), Position(x=self.config.width - self.config.wall_gap / 2, y=self.config.hallway_top)]),
+            ]
         )
 
         for i in range(num_rooms):
@@ -119,22 +116,17 @@ class WorldGeneratorHallway(WorldGeneratorImpl):
 
             room_walls = shapely.difference(room_polygon.exterior, door_polygon)
 
-            rooms.append(
-                LevelDescription.Zone(
-                    name=f"{side}_room_{len(rooms)}",
-                    corners=to_corners(room_polygon),
-                    walls=to_walls(room_walls),
-                    doors=[
-                        Door(
-                            name=f"{side}_room_{len(rooms)}_door",
-                            start=Position(x=door_start, y=door_y),
-                            end=Position(x=door_end, y=door_y),
-                        )
-                    ],
-                    description=f"{side} room {i + 1} of size {w: .1f} x {h: .1f}",
+            level.doors.append(
+                Door(
+                    name=f"{side}_room_{len(rooms)}_door",
+                    start=Position(x=door_start, y=door_y),
+                    end=Position(x=door_end, y=door_y),
                 )
             )
+            rooms.append(Zone(name=f"{side}_room_{len(rooms)}", polygon=to_corners(room_polygon)))
+            descriptions[rooms[-1].name] = f"{side} room {i + 1} of size {w: .1f} x {h: .1f}"
+            level.walls.extend(to_walls(room_walls))
 
             current_x += w
 
-        return rooms
+        level.zones.extend(rooms)

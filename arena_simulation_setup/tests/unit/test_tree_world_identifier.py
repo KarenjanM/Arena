@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from arena_simulation_setup.tree import SimplePathResolver
-from arena_simulation_setup.tree.World.World import WorldIdentifier
+from arena_simulation_setup.tree.World import WorldIdentifier
 
 
 def test_world_identifier_eq_by_name():

@@ -49,6 +49,10 @@ signals:
   l_ankle: {mean: 0.5716714948077319}
   r_y_ankle: {mean: 0.2067574486092747}
   r_ankle: {mean: 0.6563729765295316}
+  l_r_wrist: {mean: 0.0}
+  l_wrist: {mean: 0.0}
+  r_r_wrist: {mean: 0.0}
+  r_wrist: {mean: 0.0}
 joints:
   r_waist: {signal: r_waist, shift: 0.0}
   y_waist: {signal: y_waist, shift: 0.0}
@@ -86,3 +90,7 @@ joints:
   l_ankle: {signal: l_ankle, shift: 0.0}
   r_y_ankle: {signal: r_y_ankle, shift: 0.0}
   r_ankle: {signal: r_ankle, shift: 0.0}
+  l_r_wrist: {signal: l_r_wrist, shift: 0.0}
+  l_wrist: {signal: l_wrist, shift: 0.0}
+  r_r_wrist: {signal: r_r_wrist, shift: 0.0}
+  r_wrist: {signal: r_wrist, shift: 0.0}

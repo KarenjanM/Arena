@@ -87,9 +87,10 @@ class DummyHumanSimulator(NoopHumanSimulator):
 
     async def _keepalive_loop(self) -> None:
         try:
-            while True:
-                await asyncio.sleep(1.0 / _KEEPALIVE_HZ)
-                self._publish_roster()
+            with self.node.sim_time_rate(_KEEPALIVE_HZ) as (done, rate):
+                while not done.is_set():
+                    await rate.get()
+                    self._publish_roster()
         except asyncio.CancelledError:
             pass
         except Exception as e:

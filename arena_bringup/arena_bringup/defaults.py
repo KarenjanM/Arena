@@ -2,8 +2,10 @@
 
 DEFAULT_HUMAN: dict[str, str] = {
     "dummy": "dummy",
+    "flatsim": "arena",
     "gazebo": "arena",
     "isaac": "arena",
+    "mujoco": "arena",
 }
 
 

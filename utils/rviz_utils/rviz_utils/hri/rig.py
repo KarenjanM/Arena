@@ -48,11 +48,6 @@ def _rot_z(theta: float) -> np.ndarray:
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
 
 
-def _rot_x(theta: float) -> np.ndarray:
-    c, s = math.cos(theta), math.sin(theta)
-    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
-
-
 def _rot_axis(axis: np.ndarray, theta: float) -> np.ndarray:
     """Rodrigues' rotation formula about an arbitrary (non-unit) axis."""
     norm = np.linalg.norm(axis)

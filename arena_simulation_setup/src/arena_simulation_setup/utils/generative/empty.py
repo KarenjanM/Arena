@@ -1,11 +1,12 @@
 import shapely
 
+from arena_simulation_setup.tree.World import Level, World, Zone
+
 from . import (
     BaseConfiguration,
-    LevelDescription,
     WorldGeneratorImpl,
 )
-from .utils import to_corners, to_walls
+from .utils import to_corners, to_walls, world_of
 
 
 class WorldGeneratorEmpty(WorldGeneratorImpl):
@@ -18,7 +19,7 @@ class WorldGeneratorEmpty(WorldGeneratorImpl):
     def configure(self, configuration: dict):
         self.config = self.Configuration.model_validate(configuration)
 
-    def compute(self) -> LevelDescription:
+    def compute(self) -> World:
 
         room = shapely.Polygon(
             [
@@ -29,13 +30,5 @@ class WorldGeneratorEmpty(WorldGeneratorImpl):
             ]
         )
 
-        return LevelDescription(
-            zones=[
-                LevelDescription.Zone(
-                    name="empty_zone",
-                    corners=to_corners(room),
-                    walls=to_walls(room),
-                    description="An empty zone",
-                )
-            ]
-        )
+        level = Level(zones=[Zone(name="empty_zone", polygon=to_corners(room))], walls=to_walls(room))
+        return world_of(level, {"empty_zone": "An empty zone"})

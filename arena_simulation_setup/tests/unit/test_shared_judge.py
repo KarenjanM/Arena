@@ -31,7 +31,8 @@ from arena_simulation_setup.shared.judge import (
     zone_polygons,
 )
 from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, TaskPhase
-from arena_simulation_setup.tree.World.World import LevelDescription
+from arena_simulation_setup.shared import Door
+from arena_simulation_setup.tree.World import Level, Zone
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 SQUARE = shapely.Polygon([(0, 0), (0, 4), (4, 4), (4, 0)])
@@ -274,15 +275,17 @@ def test_scoped_conditions_judged_over_the_phase():
 
 
 def test_zone_polygons_from_level():
-    level = LevelDescription(
+    level = Level(
         zones=[
-            LevelDescription.Zone(name="kitchen", corners=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)]),
-            LevelDescription.Zone(name="line", corners=[Position(0, 0), Position(1, 1)]),
-        ]
+            Zone(name="kitchen", polygon=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)]),
+            Zone(name="line", polygon=[Position(0, 0), Position(1, 1)]),
+        ],
+        doors=[Door(name="kitchen_door", start=Position(4, 1), end=Position(4, 2))],
     )
     polygons = zone_polygons(level)
-    assert set(polygons) == {"kitchen"}
+    assert set(polygons) == {"kitchen", "kitchen_door"}
     assert polygons["kitchen"].covers(shapely.Point(2, 2))
+    assert polygons["kitchen_door"].covers(shapely.Point(4.2, 1.5))
 
 
 def test_park_timer_jitter_inside_bounds_keeps_the_anchor():
@@ -329,4 +332,67 @@ def test_signal_far_from_goal_misfires():
 def test_signal_on_named_target_measures_distance_to_the_target():
     monitor = PhaseMonitor(GoToPhase(target="alice", tolerance_radius=1.0, tolerance_angle=0.0, hold_time=0.0, signal="arrived"), "robot_0")
     assert monitor.step(sample(t=0.0, robot=(0.0, 0.0, 0.0), peds={"alice": (3.0, 4.0)}), ZONES, signal="arrived") is False
+    assert monitor.misfire == "signaled arrived 5.00 m from goal"
+
+
+@pytest.mark.parametrize(
+    ("op", "p_ok", "q_ok"),
+    [("always", False, True), ("never", False, True), ("eventually", False, True), ("before", True, False), ("before", False, True), ("never_during", True, False)],
+)
+def test_operator_verdict_with_unresolvable_atom_is_unknown(op, p_ok, q_ok):
+    series = np.array([True, False])
+    assert operator_verdict(op, series, p_ok, series, q_ok) is None
+
+
+def test_arrived_on_hold_phase_before_pose_fill_is_unknown():
+    phase = GoToPhase(hold_time=2.0)
+    assert arrived(phase, sample(robot=(1.0, 1.0, 0.0)), ZONES, "robot_0") is None
+    monitor = PhaseMonitor(phase, "robot_0")
+    assert monitor.step(sample(t=0.0), ZONES) is False
+    assert monitor.step(sample(t=5.0), ZONES) is False
+    assert monitor.met is False and monitor.arrived_at is None
+
+
+def test_met_phase_stays_met_while_conditions_keep_judging():
+    phase = TaskPhase.parse({"goto": [1.0, 1.0, 0.0], "tolerance_radius": 0.5, "tolerance_angle": 0.0, "conditions": [{"op": "never", "p": "robot in hallway"}]})
+    monitor = PhaseMonitor(phase, "robot_0")
+    assert monitor.met is False
+    assert monitor.step(sample(t=0.0, robot=(1.0, 1.0, 0.0)), ZONES) is True
+    assert monitor.met is True
+    assert monitor.step(sample(t=1.0, robot=(11.0, 1.0, 0.0)), ZONES) is True
+    assert monitor.met_at == 0.0
+    assert monitor.finish() == [False]
+
+
+def test_goto_phase_with_until_keeps_arrival_when_leaving_before_the_park():
+    phase = GoToPhase(pose=Pose(Position(1.0, 1.0), Orientation.identity()), tolerance_radius=0.5, tolerance_angle=0.0, hold_time=2.0, until="door.open == true")
+    monitor = PhaseMonitor(phase, "robot_0")
+    assert monitor.step(sample(t=0.0, robot=(5.0, 5.0, 0.0)), ZONES) is False
+    assert monitor.arrived_at is None and monitor.waiting is False
+    assert monitor.step(sample(t=1.0, robot=(1.0, 1.0, 0.0)), ZONES) is False
+    assert monitor.step(sample(t=2.0, robot=(5.0, 5.0, 0.0)), ZONES) is False
+    assert monitor.arrived_at == 1.0 and monitor.waiting is True and monitor.held is False
+    assert monitor.step(sample(t=3.0, robot=(1.0, 1.0, 0.0)), ZONES) is False
+    assert monitor.step(sample(t=5.0, robot=(1.0, 1.0, 0.0)), ZONES) is False
+    assert monitor.held is True
+    assert monitor.step(sample(t=6.0, robot=(5.0, 5.0, 0.0), fields={("door", "open"): "true"}), ZONES) is True
+    assert monitor.met_at == 6.0 and monitor.arrived_at == 1.0
+
+
+def test_signal_without_robot_pose_misfires_at_unknown_distance():
+    monitor = PhaseMonitor(GoToPhase(pose=Pose(Position(1.0, 1.0), Orientation.identity()), tolerance_radius=0.5, tolerance_angle=0.0, signal="arrived"), "robot_0")
+    assert monitor.step(sample(t=0.0, robot=None), ZONES, signal="arrived") is False
+    assert monitor.misfire == "signaled arrived inf m from goal"
+
+
+def test_signal_on_unresolvable_target_without_dispatch_pose_misfires_at_unknown_distance():
+    monitor = PhaseMonitor(GoToPhase(target="alice", tolerance_radius=1.0, signal="arrived"), "robot_0")
+    assert monitor.step(sample(t=0.0, robot=(0.0, 0.0, 0.0)), ZONES, signal="arrived") is False
+    assert monitor.misfire == "signaled arrived inf m from goal"
+
+
+def test_signal_on_absent_target_measures_distance_to_the_dispatch_pose():
+    monitor = PhaseMonitor(GoToPhase(target="alice", pose=Pose(Position(3.0, 4.0), Orientation.identity()), tolerance_radius=1.0, signal="arrived"), "robot_0")
+    absent = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, known=frozenset({"alice"}))
+    assert monitor.step(absent, ZONES, signal="arrived") is False
     assert monitor.misfire == "signaled arrived 5.00 m from goal"

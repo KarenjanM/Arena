@@ -1,48 +1,105 @@
 #! /usr/bin/env python
+"""Render a world's map preview, re-save it as canonical format 2 with --all, or migrate a format 1 world in place with --migrate."""
+
 import argparse
 import ast
 import os
+import sys
+import warnings
 from pathlib import Path
 
-from arena_simulation_setup.tree.World import MultiLevelWorldView
+import yaml
 
-parser = argparse.ArgumentParser(description="Render a world's map preview, or with --all regenerate its world.yaml + per-level maps.")
-parser.add_argument('world_name', type=str, help='Name of the world to touch.')
-parser.add_argument('--all', action='store_true', help='Regenerate canonical world.yaml + per-level maps in the source tree (not just a preview).')
-parser.add_argument('--assets', help='Color to draw assets in.', default=None)
-parser.add_argument('--assets-label', help='Color to draw asset labels in.', default=None)
-parser.add_argument('--assets-bbox', help='Default bounding box for static entities as ((xmin, xmax), (ymin, ymax)).', default=None)
-parser.add_argument('--resolution', type=float, help='Resolution of the generated map in meters per pixel.', default=0.05)
-args = parser.parse_args()
+from arena_simulation_setup.tree.World import WorldView
+from arena_simulation_setup.tree.World.legacy import is_legacy
 
-render_kwargs: dict = {}
-if args.assets_bbox is not None:
-    try:
-        render_kwargs['default_asset_bbox'] = ast.literal_eval(args.assets_bbox)
-    except Exception as e:
-        print(f"Error parsing assets_bbox: {e}")
-        exit(1)
-if args.assets is not None:
-    render_kwargs['asset_color'] = args.assets
-if args.assets_label is not None:
-    render_kwargs['asset_name_color'] = args.assets_label
+EPILOG = """\
+modes:
+  (none)     render the preview map of every level laid side by side to <world>/map.png and map.yaml
+  --all      re-save <world>/world.yaml as canonical format 2 plus kg.yaml and map/<level id>.png
+  --migrate  rewrite a format 1 world (per-level <id>/world.yaml or a world.yaml without format:) in place
+             as format 2, delete the per-level files and print every upgrade warning
 
-base_dir = os.getcwd()
-if (arena_dir := os.environ.get('ARENA_DIR')) is not None:
-    base_dir = os.path.join(arena_dir, 'arena_simulation_setup', 'worlds')
+The world is a directory path, or a name under $ARENA_DIR/arena_simulation_setup/worlds (else the current directory).
+"""
 
-world_path = Path(os.path.join(base_dir, args.world_name))
-view = MultiLevelWorldView(world_path)
-world = view.load()
 
-if args.all:
-    view.save(world, resolution=args.resolution, **render_kwargs)
-    print(f"Regenerated world.yaml + maps for '{args.world_name}' at {world_path}")
-else:
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog='touch_world', description=__doc__, epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('world', help='world directory, or world name')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--all', action='store_true', help='re-save world.yaml as canonical format 2 with kg.yaml and the per-level maps')
+    mode.add_argument('--migrate', action='store_true', help='rewrite a format 1 world in place as format 2 and print the upgrade warnings')
+    parser.add_argument('--assets', metavar='COLOR', help='draw static objects in this color (any PIL color name or #rrggbb), off by default')
+    parser.add_argument('--assets-label', metavar='COLOR', help='label static objects in this color, needs --assets')
+    parser.add_argument('--assets-bbox', metavar='BOX', help='bounding box for static objects without one, as "((xmin, xmax), (ymin, ymax))"')
+    parser.add_argument('--resolution', type=float, default=0.05, metavar='M', help='map resolution in meters per pixel (default 0.05)')
+    return parser
+
+
+def _world_path(raw: str) -> Path:
+    path = Path(raw).expanduser()
+    if path.is_dir():
+        return path.resolve()
+    base = Path(os.environ['ARENA_DIR']) / 'arena_simulation_setup' / 'worlds' if 'ARENA_DIR' in os.environ else Path.cwd()
+    return base / raw
+
+
+def _migrate(view: WorldView) -> int:
+    if view.world_path.exists() and not is_legacy(yaml.safe_load(view.world_path.read_text(encoding='utf-8'))):
+        print(f'{view.path} is already format 2, nothing to migrate')
+        return 0
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', DeprecationWarning)
+        notes = view.migrate()
+    for note in notes:
+        print(f'warning: {note}')
+    print(f'migrated {view.path} to format 2 ({len(notes)} warning{"" if len(notes) == 1 else "s"})')
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = _parser()
+    if not argv:
+        parser.print_help(sys.stderr)
+        return 2
+    args = parser.parse_args(argv)
+
+    render_kwargs: dict = {}
+    if args.assets_bbox is not None:
+        try:
+            render_kwargs['default_asset_bbox'] = ast.literal_eval(args.assets_bbox)
+        except (ValueError, SyntaxError) as e:
+            parser.error(f'--assets-bbox {args.assets_bbox!r} is not "((xmin, xmax), (ymin, ymax))": {e}')
+    if args.assets_label is not None and args.assets is None:
+        parser.error('--assets-label needs --assets')
+    if args.assets is not None:
+        render_kwargs['asset_color'] = args.assets
+    if args.assets_label is not None:
+        render_kwargs['asset_name_color'] = args.assets_label
+
+    world_path = _world_path(args.world)
+    if not world_path.is_dir():
+        parser.error(f'world {args.world!r} not found at {world_path}: pass a world directory, or a name under $ARENA_DIR/arena_simulation_setup/worlds')
+    view = WorldView(world_path)
+
+    if args.migrate:
+        return _migrate(view)
+
+    world = view.load()
+    if args.all:
+        view.save(world, resolution=args.resolution, **render_kwargs)
+        print(f're-saved {world_path} as canonical format 2 with maps under {world_path / "map"}')
+        return 0
+
     level_origins = view.level_origins()
-    origins = level_origins if level_origins is not None else {fid: (0.0, 0.0) for fid in world.level_ids}
-    description = world.compact_world(origins=origins)
-    png_bytes, map_yaml_out = description.render_map_files(level_origins=level_origins, resolution=args.resolution, **render_kwargs)
+    origins = level_origins if level_origins is not None else dict.fromkeys(world.level_ids, (0.0, 0.0))
+    png_bytes, map_yaml_out = world.compact_world(origins=origins).render_map_files(level_origins=level_origins, resolution=args.resolution, **render_kwargs)
     (world_path / 'map.png').write_bytes(png_bytes)
     (world_path / 'map.yaml').write_text(map_yaml_out)
-    print(f"Rendered preview map for '{args.world_name}' to {world_path}")
+    print(f'rendered the preview map of {world_path} to map.png and map.yaml, --all re-saves the world itself')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main(sys.argv[1:]))

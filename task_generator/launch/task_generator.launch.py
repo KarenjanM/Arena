@@ -114,13 +114,13 @@ def generate_launch_description() -> launch.LaunchDescription:
     sim = LaunchArgument(
         name="sim",
         default_value="",
-        description="empty = adopt the runtime's sim; explicit [dummy, gazebo, isaac] must match the runtime",
+        description="empty = adopt the runtime's sim; explicit [dummy, flatsim, gazebo, isaac, mujoco] must match the runtime",
     )
     env_tf = LaunchArgument(
         name="env.tf",
         choices=["auto", "env", "global"],
         default_value="auto",
-        description="tf topics: env = <env ns>/tf and <env ns>/tf_static, global = /tf and /tf_static, auto = global for sim isaac or robot.train, env otherwise.",
+        description="tf topics: env = <env ns>/tf and <env ns>/tf_static, global = /tf and /tf_static, auto = global for sim isaac or mujoco or robot.train, env otherwise.",
     )
     # human/mobile defaults derive from arena's authoritative `sim` (the RegisterEnv
     # response, or the sim arg arena passes for managed envs). Empty here means
@@ -128,7 +128,13 @@ def generate_launch_description() -> launch.LaunchDescription:
     human = LaunchArgument(
         name="human",
         default_value="",
-        description="empty = derive from arena_sim ({dummy: manual, gazebo|isaac: arena})",
+        description="empty = derive from arena_sim ({dummy: manual, flatsim|gazebo|isaac|mujoco: arena})",
+    )
+    human_robots_visible = LaunchArgument(
+        name="human.robots.visible",
+        choices=["true", "false"],
+        default_value="true",
+        description="false = pedestrians of the arena human backend are not told where the robots are and walk as if none were there. Possessed pedestrians stay visible to the crowd.",
     )
     acoustics = LaunchArgument(
         name="acoustics",
@@ -169,6 +175,12 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="authored",
         choices=["authored", "auto"],
         description="authored: the lights the world declares. auto: also a calibrated ceiling rig in every zone with a ceiling and no lights of its own.",
+    )
+    kg_derive = LaunchArgument(
+        name="kg.derive",
+        default_value="auto",
+        choices=["auto", "all", "off"],
+        description="auto: derive zone membership and door connections from geometry where the world's kg.yaml states none. all: derive them from geometry for everything, ignoring the stated ones. off: only what kg.yaml states.",
     )
     mobile = LaunchArgument(
         name="robot.mobile",
@@ -241,9 +253,9 @@ def generate_launch_description() -> launch.LaunchDescription:
         env_tf_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(env_tf.substitution))
         if env_tf_val == "auto":
             train_val = launch.utilities.perform_substitutions(context, launch.utilities.normalize_to_list_of_substitutions(train_mode.substitution))
-            env_tf_val = "global" if arena_sim == "isaac" or truthy(train_val) else "env"
-        if env_tf_val == "env" and arena_sim == "isaac":
-            raise RuntimeError("env.tf:=env is not supported with sim isaac, its robot odom tf is published on /tf")
+            env_tf_val = "global" if arena_sim in ("isaac", "mujoco") or truthy(train_val) else "env"
+        if env_tf_val == "env" and arena_sim in ("isaac", "mujoco"):
+            raise RuntimeError(f"env.tf:=env is not supported with sim {arena_sim}, its robot odom tf is published on /tf")
         env_ns = os.path.dirname(allocated_ns).strip("/")
         tf_namespace = f"/{env_ns}" if env_tf_val == "env" and env_ns else ""
         tf_remaps = [launch_ros.actions.SetRemap(topic, tf_namespace + topic) for topic in ("/tf", "/tf_static")] if tf_namespace else []
@@ -262,16 +274,10 @@ def generate_launch_description() -> launch.LaunchDescription:
             context,
             launch.utilities.normalize_to_list_of_substitutions(tm_modules.substitution),
         )
-        configured_modules = [
-            value.strip()
-            for value in tm_modules_val.split(",")
-            if value.strip()
-        ]
+        configured_modules = [value.strip() for value in tm_modules_val.split(",") if value.strip()]
         static_sounds_val = launch.utilities.perform_substitutions(
             context,
-            launch.utilities.normalize_to_list_of_substitutions(
-                auditory_static_sounds.substitution
-            ),
+            launch.utilities.normalize_to_list_of_substitutions(auditory_static_sounds.substitution),
         ).strip()
         static_sounds = static_sounds_val not in ("", "[]")
         if (acoustics_val != "none" or static_sounds) and "sounds" not in configured_modules:
@@ -441,6 +447,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "use_sim_time": True,
                     "sim": arena_sim,
                     "human": human_val,
+                    "human.robots.visible": human_robots_visible.param_value(bool),
                     "acoustics": acoustics_val,
                     "robot.mobile_adapter": mobile_val,
                     "robot.hearing": hearing_val,
@@ -452,6 +459,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "task.modules": tm_modules_val,
                     **world.str_param,
                     "world.lighting": world_lighting.param_value(str),
+                    "kg.derive": kg_derive.param_value(str),
                     "auditory.static_sounds": auditory_static_sounds.param_value(str),
                     "robot.train": train_mode.param_value(bool),
                     "env_id": allocated_id,
@@ -492,6 +500,10 @@ def generate_launch_description() -> launch.LaunchDescription:
                 'use_sim_time:=true',
                 '-p',
                 ['record_data_dir:=', record_dir.substitution],
+                '-p',
+                ['world.lighting:=', world_lighting.substitution],
+                '-p',
+                ['kg.derive:=', kg_derive.substitution],
                 '-r',
                 ['__ns:=/', allocated_ns],
                 *(arg for topic in ("/tf", "/tf_static") if tf_namespace for arg in ('-r', f'{topic}:={tf_namespace}{topic}')),

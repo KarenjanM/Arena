@@ -11,7 +11,7 @@ maps them to live ROS parameters.
 | --- | --- | --- |
 | `DEFAULT_PEDESTRIAN_MODEL` | `str` | `"arenian"` |
 | `TASK_GENERATOR_SERVER_NODE` | `Namespace` | `"task_generator_server"` |
-| `SimSimulator` | `Enum` | `dummy`, `flatland`, `gazebo`, `unity`, `isaac` |
+| `SimSimulator` | `Enum` | `dummy`, `flatsim`, `flatland`, `gazebo`, `unity`, `isaac` |
 | `ArenaType` | `Enum` | `training`, `deployment` |
 | `HumanSimulator` | `Enum` | `dummy`, `none`, `isaac`, `hunav`, `arena` |
 | `TaskMode.TM_Obstacles` | `Enum` | `parametrized`, `random`, `scenario`, `environment`, `prompt` |
@@ -44,7 +44,7 @@ Config.General.RNG.stream("obstacles", "random")   # independent numpy Generator
 | `HUMAN` | `human` | `dummy` | `Constants.HumanSimulator` |
 | `WORLD` | `world` | *(required)* | `str` |
 
-`HUMAN`'s `dummy` default is only the bare ROS-param fallback (offline/test contexts). `task_generator.launch.py` always resolves `human` per sim first (`gazebo`/`isaac` -> `arena`, `dummy` -> `dummy`).
+`HUMAN`'s `dummy` default is only the bare ROS-param fallback (offline/test contexts). `task_generator.launch.py` always resolves `human` per sim first (`flatsim`/`gazebo`/`isaac` -> `arena`, `dummy` -> `dummy`).
 
 ### `Config.General`
 
@@ -80,6 +80,12 @@ Every `task.episode.*` param is also a launch arg (empty = node default), listed
 | `ARM_ADAPTER` | `robot.arm_adapter` | `'moveit'` | default arm-cap adapter kind, overridden per robot via scenario `arm:` |
 
 Adapter-specific tunables (planners, RL agent, ...) live in `caps/<cap>.yaml` and can be overridden at launch time via `<cap>.<key>:=<val>` flags. Each `<cap>.<key>:=<val>` lands on the task-generator node as ROS param `robot.<cap>.<key>` and is merged into the adapter's kwargs on top of the cap-file YAML.
+
+### `Config.Human`
+
+| Attribute | ROS param | Default | Notes |
+| --- | --- | --- | --- |
+| `ROBOTS_VISIBLE` | `human.robots.visible` | `True` | `False` = the human backend leaves the robots out of what it tells its pedestrians, honored by `ArenaHumanSimulator`, read once when the backend is built |
 
 ### Node-level runtime params (declared with `ParameterDescriptor`)
 

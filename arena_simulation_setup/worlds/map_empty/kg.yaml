@@ -1,0 +1,10 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:empty_zone', props: {description: Empty Zone}}
+- {id: 'elevator:elevator_ground'}
+- {id: 'elevator:elevator_top'}
+facts:
+- {subject: 'room:empty_zone', verb: contains, object: 'elevator:elevator_ground'}
+- {subject: 'room:empty_zone', verb: contains, object: 'elevator:elevator_top'}
+constraints: []

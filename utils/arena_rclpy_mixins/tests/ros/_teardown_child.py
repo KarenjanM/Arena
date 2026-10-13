@@ -19,6 +19,7 @@ _STALL_S = 12.0
 _DEADLINE_BLOCK_S = 5.0
 _DEADLINE_S = 1.5
 _SLOW_PUBLISH_S = 0.005
+_CROWD = 300
 
 
 class Storm(ArenaMixinNode):
@@ -139,6 +140,19 @@ class Idle(rclpy.node.Node):
         print("READY", flush=True)
 
 
+class Crowded(rclpy.node.Node):
+    """Node with hundreds of subscriptions and a one-shot ready timer."""
+
+    def __init__(self) -> None:
+        super().__init__("teardown_crowded")
+        self._subs = [self.create_subscription(String, f"teardown_crowded_{i}", lambda _msg: None, 10) for i in range(_CROWD)]
+        self._timer = self.create_timer(0.05, self._ready)
+
+    def _ready(self) -> None:
+        self._timer.cancel()
+        print("READY", flush=True)
+
+
 class SlowFinalizer:
     """Hold interpreter finalization open after signal handlers are reset."""
 
@@ -196,6 +210,10 @@ def main() -> None:
     elif mode == "sync_global_idle":
         rclpy.init()
         spin_node(Idle())
+    elif mode == "sync_events_crowded":
+        rclpy.init()
+        sys.setswitchinterval(1e-6)
+        spin_node(Crowded(), executor=create_executor())
     elif mode == "sync_late":
         rclpy.init()
         with spin_context():

@@ -56,6 +56,7 @@ setup(
         where=python_root,
     ),
     package_dir={'': python_root},
+    package_data={f'{package_name}.kg': ['packages/*.toml']},
     data_files=[
         ('share/' + package_name, ['package.xml']),
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),

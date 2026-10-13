@@ -1,12 +1,11 @@
-robots:
-- start: [10.0, 0.5, 1.5708]
-  goal: [4.0, 17.6, 0.0]
-
-dynamic:
+format: arena-scenario/2
+humans:
 - name: agent1
   model: arenian
   pose: [5, 4.4, 0]
   agent: {agent_type: adult, desired_velocity: 1.2}
-  waypoints:
-    - [10, 10, 0]
-    - [15, 5, 0]
+  waypoints: [[10, 10, 0], [15, 5, 0]]
+robots:
+- start: [10.0, 0.5, 1.5708]
+  phases:
+  - {goto: [4.0, 17.6, 0.0]}

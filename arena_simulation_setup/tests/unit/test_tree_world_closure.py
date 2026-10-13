@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
-from arena_simulation_setup.tree.World.World import MultiLevelWorldView
+import pytest
+
+from arena_simulation_setup.tree.World import WorldView
 
 _WORLD = """
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - name: z
+    polygon: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+    floor: false
+  walls:
+  - path: [[0.0, 0.0], [1.0, 0.0]]
+"""
+
+_LEGACY_WORLD = """
 zones:
   - description: "test zone"
     name: "z"
@@ -22,18 +36,24 @@ zones:
 """
 
 
-def _world(tmp_path):
-    (tmp_path / 'world.yaml').write_text(_WORLD)
-    return MultiLevelWorldView(tmp_path)
+@pytest.fixture(params=[_WORLD, _LEGACY_WORLD], ids=['format2', 'format1'])
+def _world(tmp_path, request):
+    (tmp_path / 'world.yaml').write_text(request.param)
+    return WorldView(tmp_path)
 
 
-def test_closure_skips_unset_material(tmp_path):
-    """`mat: ""` is an unset field, not a reference to an asset called ''."""
-    identifiers = list(_world(tmp_path).identifiers(scenarios=False))
+def test_closure_skips_unset_material(_world):
+    """`floor: false` (format 1 `mat: ""`) is an unset field, not a reference to an asset called ''."""
+    identifiers = list(_world.identifiers(scenarios=False))
     assert [i for i in identifiers if not i.name] == []
 
 
-def test_closure_yields_the_materials_that_are_set(tmp_path):
+def test_closure_yields_the_materials_that_are_set(_world):
     """The ceiling and wall materials fall back to named defaults, and those are references."""
-    identifiers = list(_world(tmp_path).identifiers(scenarios=False))
+    identifiers = list(_world.identifiers(scenarios=False))
     assert {i.shortname for i in identifiers} == {'Common/Material/Concrete_Smooth', 'Common/Material/Marble'}
+
+
+def test_closure_yields_the_default_ceiling_material(_world):
+    identifiers = list(_world.identifiers(scenarios=False))
+    assert 'Common/Material/Concrete_Smooth' in {i.shortname for i in identifiers}

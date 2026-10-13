@@ -27,6 +27,7 @@ class Realizer:
 
     _config: _Configuration
     _level_origins: dict[str, tuple[float, float]]
+    _elevator_levels: dict[str, str]
 
     @typing.overload
     def __init__(self, config: "Realizer._Configuration", level_origins: None = None): ...
@@ -38,6 +39,7 @@ class Realizer:
     def __init__(self, config: "Realizer._Configuration | None" = None, level_origins: dict[str, tuple[float, float]] | None = None):
         self._config = config if config is not None else Realizer._Configuration()
         self._level_origins = level_origins if level_origins is not None else {}
+        self._elevator_levels = {}
 
     def set_origin(self, x: float, y: float, level_id: str = "") -> None:
         if level_id == "":
@@ -50,6 +52,10 @@ class Realizer:
     def reset_level_origins(self, origins: dict[str, tuple[float, float]]) -> None:
         """Replace the per-level origin table, dropping any levels from a prior world."""
         self._level_origins = {str(level_id): (float(x), float(y)) for level_id, (x, y) in origins.items()}
+
+    def reset_elevator_levels(self, levels: typing.Mapping[str, str]) -> None:
+        """Replace the level of every elevator cabin by cabin name, dropping those of a prior world."""
+        self._elevator_levels = {str(cabin): str(level_id) for cabin, level_id in levels.items()}
 
     def get_config(self) -> "Realizer._Configuration":
         return self._config
@@ -119,7 +125,7 @@ class Realizer:
         return attrs.evolve(
             obstacle,
             pose=self._realize_pose(obstacle.pose, level_id),
-            waypoints=[self._realize_position(w.position, w.level_id if w.level_id is not None else "") for w in obstacle.waypoints],
+            waypoints=[self._realize_position(w.position, w.level) for w in obstacle.waypoints],
         )
 
     @typing.overload
@@ -166,19 +172,16 @@ class Realizer:
     @typing.overload
     def realize(self, target: Elevator, level_id: str = "") -> Elevator: ...
 
-    def _realize_destination(self, destination: str) -> str:
-        """Translate a `<level_id>.<elevator_name>` destination into the realized elevator name."""
-        if not destination:
-            return destination
-        dest_level_id, dest_name = destination.split('.', 1) if '.' in destination else ('', destination)
-        return self._prefix(dest_name, dest_level_id)
+    def _realize_destination(self, cabin: str) -> str:
+        """The realized name of a destination cabin, prefixed with the level it stands on."""
+        return self._prefix(cabin, self._elevator_levels.get(cabin, ''))
 
     def _realize_elevator(self, elevator: Elevator, level_id: str = "") -> Elevator:
         return attrs.evolve(
             elevator,
             name=self._prefix(elevator.name, level_id),
             position=self._realize_position(elevator.position, level_id),
-            destination=self._realize_destination(elevator.destination),
+            destinations=[self._realize_destination(cabin) for cabin in elevator.destinations],
         )
 
     @typing.overload
@@ -211,7 +214,7 @@ class Realizer:
             light,
             name=self._prefix(light.name, level_id),
             frame=frame,
-            position=self._realize_position(light.position, level_id) if light.position is not None else None,
+            pose=self._realize_pose(light.pose, level_id) if light.pose is not None and not light.spec.ambient else light.pose,
             fixtures=[self._realize_position(fixture, level_id) for fixture in light.fixtures],
         )
 
@@ -222,6 +225,11 @@ class Realizer:
             realized = self._realize_position(corner, level_id)
             ring.append((realized.x, realized.y))
         return ring
+
+    def realize_xy(self, x: float, y: float, level_id: str = "") -> tuple[float, float]:
+        """Env-realized xy of a world point, for semantic params authored in world coordinates."""
+        realized = self._realize_position(Position(x=x, y=y, z=0.0), level_id)
+        return realized.x, realized.y
 
     def realize(self, target: object = None, level_id: str = "") -> object:
         if target is None:

@@ -104,6 +104,10 @@ def test_spin_node_on_idle_global_executor_sigterm_is_quiet():
     _exits_quietly("sync_global_idle", signal.SIGTERM)
 
 
+def test_spin_node_on_events_executor_sigterm_with_many_subscriptions_is_quiet():
+    _exits_quietly("sync_events_crowded", signal.SIGTERM)
+
+
 def test_async_main_reports_loop_stall():
     proc = subprocess.Popen([sys.executable, str(_CHILD), "async_stall"], env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.stdout is not None

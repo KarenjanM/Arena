@@ -1,5 +1,5 @@
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_simulation_setup.tree.World import WorldIdentifier
+from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light
 from arena_simulation_setup.tree.World.Scenario import Scenario
 from arena_simulation_setup.utils.geometry import Position
 
@@ -44,6 +44,7 @@ class TM_Scenario(TM_Obstacles):
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(scenario_name).resolve_sync()
         scenario = scenario_view.load(converter=zone_conv)
         self.scenario = scenario
+        self.lights = [anchor_light(light, scenario.objects) for light in scenario.lights]
 
         regions = [
             Region(
@@ -60,7 +61,7 @@ class TM_Scenario(TM_Obstacles):
         self.node.register_timeline(scenario.timeline, seed)
         self.node.register_conditions(scenario.conditions)
 
-        return scenario.static, scenario.dynamic
+        return scenario.objects, scenario.humans
 
     def __init__(self, **kwargs: object) -> None:
         TM_Obstacles.__init__(self, **kwargs)

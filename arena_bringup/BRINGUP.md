@@ -131,6 +131,7 @@ arena launch \
 | Arg | Implication |
 |---|---|
 | `sim:=isaac` | Runs `arena feature isaac launch` via bash. `mobile` adapter defaults to `nav2` |
+| `sim:=mujoco` | Runs `arena feature mujoco launch` via bash (out-of-process MuJoCo server, CPU physics, ray-cast lidar, kinematic pedestrians, needs `arena feature mujoco install`). `human` defaults to `arena`, tf is `global` like isaac |
 | `task.config:=<path>` | Structured `TaskModeSpec` YAML; overrides `task.robots`. Use to split a fleet across multiple task modes |
 | `headless:=true` | Sim GUI hidden; rviz suppressed (no GUI at all) |
 
@@ -176,7 +177,7 @@ arena launch \
 | Arg | Implication |
 |---|---|
 | `env.n:=3` | Three task-generator instances under `arena/env_0/task_generator_node`, `arena/env_1/...`, `arena/env_2/...`. `arena_node` self-orchestrates the fleet via `/arena/spawn_env`. |
-| `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
+| `env.tf` | Omitted -> `auto`. Each env's tf traffic goes to `/arena/env_<N>/tf` and `/arena/env_<N>/tf_static` (`env`) or to the shared `/tf` and `/tf_static` (`global`). `auto` = `global` under `sim:=isaac`, `sim:=mujoco` or `robot.train:=true`, `env` otherwise. Frame names are the same either way. The task generator reports the chosen namespace in its `tf_namespace` param, empty for `global`. |
 
 Slot positions are placed by the shelf packer in `arena_node` based on each env's `WorldExtent`; spacing is governed by the `slot_buffer` ROS parameter on `arena_node` (default 5 m).
 
@@ -236,6 +237,7 @@ via `/arena/spawn_env`.
 | `headless` | `false` | `true` = hide the sim GUI (server-only mode for Gazebo). Implicitly sets `viz:=false` unless `viz:=true` is explicit. |
 | `viz` | `true` | Controls whether `arena viz --all` is called after envs come up. Ignored when `headless:=true` unless overridden. |
 | `human.steering` | `auto` | Per-env `human_steering` panel. `auto` = attach when the resolved `human` backend is `dummy` (and not headless). `true` = always attach, wins over `headless`. `false` = never. |
+| `human.robots.visible` | `true` | `false` = pedestrians of the `arena` human backend are not told where the robots are and walk as if none were there. Possessed pedestrians stay visible to the crowd. |
 | `humansim.<arg>` | engine default | Any launch arg of the `arena` human backend. The prefix is stripped and the arg is forwarded to [arena_humansim.launch.py](../humansim/arena_humansim/launch/arena_humansim.launch.py), e.g. `humansim.local_planner:=orca`, `humansim.local_planner.relaxation_time:=0.7` or `humansim.global_planner.resolution:=0.1` (finer planning grid, opens 1 m doors to pedestrians). The same keys work per episode as `QueueEpisode.human_params`. `mode`, `use_sim_time`, `rviz`, and `namespace` are pinned. |
 | `humansim.markers` | `1` | Debug marker level of the `arena` human backend: `0` = off (also hides its rviz panels), `1` = agent bodies, headings and infrastructure, `2` = adds goals, paths, waypoints, vision cones and force vectors. Lower it to cut per-tick marker cost in crowded scenarios. |
 | `viz.view` | `map` | Camera view in rviz: `map` (TopDownOrtho), `robot` (Orbit on robot base), `robot3p` (ThirdPersonFollower on robot base). |
@@ -354,7 +356,14 @@ Default is `gazebo`. Valid values:
 |---|---|
 | `gazebo` (default) | gz-sim 8, dart physics, ogre renderer. `human` defaults to `arena` (arena_humansim). |
 | `isaac` | Isaac Sim via `arena feature isaac launch`. `mobile` defaults to `nav2`. |
+| `flatsim` | [flatsim](../flatsim/README.md) server, 2D Box2D with no renderer, one world for every env. Needs `arena feature flatsim install`. Odom, tf, laserscans, point clouds, IMU and contacts are computed from geometry, camera images are absent. `human` defaults to `arena`, `mobile` to `nav2`. |
 | `dummy` | No physics engine; a static `map->dummy` TF is published. For plumbing-only checks (no GPU, no controllers). Must be passed explicitly. |
+
+### sim.flatsim.*
+
+| Key | Default | Meaning |
+|---|---|---|
+| `sim.flatsim.dynamics` | `rigid` | Runtime argument. `rigid`: walls, obstacles and pedestrians stop or push the robot. `kinematic`: the robot passes through and only the collision tracker reports. |
 
 ### sim.isaac.*
 
