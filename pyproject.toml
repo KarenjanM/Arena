@@ -53,6 +53,7 @@ dev = [
 arena_humansim = [
     "attrs",
     "cattrs",
+    "gymnasium",
     "matplotlib",
     "numpy",
     "pandas",
@@ -61,6 +62,7 @@ arena_humansim = [
     "pyyaml",
     "rosbags",
     "scipy",
+    "stable-baselines3",
     "torch-geometric>=2.8.0.post1",
     "tqdm",
 ]
