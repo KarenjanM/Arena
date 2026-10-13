@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from task_generator.simulators.human.animation_mananager import JOINT_NAMES, AnimationManager
+from task_generator.simulators.human.animation_manager import JOINT_NAMES, AnimationManager
 from task_generator.simulators.human.gestures import (
     BREATH_AMP_RAD,
     BREATH_HZ,

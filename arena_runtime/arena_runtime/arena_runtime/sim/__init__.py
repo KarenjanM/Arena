@@ -83,7 +83,7 @@ def _flatsim_missing(e: ModuleNotFoundError) -> typing.NoReturn:
 @SimulatorRegistry.register(SimSimulator.FLATSIM)
 async def lazy_flatsim(**kwargs: object) -> BaseSim:
     try:
-        from .flatsim_simulator.simulator import FlatsimSimulator
+        from .flatsim_simulator import FlatsimSimulator
     except ModuleNotFoundError as e:
         _flatsim_missing(e)
 
@@ -95,7 +95,7 @@ async def lazy_flatsim_lifecycle(node: object, physics_dt: float = 0.0333, **kwa
     from arena_rclpy_mixins import ArenaMixinNode
 
     try:
-        from .flatsim_simulator.host import FlatsimHost
+        from .flatsim_simulator.flatsim_simulator import FlatsimHost
     except ModuleNotFoundError as e:
         _flatsim_missing(e)
 

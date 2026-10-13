@@ -195,7 +195,7 @@ with the simulator that will animate the resulting agents.
 
 `ArenaHumanSimulator` derives pedestrian parameters from the `agent:` block of
 each `humans:` scenario entry (`ArenaHumanDynamicObstacle`,
-[`arena_humansim/__init__.py`](arena_humansim/__init__.py)). `agent:` accepts
+[`arena_humansim/agent.py`](arena_humansim/agent.py)). `agent:` accepts
 either a bare string or a dict:
 
 ```yaml
@@ -366,7 +366,7 @@ widened to cover the object or the ped never gets close enough to sit.
 
 `HunavHumanSimulator` derives pedestrian parameters from a `HunavDynamicObstacle`
 instance. At module import time
-([`hunav/__init__.py:326`](hunav/__init__.py#L326)), the class-level default is
+([`hunav/agent.py:295`](hunav/agent.py#L295)), the class-level default is
 loaded from:
 
 ```

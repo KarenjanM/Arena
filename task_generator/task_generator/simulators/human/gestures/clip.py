@@ -10,7 +10,7 @@ from ..gait import GaitGenerator
 from . import GestureClip
 
 if typing.TYPE_CHECKING:
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
 
 
 class ClipGesture:

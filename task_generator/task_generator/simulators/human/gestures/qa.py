@@ -15,7 +15,7 @@ from pathlib import Path
 import attrs
 import numpy as np
 
-from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.gestures import BODY_HEIGHT, Channel, GestureLayer, GestureRequest, world_to_local
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.contract import ROS_JOINT_ORDER

@@ -9,7 +9,7 @@ This directory contains two distinct things used by the HuNav human simulator:
 
 `HunavDynamicObstacle._default` is populated by
 `_load_config()` in
-[task_generator/simulators/human/hunav/__init__.py](../../../task_generator/task_generator/simulators/human/hunav/__init__.py)
+[task_generator/simulators/human/hunav/agent.py](../../../task_generator/task_generator/simulators/human/hunav/agent.py)
 (`_load_config`, `HunavDynamicObstacle.parse`), which reads
 `<arena_simulation_setup share>/configs/hunav/default.yaml` at module import
 time.

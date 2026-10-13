@@ -113,7 +113,8 @@ from task_generator.constants.rng import stable_int
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator
-from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, agent_type_def, path_agent_type_name, resolve_agent_type_path
+
+from .agent import ArenaHumanDynamicObstacle, agent_type_def, path_agent_type_name, resolve_agent_type_path
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):

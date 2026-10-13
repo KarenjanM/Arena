@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from task_generator.simulators.human.arena_humansim import ArenaHumanDynamicObstacle, agent_type_def
+from task_generator.simulators.human.arena_humansim.agent import ArenaHumanDynamicObstacle, agent_type_def
 
 
 def test_agent_type_def_resolves_builtin_names_and_yaml_paths(tmp_path: Path) -> None:

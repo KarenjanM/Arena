@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from arena_runtime.gz_scene import parse_scene_models
+import pytest
+
+pytest.importorskip("arena_runtime.sim.gazebo_simulator.gazebo_simulator")
+
+from arena_runtime.sim.gazebo_simulator.scene import parse_scene_models  # noqa: E402
 
 _SCENE = """ambient {
   r: 0.4

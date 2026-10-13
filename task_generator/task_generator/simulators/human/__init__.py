@@ -36,7 +36,7 @@ from visualization_msgs.msg import MarkerArray
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
-from task_generator.simulators.human.animation_mananager import AnimationManager
+from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable

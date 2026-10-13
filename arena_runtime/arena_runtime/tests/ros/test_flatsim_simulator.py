@@ -34,8 +34,7 @@ async def _run(dynamics: str, scenario: typing.Callable[..., typing.Awaitable[No
     from task_generator.manager.realizer import Realizer
     from task_generator.shared import Pose, Robot
 
-    from arena_runtime.sim.flatsim_simulator.host import FlatsimHost
-    from arena_runtime.sim.flatsim_simulator.simulator import FlatsimSimulator
+    from arena_runtime.sim.flatsim_simulator.flatsim_simulator import FlatsimHost, FlatsimSimulator
     from flatsim.server import FlatsimServer
 
     class Bench(ArenaMixinNode):
@@ -225,7 +224,7 @@ async def _two_envs_share_the_world(bench: typing.Any, sim: typing.Any, robot: t
     from task_generator.manager.realizer import Realizer
     from task_generator.shared import Pose
 
-    from arena_runtime.sim.flatsim_simulator.simulator import FlatsimSimulator
+    from arena_runtime.sim.flatsim_simulator import FlatsimSimulator
 
     gap = _ahead(bench.scans[-1])
     other = await FlatsimSimulator.create(node=bench, namespace=Namespace("/flatsim_test/env_1"), realizer=Realizer(), env_id=1)
@@ -382,7 +381,7 @@ def test_overrides_take_the_parameters_of_the_simulator_interface() -> None:
     import inspect
 
     from arena_runtime.sim import BaseSim
-    from arena_runtime.sim.flatsim_simulator.simulator import FlatsimSimulator
+    from arena_runtime.sim.flatsim_simulator import FlatsimSimulator
 
     own = vars(FlatsimSimulator)
     for name, base in inspect.getmembers(BaseSim, inspect.isfunction):

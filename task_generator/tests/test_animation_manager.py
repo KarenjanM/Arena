@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from task_generator.simulators.human.animation_mananager import JOINT_NAMES, Animation, AnimationManager
+from task_generator.simulators.human.animation_manager import JOINT_NAMES, Animation, AnimationManager
 
 ANIMATIONS = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
 ARMS = {"l_y_collar", "l_p_collar", "l_y_shoulder", "l_p_shoulder", "l_r_shoulder", "l_elbow", "r_y_collar", "r_p_collar", "r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow"}

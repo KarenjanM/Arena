@@ -39,7 +39,7 @@ from arena_text_crowd.crowd_generation_pipeline.velocity_field_generation.veloci
 from hunav_msgs.srv import SetArenaWorldBounds, SetVelocityField
 
 from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
-from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
+from task_generator.simulators.human.hunav.agent import HunavDynamicObstacle
 from task_generator.tasks.obstacles import (
     DynamicObstacle,
     Obstacle,

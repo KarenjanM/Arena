@@ -57,7 +57,6 @@ from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
-from arena_runtime.gz_scene import parse_scene_models
 from arena_runtime.sim import BaseSim, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import (
     effective_control_yaml,
@@ -69,6 +68,7 @@ from arena_runtime.sim._interface import resolve_obstacle_box
 from arena_runtime.sim._walls import realize_renderable
 
 from .robot_bridge import BridgeConfiguration, MappingDirection, _TopicMapping
+from .scene import parse_scene_models
 
 _VIEWPORT_STREAM_QOS = QoSProfile(
     depth=1,

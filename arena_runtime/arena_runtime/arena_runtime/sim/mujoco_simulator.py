@@ -88,6 +88,9 @@ MujocoSimulator is per-env on task_generator_node and adapts env-namespace state
 """
 
 _MUJOCO_PHYSICS_DT = 0.002
+_MESH_MODEL_TYPES = (ModelType.OBJ, ModelType.SDF)
+_SPAWN_ASSETS_TIMEOUT_S = 300.0
+_RESEND_AFTER_S = 10.0
 
 
 class MujocoHost(SimLifecycle):
@@ -149,12 +152,6 @@ class MujocoHost(SimLifecycle):
         while not await self._node.await_sim_time(target, freeze_timeout=10.0):
             self._logger.warning(f"waiting on mujoco sim clock >= {target.to_seconds():.3f}s (at {self._node.sim_time.to_seconds():.3f}s)")
         return (self._node.sim_time - start).to_seconds()
-
-
-_MESH_MODEL_TYPES = (ModelType.OBJ, ModelType.SDF)
-
-_SPAWN_ASSETS_TIMEOUT_S = 300.0
-_RESEND_AFTER_S = 10.0
 
 
 def _mesh_files(model: Model) -> list[tuple[str, str]]:

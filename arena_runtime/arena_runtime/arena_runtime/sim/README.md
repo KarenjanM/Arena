@@ -250,7 +250,7 @@ controller activation lives inside the robot bring-up unpause window.
 | Key | Class | File | Notes |
 | --- | --- | --- | --- |
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
-| `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/simulator.py`](flatsim_simulator/simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
+| `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/flatsim_simulator.py`](flatsim_simulator/flatsim_simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
 | `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
 | `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
@@ -272,13 +272,13 @@ Gazebo and Isaac do, and publishes each robot's
 messages. Its interface is documented in the flatsim README, the notes here
 are what Arena sends it.
 
-- [`FlatsimHost`](flatsim_simulator/host.py): `pause` and `unpause` are
+- [`FlatsimHost`](flatsim_simulator/flatsim_simulator.py): `pause` and `unpause` are
   `control_world` calls. `step_seconds` sends `multi_step` in chunks of at
   most one sim second, the server takes the steps before it answers, and the
   call returns once arena_node's own clock carries the returned time.
   `cleanup_namespace` deletes every entity, floor and robot whose name starts
   with the env prefix `env_<id>/`.
-- [`FlatsimSimulator`](flatsim_simulator/simulator.py): the per-env client. It
+- [`FlatsimSimulator`](flatsim_simulator/flatsim_simulator.py): the per-env client. It
   keeps no world of its own. Spawns and deletes are service calls, pedestrians
   go out on `/flatsim/discs` and door and cabin moves on `/flatsim/poses`
   without waiting for an answer, as Gazebo's `move_box` does, since the

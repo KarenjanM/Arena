@@ -12,7 +12,7 @@ from conftest import DT, Rig
 async def _steps_are_exact_and_the_hold_freezes_the_server(rig: Rig) -> None:
     from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep
 
-    from arena_runtime.sim.flatsim_simulator.host import FlatsimHost
+    from arena_runtime.sim.flatsim_simulator.flatsim_simulator import FlatsimHost
 
     probe = rig.probe
     host = rig.arena._lifecycle._inner

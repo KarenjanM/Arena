@@ -210,7 +210,7 @@ def test_explicit_phase_does_not_advance_the_integrator(gen: GaitGenerator, stat
 def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
     from pathlib import Path
 
-    from task_generator.simulators.human.animation_mananager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationManager
     from task_generator.simulators.human.profile import resolve_pose_profile
 
     class _Logger:

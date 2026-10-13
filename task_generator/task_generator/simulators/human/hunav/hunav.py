@@ -36,7 +36,7 @@ from task_generator.shared import (
 from task_generator.simulators.human import BaseHumanSimulator, TrackedRobot
 from task_generator.simulators.human.noop import NoopHumanSimulator
 
-from . import HunavDynamicObstacle
+from .agent import HunavDynamicObstacle
 
 # robotless-env park position, far enough that all robot forces vanish
 _ROBOT_PARK_XY = 1.0e4
