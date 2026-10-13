@@ -8,15 +8,14 @@ import pytest
 
 from arena_simulation_setup.shared import Door
 from arena_simulation_setup.shared.walls import Wall
-from arena_simulation_setup.tree.World.World import LevelDescription
+from arena_simulation_setup.tree.World import Level, WallPath, Zone, ZoneCeiling
 from arena_simulation_setup.utils.geometry import Position
 
 
-def _room(ceiling_height: float | None = 2.6, ceiling: bool = True, doors: list[Door] | None = None) -> LevelDescription:
+def _room(ceiling_height: float | None = 2.6, ceiling: bool = True, doors: list[Door] | None = None) -> Level:
     corners = [Position(0.0, 0.0), Position(8.0, 0.0), Position(8.0, 6.0), Position(0.0, 6.0)]
-    walls = [Wall(start=corners[index], end=corners[(index + 1) % 4]) for index in range(4)]
-    zone = LevelDescription.Zone(name='hall', corners=corners, walls=walls, doors=doors or [], ceiling=ceiling, ceiling_height=ceiling_height)
-    return LevelDescription(zones=[zone])
+    zone = Zone(name='hall', polygon=corners, ceiling=ZoneCeiling(height=ceiling_height) if ceiling else None)
+    return Level(zones=[zone], walls=[WallPath(path=corners, closed=True)], doors=doors or [])
 
 
 def _tops(walls: list[Wall]) -> list[float]:
@@ -28,9 +27,9 @@ def _tops(walls: list[Wall]) -> list[float]:
 
 
 def test_walls_rise_to_a_ceiling_above_them() -> None:
-    plain = [wall.top for wall in _room().zones[0].walls]
+    plain = [wall.top for wall in _room().all_walls]
     assert plain == [None, None, None, None]
-    assert _tops(_room().zones[0].walls) == pytest.approx([2.0] * 4)
+    assert _tops(_room().all_walls) == pytest.approx([2.0] * 4)
     assert _tops(asyncio.run(_room().closed_walls())) == pytest.approx([2.6] * 4)
 
 

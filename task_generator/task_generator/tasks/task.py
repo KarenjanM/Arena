@@ -268,6 +268,7 @@ class Task(NodeInterface):
                         self.environment_manager.spawn_dynamic_obstacles(dynamic_obstacles),
                         self.environment_manager.spawn_obstacles(obstacles),
                     )
+                    await self.environment_manager.spawn_mode_lights(self.tm_obstacles.lights)
 
                 await self.environment_manager.respawn(respawn)
 

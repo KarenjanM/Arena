@@ -10,6 +10,7 @@ from arena_simulation_setup.shared.entities import (
     Obstacle,
 )
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
+from arena_simulation_setup.tree.World.Scenario import parse_scenario, upgrade_scenario
 from arena_simulation_setup.utils.geometry import Pose, Scale
 
 
@@ -71,16 +72,24 @@ def test_named_serialize_omits_empty_extra():
     assert "extra" not in d or not d["extra"]
 
 
-def test_named_serialize_preserves_nonempty_extra():
+def test_named_serialize_leaves_out_runtime_extra():
     n = Named(name="hello", extra={"custom_key": 42})
     d = n.serialize()
-    assert d.get("custom_key") == 42 or d.get("extra", {}).get("custom_key") == 42
+    assert d == {"name": "hello"}
+    assert n.extra == {"custom_key": 42}
 
 
-def test_named_parse_with_pos_alias():
-    d = {"name": "x", "pos": [1.0, 2.0]}
-    n = Named.parse(d)
-    assert n.name == "x"
+def test_named_parse_rejects_the_pos_alias_and_extra():
+    with pytest.raises(ValueError, match=r"unknown keys \['pos'\]"):
+        Named.parse({"name": "x", "pos": [1.0, 2.0]})
+    with pytest.raises(ValueError, match=r"unknown keys \['extra'\]"):
+        Named.parse({"name": "x", "extra": {"sim_path": "y"}})
+
+
+def test_legacy_scenario_maps_pos_to_pose():
+    upgraded, _ = upgrade_scenario({"static": [{"name": "x", "model": "box", "pos": [1.0, 2.0]}]})
+    (obj,) = parse_scenario(upgraded).objects
+    assert (obj.pose.position.x, obj.pose.position.y) == pytest.approx((1.0, 2.0))
 
 
 # ---------------------------------------------------------------------------
@@ -98,18 +107,19 @@ def test_entity_model_is_object_identifier():
     assert isinstance(e.model, ObjectIdentifier)
 
 
-def test_entity_asdict_expand_extra_true():
+def test_entity_extra_is_read_directly():
     e = _make_entity()
     e.extra["my_key"] = "my_val"
-    d = e.asdict(expand_extra=True)
-    assert "my_key" in d
+    assert e.extra.get("my_key") == "my_val"
+    assert e.extra.get("bbox") is None
 
 
-def test_entity_asdict_expand_extra_false():
+def test_entity_serialize_leaves_out_extra():
     e = _make_entity()
     e.extra["my_key"] = "my_val"
-    d = e.asdict(expand_extra=False)
+    d = e.serialize()
     assert "my_key" not in d
+    assert "extra" not in d
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +133,11 @@ def test_obstacle_scale_set():
     assert obs.scale.x == pytest.approx(2.0)
 
 
-def test_obstacle_asdict_returns_dict():
+def test_obstacle_serialize_returns_dict():
     obs = _make_obstacle()
-    d = obs.asdict()
+    d = obs.serialize()
     assert isinstance(d, dict)
+    assert d["name"] == obs.name
 
 
 # ---------------------------------------------------------------------------
@@ -189,13 +200,14 @@ def test_custom_dynamic_obstacle_getattr_miss():
         _ = cdo.nonexistent_field
 
 
-def test_custom_dynamic_obstacle_parse_emits_future_warning():
+def test_custom_dynamic_obstacle_parse_rejects_unknown_fields():
     data = {
         "name": "cdo",
         "pose": [0.0, 0.0],
         "model": "p",
         "custom_field": "hello",
     }
-    with pytest.warns(FutureWarning):
-        cdo = CustomDynamicObstacle.parse(data)
-    assert cdo.name == "cdo"
+    with pytest.raises(ValueError, match=r"unknown keys \['custom_field'\]"):
+        CustomDynamicObstacle.parse(data)
+    cdo = CustomDynamicObstacle(name="cdo", pose=Pose(), model="p", extra={"custom_field": "hello"})
+    assert cdo.custom_field == "hello"

@@ -1,0 +1,20 @@
+# Package "robot": the machine the scene is built for, loaded on demand
+name = "robot"
+version = 1
+
+[nodes.robot]
+props = ["pose", "platform", "radius"]
+authorable = false
+
+[nodes.waypoint]
+props = ["pose"]
+authorable = false
+
+[verbs.goto]
+from = ["robot"]
+to = ["waypoint"]
+
+[constraints.traversable]
+arity = 3
+desc = "robot A must be able to drive from room B to room C: scope order (robot, from, to)"
+params = []

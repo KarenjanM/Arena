@@ -1,144 +1,106 @@
-robots:
-- start: [10.0, 0.5, 1.5708]
-  goal: [15.0, 17.35, 0.0]
-
-dynamic:
+format: arena-scenario/2
+humans:
 - name: hunav_1
   model: Hospital/nurse_female_caucasian_young
   pose: [4.0, 2.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [4.0, 2.0, 0.0]
-
+  waypoints: [[4.0, 2.0, 0.0]]
 - name: hunav_2
   model: Hospital/doctor_male_caucasian_middleage
   pose: [2.0, 3.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [2.0, 3.0, 0.0]
-
+  waypoints: [[2.0, 3.0, 0.0]]
 - name: hunav_3
   model: Office/office_female_caucasian_young
   pose: [6.0, 3.5, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [6.0, 3.5, 0.0]
-
+  waypoints: [[6.0, 3.5, 0.0]]
 - name: hunav_4
   model: worker_male_caucasian_young
   pose: [3.0, 6.5, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.4}
-  waypoints:
-    - [2.0, 7.0, 0.0]
-
+  waypoints: [[2.0, 7.0, 0.0]]
 - name: hunav_5
   model: casual_female_caucasian_young
   pose: [6.0, 8.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.8}
-  waypoints:
-    - [6.0, 8.0, 0.0]
-
+  waypoints: [[6.0, 8.0, 0.0]]
 - name: hunav_6
   model: worker_male_asian_middleage
   pose: [4.0, 16.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.4}
-  waypoints:
-    - [4.0, 16.0, 0.0]
-
+  waypoints: [[4.0, 16.0, 0.0]]
 - name: hunav_7
   model: casual_female_asian_middleage
   pose: [6.0, 22.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.8}
-  waypoints:
-    - [6.0, 22.0, 0.0]
-
+  waypoints: [[6.0, 22.0, 0.0]]
 - name: hunav_8
   model: worker_male_african_young
   pose: [2.0, 20.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.4}
-  waypoints:
-    - [2.0, 20.0, 0.0]
-
+  waypoints: [[2.0, 20.0, 0.0]]
 - name: hunav_9
   model: Hospital/nurse_female_caucasian_young
   pose: [2.0, 27.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [2.0, 27.0, 0.0]
-
+  waypoints: [[2.0, 27.0, 0.0]]
 - name: hunav_10
   model: Hospital/doctor_male_caucasian_middleage
   pose: [7.0, 28.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [6.0, 28.0, 0.0]
-
+  waypoints: [[6.0, 28.0, 0.0]]
 - name: hunav_11
   model: casual_female_african_young
   pose: [14.0, 5.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.8}
-  waypoints:
-    - [14.0, 5.0, 0.0]
-
+  waypoints: [[14.0, 5.0, 0.0]]
 - name: hunav_12
   model: worker_male_caucasian_middleage
   pose: [16.0, 7.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.4}
-  waypoints:
-    - [16.0, 7.0, 0.0]
-
+  waypoints: [[16.0, 7.0, 0.0]]
 - name: hunav_13
   model: Office/office_female_caucasian_young
   pose: [21.0, 3.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [21.0, 3.0, 0.0]
-
+  waypoints: [[21.0, 3.0, 0.0]]
 - name: hunav_14
   model: casual_male_caucasian_middleage
   pose: [23.0, 7.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.8}
-  waypoints:
-    - [23.0, 7.0, 0.0]
-
+  waypoints: [[23.0, 7.0, 0.0]]
 - name: hunav_15
   model: Hospital/nurse_female_caucasian_young
   pose: [14.0, 14.7, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [14.0, 14.7, 0.0]
-
+  waypoints: [[14.0, 14.7, 0.0]]
 - name: hunav_16
   model: Hospital/doctor_male_caucasian_middleage
   pose: [16.3, 19.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [16.3, 19.0, 0.0]
-
+  waypoints: [[16.3, 19.0, 0.0]]
 - name: hunav_17
   model: casual_female_caucasian_young
   pose: [14.0, 24.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.8}
-  waypoints:
-    - [14.0, 24.0, 0.0]
-
+  waypoints: [[14.0, 24.0, 0.0]]
 - name: hunav_18
   model: worker_male_caucasian_young
   pose: [16.0, 27.4, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.4}
-  waypoints:
-    - [16.0, 27.4, 0.0]
-
+  waypoints: [[16.0, 27.4, 0.0]]
 - name: hunav_19
   model: Office/office_female_caucasian_young
   pose: [14.0, 32.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.5}
-  waypoints:
-    - [14.0, 32.0, 0.0]
-
+  waypoints: [[14.0, 32.0, 0.0]]
 - name: hunav_20
   model: casual_male_caucasian_middleage
   pose: [16.0, 33.0, 0.0]
   agent: {agent_type: adult, desired_velocity: 1.8}
-  waypoints:
-    - [16.0, 33.0, 0.0]
+  waypoints: [[16.0, 33.0, 0.0]]
+robots:
+- start: [10.0, 0.5, 1.5708]
+  phases:
+  - {goto: [15.0, 17.35, 0.0]}

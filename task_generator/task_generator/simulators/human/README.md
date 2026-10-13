@@ -194,12 +194,12 @@ with the simulator that will animate the resulting agents.
 ## arena_humansim agent types
 
 `ArenaHumanSimulator` derives pedestrian parameters from the `agent:` block of
-each `dynamic:` scenario entry (`ArenaHumanDynamicObstacle`,
+each `humans:` scenario entry (`ArenaHumanDynamicObstacle`,
 [`arena_humansim/__init__.py`](arena_humansim/__init__.py)). `agent:` accepts
 either a bare string or a dict:
 
 ```yaml
-dynamic:
+humans:
   - name: nurse_1
     ...
     agent: adult                 # shorthand for {agent_type: adult}
@@ -225,11 +225,10 @@ A scripted entry renders with its `model:`. A source-spawned agent has none, so 
 
 ### Static world objects
 
-A `static:` scenario entry that pedestrians can interact with (a bench, a
+An `objects:` scenario or world entry that pedestrians can interact with (a bench, a
 reception desk) is registered as a `WorldObject` by `_spawn_obstacles_impl` in
 [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py). The
-keys below are written directly on the entry, as siblings of `name:`/`model:`/`pose:`
-(they land on `Obstacle.extra`, a copy of the entry's full raw dict):
+keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 
 | Key | Meaning |
 | --- | --- |
@@ -240,13 +239,14 @@ keys below are written directly on the entry, as siblings of `name:`/`model:`/`p
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
 
 ```yaml
-static:
+objects:
   - name: reception_desk
     ...
-    type: desk
-    capacity: 3
-    interaction_radius: 1.0
-    formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}
+    humansim:
+      type: desk
+      capacity: 3
+      interaction_radius: 1.0
+      formation: {type: line, params: {base_step: 0.8, front_offset: 0.6}}
 ```
 
 ## Possession

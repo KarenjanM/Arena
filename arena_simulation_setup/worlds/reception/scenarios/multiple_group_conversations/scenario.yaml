@@ -1,150 +1,112 @@
-robots:
-  - start: [22.0, 17.6, 0.0]
-    goal: [13.5, 10.0, 0.7854]
-
-static:
-  - name: gathering_area_1
+format: arena-scenario/2
+objects:
+- name: gathering_area_1
+  model: chair
+  pose: [25.0, 7.0, 0.0]
+  humansim:
     type: gathering_area_1
-    model: chair
-    pose: [25.0, 7.0, 0.0]
     capacity: 0
-    formation:
-      type: f_formation
-      anchor: {kind: object, ref: gathering_area_1}
-      params: {base_radius: 1.0, radius_per_member: 0.12}
-  
-  - name: gathering_area_2
+    formation: {type: f_formation, anchor: {kind: object, ref: gathering_area_1}, params: {base_radius: 1.0, radius_per_member: 0.12}}
+- name: gathering_area_2
+  model: chair
+  pose: [23.0, 20.0, 0.0]
+  humansim:
     type: gathering_area_2
-    model: chair
-    pose: [23.0, 20.0, 0.0]
     capacity: 0
-    formation:
-      type: f_formation
-      anchor: {kind: object, ref: gathering_area_2}
-      params: {base_radius: 0.7, radius_per_member: 0.12}
-
-  - name: gathering_area_3
+    formation: {type: f_formation, anchor: {kind: object, ref: gathering_area_2}, params: {base_radius: 0.7, radius_per_member: 0.12}}
+- name: gathering_area_3
+  model: chair
+  pose: [16.5, 10.0, 0.0]
+  humansim:
     type: gathering_area_3
-    model: chair
-    pose: [16.5, 10.0, 0.0]
     capacity: 0
-    formation:
-      type: f_formation
-      anchor: {kind: object, ref: gathering_area_3}
-      params: {base_radius: 0.8, radius_per_member: 0.12}
-
+    formation: {type: f_formation, anchor: {kind: object, ref: gathering_area_3}, params: {base_radius: 0.8, radius_per_member: 0.12}}
+robots:
+- start: [22.0, 17.6, 0.0]
+  phases:
+  - {goto: [13.5, 10.0, 0.7854]}
 regions:
   visitor_entrance_1:
     type: source
     polygon:
-      - {x: 20.1, y: 20.1}
-      - {x: 22.1, y: 20.1}
-      - {x: 22.1, y: 22.1}
-      - {x: 20.1, y: 22.1}
+    - {x: 20.1, y: 20.1}
+    - {x: 22.1, y: 20.1}
+    - {x: 22.1, y: 22.1}
+    - {x: 20.1, y: 22.1}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 3
       max_total: 4
-      agent:
-        agent_type: ./ped_group_1.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./ped_group_1.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}
   visitor_entrance_2:
     type: source
     polygon:
-      - {x: 20.1, y: 10.1}
-      - {x: 22.1, y: 10.1}
-      - {x: 22.1, y: 12.1}
-      - {x: 20.1, y: 12.1}
+    - {x: 20.1, y: 10.1}
+    - {x: 22.1, y: 10.1}
+    - {x: 22.1, y: 12.1}
+    - {x: 20.1, y: 12.1}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 3
       max_total: 4
-      agent:
-        agent_type: ./ped_group_2.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./ped_group_2.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}
   visitor_entrance_3:
     type: source
     polygon:
-      - {x: 5.1, y: 5.1}
-      - {x: 7.1, y: 5.1}
-      - {x: 7.1, y: 7.1}
-      - {x: 5.1, y: 7.1}
+    - {x: 5.1, y: 5.1}
+    - {x: 7.1, y: 5.1}
+    - {x: 7.1, y: 7.1}
+    - {x: 5.1, y: 7.1}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 2
       max_total: 2
-      agent:
-        agent_type: ./ped_group_3.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./ped_group_3.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}
   visitor_entrance_4:
     type: source
     polygon:
-      - {x: 20.1, y: 20.1}
-      - {x: 22.1, y: 20.1}
-      - {x: 22.1, y: 22.1}
-      - {x: 20.1, y: 22.1}
+    - {x: 20.1, y: 20.1}
+    - {x: 22.1, y: 20.1}
+    - {x: 22.1, y: 22.1}
+    - {x: 20.1, y: 22.1}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 3
       max_total: 4
-      agent:
-        agent_type: ./ped_group_4.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./ped_group_4.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}
   visitor_entrance_5:
     type: source
     polygon:
-      - {x: 5.1, y: 5.1}
-      - {x: 7.1, y: 5.1}
-      - {x: 7.1, y: 7.1}
-      - {x: 5.1, y: 7.1}
+    - {x: 5.1, y: 5.1}
+    - {x: 7.1, y: 5.1}
+    - {x: 7.1, y: 7.1}
+    - {x: 5.1, y: 7.1}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 2
       max_total: 2
-      agent:
-        agent_type: ./ped_group_5.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./ped_group_5.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}
   visitor_entrance_6:
     type: source
     polygon:
-      - {x: 20.1, y: 10.1}
-      - {x: 22.1, y: 10.1}
-      - {x: 22.1, y: 12.1}
-      - {x: 20.1, y: 12.1}
+    - {x: 20.1, y: 10.1}
+    - {x: 22.1, y: 10.1}
+    - {x: 22.1, y: 12.1}
+    - {x: 20.1, y: 12.1}
     config:
       rate_profile:
-        - {t: 0.0, rate: 0.1}
-        - {t: 30.0, rate: 0.3}
+      - {t: 0.0, rate: 0.1}
+      - {t: 30.0, rate: 0.3}
       max_concurrent: 3
       max_total: 4
-      agent:
-        agent_type: ./ped_group_6.yaml
-        desired_velocity: {min: 1.0, max: 1.5}
-        sink_affinity:
-          - {sink: none, weight: 1.0}
-
+      agent: {agent_type: ./ped_group_6.yaml, desired_velocity: {min: 1.0, max: 1.5}, sink_affinity: [{sink: none, weight: 1.0}]}

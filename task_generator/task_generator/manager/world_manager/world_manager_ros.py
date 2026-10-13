@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
-import arena_simulation_setup.tree.World as World
 import geometry_msgs.msg
 import launch
 import launch.actions
@@ -29,7 +28,8 @@ from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
 from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree import DynamicPaths
-from arena_simulation_setup.tree.World.World import _render_door_polygons, _render_elevator_polygons
+from arena_simulation_setup.tree.World import Level, World, WorldIdentifier, WorldView
+from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
 
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.realizer import Realizer
@@ -92,15 +92,16 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     _world_name: str
     _world_mtime: float
     _world_path: Path
+    _world_sources: list[Path]
     _map_server_present: bool
     _map_render_memo: dict[str, tuple[bytes, str]]
     _static_markers: list[visualization_msgs.msg.Marker] | None
 
-    def _load_multi_level_map(self, world_root: Path) -> MultiLevelMap | None:
+    def _load_multi_level_map(self, world_view: WorldView, level_ids: Sequence[str]) -> MultiLevelMap | None:
         maps: dict[str, WorldMap] = {}
-        for level_yaml in sorted(world_root.glob('*/map.yaml')):
-            level_id = level_yaml.parent.name
-            if level_id in {'scenarios', 'assets', 'map'}:
+        for level_id in level_ids:
+            level_yaml = world_view.map_yaml(level_id)
+            if not level_yaml.is_file():
                 continue
             try:
                 maps[level_id] = WorldMap.from_map_files(level_yaml)
@@ -125,6 +126,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         origin[0] = shifted_origin.x
         origin[1] = shifted_origin.y
         map_yaml['origin'] = origin
+        map_yaml['image'] = 'map.png'
         level_origins = map_yaml.get('origins')
         if isinstance(level_origins, dict):
             realizer: Realizer = self.node._realizer
@@ -163,7 +165,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     async def _render_world_map(
         self,
         world_name: str,
-        description: World.LevelDescription,
+        description: Level,
         level_origins: dict[str, tuple[float, float]] | None = None,
     ) -> tuple[bytes, str]:
         """Render (map.png bytes, map.yaml text) for a world, memoized per world for this process."""
@@ -181,10 +183,9 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
     async def apply_world(self, world_name: str) -> bool:
         """Synchronously swap to `world_name`. Must be called inside `_run_reset_cycle`'s hold."""
-        bare_name, level_filter = World.WorldIdentifier.parse(world_name)
-        world_view = await World.WorldIdentifier(bare_name).resolve()
-        mtimes = [p.stat().st_mtime for p in Path(world_view.path).glob('*/world.yaml')]
-        mtime = max(mtimes) if mtimes else 0.0
+        bare_name, level_filter = WorldIdentifier.parse(world_name)
+        world_view = await WorldIdentifier(bare_name).resolve()
+        mtime = world_view.mtime(self._world_sources if world_name == self._world_name else ())
 
         if world_name == self._world_name and mtime == self._world_mtime:
             return True
@@ -194,14 +195,14 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         # regeneration reuses the name but rewrites world.yaml; drop the stale render
         self._map_render_memo.pop(world_name, None)
 
-        world = world_view.load(level_filter=level_filter)
-        world.apply_elevator_door_sides()
+        world = world_view.load(level_filter=level_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
         level_origins = world_view.level_origins()
         origins = level_origins if level_origins is not None else {fid: (0.0, 0.0) for fid in world.level_ids}
         self.node._realizer.reset_level_origins(origins)
+        self.node._realizer.reset_elevator_levels(world.elevator_levels())
         compacted_description = world.compact_world(origins=origins)
 
-        multi_level_map = self._load_multi_level_map(Path(world_view.path))
+        multi_level_map = self._load_multi_level_map(world_view, world.level_ids)
 
         source = map_source(self.node)
         disk_mode = source is MapSource.DISK
@@ -258,33 +259,34 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 compacted_description = world.compact_world(origins={fid: (0.0, 0.0) for fid in world.level_ids})
             world_map = WorldMap.from_world_description(compacted_description, resolution=_DEFAULT_RESOLUTION, time=self.node.sim_time, _level_origins=level_origins)
         DynamicPaths.WORLD.path = world_view.path
+        DynamicPaths.LINKED.paths = list(world.sources)
         static_footprints = await asyncio.gather(*(o.footprint() for o in world.all_static_entities))
         self.update_world(world_map=world_map, world_description=world, multi_level_map=multi_level_map, static_footprints=static_footprints)
 
         self._world_name = world_name
-        self._world_mtime = mtime
+        self._world_mtime = world_view.mtime(world.sources)
         self._world_path = Path(world_view.path)
+        self._world_sources = list(world.sources)
         self._static_markers = None
         self.node.rosparam[str].set('world', world_name)
 
         if self._map_server_present:
             if disk_mode:
-                await self._push_disk_map_to_map_server(Path(world_view.path) / disk_level, compacted_description)
+                await self._push_disk_map_to_map_server(world_view.map_yaml(disk_level), compacted_description)
             elif compacted_description is not None:
                 await self._push_world_to_map_server(compacted_description, level_origins=level_origins)
 
         await self._environment_manager.reset(purge=ObstacleLayer.WORLD)
         detected_walls = {}
         if disk_mode:
-            zones = [zone for level in world.all_levels for zone in level.zones]
-            if not zones or any(zone.wall_material.name for zone in zones):
+            if any(level.pedestrian_walls for level in world.all_levels):
                 detected_walls = {disk_level: tuple(disk_map.detect_walls())}
         await self._environment_manager.spawn_world_obstacles(self._world, detected_walls=detected_walls, world_map=world_map)
         self.node._publish_semantics_snapshot()
 
         return True
 
-    async def _load_map_to_server(self, png_bytes: bytes, map_yaml_text: str, description: World.LevelDescription) -> None:
+    async def _load_map_to_server(self, png_bytes: bytes, map_yaml_text: str, description: Level) -> None:
         """Shift+LoadMap+door-mask. Caller guarantees map_server is present."""
         tmp_map = self._shift_map(png_bytes, map_yaml_text)
         try:
@@ -299,20 +301,20 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             raise RuntimeError(f'failed to load map for world {self._world_name}: status code {response.result}')
         self._publish_door_mask(description, png_bytes, map_yaml_text)
 
-    async def _push_world_to_map_server(self, description: World.LevelDescription, level_origins: dict[str, tuple[float, float]] | None = None) -> None:
+    async def _push_world_to_map_server(self, description: Level, level_origins: dict[str, tuple[float, float]] | None = None) -> None:
         """Render+load the computed map. Caller guarantees map_server is present."""
         png_bytes, map_yaml_text = await self._render_world_map(self._world_name, description, level_origins=level_origins)
         await self._load_map_to_server(png_bytes, map_yaml_text, description)
 
-    async def _push_disk_map_to_map_server(self, level_dir: Path, description: World.LevelDescription) -> None:
-        """Load the on-disk map.png/map.yaml. Caller guarantees map_server is present."""
-        png_bytes = (level_dir / 'map.png').read_bytes()
-        map_yaml_text = (level_dir / 'map.yaml').read_text()
+    async def _push_disk_map_to_map_server(self, map_yaml: Path, description: Level) -> None:
+        """Load an on-disk preview map and the image it names. Caller guarantees map_server is present."""
+        map_yaml_text = map_yaml.read_text()
+        png_bytes = (map_yaml.parent / yaml.safe_load(map_yaml_text)['image']).read_bytes()
         await self._load_map_to_server(png_bytes, map_yaml_text, description)
 
     def _publish_door_mask(
         self,
-        description: World.LevelDescription,
+        description: Level,
         png_bytes: bytes,
         map_yaml_text: str,
     ) -> None:
@@ -325,7 +327,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         origin_world = list(map_yaml.get('origin', [0, 0, 0]))
 
         data = np.full(width * height, -1, dtype=np.int8)
-        polys = [p for d in description.all_doors for p in _render_door_polygons(d)] + [p for e in description.all_elevators for p in _render_elevator_polygons(e)]
+        polys = [p for d in description.all_doors for p in render_door_polygons(d)] + [p for e in description.all_elevators for p in render_elevator_polygons(e)]
         for poly in polys:
             if poly.is_empty:
                 continue
@@ -402,9 +404,9 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             await self._cli.ensure()
             await self.ensure_map_server()
             if self._world_name:
-                bare_wn, wn_filter = World.WorldIdentifier.parse(self._world_name)
-                world_view = await World.WorldIdentifier(bare_wn).resolve()
-                loaded = world_view.load(level_filter=wn_filter)
+                bare_wn, wn_filter = WorldIdentifier.parse(self._world_name)
+                world_view = await WorldIdentifier(bare_wn).resolve()
+                loaded = world_view.load(level_filter=wn_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
                 origins = world_view.level_origins()
                 compacted = loaded.compact_world(origins=origins if origins is not None else {fid: (0.0, 0.0) for fid in loaded.level_ids})
                 if compacted is not None:
@@ -421,11 +423,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 resolution=_DEFAULT_RESOLUTION,
                 time=self.node.sim_time,
             ),
-            world_description=World.WorldDescription.from_levels(World.LevelDescription()),
+            world_description=World.from_levels(Level()),
         )
         self._world_name = ''
         self._world_mtime = 0.0
         self._world_path = Path()
+        self._world_sources = []
         self._cli = None
         self._map_server_present = False
         self._map_server_lock = asyncio.Lock()

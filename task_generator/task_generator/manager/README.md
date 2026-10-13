@@ -78,12 +78,12 @@ refusal or a finalized controller raises.
 
 [`world_manager/world_manager.py:16`](world_manager/world_manager.py#L16)
 
-Owns the static map and `WorldDescription`. Provides free-cell sampling for
+Owns the static map and the loaded `World`. Provides free-cell sampling for
 obstacle and robot placement.
 
 | Method / property | Purpose |
 | --- | --- |
-| `world` | `WorldDescription`: walls, zones, entities |
+| `world` | `World`: levels with their zones, walls, doors and objects, world-scope schedules and signals, the KG |
 | `map` | `WorldMap`: occupancy grid + resolution + origin |
 | `update_world(world_map, world_description)` | replace the active world; marks world-entity cells as occupied |
 | `get_positions_on_map(n, safe_dist, ...)` | sample `n` free positions with mutual safe distance |

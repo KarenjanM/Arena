@@ -112,7 +112,7 @@ class HunavDynamicObstacle:
     def from_dynamic_obstacle(cls, obj: DynamicObstacle, extra: dict | None = None) -> "HunavDynamicObstacle":
         if extra is None:
             extra = {}
-        extra = {**obj.extra, **extra}
+        extra = {**obj.hunav, **extra}
 
         if 'goals' in extra:
             waypoints = Goals.parse(extra)

@@ -9,12 +9,12 @@ import world_generator_msgs.srv
 from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
 
-from arena_simulation_setup.tree.World.World import WorldDescription, WorldIdentifier
+from arena_simulation_setup.tree.World import WorldIdentifier
 
 from . import alphabet
 from .layout import diagnostics_of
 from .schema import declare_config_params
-from .world_generator import WorldGenerator, WorldGeneratorType
+from .world_generator import WorldGenerator, WorldGeneratorType, save_generated
 
 PREVIEW_PIXEL_BUDGET = 800
 
@@ -36,7 +36,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
     def _cb_generate(self, request: std_srvs.srv.Trigger.Request, response: std_srvs.srv.Trigger.Response) -> std_srvs.srv.Trigger.Response:
         try:
             self.update_generator(*self._get_parameters())
-            WorldIdentifier(self.get_parameter('world').value).resolve_write_sync().save(WorldDescription.from_levels(self.compute()), extra_files=self.files())
+            save_generated(WorldIdentifier(self.get_parameter('world').value).resolve_write_sync(), self.compute(), self.files())
             response.success = True
             response.message = json.dumps(self.params())  # episode binding for the panel to apply on queue
         except Exception as e:
@@ -64,11 +64,12 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
                 config['sketch'] = request.sketch
 
             self.update_generator(name, config, seed)
-            level = self.compute()
+            world = self.compute()
+            level = world.all_levels[0]
             diagnostics = diagnostics_of(level)
 
             if not request.preview_only:
-                WorldIdentifier(request.world or self.get_parameter('world').value).resolve_sync().save(WorldDescription.from_levels(level), extra_files=self.files())
+                save_generated(WorldIdentifier(request.world or self.get_parameter('world').value).resolve_sync(), world, self.files())
 
             resolution = request.resolution or max(0.05, max(diagnostics.extent) / PREVIEW_PIXEL_BUDGET)
             response.png, map_origin = level.render(resolution=resolution)

@@ -10,12 +10,13 @@ import time
 import traceback
 import typing
 import xml.etree.ElementTree
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 
 import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
+import attrs
 import gz.transport13
 import launch
 import launch_ros
@@ -340,7 +341,8 @@ class GazeboSimulator(BaseSim):
 
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         args: dict[str, object] = {
-            **robot.asdict(),
+            **robot.extra,
+            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
             'sim_path': robot.sim_path,
             'optim': self.node.rosparam[str].get('optim', ''),
         }
@@ -511,10 +513,9 @@ class GazeboSimulator(BaseSim):
             return await self._spawn_sdf(name, _generate_light_sdf(name, params), Pose(position=Position(x=x, y=y, z=z)))
 
     async def _spawn_lights(self, lights: Sequence[Light]) -> bool:
-        dome = next((light for light in lights if light.fixture == 'dome'), None)
         ok = await self._light_link()
         if any(not light.intrinsic for light in lights):
-            ok = self._scale_default_lights(_gz_dome_scale(dome.lux, 1.0) if dome is not None else 0.0) and ok
+            ok = self._scale_default_lights(_default_light_scale([*self._lights.values(), *lights])) and ok
             self._default_lights_scaled = self._owns_ambient
         spawns = []
         for light in lights:
@@ -533,7 +534,7 @@ class GazeboSimulator(BaseSim):
         results = [await self._delete_entity(name, EntityMsg.LIGHT) for light in lights for name in self._light_entities.pop(light.name, ())]
         for light in lights:
             self._glow_lights.pop(light.name, None)
-        if self._default_lights_scaled and any(not light.intrinsic for light in lights):
+        if self._default_lights_scaled and _default_light_scale(self._lights.values()) is None:
             self._default_lights_scaled = False
             results.append(self._scale_default_lights(1.0))
         return all(results)
@@ -548,11 +549,14 @@ class GazeboSimulator(BaseSim):
             self._material_publisher.publish(_glow_request(f'{sim_path}::{visual}', base, light.cct_K, level))
 
     async def _move_light(self, light: Light, position: Position, yaw: float) -> None:
-        for name in self._light_entities.get(light.name, ()):
-            request = SetEntityPose.Request()
-            request.entity = EntityMsg(name=name, type=EntityMsg.LIGHT)
-            request.pose = Pose(position=position, orientation=Orientation.from_yaw(yaw)).to_msg()
-            self._service_set_entity_pose.client.call_async(request)
+        output = self._light_outputs.get(light.name)
+        names = self._light_entities.get(light.name)
+        if output is None or not names:
+            return
+        level, dead_fraction = output
+        params = _light_params(light, level, light.alive(dead_fraction), position, yaw)
+        if not all([self._light_config(_light_request(name, p)) for name, p in zip(names, params, strict=True)]):
+            raise RuntimeError(f"light {light.name!r} did not take its pose")
 
     async def _apply_light(self, light: Light, level: float, alive: Sequence[bool]) -> None:
         if light.fixture == 'dome':
@@ -564,7 +568,7 @@ class GazeboSimulator(BaseSim):
         if not names:
             return
         pose = self._light_poses.get(light.name)
-        params = _light_params(light, level, alive, pose[0] if pose is not None else None)
+        params = _light_params(light, level, alive, *(pose if pose is not None else ()))
         if not all([self._light_config(_light_request(name, p)) for name, p in zip(names, params, strict=True)]):
             raise RuntimeError(f"light {light.name!r} did not take its state")
 
@@ -1249,18 +1253,20 @@ def _generate_wall_sdf(name: str, boxes: list[tuple[WallSegment, dict[str, str]]
                         <size>{length} {thickness} {height}</size>
                     </box>
                 </geometry>
+                <cast_shadows>{cast_shadows}</cast_shadows>
                 {material}
             </visual>
-            <collision name="collision">
+            {collision}
+            <pose>{x} {y} {z} 0 0 {orientation}</pose>
+        </link>
+        """
+    collision_template = """<collision name="collision">
                 <geometry>
                     <box>
                         <size>{length} {thickness} {height}</size>
                     </box>
                 </geometry>
-            </collision>
-            <pose>{x} {y} {z} 0 0 {orientation}</pose>
-        </link>
-        """
+            </collision>"""
     links = []
     for i, (segment, textures) in enumerate(boxes):
         x1, y1, x2, y2 = segment.start.x, segment.start.y, segment.end.x, segment.end.y
@@ -1279,6 +1285,8 @@ def _generate_wall_sdf(name: str, boxes: list[tuple[WallSegment, dict[str, str]]
                 z=segment.start.z + segment.height / 2.0,
                 orientation=orientation,
                 material=_wall_material_sdf(textures),
+                cast_shadows=str(segment.shadows).lower(),
+                collision=collision_template.format(length=length, thickness=segment.width, height=segment.height) if segment.solid else "",
             )
         )
 
@@ -1373,6 +1381,14 @@ def _gz_dome_scale(lux: float | None, level: float) -> float:
     return (lux or 0.0) * level / _GZ_DOME_REFERENCE_LUX
 
 
+def _default_light_scale(lights: Collection[Light]) -> float | None:
+    """Scale of the default lights under all spawned lights: None while none is declared, else the dome's share."""
+    if all(light.intrinsic for light in lights):
+        return None
+    dome = next((light for light in lights if light.fixture == 'dome'), None)
+    return _gz_dome_scale(dome.lux, 1.0) if dome is not None else 0.0
+
+
 def _rig_cells(light: Light) -> list[list[int]]:
     """Fixture indices of a rig grouped into square cells of neighboring fixtures."""
     points = [(p.x, p.y) for p in light.fixtures]
@@ -1403,10 +1419,12 @@ def _rig_bounce(light: Light, level: float, alive: Sequence[bool]) -> dict[str, 
     return {'type': 'point', 'pose': (sum(xs) / len(xs), sum(ys) / len(ys), height / 2.0), 'intensity': reflected_lux / _GZ_DOME_REFERENCE_LUX, 'range': reach, 'constant': 1.0, 'quadratic': 0.0, 'cone': None, 'cast_shadows': False}
 
 
-def _light_params(light: Light, level: float, alive: Sequence[bool], position: Position | None = None) -> list[dict[str, typing.Any]]:
-    """One parameter set per gz light: a rig becomes a point light per cell of fixtures."""
+def _light_params(light: Light, level: float, alive: Sequence[bool], position: Position | None = None, yaw: float = 0.0) -> list[dict[str, typing.Any]]:
+    """One parameter set per gz light: a rig becomes a point light per cell of fixtures, a frame light points along its frame's yaw."""
     r, g, b = cct_to_rgb(light.cct_K)
-    params: dict[str, typing.Any] = {'diffuse': (r, g, b), 'cast_shadows': light.cast_shadows, 'direction': light.direction}
+    dx, dy, dz = light.direction
+    direction = (math.cos(yaw) * dx - math.sin(yaw) * dy, math.sin(yaw) * dx + math.cos(yaw) * dy, dz)
+    params: dict[str, typing.Any] = {'diffuse': (r, g, b), 'cast_shadows': light.cast_shadows, 'direction': direction}
     if light.fixture == 'sun':
         return [params | {'type': 'directional', 'pose': (0.0, 0.0, 10.0), 'intensity': _gz_dome_scale(light.lux, level), 'range': 1000.0, 'constant': 1.0, 'quadratic': 0.0, 'cone': None}]
     if light.rig:

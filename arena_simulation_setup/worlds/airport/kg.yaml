@@ -1,0 +1,6 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:destination', props: {description: Airport Destination Area}}
+facts: []
+constraints: []

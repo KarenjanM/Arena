@@ -1,6 +1,7 @@
 import pytest
 import shapely
 import shapely.affinity
+from arena_simulation_setup.tree.World import describe
 from arena_simulation_setup.utils.generative import WorldGenerator
 from arena_simulation_setup.utils.generative.layout import (
     Area,
@@ -19,11 +20,23 @@ def corridor(a, b, width=2.0):
 
 def test_single_corridor_is_one_component():
     layout = Layout(segments=[corridor((0.0, 0.0), (10.0, 0.0))])
-    level, diagnostics = compile_layout(layout)
+    world, diagnostics = compile_layout(layout)
+    level = world.all_levels[0]
     assert diagnostics.components == 1
     assert diagnostics.islands == 0
     assert diagnostics.extent == (10.0, 2.0)
     assert len(list(level.all_walls)) == 4
+
+
+def test_boundary_walls_are_closed_level_paths_and_zones_take_no_ceiling_by_default():
+    layout = Layout(segments=[corridor((0.0, 0.0), (10.0, 0.0))], regions=[Region(name='hall', polygon=shapely.box(-1.0, -1.0, 11.0, 1.0), description='main hall', material='Marble')])
+    world, _ = compile_layout(layout)
+    level = world.all_levels[0]
+    assert [(len(path.path), path.closed) for path in level.walls] == [(4, True)]
+    assert [zone.ceiling for zone in level.zones] == [None]
+    assert level.zones[0].floor.name == 'Marble'
+    assert describe(world.kg, 'hall') == 'main hall'
+    assert all(zone.ceiling is not None for zone in compile_layout(layout, ceiling=True)[0].all_levels[0].zones)
 
 
 def test_detached_pieces_are_counted():
@@ -61,12 +74,13 @@ def test_zones_are_named_by_region_and_never_overlap():
             Region(name='spur', polygon=shapely.box(4.0, -1.0, 6.0, 11.0)),
         ],
     )
-    level, diagnostics = compile_layout(layout)
+    world, diagnostics = compile_layout(layout)
+    level = world.all_levels[0]
     names = [zone.name for zone in level.zones]
     assert names[0] == 'hall'
     assert 'spur' in names
     assert diagnostics.zones == len(level.zones)
-    polygons = [shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones]
+    polygons = [zone.shape() for zone in level.zones]
     for index, first in enumerate(polygons):
         for second in polygons[index + 1 :]:
             assert first.intersection(second).area == 0.0
@@ -77,8 +91,8 @@ def test_zones_cover_the_whole_geometry():
         segments=[corridor((0.0, 0.0), (10.0, 0.0))],
         regions=[Region(name='half', polygon=shapely.box(-1.0, -2.0, 5.0, 2.0))],
     )
-    level, _ = compile_layout(layout)
-    covered = shapely.union_all([shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones])
+    level = compile_layout(layout)[0].all_levels[0]
+    covered = shapely.union_all([zone.shape() for zone in level.zones])
     assert covered.difference(layout.geometry()).area == 0.0
     assert layout.geometry().difference(covered).area == 0.0
 
@@ -118,15 +132,15 @@ def test_edges_a_rounding_error_apart_do_not_become_a_zone():
             Region(name='shell', polygon=shapely.box(0.0, 0.0, 20.0, 20.0)),
         ],
     )
-    level, _ = compile_layout(layout)
-    assert min(shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]).area for zone in level.zones) > 1.0
+    level = compile_layout(layout)[0].all_levels[0]
+    assert min(zone.shape().area for zone in level.zones) > 1.0
 
 
 @pytest.mark.parametrize('generator_type', sorted(WorldGenerator.available(), key=lambda t: t.value), ids=lambda t: t.value)
 def test_every_generator_reports_its_size(generator_type):
     """Diagnostics come off the finished level, so a generator that builds zones by hand still
     reports them. Zero extent would also flatten the preview resolution to its floor."""
-    level = WorldGenerator(generator_type, {}, 0).compute()
+    level = WorldGenerator(generator_type, {}, 0).compute().all_levels[0]
     diagnostics = diagnostics_of(level)
     assert diagnostics.zones == len(level.zones) > 0
     assert diagnostics.components > 0

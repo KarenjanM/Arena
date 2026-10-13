@@ -108,7 +108,7 @@ def _elevator(name: str = "e") -> Elevator:
         position=Position(0.0, 0.0, 0.0),
         size=[2.0, 2.0, 2.5],
         door_side="+x",
-        destination="other",
+        destinations=["other"],
     )
 
 

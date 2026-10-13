@@ -3,12 +3,12 @@ import itertools
 import math
 from collections.abc import Sequence
 
-import arena_simulation_setup.tree.World as World
 import numpy as np
 import scipy.ndimage
 import shapely
 import shapely.affinity
 from arena_runtime._node import NodeInterface
+from arena_simulation_setup.tree.World import Level, World
 
 from task_generator.shared import Position, PositionRadius
 
@@ -93,7 +93,7 @@ WORLD_ENTITY_PREFIX = 'world_'
 class WorldManager(NodeInterface):
     """Used to get new goal, robot and obstacle positions from the static map."""
 
-    _world: World.WorldDescription
+    _world: World
     _map: WorldMap  # main map used that has all of the levels
     _multi_map: MultiLevelMap | None  # utility reference maps for level-specific get position operations; actual occupancy is managed by _map
     _zone_masks: dict[str, np.ndarray]  # per level, cells inside that level's zones on map_for_floor(level)
@@ -104,18 +104,18 @@ class WorldManager(NodeInterface):
         self._zone_masks = {}
 
     @property
-    def world(self) -> World.WorldDescription:
+    def world(self) -> World:
         return self._world
 
-    def world_compacted(self) -> World.LevelDescription:
-        """All loaded levels merged into one LevelDescription, shifted into the map frame."""
+    def world_compacted(self) -> Level:
+        """All loaded levels merged into one Level, shifted into the map frame."""
         origins = {fid: self._map.level_origins.get(fid, (0.0, 0.0)) for fid in self._world.level_ids}
         return self._world.compact_world(origins=origins)
 
     def level_of_point(self, x: float, y: float) -> str:
         """Return the loaded level id whose map-frame footprint contains (x, y), or '' if none."""
         for level_id, level in self._world.levels.items():
-            corners = [corner for zone in level.zones for corner in zone.corners]
+            corners = [corner for zone in level.zones for corner in zone.polygon]
             if not corners:
                 continue
             ox, oy = self._map.level_origins.get(level_id, (0.0, 0.0))
@@ -142,6 +142,7 @@ class WorldManager(NodeInterface):
         """
         if not from_level or not to_level or from_level == to_level:
             return []
+        cabins = self._world.elevator_levels()
         prev: dict[str, tuple[str, str]] = {}
         visited = {from_level}
         queue = collections.deque([from_level])
@@ -152,9 +153,10 @@ class WorldManager(NodeInterface):
             level = self._world.get_level(level_id)
             if level is None:
                 continue
-            for elevator in level.levelElevators:
-                for dest_level, _dest_name in elevator.all_destinations:
-                    if dest_level not in visited:
+            for elevator in level.elevators:
+                for destination in elevator.destinations:
+                    dest_level = cabins.get(destination)
+                    if dest_level is not None and dest_level not in visited:
                         visited.add(dest_level)
                         prev[dest_level] = (level_id, elevator.name)
                         queue.append(dest_level)
@@ -202,7 +204,7 @@ class WorldManager(NodeInterface):
     def update_world(
         self,
         world_map: WorldMap,
-        world_description: World.WorldDescription,
+        world_description: World,
         multi_level_map: MultiLevelMap | None = None,
         static_footprints: Sequence[shapely.Polygon | None] | None = None,
     ):
@@ -219,7 +221,7 @@ class WorldManager(NodeInterface):
 
         self._zone_masks = {}
         for level_id, level in self.world.levels.items():
-            polygons = [shapely.Polygon([(corner.x, corner.y) for corner in zone.corners]) for zone in level.zones if len(zone.corners) >= 3]
+            polygons = [shapely.Polygon([(corner.x, corner.y) for corner in zone.polygon]) for zone in level.zones if len(zone.polygon) >= 3]
             if polygons:
                 self._zone_masks[level_id] = _zone_mask(self.map_for_floor(level_id), polygons)
 

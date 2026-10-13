@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import warnings
+import typing
+from collections.abc import Mapping
 from pathlib import Path
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Union
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
 
 @attrs.define(auto_attribs=True, kw_only=True)
 class Waypoint(Position):
-    level_id: str | None = None
+    level: str = ''
 
     @property
     def position(self) -> Position:
@@ -41,44 +42,41 @@ class Waypoint(Position):
         self.z = value.z
 
     @classmethod
-    def from_any(cls, obj: Union[Position, dict, str, 'Waypoint']) -> 'Waypoint':
+    def from_any(cls, obj: Union[Position, Mapping, str, typing.Sequence[float], 'Waypoint']) -> 'Waypoint':
+        """A waypoint from a zone name, a position, `[x, y[, z]]` or `{x, y[, z][, level]}`."""
         if isinstance(obj, str):
             return cls.from_position(pos=resolve_zone_point(obj))
         if isinstance(obj, Waypoint):
             return obj
         if isinstance(obj, Position):
             return cls.from_position(pos=obj)
-        if isinstance(obj, dict):
-            # Accept {"position": ..., "level_id": ...}, a flat waypoint dict,
-            # or just a Position dict.
-            if 'position' in obj:
-                pos = obj['position']
-                if not isinstance(pos, Position):
-                    pos = Position.converter(pos)
-                return cls.from_position(pos=pos, level_id=obj.get('level_id'))
+        if isinstance(obj, Mapping):
+            unknown = set(obj) - {'x', 'y', 'z', 'level'}
+            if unknown:
+                raise ValueError(f'waypoint has unknown keys {sorted(unknown)}')
             pos = Position.converter({k: obj[k] for k in ('x', 'y', 'z') if k in obj})
-            return cls.from_position(pos=pos, level_id=obj.get('level_id'))
-        raise TypeError(f"Cannot convert {obj!r} to Waypoint")
+            return cls.from_position(pos=pos, level=str(obj.get('level', '')))
+        return cls.from_position(pos=Position.parse(obj))
 
     @classmethod
-    def from_position(cls, pos: Position, level_id: str | None = None) -> 'Waypoint':
-        return cls(x=pos.x, y=pos.y, z=pos.z, level_id=level_id)
+    def from_position(cls, pos: Position, level: str = '') -> 'Waypoint':
+        return cls(x=pos.x, y=pos.y, z=pos.z, level=level)
 
     def __add__(self, other: Position) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
-            return type(self).from_position(pos=super().__add__(other), level_id=self.level_id)
+            return type(self).from_position(pos=super().__add__(other), level=self.level)
         return NotImplemented
 
     def __radd__(self, other: Position) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
-            return type(self).from_position(pos=other + Position(x=self.x, y=self.y, z=self.z), level_id=self.level_id)
+            return type(self).from_position(pos=other + Position(x=self.x, y=self.y, z=self.z), level=self.level)
         return NotImplemented
 
 
 @attrs.define(kw_only=True)
 class Named(Parseable, Serializable):
     name: str
-    extra: dict = attrs.field(factory=dict)
+    extra: dict = attrs.field(factory=dict, eq=False)
 
     @property
     def sim_path(self) -> str:
@@ -90,18 +88,16 @@ class Named(Parseable, Serializable):
 
     @classmethod
     def parse(cls, value: dict) -> Self:
-        if 'pos' in value:
-            value['pose'] = value['pos']
-            del value['pos']
-        value['extra'] = {**value}
-        return ArenaConverter.current().structure_attrs_fromdict(value, cls)
+        if not isinstance(value, Mapping):
+            raise TypeError(f'{cls.__name__} must be a mapping, got {value!r}')
+        unknown = set(value) - {field.name for field in attrs.fields(cls)} | ({'extra'} & set(value))
+        if unknown:
+            raise ValueError(f"{cls.__name__.lower()} {value.get('name')!r} has unknown keys {sorted(unknown)}")
+        return ArenaConverter.current().structure_attrs_fromdict(dict(value), cls)
 
     def serialize(self) -> dict:
         result = cattrs.gen.make_dict_unstructure_fn(type(self), converter, _cattrs_omit_if_default=True)(self)
-        for k in attrs.fields(type(self)):
-            result.get('extra', {}).pop(k.name, None)
-        if not result.get('extra', {}):
-            result.pop('extra', None)
+        result.pop('extra', None)
         return result
 
 
@@ -109,23 +105,33 @@ class Named(Parseable, Serializable):
 class Entity(Named, Parseable, Serializable):
     pose: Pose = attrs.field(converter=Pose.converter)
     model: ObjectIdentifier = attrs.field(converter=ObjectIdentifier.converter)
+    level: str = ''
 
     included_from: Path | None = attrs.field(default=None, repr=False)
 
-    def asdict(self, expand_extra: bool = True) -> dict:
-        if expand_extra:
-            return {
-                **self.extra,
-                **attrs.asdict(self, filter=lambda a, v: a.name != 'extra'),
-            }
-        return attrs.asdict(self)
+    @classmethod
+    def parse(cls, value: dict) -> Self:
+        if isinstance(value, Mapping) and 'included_from' in value:
+            raise ValueError(f"{cls.__name__.lower()} {value.get('name')!r} has unknown keys ['included_from']")
+        return super().parse(value)
+
+
+HUMANSIM_OBJECT_KEYS = frozenset({'type', 'capacity', 'satisfies', 'interaction_radius', 'formation', 'seats'})
+
+
+def _humansim_object(value: object) -> dict:
+    value = dict(value or {})
+    unknown = set(value) - HUMANSIM_OBJECT_KEYS
+    if unknown:
+        raise ValueError(f'humansim block has unknown keys {sorted(unknown)}, expected some of {sorted(HUMANSIM_OBJECT_KEYS)}')
+    return value
 
 
 @attrs.define
 class Obstacle(Entity):
     scale: Scale | None = None
-    level_id: str | None = None
     light: ObjectLightSettings | None = None
+    humansim: dict = attrs.field(factory=dict, converter=_humansim_object)
 
     async def footprint(self) -> shapely.Polygon | None:
         """Map-frame 2D footprint from the asset's annotated bounds, None when unannotated."""
@@ -144,18 +150,26 @@ class Obstacle(Entity):
         return shapely.affinity.translate(poly, xoff=self.pose.position.x, yoff=self.pose.position.y)
 
 
+converter.register_structure_hook_func(lambda t: t == dict | str | None, lambda v, _t: v)
+
+
 def _waypoints_converter(value: object) -> list[Waypoint]:
     if not isinstance(value, list):
         raise TypeError("waypoints must be a list")
     return [Waypoint.from_any(wp) for wp in value]
 
 
+WAYPOINT_MODES = ('repeat', 'reverse', 'once', 'random')
+
+
 @attrs.define
 class DynamicObstacle(Entity):
     model: HumanIdentifier = attrs.field(converter=HumanIdentifier.converter)
     waypoints: list[Waypoint] = attrs.field(factory=list, converter=_waypoints_converter)
+    waypoint_mode: str = attrs.field(default='repeat', validator=attrs.validators.in_(WAYPOINT_MODES))
     velocity: float = attrs.field(converter=float, default=1.0)  # m/s
-    level_id: str = ""
+    agent: dict | str | None = None
+    hunav: dict = attrs.field(factory=dict)
 
 
 @attrs.define
@@ -171,20 +185,3 @@ class CustomDynamicObstacle(DynamicObstacle):
         if name in self.extra:
             return self.extra[name]
         raise AttributeError(f"{name} not found")
-
-    @classmethod
-    def parse(cls, value: object) -> Self:
-        known_fields = set(f.name for f in attrs.fields(cls))
-
-        if 'pos' in value:
-            value['pose'] = value['pos']
-            del value['pos']
-
-        known_values = {k: v for k, v in value.items() if k in known_fields}
-        custom_fields = {k: v for k, v in value.items() if k not in known_fields}
-
-        warnings.warn("CustomDynamicObstacle.parse is deprecated and will be removed in a future release. Call the constructor directly, e.g., CustomDynamicObstacle(**value).", FutureWarning, stacklevel=2)
-
-        obj = converter.structure_attrs_fromdict(known_values, cls)
-        obj.extra.update(custom_fields)
-        return obj

@@ -1,8 +1,12 @@
+from collections.abc import Iterator, Mapping
+
 from shapely import LineString, MultiLineString
 from shapely.geometry import Point, Polygon
+from shapely.geometry.base import BaseGeometry
 
-from arena_simulation_setup.shared import Position, Wall
+from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
+from arena_simulation_setup.tree.World import Level, WallPath, World
 
 
 def line_pairs(geom: MultiLineString | LineString | Polygon):
@@ -45,14 +49,39 @@ def to_corners(geom: Polygon) -> list[Position]:
     return [Position(x=pt[0], y=pt[1]) for pt in geom.exterior.coords]
 
 
-def to_walls(geom: MultiLineString | LineString | Polygon, material: MaterialIdentifier | None = None) -> list[Wall]:
-    """Convert a geometry to a list of Wall segments.
+def _lines(geom: BaseGeometry) -> Iterator[LineString]:
+    if geom.is_empty:
+        return
+    if isinstance(geom, Polygon):
+        yield geom.exterior
+        yield from geom.interiors
+    elif isinstance(geom, LineString):
+        yield geom
+    elif not isinstance(geom, Point):
+        for part in geom.geoms:
+            yield from _lines(part)
 
-    Args:
-        geom (MultiLineString | LineString | Polygon): The geometry to convert.
-        material (MaterialIdentifier | None): Optional material applied to every wall segment.
 
-    Returns:
-        list[Wall]: A list of Wall segments representing the geometry.
-    """
-    return [Wall(start=Position(x=start.x, y=start.y), end=Position(x=end.x, y=end.y), material=material) for (start, end) in line_pairs(geom)]
+def to_walls(geom: BaseGeometry, material: MaterialIdentifier | None = None) -> list[WallPath]:
+    """Wall paths along the lines and polygon rings of a geometry, one per line, rings closed."""
+    paths: list[WallPath] = []
+    for line in _lines(geom):
+        points = [Position(x=x, y=y) for x, y, *_ in line.coords]
+        if len(points) < 2:
+            continue
+        closed = line.is_ring and len(points) > 3
+        paths.append(WallPath(path=points[:-1] if closed else points, closed=closed, material=material))
+    return paths
+
+
+def world_of(level: Level, descriptions: Mapping[str, str] | None = None) -> World:
+    """A one-level world of a generated level, the zone descriptions in its KG."""
+    from arena_simulation_setup.kg.scene import Scene
+
+    world = World.from_levels(level)
+    described = {name: text for name, text in (descriptions or {}).items() if text}
+    if described:
+        world.kg = Scene()
+        for name, text in described.items():
+            world.kg.add_entity(f'room:{name}', {'description': text})
+    return world

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 import attrs
 from arena_robots.Sensor import SensorType
+from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.route import WORDINGS, instruct
 
 from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
@@ -14,7 +15,7 @@ from task_generator.tasks.robots.adapters.mobile.drl import DrlAdapter
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from arena_simulation_setup.tree.World import LevelDescription
+    from arena_simulation_setup.tree.World import Level
     from rclpy.impl.rcutils_logger import RcutilsLogger
 
     from task_generator.manager.robot_manager.robot_manager import RobotManager
@@ -22,10 +23,10 @@ if TYPE_CHECKING:
     from task_generator.tasks.robots.request import GoToPhase
 
 
-def localized_instruction(phase: GoToPhase, here: Pose | None, ezilear: Callable[[Pose], Pose], level: LevelDescription, wording: str = "", fallback: str = "") -> dict[str, str]:
+def localized_instruction(phase: GoToPhase, here: Pose | None, ezilear: Callable[[Pose], Pose], level: Level, semantics: Scene, wording: str = "", fallback: str = "") -> dict[str, str]:
     """Instruction for the env-frame `phase` worded from env-frame pose `here`, both taken into `level`'s frame by `ezilear`, `fallback` standing in for missing phase text."""
     local = attrs.evolve(phase, text=phase.text or fallback, pose=None if phase.pose is None else ezilear(phase.pose))
-    return instruct(local, level, None if here is None else ezilear(here).to_2d(), wording, WORLD_ENTITY_PREFIX)
+    return instruct(local, level, semantics, None if here is None else ezilear(here).to_2d(), wording, WORLD_ENTITY_PREFIX)
 
 
 class VlaAdapter(DrlAdapter):
@@ -76,7 +77,9 @@ class VlaAdapter(DrlAdapter):
 
     def _instruct(self, phase: GoToPhase) -> dict[str, str]:
         """Instruction for the dispatched `phase`, worded from the robot's current pose."""
-        return localized_instruction(phase, self.rm.pose, self.rm._environment_manager.ezilear, self.rm.node._world_manager.world_compacted(), self._wording, self._fallback_instruction)  # pylint: disable=protected-access
+        world_manager = self.rm.node._world_manager  # pylint: disable=protected-access
+        semantics = world_manager.world.kg
+        return localized_instruction(phase, self.rm.pose, self.rm._environment_manager.ezilear, world_manager.world_compacted(), semantics if semantics is not None else Scene(), self._wording, self._fallback_instruction)  # pylint: disable=protected-access
 
     def _initial_state(self, phase: GoToPhase) -> dict:
         from arena_planners import goal  # noqa: PLC0415

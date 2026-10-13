@@ -1,0 +1,675 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: main_hallway, polygon: [[0.0, 10.0], [60.0, 10.0], [60.0, 14.0], [0.0, 14.0]], floor: Ceramic_Tile_18}
+  - {name: cafeteria, polygon: [[0.0, 0.0], [12.0, 0.0], [12.0, 10.0], [0.0, 10.0]], floor: Ceramic_Tile_6}
+  - {name: sub_hallway, polygon: [[12.0, 0.0], [15.0, 0.0], [15.0, 10.0], [12.0, 10.0]], floor: Ceramic_Tile_18}
+  - {name: meeting_room_1, polygon: [[15.0, 3.0], [23.0, 3.0], [23.0, 10.0], [15.0, 10.0]], floor: Carpet_Beige}
+  - {name: wc_2, polygon: [[15.0, 0.0], [23.0, 0.0], [23.0, 3.0], [15.0, 3.0]], floor: Ceramic_Tile_12}
+  - {name: reception, polygon: [[23.0, -3.0], [38.0, -3.0], [38.0, 10.0], [23.0, 10.0]], floor: Marble_Tile_18}
+  - {name: executive_office_1, polygon: [[38.0, 3.0], [48.0, 3.0], [48.0, 10.0], [38.0, 10.0]], floor: Walnut_Planks}
+  - {name: executive_office_2, polygon: [[48.0, 3.0], [60.0, 3.0], [60.0, 10.0], [48.0, 10.0]], floor: Oak_Planks}
+  - {name: wc_1, polygon: [[48.0, 14.0], [60.0, 14.0], [60.0, 25.0], [48.0, 25.0]], floor: Ceramic_Tile_12}
+  - {name: main_office, polygon: [[18.0, 14.0], [48.0, 14.0], [48.0, 25.0], [18.0, 25.0]], floor: Carpet_Beige}
+  - {name: meeting_room_big, polygon: [[0.0, 14.0], [10.0, 14.0], [10.0, 25.0], [0.0, 25.0]], floor: Carpet_Beige}
+  - {name: storage, polygon: [[10.0, 14.0], [18.0, 14.0], [18.0, 25.0], [10.0, 25.0]], floor: Concrete_Smooth}
+  walls:
+  - {path: [[0.0, 10.0], [0.0, 14.0]], material: Paint_Satin}
+  - {path: [[60.0, 14.0], [60.0, 10.0]], material: Paint_Satin}
+  - {path: [[0.0, 0.0], [0.0, 10.0], [3.0, 10.0]], material: Paint_Satin}
+  - {path: [[9.0, 10.0], [12.0, 10.0], [12.0, 7.0]], material: Paint_Satin}
+  - {path: [[12.0, 5.0], [12.0, 3.5]], material: Paint_Satin}
+  - {path: [[12.0, 1.5], [12.0, 0.0], [0.0, 0.0]], material: Paint_Satin}
+  - {path: [[15.0, 0.0], [12.0, 0.0]], material: Paint_Satin}
+  - {path: [[15.0, 3.0], [15.0, 6.5]], material: Paint_Satin}
+  - {path: [[15.0, 8.0], [15.0, 10.0], [23.0, 10.0], [23.0, 3.0], [15.0, 3.0]], material: Paint_Satin}
+  - {path: [[15.0, 0.0], [15.0, 1.5]], material: Paint_Gloss}
+  - {path: [[15.0, 3.0], [23.0, 3.0], [23.0, 2.0]], material: Paint_Gloss}
+  - {path: [[23.0, 1.2], [23.0, 0.0], [15.0, 0.0]], material: Paint_Gloss}
+  - {path: [[16.0, 2.0], [16.0, 3.0]], material: Paint_Gloss}
+  - {path: [[17.2, 3.0], [17.2, 2.0]], material: Paint_Gloss}
+  - {path: [[17.25, 2.0], [17.25, 3.0]], material: Paint_Gloss}
+  - {path: [[18.45, 3.0], [18.45, 2.0]], material: Paint_Gloss}
+  - {path: [[18.5, 2.0], [18.5, 3.0]], material: Paint_Gloss}
+  - {path: [[19.7, 3.0], [19.7, 2.0]], material: Paint_Gloss}
+  - {path: [[19.75, 2.0], [19.75, 3.0]], material: Paint_Gloss}
+  - {path: [[20.95, 3.0], [20.95, 2.0]], material: Paint_Gloss}
+  - {path: [[21.0, 2.0], [21.0, 3.0]], material: Paint_Gloss}
+  - {path: [[22.2, 3.0], [22.2, 2.0]], material: Paint_Gloss}
+  - {path: [[23.0, -3.0], [23.0, 0.0]], material: Paint_Gloss}
+  - {path: [[23.0, 2.0], [23.0, 10.0], [24.5, 10.0]], material: Paint_Gloss}
+  - {path: [[29.5, 10.0], [31.5, 10.0]], material: Paint_Gloss}
+  - {path: [[36.0, 10.0], [38.0, 10.0], [38.0, -3.0], [35.5, -3.0]], material: Paint_Gloss}
+  - {path: [[25.5, -3.0], [23.0, -3.0]], material: Paint_Gloss}
+  - {path: [[38.0, 3.0], [38.0, 10.0], [40.0, 10.0]], material: Paint_Satin}
+  - {path: [[46.0, 10.0], [48.0, 10.0], [48.0, 3.0], [38.0, 3.0]], material: Paint_Satin}
+  - {path: [[48.0, 3.0], [48.0, 10.0], [51.0, 10.0]], material: Paint_Satin}
+  - {path: [[57.0, 10.0], [60.0, 10.0], [60.0, 3.0], [48.0, 3.0]], material: Paint_Satin}
+  - {path: [[48.0, 25.0], [48.0, 18.0]], material: Paint_Satin}
+  - {path: [[48.0, 16.5], [48.0, 14.0]], material: Paint_Satin}
+  - {path: [[48.0, 25.0], [60.0, 25.0], [60.0, 14.0], [54.4, 14.0]], material: Paint_Gloss}
+  - {path: [[53.5, 14.0], [48.0, 14.0]], material: Paint_Gloss}
+  - {path: [[48.5, 23.0], [48.5, 25.0]], material: Paint_Gloss}
+  - {path: [[50.0, 25.0], [50.0, 23.0]], material: Paint_Gloss}
+  - {path: [[50.05, 23.0], [50.05, 25.0]], material: Paint_Gloss}
+  - {path: [[51.55, 25.0], [51.55, 23.0]], material: Paint_Gloss}
+  - {path: [[51.6, 23.0], [51.6, 25.0]], material: Paint_Gloss}
+  - {path: [[53.1, 25.0], [53.1, 23.0]], material: Paint_Gloss}
+  - {path: [[53.15, 23.0], [53.15, 25.0]], material: Paint_Gloss}
+  - {path: [[54.65, 25.0], [54.65, 23.0]], material: Paint_Gloss}
+  - {path: [[54.7, 23.0], [54.7, 25.0]], material: Paint_Gloss}
+  - {path: [[56.2, 25.0], [56.2, 23.0]], material: Paint_Gloss}
+  - {path: [[56.25, 23.0], [56.25, 25.0]], material: Paint_Gloss}
+  - {path: [[57.75, 25.0], [57.75, 23.0]], material: Paint_Gloss}
+  - {path: [[57.8, 23.0], [57.8, 25.0]], material: Paint_Gloss}
+  - {path: [[59.3, 25.0], [59.3, 23.0]], material: Paint_Gloss}
+  - {path: [[18.0, 14.0], [18.0, 25.0], [48.0, 25.0], [48.0, 18.0]], material: Paint_Satin}
+  - {path: [[48.0, 16.5], [48.0, 14.0], [42.0, 14.0]], material: Paint_Satin}
+  - {path: [[37.0, 14.0], [29.0, 14.0]], material: Paint_Satin}
+  - {path: [[24.0, 14.0], [18.0, 14.0]], material: Paint_Satin}
+  - {path: [[0.0, 14.0], [0.0, 25.0], [10.0, 25.0], [10.0, 14.0], [8.5, 14.0]], material: Paint_Satin}
+  - {path: [[6.5, 14.0], [4.0, 14.0]], material: Paint_Satin}
+  - {path: [[2.0, 14.0], [0.0, 14.0]], material: Paint_Satin}
+  - {path: [[10.0, 14.0], [10.0, 25.0], [18.0, 25.0], [18.0, 14.0], [17.0, 14.0]], material: Paint_Satin}
+  - {path: [[12.0, 14.0], [10.0, 14.0]], material: Paint_Satin}
+  doors:
+  - {name: cafeteria_to_hallway, span: [[3.0, 10.0], [9.0, 10.0]]}
+  - {name: cafeteria_to_sub_hallway_1, span: [[12.0, 1.5], [12.0, 3.5]]}
+  - {name: cafeteria_to_sub_hallway_2, span: [[12.0, 5.0], [12.0, 7.0]]}
+  - {name: meeting_1_to_sub_hallway, span: [[15.0, 6.5], [15.0, 8.0]]}
+  - {name: wc_2_to_sub_hallway, span: [[15.0, 1.5], [15.0, 3.0]]}
+  - {name: wc_2_to_reception, span: [[23.0, 1.2], [23.0, 2.0]]}
+  - {name: wc2_stall_1_door, span: [[16.0, 2.0], [17.2, 2.0]], height: 1.8}
+  - {name: wc2_stall_2_door, span: [[17.25, 2.0], [18.45, 2.0]], height: 1.8}
+  - {name: wc2_stall_3_door, span: [[18.5, 2.0], [19.7, 2.0]], height: 1.8}
+  - {name: wc2_stall_4_door, span: [[19.75, 2.0], [20.95, 2.0]], height: 1.8}
+  - {name: wc2_stall_5_door, span: [[21.0, 2.0], [22.2, 2.0]], height: 1.8}
+  - {name: reception_to_hallway_1, span: [[24.5, 10.0], [29.5, 10.0]]}
+  - {name: reception_to_hallway_2, span: [[31.5, 10.0], [36.0, 10.0]]}
+  - {name: main_entrance, span: [[35.5, -3.0], [25.5, -3.0]]}
+  - {name: exec_office_1_door, span: [[40.0, 10.0], [46.0, 10.0]]}
+  - {name: exec_office_2_door, span: [[51.0, 10.0], [57.0, 10.0]]}
+  - {name: wc_1_to_hallway, span: [[53.5, 14.0], [54.4, 14.0]]}
+  - {name: wc1_stall_1_door, span: [[48.5, 23.0], [50.0, 23.0]], height: 1.8}
+  - {name: wc1_stall_2_door, span: [[50.05, 23.0], [51.55, 23.0]], height: 1.8}
+  - {name: wc1_stall_3_door, span: [[51.6, 23.0], [53.1, 23.0]], height: 1.8}
+  - {name: wc1_stall_4_door, span: [[53.15, 23.0], [54.65, 23.0]], height: 1.8}
+  - {name: wc1_stall_5_door, span: [[54.7, 23.0], [56.2, 23.0]], height: 1.8}
+  - {name: wc1_stall_6_door, span: [[56.25, 23.0], [57.75, 23.0]], height: 1.8}
+  - {name: wc1_stall_7_door, span: [[57.8, 23.0], [59.3, 23.0]], height: 1.8}
+  - {name: main_office_to_hallway_1, span: [[24.0, 14.0], [29.0, 14.0]]}
+  - {name: main_office_to_hallway_2, span: [[37.0, 14.0], [42.0, 14.0]]}
+  - {name: main_office_to_wc1, span: [[48.0, 16.5], [48.0, 18.0]]}
+  - {name: meeting_big_to_hallway_1, span: [[2.0, 14.0], [4.0, 14.0]]}
+  - {name: meeting_big_to_hallway_2, span: [[6.5, 14.0], [8.5, 14.0]]}
+  - {name: storage_to_hallway, span: [[12.0, 14.0], [17.0, 14.0]]}
+  objects:
+  - {name: hallway_fire_ext_1, pose: [1.0, 13.8], model: Office/SM_Extinguisher}
+  - {name: hallway_fire_ext_2, pose: [1.2, 13.8], model: Office/SM_Extinguisher}
+  - {name: hallway_fire_ext_3, pose: [59.7, 13.8], model: Office/SM_Extinguisher}
+  - {name: hallway_fire_ext_4, pose: [59.7, 13.5], model: Office/SM_Extinguisher}
+  - {name: hallway_plant_1, pose: [0.5, 13.5], model: Office/SM_Plant02}
+  - {name: hallway_plant_2, pose: [0.5, 10.5], model: Office/SM_Plant02}
+  - {name: hallway_plant_3, pose: [18.5, 13.3], model: Office/SM_Plant01}
+  - {name: hallway_plant_4, pose: [20.5, 13.3], model: Office/SM_Plant01}
+  - {name: hallway_plant_5, pose: [24.0, 10.7], model: Office/SM_Plant01}
+  - {name: cafeteria_table_1, pose: [3.0, 3.0], model: Office/SM_TableD}
+  - {name: cafeteria_chair_1_1a, pose: [2.2, 1.9, 0.6], model: Office/SM_Chair}
+  - {name: cafeteria_chair_1_1b, pose: [2.2, 3.5], model: Office/SM_Chair}
+  - {name: cafeteria_chair_1_2a, pose: [3.8, 2.5, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_chair_1_2b, pose: [3.8, 3.7, -2.4], model: Office/SM_Chair}
+  - {name: cafeteria_table_2, pose: [9.0, 3.0], model: Office/SM_TableD}
+  - {name: cafeteria_chair_2_1a, pose: [8.02, 2.5, -0.6], model: Office/SM_Chair}
+  - {name: cafeteria_chair_2_1b, pose: [7.7, 3.5, 0.65], model: Office/SM_Chair}
+  - {name: cafeteria_chair_2_2a, pose: [9.8, 2.5, 2.9], model: Office/SM_Chair}
+  - {name: cafeteria_chair_2_2b, pose: [9.8, 3.5, -2.3], model: Office/SM_Chair}
+  - {name: cafeteria_table_3, pose: [3.0, 7.5], model: Office/SM_TableD}
+  - {name: cafeteria_chair_3_1a, pose: [2.5, 7.0], model: Office/SM_Chair}
+  - {name: cafeteria_chair_3_1b, pose: [2.5, 8.0], model: Office/SM_Chair}
+  - {name: cafeteria_chair_3_2a, pose: [3.5, 7.0, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_chair_3_2b, pose: [3.5, 8.0, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_table_4, pose: [9.0, 7.5], model: Office/SM_TableD}
+  - {name: cafeteria_chair_4_1b, pose: [8.2, 8.0], model: Office/SM_Chair}
+  - {name: cafeteria_chair_4_2a, pose: [11.4, 7.0, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_chair_4_2b, pose: [9.8, 7.0, 3.14159], model: Office/SM_Chair}
+  - {name: cafeteria_drinks_machine, pose: [11.3, 9.9, -1.5708], model: Office/SM_DrinksMachine}
+  - {name: cafeteria_water_cooler, pose: [10.5, 9.7, -1.5708], model: Office/SM_WaterCooler}
+  - {name: cafeteria_plant_1, pose: [0.5, 9.4], model: Office/SM_Plant02}
+  - {name: cafeteria_plant_2, pose: [11.5, 0.5], model: Office/SM_Plant03}
+  - {name: cafeteria_trash_1, pose: [0.2, 0.2], model: Office/SM_TrashCan}
+  - {name: sub_hallway_plant, pose: [14.4, 0.8], model: Office/SM_Plant01}
+  - {name: meet1_table1, pose: [20.8, 7.125, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_table2, pose: [19.55, 7.125, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_table3, pose: [18.3, 7.125, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_table4, pose: [20.8, 5.875, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_table5, pose: [19.55, 5.875, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_table6, pose: [18.3, 5.875, 1.5708], model: Office/SM_TableRound_module}
+  - {name: meet1_chair_board, pose: [22.4, 8.0, -2.363185], model: Office/SM_ChairOffice}
+  - {name: meet1_chair_1a, pose: [20.7, 8.0, -1.3], model: Office/SM_ChairOffice}
+  - {name: meet1_chair_1b, pose: [19.6, 8.0], model: Office/SM_ChairOffice}
+  - {name: meet1_chair_1c, pose: [18.5, 7.8, -1.57079], model: Office/SM_ChairOffice}
+  - {name: meet1_chair_2a, pose: [20.7, 5.1, 0.9], model: Office/SM_ChairOffice}
+  - {name: meet1_chair_2b, pose: [19.6, 4.7, 1.57079], model: Office/SM_ChairOffice}
+  - {name: meet1_chair_2c, pose: [18.5, 5.1, 1.57079], model: Office/SM_ChairOffice}
+  - {name: meet1_tv, pose: {x: 23.05, y: 7.9, z: 1.1, yaw: 3.14159}, model: Office/SM_TVDisplay_small}
+  - {name: meet1_board, pose: {x: 22.95, y: 6.5, z: 0.7}, model: Office/SM_MarkerBoard}
+  - {name: meet1_plant, pose: [22.5, 3.5], model: Office/SM_Plant02}
+  - {name: meet1_ringbinder_1, pose: {x: 20.5, y: 7.0, z: 0.75, yaw: 0.3}, model: Office/SM_RingBinder}
+  - {name: meet1_papertray_1, pose: {x: 19.3, y: 7.2, z: 0.75, yaw: 1.2}, model: Office/SM_PaperTray}
+  - {name: meet1_phone_1, pose: {x: 18.5, y: 5.8, z: 0.75}, model: Office/SM_Phone}
+  - {name: meet1_standforpapers_1, pose: {x: 20.6, y: 6.0, z: 0.75, yaw: -0.5}, model: Office/SM_StandForPapers}
+  - {name: meet1_smartphone_1, pose: {x: 19.7, y: 6.2, z: 0.75, yaw: 0.8}, model: Office/SM_Smartphone}
+  - {name: meet1_pencilcup_1, pose: {x: 18.6, y: 7.0, z: 0.75}, model: Office/SM_PencilCup}
+  - {name: meet1_donut_1, pose: {x: 20.2, y: 5.7, z: 0.75}, model: Office/SM_Donut}
+  - {name: meet1_coffeetogo_1, pose: {x: 19.0, y: 5.9, z: 0.75}, model: Office/SM_CoffeeToGo}
+  - {name: meet1_trash, pose: [22.5, 9.5], model: Office/SM_TrashCan}
+  - {name: wc2_toilet_1, pose: {x: 16.6, y: 2.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc2_toilet_paper_1, pose: {x: 16.0, y: 2.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc2_toilet_2, pose: {x: 17.85, y: 2.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc2_toilet_paper_2, pose: {x: 17.25, y: 2.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc2_toilet_3, pose: {x: 19.1, y: 2.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc2_toilet_paper_3, pose: {x: 18.5, y: 2.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc2_toilet_4, pose: {x: 20.35, y: 2.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc2_toilet_paper_4, pose: {x: 19.75, y: 2.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc2_toilet_5, pose: {x: 21.6, y: 2.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc2_toilet_paper_5, pose: {x: 21.0, y: 2.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc2_washbasin_1, pose: {x: 17.5, y: 0.025, z: 0.62, yaw: 1.5708}, model: Office/SM_Washbasin}
+  - {name: wc2_mirror_1, pose: {x: 17.5, y: 0.025, z: 0.67, yaw: 1.5708}, model: Office/SM_Mirror}
+  - {name: wc2_washbasin_2, pose: {x: 20.5, y: 0.025, z: 0.62, yaw: 1.5708}, model: Office/SM_Washbasin}
+  - {name: wc2_mirror_2, pose: {x: 20.5, y: 0.025, z: 0.67, yaw: 1.5708}, model: Office/SM_Mirror}
+  - {name: wc2_hand_dryer, pose: {x: 22.975, y: 0.7, z: 0.8, yaw: 3.14159}, model: Office/SM_HandDryer}
+  - {name: wc2_trash, pose: [15.2, 0.5], model: Office/SM_TrashCan}
+  - {name: reception_desk_straight_a, pose: [35.0, 2.5], model: Office/SM_ReceptionTableStraight}
+  - {name: reception_desk_straight_b, pose: [35.0, 4.5], model: Office/SM_ReceptionTableStraight}
+  - {name: reception_desk_corner_a, pose: [36.0, 0.5, 1.5708], model: Office/SM_ReceptionTableCornerOutside}
+  - {name: reception_desk_corner_b, pose: [36.0, 6.5], model: Office/SM_ReceptionTableCornerOutside}
+  - {name: reception_desk_stand_1, pose: [35.0, 1.5], model: Office/SM_ReceptionStandB}
+  - {name: reception_desk_stand_2, pose: [35.0, 5.5], model: Office/SM_ReceptionStandB}
+  - {name: reception_personenleit_1a, pose: [37.75, 7.7, -1.5708], model: Office/SM_Personenleitsystem}
+  - {name: reception_personenleit_1b, pose: [36.75, 7.7, -1.5708], model: Office/SM_Personenleitsystem_Red1m}
+  - {name: reception_personenleit_1c, pose: [37.75, -0.5, -1.5708], model: Office/SM_Personenleitsystem}
+  - {name: reception_personenleit_1d, pose: [36.75, -0.5, -1.5708], model: Office/SM_Personenleitsystem}
+  - {name: reception_chair_1, pose: [36.5, 5.1, -2.3562], model: Office/SM_ChairOffice}
+  - {name: reception_chair_2, pose: [36.5, 3.9, 1.57079], model: Office/SM_ChairOffice}
+  - {name: reception_chair_3, pose: [37.1, 3.0, 2.5362], model: Office/SM_ChairOffice}
+  - {name: reception_chair_4, pose: [36.5, 1.96, -1.7562], model: Office/SM_ChairOffice}
+  - {name: reception_monitor_a1, pose: {x: 35.6, y: 6.5, z: 0.74, yaw: -0.6}, model: Office/SM_MonitorPC}
+  - {name: reception_monitor_a2, pose: {x: 35.4, y: 6.0, z: 0.74, yaw: -0.1}, model: Office/SM_MonitorPC}
+  - {name: reception_keyboard_1, pose: {x: 35.6, y: 6.0, z: 0.74}, model: Office/SM_KeyboardPC}
+  - {name: reception_mouse_1, pose: {x: 35.8, y: 6.3, z: 0.741, yaw: -0.1}, model: Office/SM_MousePadPC}
+  - {name: reception_monitor_b1, pose: {x: 35.6, y: 0.5, z: 0.74, yaw: 0.6}, model: Office/SM_MonitorPC}
+  - {name: reception_monitor_b2, pose: {x: 35.4, y: 1.0, z: 0.74, yaw: 0.1}, model: Office/SM_MonitorPC}
+  - {name: reception_keyboard_2, pose: {x: 35.6, y: 1.0, z: 0.74}, model: Office/SM_KeyboardPC}
+  - {name: reception_mouse_2, pose: {x: 35.8, y: 0.7, z: 0.741, yaw: -0.1}, model: Office/SM_MousePadPC}
+  - {name: reception_sofa_1, pose: [23.4, 8.0], model: Office/SM_Sofa}
+  - {name: reception_table_coffee_1, pose: [24.6, 8.0], model: Office/SM_TableCoffee}
+  - {name: reception_sofa_2, pose: [23.4, 5.8], model: Office/SM_Sofa}
+  - {name: reception_table_coffee_2, pose: [31.3, 0.35], model: Office/SM_TableCoffee}
+  - {name: reception_sofa_row1a, pose: [31.3, 0.35], model: Office/SM_Sofa}
+  - {name: reception_sofa_row1b, pose: [31.3, 2.45], model: Office/SM_Sofa}
+  - {name: reception_sofa_row1c, pose: [31.3, 4.55], model: Office/SM_Sofa}
+  - {name: reception_sofa_row1d, pose: [31.3, 6.65], model: Office/SM_Sofa}
+  - {name: reception_sofa_row1_personeleit_a, pose: [32.5, -1.0], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row1_personeleit_b, pose: [32.5, 0.5], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row1_personeleit_c, pose: [32.5, 2.0], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row1_personeleit_d, pose: [32.5, 3.5], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row1_personeleit_e, pose: [32.5, 5.0], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row1_personeleit_f, pose: [32.5, 6.5], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row1_personeleit_g, pose: [32.5, 8.0], model: Office/SM_Personenleitsystem_A1}
+  - {name: reception_sofa_row2a, pose: [28.3, 0.35], model: Office/SM_Sofa}
+  - {name: reception_sofa_row2b, pose: [28.3, 2.45], model: Office/SM_Sofa}
+  - {name: reception_sofa_row2c, pose: [28.3, 4.55], model: Office/SM_Sofa}
+  - {name: reception_sofa_row2d, pose: [28.3, 6.65], model: Office/SM_Sofa}
+  - {name: reception_sofa_row2_personeleit_a, pose: [29.5, -1.0], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row2_personeleit_b, pose: [29.5, 0.5], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row2_personeleit_c, pose: [29.5, 2.0], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row2_personeleit_d, pose: [29.5, 3.5], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row2_personeleit_e, pose: [29.5, 5.0], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row2_personeleit_f, pose: [29.5, 6.5], model: Office/SM_Personenleitsystem_A}
+  - {name: reception_sofa_row2_personeleit_g, pose: [29.5, 8.0], model: Office/SM_Personenleitsystem_A1}
+  - {name: reception_armchair_1, pose: [23.45, 0.6], model: Office/SM_Armchair}
+  - {name: reception_armchair_2, pose: [23.45, -0.5], model: Office/SM_Armchair}
+  - {name: reception_armchair_3, pose: [23.45, -1.6], model: Office/SM_Armchair}
+  - {name: reception_table_coffee_3, pose: [24.6, 0.15], model: Office/SM_TableCoffee}
+  - {name: reception_table_coffee_4, pose: [24.6, -1.1], model: Office/SM_TableCoffee}
+  - {name: reception_plant_new_1, pose: [23.5, -2.5], model: Office/SM_Plant02}
+  - {name: reception_plant_new_2, pose: [37.5, -2.5], model: Office/SM_Plant03}
+  - {name: reception_plant_1, pose: [23.5, 9.5], model: Office/SM_Plant01}
+  - {name: reception_plant_2, pose: [37.5, 9.5], model: Office/SM_Plant03}
+  - {name: reception_plant_3, pose: [23.5, 3.5], model: Office/SM_Plant01}
+  - {name: exec1_desk, pose: [45.5, 6.5], model: Office/SM_SecretaryDeskA}
+  - {name: exec1_chair, pose: [46.3, 5.7, 2.3562], model: Office/SM_ChairOffice}
+  - {name: exec1_monitor, pose: {x: 45.3, y: 5.5, z: 0.74, yaw: 0.2}, model: Office/SM_MonitorPC}
+  - {name: exec1_keyboard, pose: {x: 45.6, y: 5.75, z: 0.75}, model: Office/SM_Keyboard}
+  - {name: exec1_laptop, pose: {x: 45.2, y: 6.0, z: 0.74}, model: Office/SM_Laptop}
+  - {name: exec1_bookcase, pose: [47.75, 5.375, 3.14159], model: Office/SM_BookcaseA}
+  - {name: exec1_cupboard, pose: [47.85, 7.2, 3.14159], model: Office/SM_Cupboard}
+  - {name: exec1_file_cabinet, pose: [47.6, 9.75, 3.14159], model: Office/SM_FileCabinet_03}
+  - {name: exec1_armchair_1_a, pose: [39.5, 7.1], model: Office/SM_Armchair}
+  - {name: exec1_armchair_2_a, pose: [39.5, 5.9], model: Office/SM_Armchair}
+  - {name: exec1_table_coffee, pose: [40.5, 6.55], model: Office/SM_TableCoffee}
+  - {name: exec1_armchair_1_b, pose: [41.5, 7.1, -3.14159], model: Office/SM_Armchair}
+  - {name: exec1_armchair_2_b, pose: [41.5, 5.9, -3.14159], model: Office/SM_Armchair}
+  - {name: exec1_plant, pose: [47.5, 3.5], model: Office/SM_Plant03}
+  - {name: exec1_trash, pose: [38.2, 9.8], model: Office/SM_TrashCan}
+  - {name: exec2_desk, pose: [50.5, 6.5, 3.14159], model: Office/SM_SecretaryDeskA}
+  - {name: exec2_chair, pose: [49.7, 7.3, -0.785385], model: Office/SM_ChairOffice}
+  - {name: exec2_monitor, pose: {x: 50.7, y: 7.5, z: 0.74, yaw: -2.941595}, model: Office/SM_MonitorPC}
+  - {name: exec2_keyboard, pose: {x: 50.4, y: 7.25, z: 0.75, yaw: 3.14159}, model: Office/SM_Keyboard}
+  - {name: exec2_laptop, pose: {x: 50.8, y: 7.0, z: 0.74, yaw: 3.14159}, model: Office/SM_Laptop}
+  - {name: exec2_bookcase, pose: [48.25, 7.625, !!float '-5e-06'], model: Office/SM_BookcaseA}
+  - {name: exec2_cupboard, pose: [48.15, 5.8, !!float '-5e-06'], model: Office/SM_Cupboard}
+  - {name: exec2_file_cabinet_flipped, pose: [48.4, 3.25, !!float '-5e-06'], model: Office/SM_FileCabinet_03}
+  - {name: exec2_armchair_1_a, pose: [56.5, 5.9, 3.14159], model: Office/SM_Recliner}
+  - {name: exec2_armchair_2_a_, pose: [56.5, 7.1, 3.14159], model: Office/SM_Recliner}
+  - {name: exec2_table_coffee, pose: [55.5, 6.45, 3.14159], model: Office/SM_TableCoffee}
+  - {name: exec2_trash, pose: [59.8, 9.75], model: Office/SM_TrashCan}
+  - {name: wc1_toilet_1, pose: {x: 49.25, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_1, pose: {x: 48.5, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_toilet_2, pose: {x: 50.8, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_2, pose: {x: 50.05, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_toilet_3, pose: {x: 52.35, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_3, pose: {x: 51.6, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_toilet_4, pose: {x: 53.9, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_4, pose: {x: 53.15, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_toilet_5, pose: {x: 55.45, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_5, pose: {x: 54.7, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_toilet_6, pose: {x: 57.0, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_6, pose: {x: 56.25, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_toilet_7, pose: {x: 58.55, y: 24.975, z: 0.3, yaw: -1.5708}, model: Office/SM_Toilet}
+  - {name: wc1_toilet_paper_7, pose: {x: 57.8, y: 24.5, z: 0.8}, model: Office/SM_ToiletPaper}
+  - {name: wc1_washbasin_1, pose: {x: 48.025, y: 15.7, z: 0.62}, model: Office/SM_Washbasin}
+  - {name: wc1_mirror_1, pose: {x: 48.025, y: 15.7, z: 0.67}, model: Office/SM_Mirror}
+  - {name: wc1_washbasin_2, pose: {x: 48.025, y: 19.5, z: 0.62}, model: Office/SM_Washbasin}
+  - {name: wc1_mirror_2, pose: {x: 48.025, y: 19.5, z: 0.67}, model: Office/SM_Mirror}
+  - {name: wc1_washbasin_3, pose: {x: 59.975, y: 15.5, z: 0.62, yaw: 3.14159}, model: Office/SM_Washbasin}
+  - {name: wc1_mirror_3, pose: {x: 59.975, y: 15.5, z: 0.67, yaw: 3.14159}, model: Office/SM_Mirror}
+  - {name: wc1_washbasin_4, pose: {x: 59.975, y: 18.5, z: 0.62, yaw: 3.14159}, model: Office/SM_Washbasin}
+  - {name: wc1_mirror_4, pose: {x: 59.975, y: 18.5, z: 0.67, yaw: 3.14159}, model: Office/SM_Mirror}
+  - {name: wc1_washbasin_5, pose: {x: 59.975, y: 21.5, z: 0.62, yaw: 3.14159}, model: Office/SM_Washbasin}
+  - {name: wc1_mirror_5, pose: {x: 59.975, y: 21.5, z: 0.67, yaw: 3.14159}, model: Office/SM_Mirror}
+  - {name: wc1_hand_dryer1, pose: {x: 52.5, y: 14.05, z: 0.8, yaw: 1.5708}, model: Office/SM_HandDryer}
+  - {name: wc1_hand_dryer2, pose: {x: 48.05, y: 18.5, z: 0.8}, model: Office/SM_HandDryer}
+  - {name: wc1_trash1, pose: [48.24, 14.25], model: Office/SM_TrashCan}
+  - {name: wc1_trash2, pose: [59.8, 14.25], model: Office/SM_TrashCan}
+  - {name: office_desk_1_1, pose: [22.0, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_desk_1_2, pose: [23.7, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_2_a, pose: [23.7, 15.5, 1.4], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_2_b, pose: [23.7, 18.5, -2.5], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_2_a, pose: {x: 23.7, y: 16.8, z: 0.74, yaw: -1.041595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_2_a, pose: {x: 23.7, y: 16.4, z: 0.75, yaw: 1.8}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_2_b, pose: {x: 23.7, y: 17.2, z: 0.74, yaw: 0.84159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_2_b, pose: {x: 23.7, y: 17.6, z: 0.75, yaw: -1.9}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_3, pose: [25.4, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_3_a, pose: [25.4, 15.5, 0.7], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_3_b, pose: [25.4, 18.5, -1.6], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_3_a, pose: {x: 25.4, y: 16.8, z: 0.74, yaw: -1.841595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_3_a, pose: {x: 25.4, y: 16.4, z: 0.75, yaw: 0.9}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_3_b, pose: {x: 25.4, y: 17.2, z: 0.74, yaw: 1.34159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_3_b, pose: {x: 25.4, y: 17.6, z: 0.75, yaw: -2.4}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_4, pose: [27.1, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_4_a, pose: [27.1, 15.5, 2.6], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_4_b, pose: [27.1, 18.5, -0.9], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_4_a, pose: {x: 27.1, y: 16.8, z: 0.74, yaw: -0.441595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_4_a, pose: {x: 27.1, y: 16.4, z: 0.75, yaw: 2.3}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_4_b, pose: {x: 27.1, y: 17.2, z: 0.74, yaw: 1.94159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_4_b, pose: {x: 27.1, y: 17.6, z: 0.75, yaw: -0.8}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_5, pose: [31.0, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_desk_1_6, pose: [32.7, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_6_a, pose: [32.7, 15.5, 1.6], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_6_b, pose: [32.7, 18.5, -2.1], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_6_a, pose: {x: 32.7, y: 16.8, z: 0.74, yaw: -1.241595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_6_a, pose: {x: 32.7, y: 16.4, z: 0.75, yaw: 1.5}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_6_b, pose: {x: 32.7, y: 17.2, z: 0.74, yaw: 0.44159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_6_b, pose: {x: 32.7, y: 17.6, z: 0.75, yaw: -2.3}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_7, pose: [34.4, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_7_a, pose: [34.4, 15.5, 2.4], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_7_b, pose: [34.4, 18.5, -1.4], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_7_a, pose: {x: 34.4, y: 16.8, z: 0.74, yaw: -0.341595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_7_a, pose: {x: 34.4, y: 16.4, z: 0.75, yaw: 2.4}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_7_b, pose: {x: 34.4, y: 17.2, z: 0.74, yaw: 1.64159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_7_b, pose: {x: 34.4, y: 17.6, z: 0.75, yaw: -1.1}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_8, pose: [36.1, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_8_a, pose: [36.1, 15.5, 1.1], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_8_b, pose: [36.1, 18.5, -2.8], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_8_a, pose: {x: 36.1, y: 16.8, z: 0.74, yaw: -1.541595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_8_a, pose: {x: 36.1, y: 16.4, z: 0.75, yaw: 1.2}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_8_b, pose: {x: 36.1, y: 17.2, z: 0.74, yaw: 0.24159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_8_b, pose: {x: 36.1, y: 17.6, z: 0.75, yaw: -2.5}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_9, pose: [37.0, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_desk_1_10, pose: [38.7, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_10_a, pose: [38.7, 15.5, 1.9], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_10_b, pose: [38.7, 18.5, -2.6], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_10_a, pose: {x: 38.7, y: 16.8, z: 0.74, yaw: -0.941595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_10_a, pose: {x: 38.7, y: 16.4, z: 0.75, yaw: 1.7}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_10_b, pose: {x: 38.7, y: 17.2, z: 0.74, yaw: 0.54159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_10_b, pose: {x: 38.7, y: 17.6, z: 0.75, yaw: -2.2}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_11, pose: [40.4, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_11_a, pose: [40.4, 15.5, 2.8], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_11_b, pose: [40.4, 18.5, -1.5], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_11_a, pose: {x: 40.4, y: 16.8, z: 0.74, yaw: -0.241595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_11_a, pose: {x: 40.4, y: 16.4, z: 0.75, yaw: 2.5}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_11_b, pose: {x: 40.4, y: 17.2, z: 0.74, yaw: 1.74159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_11_b, pose: {x: 40.4, y: 17.6, z: 0.75, yaw: -1.0}, model: Office/SM_Keyboard}
+  - {name: office_desk_1_12, pose: [42.1, 17.0, 1.5708], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_1_12_a, pose: [42.1, 15.5, 0.8], model: Office/SM_ChairOffice}
+  - {name: office_chair_1_12_b, pose: [42.1, 18.5, -1.8], model: Office/SM_ChairOffice}
+  - {name: office_monitor_1_12_a, pose: {x: 42.1, y: 16.8, z: 0.74, yaw: -1.641595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_12_a, pose: {x: 42.1, y: 16.4, z: 0.75, yaw: 1.1}, model: Office/SM_Keyboard}
+  - {name: office_monitor_1_12_b, pose: {x: 42.1, y: 17.2, z: 0.74, yaw: 1.44159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_1_12_b, pose: {x: 42.1, y: 17.6, z: 0.75, yaw: -1.6}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_1, pose: [22.0, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_desk_2_2, pose: [23.7, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_2_a, pose: [23.7, 20.5, 2.2], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_2_b, pose: [23.7, 23.5, -1.8], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_2_a, pose: {x: 23.7, y: 21.8, z: 0.74, yaw: -0.641595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_2_a, pose: {x: 23.7, y: 21.4, z: 0.75, yaw: 2.1}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_2_b, pose: {x: 23.7, y: 22.2, z: 0.74, yaw: 1.14159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_2_b, pose: {x: 23.7, y: 22.6, z: 0.75, yaw: -1.6}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_3, pose: [25.4, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_3_a, pose: [25.4, 20.5, 1.3], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_3_b, pose: [25.4, 23.5, -2.6], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_3_a, pose: {x: 25.4, y: 21.8, z: 0.74, yaw: -1.441595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_3_a, pose: {x: 25.4, y: 21.4, z: 0.75, yaw: 1.3}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_3_b, pose: {x: 25.4, y: 22.2, z: 0.74, yaw: 0.34159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_3_b, pose: {x: 25.4, y: 22.6, z: 0.75, yaw: -2.4}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_4, pose: [27.1, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_4_a, pose: [27.1, 20.5, 2.9], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_4_b, pose: [27.1, 23.5, -1.0], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_4_a, pose: {x: 27.1, y: 21.8, z: 0.74, yaw: -0.141595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_4_a, pose: {x: 27.1, y: 21.4, z: 0.75, yaw: 2.6}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_4_b, pose: {x: 27.1, y: 22.2, z: 0.74, yaw: 1.84159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_4_b, pose: {x: 27.1, y: 22.6, z: 0.75, yaw: -0.9}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_5, pose: [31.0, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_desk_2_6, pose: [32.7, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_6_a, pose: [32.7, 20.5, 2.0], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_6_b, pose: [32.7, 23.5, -2.2], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_6_a, pose: {x: 32.7, y: 21.8, z: 0.74, yaw: -0.841595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_6_a, pose: {x: 32.7, y: 21.4, z: 0.75, yaw: 1.9}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_6_b, pose: {x: 32.7, y: 22.2, z: 0.74, yaw: 0.74159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_6_b, pose: {x: 32.7, y: 22.6, z: 0.75, yaw: -2.0}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_7, pose: [34.4, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_7_a, pose: [34.4, 20.5, 1.5], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_7_b, pose: [34.4, 23.5, -1.7], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_7_a, pose: {x: 34.4, y: 21.8, z: 0.74, yaw: -1.341595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_7_a, pose: {x: 34.4, y: 21.4, z: 0.75, yaw: 1.4}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_7_b, pose: {x: 34.4, y: 22.2, z: 0.74, yaw: 1.24159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_7_b, pose: {x: 34.4, y: 22.6, z: 0.75, yaw: -1.5}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_8, pose: [36.1, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_8_a, pose: [36.1, 20.5, 2.7], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_8_b, pose: [36.1, 23.5, -1.3], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_8_a, pose: {x: 36.1, y: 21.8, z: 0.74, yaw: -0.241595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_8_a, pose: {x: 36.1, y: 21.4, z: 0.75, yaw: 2.5}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_8_b, pose: {x: 36.1, y: 22.2, z: 0.74, yaw: 1.74159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_8_b, pose: {x: 36.1, y: 22.6, z: 0.75, yaw: -1.0}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_9, pose: [37.0, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_desk_2_10, pose: [38.7, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_10_a, pose: [38.7, 20.5, 1.7], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_10_b, pose: [38.7, 23.5, -2.4], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_10_a, pose: {x: 38.7, y: 21.8, z: 0.74, yaw: -1.041595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_10_a, pose: {x: 38.7, y: 21.4, z: 0.75, yaw: 1.8}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_10_b, pose: {x: 38.7, y: 22.2, z: 0.74, yaw: 0.84159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_10_b, pose: {x: 38.7, y: 22.6, z: 0.75, yaw: -1.9}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_11, pose: [40.4, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_11_a, pose: [40.4, 20.5, 2.3], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_11_b, pose: [40.4, 23.5, -1.2], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_11_a, pose: {x: 40.4, y: 21.8, z: 0.74, yaw: -0.541595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_11_a, pose: {x: 40.4, y: 21.4, z: 0.75, yaw: 2.2}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_11_b, pose: {x: 40.4, y: 22.2, z: 0.74, yaw: 1.54159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_11_b, pose: {x: 40.4, y: 22.6, z: 0.75, yaw: -1.3}, model: Office/SM_Keyboard}
+  - {name: office_desk_2_12, pose: [42.1, 22.0, -1.570795], model: Office/SM_TableWorkingDouble}
+  - {name: office_chair_2_12_a, pose: [42.1, 20.5, 1.2], model: Office/SM_ChairOffice}
+  - {name: office_chair_2_12_b, pose: [42.1, 23.5, -2.9], model: Office/SM_ChairOffice}
+  - {name: office_monitor_2_12_a, pose: {x: 42.1, y: 21.8, z: 0.74, yaw: -1.341595}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_12_a, pose: {x: 42.1, y: 21.4, z: 0.75, yaw: 1.4}, model: Office/SM_Keyboard}
+  - {name: office_monitor_2_12_b, pose: {x: 42.1, y: 22.2, z: 0.74, yaw: 1.34159}, model: Office/SM_MonitorPC}
+  - {name: office_keyboard_2_12_b, pose: {x: 42.1, y: 22.6, z: 0.75, yaw: -2.1}, model: Office/SM_Keyboard}
+  - {name: office_printer_1, pose: {x: 21.5, y: 16.5, z: 0.74}, model: Office/SM_Printer}
+  - {name: office_printer_2, pose: {x: 30.5, y: 16.5, z: 0.74}, model: Office/SM_Printer}
+  - {name: office_printer_3, pose: {x: 21.5, y: 21.5, z: 0.74}, model: Office/SM_Printer}
+  - {name: office_printer_4, pose: {x: 30.5, y: 21.5, z: 0.74}, model: Office/SM_Printer}
+  - {name: office_file_cabinet_1, pose: [18.4, 15.5], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_2, pose: [18.4, 15.9], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_3, pose: [18.4, 16.3], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_4, pose: [18.4, 16.7], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_5, pose: [18.4, 17.1], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_6, pose: [18.4, 17.5], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_7, pose: [18.4, 17.9], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_8, pose: [18.4, 18.3], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_9, pose: [18.4, 18.7], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_10, pose: [18.4, 19.1], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_11, pose: [18.4, 19.5], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_12, pose: [18.4, 19.9], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_13, pose: [18.4, 20.3], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_14, pose: [18.4, 20.7], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_15, pose: [18.4, 21.1], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_16, pose: [18.4, 21.5], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_17, pose: [18.4, 21.9], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_18, pose: [18.4, 22.3], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_19, pose: [18.4, 22.7], model: Office/SM_FileCabinet_03}
+  - {name: office_file_cabinet_20, pose: [18.4, 23.1], model: Office/SM_FileCabinet_01}
+  - {name: office_file_cabinet_21, pose: [18.4, 23.5], model: Office/SM_FileCabinet_03}
+  - {name: office_water_cooler, pose: [47.7, 24.7, -1.5708], model: Office/SM_WaterCooler}
+  - {name: office_plant_1, pose: [18.8, 24.5], model: Office/SM_Plant01}
+  - {name: office_plant_2, pose: [43.5, 24.5], model: Office/SM_Plant02}
+  - {name: office_trash_1, pose: [18.3, 14.2], model: Office/SM_TrashCan}
+  - {name: office_trash_2, pose: [47.8, 14.2], model: Office/SM_TrashCan}
+  - {name: meet_big_corner_1, pose: [5.625, 16.375], model: Office/SM_TableRound_corner}
+  - {name: meet_big_corner_2, pose: [4.375, 22.625, 3.14159], model: Office/SM_TableRound_corner}
+  - {name: meet_big_corner_3, pose: [5.625, 22.625, 1.5708], model: Office/SM_TableRound_corner}
+  - {name: meet_big_corner_4, pose: [4.375, 16.375, -1.5708], model: Office/SM_TableRound_corner}
+  - {name: meet_big_module_1, pose: [4.375, 21.375], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_2, pose: [4.375, 20.125], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_3, pose: [4.375, 18.875], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_4, pose: [4.375, 17.625], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_5, pose: [5.625, 21.375], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_6, pose: [5.625, 20.125], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_7, pose: [5.625, 18.875], model: Office/SM_TableRound_module}
+  - {name: meet_big_module_8, pose: [5.625, 17.625], model: Office/SM_TableRound_module}
+  - {name: meet_big_chair_board, pose: [6.5, 24.3, -2.363185], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_1a, pose: [5.5, 23.3, -1.3], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_1c, pose: [4.0, 23.3, -1.57079], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_2a, pose: [5.8, 15.7, 0.9], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_2b, pose: [5.2, 15.5, 1.57079], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_2c, pose: [4.5, 15.5, 1.57079], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_2d, pose: [3.8, 15.7, 1.2], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_3a, pose: [3.5, 21.8, 0.7], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_3b, pose: [3.5, 20.5], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_3c, pose: [3.5, 19.2], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_3d, pose: [3.5, 17.9, -0.5], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_4a, pose: [6.5, 21.8, -2.4], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_4b, pose: [6.5, 20.5, 3.14159], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_4c, pose: [6.5, 19.2, 3.14159], model: Office/SM_ChairOffice}
+  - {name: meet_big_chair_4d, pose: [6.5, 17.9, 2.5], model: Office/SM_ChairOffice}
+  - {name: meet_big_tv_1, pose: {x: 3.6, y: 25.05, z: 1.1, yaw: -1.5708}, model: Office/SM_TVDisplay_small}
+  - {name: meet_big_board, pose: {x: 5.0, y: 24.95, z: 0.7, yaw: 1.5708}, model: Office/SM_MarkerBoard}
+  - {name: meet_big_plant_1, pose: [0.5, 24.5], model: Office/SM_Plant01}
+  - {name: meet_big_ringbinder_1, pose: {x: 4.5, y: 21.0, z: 0.75, yaw: 0.5}, model: Office/SM_RingBinder}
+  - {name: meet_big_ringbinder_2, pose: {x: 5.4, y: 19.2, z: 0.75, yaw: -0.3}, model: Office/SM_RingBinder}
+  - {name: meet_big_papertray_1, pose: {x: 4.2, y: 20.0, z: 0.75, yaw: 0.8}, model: Office/SM_PaperTray}
+  - {name: meet_big_phone_1, pose: {x: 5.8, y: 21.5, z: 0.75}, model: Office/SM_Phone}
+  - {name: meet_big_standforpapers_1, pose: {x: 4.6, y: 18.5, z: 0.75}, model: Office/SM_StandForPapers}
+  - {name: meet_big_standforpapers_2, pose: {x: 5.3, y: 20.5, z: 0.75, yaw: -0.6}, model: Office/SM_StandForPapers}
+  - {name: meet_big_smartphone_1, pose: {x: 4.8, y: 19.5, z: 0.75, yaw: 1.2}, model: Office/SM_Smartphone}
+  - {name: meet_big_smartphone_2, pose: {x: 5.5, y: 18.0, z: 0.75, yaw: 0.4}, model: Office/SM_Smartphone}
+  - {name: meet_big_pencilcup_1, pose: {x: 4.3, y: 17.8, z: 0.75}, model: Office/SM_PencilCup}
+  - {name: meet_big_donut_1, pose: {x: 5.7, y: 20.3, z: 0.75}, model: Office/SM_Donut}
+  - {name: meet_big_donut_2, pose: {x: 4.4, y: 19.0, z: 0.75}, model: Office/SM_Donut}
+  - {name: meet_big_coffeetogo_1, pose: {x: 5.2, y: 21.2, z: 0.75}, model: Office/SM_CoffeeToGo}
+  - {name: meet_big_coffeetogo_2, pose: {x: 4.7, y: 18.2, z: 0.75}, model: Office/SM_CoffeeToGo}
+  - {name: storage_rack_10, pose: [17.6, 24.3], model: Office/SM_Rack}
+  - {name: storage_rack_11, pose: [15.4, 24.3], model: Office/SM_Rack}
+  - {name: storage_rack_12, pose: [12.9, 24.3], model: Office/SM_Rack}
+  - {name: storage_rack_13, pose: [10.35, 24.3], model: Office/SM_Rack}
+  - {name: storage_rack_20, pose: [17.6, 23.08], model: Office/SM_Rack}
+  - {name: storage_rack_21, pose: [15.4, 23.08], model: Office/SM_Rack}
+  - {name: storage_rack_22, pose: [12.9, 23.08], model: Office/SM_Rack}
+  - {name: storage_rack_23, pose: [10.35, 23.08], model: Office/SM_Rack}
+  - {name: storage_rack_30, pose: [17.6, 21.86], model: Office/SM_Rack}
+  - {name: storage_rack_31, pose: [15.4, 21.86], model: Office/SM_Rack}
+  - {name: storage_rack_32, pose: [12.9, 21.86], model: Office/SM_Rack}
+  - {name: storage_rack_33, pose: [10.35, 21.86], model: Office/SM_Rack}
+  - {name: storage_box_10_top_1, pose: {x: 17.6, y: 24.0, z: 1.786}, model: Office/SM_BoxPortableA}
+  - {name: storage_box_10_top_2, pose: {x: 17.6, y: 24.6, z: 1.786}, model: Office/SM_BoxPortableB}
+  - {name: storage_box_10_3rd_1, pose: {x: 17.6, y: 23.8, z: 1.372}, model: Office/SM_BoxBig}
+  - {name: storage_box_10_2nd_1, pose: {x: 17.6, y: 24.3, z: 0.536}, model: Office/SM_Box}
+  - {name: storage_box_10_2nd_2, pose: {x: 17.6, y: 24.3, z: 0.651}, model: Office/SM_BoxA}
+  - {name: storage_box_10_2nd_3, pose: {x: 17.6, y: 24.3, z: 0.766}, model: Office/SM_Box}
+  - {name: storage_box_10_1st_1, pose: {x: 17.6, y: 24.9, z: 0.115}, model: Office/SM_BoxBigA}
+  - {name: storage_box_10_1st_2, pose: {x: 17.6, y: 24.6, z: 0.115}, model: Office/SM_Box}
+  - {name: storage_box_10_2nd_4, pose: {x: 17.6, y: 24.6, z: 0.536}, model: Office/SM_BoxA}
+  - {name: storage_box_10_2nd_5, pose: {x: 17.6, y: 24.6, z: 0.651}, model: Office/SM_Box}
+  - {name: storage_box_11_top_1, pose: {x: 15.4, y: 23.8, z: 1.786, yaw: 0.785}, model: Office/SM_BoxPortableC}
+  - {name: storage_box_11_top_2, pose: {x: 15.4, y: 24.9, z: 1.786, yaw: -0.5}, model: Office/SM_BoxPortableD}
+  - {name: storage_box_11_3rd_1, pose: {x: 15.4, y: 24.0, z: 1.372, yaw: 1.2}, model: Office/SM_BoxA}
+  - {name: storage_box_11_3rd_2, pose: {x: 15.4, y: 24.6, z: 1.372, yaw: 0.8}, model: Office/SM_Box}
+  - {name: storage_box_11_3rd_3, pose: {x: 15.4, y: 24.3, z: 1.372, yaw: -0.5}, model: Office/SM_BoxA}
+  - {name: storage_box_11_2nd_1, pose: {x: 15.4, y: 24.6, z: 0.536, yaw: -0.3}, model: Office/SM_BoxBigA}
+  - {name: storage_box_11_1st_1, pose: {x: 15.4, y: 24.3, z: 0.115, yaw: 0.6}, model: Office/SM_Box}
+  - {name: storage_box_11_1st_2, pose: {x: 15.4, y: 24.3, z: 0.23, yaw: 0.6}, model: Office/SM_BoxA}
+  - {name: storage_box_11_1st_3, pose: {x: 15.4, y: 24.3, z: 0.345, yaw: 0.6}, model: Office/SM_Box}
+  - {name: storage_box_11_1st_4, pose: {x: 15.4, y: 24.9, z: 0.115, yaw: -0.3}, model: Office/SM_BoxA}
+  - {name: storage_box_12_top_1, pose: {x: 12.9, y: 23.8, z: 1.786, yaw: 1.5708}, model: Office/SM_BoxPortableE}
+  - {name: storage_box_12_top_2, pose: {x: 12.9, y: 24.9, z: 1.786, yaw: 1.5708}, model: Office/SM_BoxPortableF}
+  - {name: storage_box_12_3rd_1, pose: {x: 12.9, y: 24.6, z: 1.372, yaw: 1.5708}, model: Office/SM_BoxBigA}
+  - {name: storage_box_12_3rd_2, pose: {x: 12.9, y: 24.3, z: 1.372, yaw: 1.5708}, model: Office/SM_Box}
+  - {name: storage_box_12_2nd_1, pose: {x: 12.9, y: 24.0, z: 0.536, yaw: 1.5708}, model: Office/SM_BoxA}
+  - {name: storage_box_12_2nd_2, pose: {x: 12.9, y: 24.0, z: 0.651, yaw: 1.5708}, model: Office/SM_Box}
+  - {name: storage_box_12_2nd_3, pose: {x: 12.9, y: 24.0, z: 0.766, yaw: 1.5708}, model: Office/SM_BoxA}
+  - {name: storage_box_12_1st_1, pose: {x: 12.9, y: 24.3, z: 0.115, yaw: 1.5708}, model: Office/SM_Box}
+  - {name: storage_box_13_top_1, pose: {x: 10.35, y: 24.9, z: 1.786, yaw: -0.8}, model: Office/SM_BoxPortableG}
+  - {name: storage_box_13_top_2, pose: {x: 10.35, y: 24.3, z: 1.786, yaw: 0.5}, model: Office/SM_BoxPortableH}
+  - {name: storage_box_13_3rd_1, pose: {x: 10.35, y: 24.6, z: 1.372, yaw: -0.6}, model: Office/SM_BoxA}
+  - {name: storage_box_13_3rd_2, pose: {x: 10.35, y: 24.6, z: 1.487, yaw: -0.6}, model: Office/SM_Box}
+  - {name: storage_box_13_2nd_1, pose: {x: 10.35, y: 24.0, z: 0.536, yaw: 0.4}, model: Office/SM_BoxBig}
+  - {name: storage_box_13_2nd_2, pose: {x: 10.35, y: 24.3, z: 0.536, yaw: 0.9}, model: Office/SM_Box}
+  - {name: storage_box_13_1st_1, pose: {x: 10.35, y: 24.6, z: 0.115}, model: Office/SM_BoxA}
+  - {name: storage_box_13_1st_2, pose: {x: 10.35, y: 24.6, z: 0.23}, model: Office/SM_Box}
+  - {name: storage_box_20_top_1, pose: {x: 17.6, y: 22.7, z: 1.786, yaw: 3.14159}, model: Office/SM_BoxPortableH}
+  - {name: storage_box_20_top_2, pose: {x: 17.6, y: 23.5, z: 1.786, yaw: 3.14159}, model: Office/SM_BoxPortableA}
+  - {name: storage_box_20_3rd_1, pose: {x: 17.6, y: 23.2, z: 1.372, yaw: 3.14159}, model: Office/SM_Box}
+  - {name: storage_box_20_3rd_2, pose: {x: 17.6, y: 22.9, z: 1.372, yaw: 3.14159}, model: Office/SM_BoxA}
+  - {name: storage_box_20_2nd_1, pose: {x: 17.6, y: 22.9, z: 0.536, yaw: 3.14159}, model: Office/SM_BoxBigA}
+  - {name: storage_box_20_2nd_2, pose: {x: 17.6, y: 23.2, z: 0.536, yaw: 3.14159}, model: Office/SM_Box}
+  - {name: storage_box_20_1st_1, pose: {x: 17.6, y: 23.08, z: 0.115, yaw: 3.14159}, model: Office/SM_BoxA}
+  - {name: storage_box_20_1st_2, pose: {x: 17.6, y: 23.08, z: 0.23, yaw: 3.14159}, model: Office/SM_Box}
+  - {name: storage_box_20_1st_3, pose: {x: 17.6, y: 23.08, z: 0.345, yaw: 3.14159}, model: Office/SM_BoxA}
+  - {name: storage_box_21_top_1, pose: {x: 15.4, y: 22.7, z: 1.786, yaw: 0.9}, model: Office/SM_BoxPortableB}
+  - {name: storage_box_21_top_2, pose: {x: 15.4, y: 23.5, z: 1.786, yaw: -1.1}, model: Office/SM_BoxPortableC}
+  - {name: storage_box_21_3rd_1, pose: {x: 15.4, y: 23.2, z: 1.372, yaw: 0.5}, model: Office/SM_BoxBigA}
+  - {name: storage_box_21_3rd_2, pose: {x: 15.4, y: 22.7, z: 1.372, yaw: -0.8}, model: Office/SM_BoxA}
+  - {name: storage_box_21_2nd_1, pose: {x: 15.4, y: 22.9, z: 0.536, yaw: -0.7}, model: Office/SM_Box}
+  - {name: storage_box_21_2nd_2, pose: {x: 15.4, y: 22.9, z: 0.651, yaw: -0.7}, model: Office/SM_BoxA}
+  - {name: storage_box_21_2nd_3, pose: {x: 15.4, y: 23.5, z: 0.536, yaw: 1.2}, model: Office/SM_Box}
+  - {name: storage_box_21_1st_1, pose: {x: 15.4, y: 23.08, z: 0.115, yaw: 1.3}, model: Office/SM_BoxBig}
+  - {name: storage_box_22_top_1, pose: {x: 12.9, y: 23.5, z: 1.786}, model: Office/SM_BoxPortableD}
+  - {name: storage_box_22_3rd_1, pose: {x: 12.9, y: 22.7, z: 1.372}, model: Office/SM_BoxA}
+  - {name: storage_box_22_3rd_2, pose: {x: 12.9, y: 23.2, z: 1.372}, model: Office/SM_Box}
+  - {name: storage_box_22_2nd_1, pose: {x: 12.9, y: 22.9, z: 0.536}, model: Office/SM_BoxBigA}
+  - {name: storage_box_22_1st_2, pose: {x: 12.9, y: 23.5, z: 0.115}, model: Office/SM_Box}
+  - {name: storage_box_22_1st_3, pose: {x: 12.9, y: 23.5, z: 0.23}, model: Office/SM_BoxA}
+  - {name: storage_box_22_1st_1, pose: {x: 12.9, y: 23.08, z: 0.115}, model: Office/SM_BoxBigA}
+  - {name: storage_box_23_top_1, pose: {x: 10.35, y: 22.7, z: 1.786, yaw: -1.5708}, model: Office/SM_BoxPortableE}
+  - {name: storage_box_23_top_2, pose: {x: 10.35, y: 23.5, z: 1.786, yaw: -1.5708}, model: Office/SM_BoxPortableF}
+  - {name: storage_box_23_3rd_1, pose: {x: 10.35, y: 23.2, z: 1.372, yaw: -1.5708}, model: Office/SM_BoxBig}
+  - {name: storage_box_23_2nd_1, pose: {x: 10.35, y: 22.9, z: 0.536, yaw: -1.5708}, model: Office/SM_Box}
+  - {name: storage_box_23_2nd_2, pose: {x: 10.35, y: 22.9, z: 0.651, yaw: -1.5708}, model: Office/SM_BoxA}
+  - {name: storage_box_23_2nd_3, pose: {x: 10.35, y: 22.9, z: 0.766, yaw: -1.5708}, model: Office/SM_Box}
+  - {name: storage_box_23_1st_1, pose: {x: 10.35, y: 23.08, z: 0.115, yaw: -1.5708}, model: Office/SM_BoxBigA}
+  - {name: storage_box_30_top_1, pose: {x: 17.6, y: 21.5, z: 1.786, yaw: 0.6}, model: Office/SM_BoxPortableG}
+  - {name: storage_box_30_top_2, pose: {x: 17.6, y: 22.3, z: 1.786, yaw: -0.4}, model: Office/SM_BoxPortableH}
+  - {name: storage_box_30_3rd_1, pose: {x: 17.6, y: 21.86, z: 1.372, yaw: 0.3}, model: Office/SM_BoxA}
+  - {name: storage_box_30_3rd_2, pose: {x: 17.6, y: 21.86, z: 1.487, yaw: 0.3}, model: Office/SM_Box}
+  - {name: storage_box_30_2nd_1, pose: {x: 17.6, y: 22.1, z: 0.536, yaw: -0.9}, model: Office/SM_BoxBigA}
+  - {name: storage_box_30_2nd_2, pose: {x: 17.6, y: 21.7, z: 0.536, yaw: 0.4}, model: Office/SM_BoxA}
+  - {name: storage_box_30_1st_1, pose: {x: 17.6, y: 21.7, z: 0.115, yaw: 0.8}, model: Office/SM_Box}
+  - {name: storage_box_30_1st_2, pose: {x: 17.6, y: 22.1, z: 0.115, yaw: -0.6}, model: Office/SM_BoxA}
+  - {name: storage_box_30_1st_3, pose: {x: 17.6, y: 22.1, z: 0.23, yaw: -0.6}, model: Office/SM_Box}
+  - {name: storage_box_31_top_1, pose: {x: 15.4, y: 21.5, z: 1.786, yaw: 1.5708}, model: Office/SM_BoxPortableA}
+  - {name: storage_box_31_top_2, pose: {x: 15.4, y: 22.3, z: 1.786, yaw: 1.5708}, model: Office/SM_BoxPortableB}
+  - {name: storage_box_31_3rd_1, pose: {x: 15.4, y: 22.1, z: 1.372, yaw: 1.5708}, model: Office/SM_BoxBigA}
+  - {name: storage_box_31_3rd_2, pose: {x: 15.4, y: 21.86, z: 1.372, yaw: 1.5708}, model: Office/SM_Box}
+  - {name: storage_box_31_2nd_1, pose: {x: 15.4, y: 21.7, z: 0.536, yaw: 1.5708}, model: Office/SM_BoxA}
+  - {name: storage_box_31_2nd_2, pose: {x: 15.4, y: 21.86, z: 0.536, yaw: 1.5708}, model: Office/SM_Box}
+  - {name: storage_box_31_1st_1, pose: {x: 15.4, y: 22.2, z: 0.115, yaw: 1.5708}, model: Office/SM_BoxBig}
+  - {name: storage_box_31_1st_2, pose: {x: 15.4, y: 21.5, z: 0.115, yaw: 1.5708}, model: Office/SM_BoxA}
+  - {name: storage_box_32_top_1, pose: {x: 12.9, y: 21.5, z: 1.786, yaw: 2.1}, model: Office/SM_BoxPortableC}
+  - {name: storage_box_32_top_2, pose: {x: 12.9, y: 22.3, z: 1.786, yaw: -0.7}, model: Office/SM_BoxPortableD}
+  - {name: storage_box_32_3rd_1, pose: {x: 12.9, y: 21.86, z: 1.372, yaw: 1.3}, model: Office/SM_BoxBig}
+  - {name: storage_box_32_2nd_1, pose: {x: 12.9, y: 22.1, z: 0.536, yaw: -0.5}, model: Office/SM_BoxA}
+  - {name: storage_box_32_2nd_2, pose: {x: 12.9, y: 22.1, z: 0.651, yaw: -0.5}, model: Office/SM_Box}
+  - {name: storage_box_32_1st_1, pose: {x: 12.9, y: 22.3, z: 0.115}, model: Office/SM_BoxBigA}
+  - {name: storage_box_32_1st_2, pose: {x: 12.9, y: 21.7, z: 0.115, yaw: -0.5}, model: Office/SM_Box}
+  - {name: storage_box_32_1st_3, pose: {x: 12.9, y: 21.7, z: 0.23, yaw: -0.5}, model: Office/SM_BoxA}
+  - {name: storage_box_33_top_1, pose: {x: 10.35, y: 21.5, z: 1.786}, model: Office/SM_BoxPortableD}
+  - {name: storage_box_33_top_2, pose: {x: 10.35, y: 22.3, z: 1.786}, model: Office/SM_BoxPortableE}
+  - {name: storage_box_33_3rd_1, pose: {x: 10.35, y: 22.1, z: 1.372}, model: Office/SM_BoxBig}
+  - {name: storage_box_33_3rd_2, pose: {x: 10.35, y: 21.86, z: 1.372}, model: Office/SM_BoxA}
+  - {name: storage_box_33_2nd_1, pose: {x: 10.35, y: 21.86, z: 0.536}, model: Office/SM_Box}
+  - {name: storage_box_33_2nd_2, pose: {x: 10.35, y: 21.86, z: 0.651}, model: Office/SM_BoxA}
+  - {name: storage_box_33_2nd_3, pose: {x: 10.35, y: 21.86, z: 0.766}, model: Office/SM_Box}
+  - {name: storage_box_33_1st_1, pose: {x: 10.35, y: 21.7, z: 0.115}, model: Office/SM_BoxA}
+  - {name: storage_box_33_1st_2, pose: {x: 10.35, y: 21.7, z: 0.23}, model: Office/SM_Box}
+  - {name: storage_box_33_1st_3, pose: {x: 10.35, y: 22.3, z: 0.115}, model: Office/SM_BoxA}
+  - {name: storage_floor_box_1, pose: {x: 14.0, y: 20.5, z: 0.02}, model: Office/SM_BoxBigOpenA}
+  - {name: storage_floor_box_2, pose: {x: 11.2, y: 19.0, z: 0.02}, model: Office/SM_BoxOpenA}
+  - {name: storage_floor_box_4, pose: {x: 15.8, y: 18.3, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_floor_box_5, pose: {x: 10.8, y: 17.8, z: 0.02}, model: Office/SM_BoxBigB}
+  - {name: storage_floor_box_7, pose: {x: 17.5, y: 17.8, z: 0.02}, model: Office/SM_BoxOpenA}
+  - {name: storage_floor_box_9, pose: {x: 15.3, y: 20.2, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_floor_box_10, pose: {x: 11.2, y: 16.8, z: 0.02}, model: Office/SM_BoxBig}
+  - {name: storage_floor_stack1_1, pose: {x: 17.6, y: 23.7, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack1_2, pose: {x: 17.6, y: 23.7, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_floor_stack1_3, pose: {x: 17.6, y: 23.7, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack1_4, pose: {x: 17.6, y: 23.7, z: 0.365}, model: Office/SM_Box}
+  - {name: storage_floor_stack2_1, pose: {x: 15.4, y: 23.7, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_floor_stack2_2, pose: {x: 15.4, y: 23.7, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack2_3, pose: {x: 15.4, y: 23.7, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_floor_stack2_4, pose: {x: 15.4, y: 23.7, z: 0.365}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack3_1, pose: {x: 12.9, y: 23.7, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack3_2, pose: {x: 12.9, y: 23.7, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_floor_stack3_3, pose: {x: 12.9, y: 23.7, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack4_1, pose: {x: 10.35, y: 23.7, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_floor_stack4_2, pose: {x: 10.35, y: 23.7, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack4_3, pose: {x: 10.35, y: 23.7, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_floor_stack4_4, pose: {x: 10.35, y: 23.7, z: 0.365}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack5_1, pose: {x: 17.6, y: 22.5, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack5_2, pose: {x: 17.6, y: 22.5, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_floor_stack5_3, pose: {x: 17.6, y: 22.5, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack6_1, pose: {x: 15.4, y: 22.5, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_floor_stack6_2, pose: {x: 15.4, y: 22.5, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack6_3, pose: {x: 15.4, y: 22.5, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_floor_stack6_4, pose: {x: 15.4, y: 22.5, z: 0.365}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack7_1, pose: {x: 12.9, y: 22.5, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack7_2, pose: {x: 12.9, y: 22.5, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_floor_stack7_3, pose: {x: 12.9, y: 22.5, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack8_1, pose: {x: 10.35, y: 22.5, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_floor_stack8_2, pose: {x: 10.35, y: 22.5, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_floor_stack8_3, pose: {x: 10.35, y: 22.5, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_cabinet_stack1_1, pose: {x: 11.0, y: 16.0, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_cabinet_stack1_2, pose: {x: 11.0, y: 16.0, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_cabinet_stack1_3, pose: {x: 11.0, y: 16.0, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_cabinet_stack2_1, pose: {x: 11.0, y: 16.5, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_cabinet_stack2_2, pose: {x: 11.0, y: 16.5, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_cabinet_stack2_3, pose: {x: 11.0, y: 16.5, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_cabinet_stack2_4, pose: {x: 11.0, y: 16.5, z: 0.365}, model: Office/SM_BoxA}
+  - {name: storage_corner_stack1_1, pose: {x: 10.6, y: 20.8, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_corner_stack1_2, pose: {x: 10.6, y: 20.8, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_corner_stack1_3, pose: {x: 10.6, y: 20.8, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_corner_stack1_4, pose: {x: 10.6, y: 20.8, z: 0.365}, model: Office/SM_BoxA}
+  - {name: storage_side_stack1_1, pose: {x: 17.8, y: 20.5, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_side_stack1_2, pose: {x: 17.8, y: 20.5, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_side_stack1_3, pose: {x: 17.8, y: 20.5, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_side_stack2_1, pose: {x: 17.8, y: 18.5, z: 0.02}, model: Office/SM_Box}
+  - {name: storage_side_stack2_2, pose: {x: 17.8, y: 18.5, z: 0.135}, model: Office/SM_BoxA}
+  - {name: storage_side_stack2_3, pose: {x: 17.8, y: 18.5, z: 0.25}, model: Office/SM_Box}
+  - {name: storage_side_stack2_4, pose: {x: 17.8, y: 18.5, z: 0.365}, model: Office/SM_BoxA}
+  - {name: storage_side_stack3_1, pose: {x: 17.8, y: 17.0, z: 0.02}, model: Office/SM_BoxA}
+  - {name: storage_side_stack3_2, pose: {x: 17.8, y: 17.0, z: 0.135}, model: Office/SM_Box}
+  - {name: storage_side_stack3_3, pose: {x: 17.8, y: 17.0, z: 0.25}, model: Office/SM_BoxA}
+  - {name: storage_file_cabinet_1, pose: [10.4, 15.5], model: Office/SM_FileCabinet_03}
+  - {name: storage_file_cabinet_2, pose: [10.4, 15.9], model: Office/SM_FileCabinet_01}
+  - {name: storage_file_cabinet_3, pose: [10.4, 16.3], model: Office/SM_FileCabinet_03}
+  - {name: storage_file_cabinet_4, pose: [10.4, 16.7], model: Office/SM_FileCabinet_01}
+  - {name: storage_file_cabinet_5, pose: [10.4, 17.1], model: Office/SM_FileCabinet_03}

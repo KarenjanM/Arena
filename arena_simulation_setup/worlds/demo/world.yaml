@@ -1,0 +1,7 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: demo_zone, polygon: [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]], floor: false}
+  walls:
+  - {path: [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]], closed: true}

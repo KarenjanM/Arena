@@ -1,3 +1,4 @@
+format: arena-scenario/2
 robots:
 - start: [10.0, 5.05, -1.5708]
   phases:

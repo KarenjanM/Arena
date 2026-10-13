@@ -8,7 +8,7 @@ from visualization_msgs.msg import Marker
 from task_generator.interactive import Apply, Menu, planar_marker, visual
 from task_generator.shared import Position
 from task_generator.tasks.modules import TM_Module
-from task_generator.utils.zone_corners import write_zone_corners
+from task_generator.utils.zone_corners import write_zone_polygons
 
 _PREFIX = "zone/"
 _HANDLE_SCALE = 0.6
@@ -25,7 +25,7 @@ class Mod_ZoneEdit(TM_Module):
         for level_id, level in manager.world.levels.items():
             offset = self.node._realizer.realize(Position(x=0.0, y=0.0), level_id)
             for zone in level.zones:
-                for index, corner in enumerate(zone.corners):
+                for index, corner in enumerate(zone.polygon):
                     pose = geometry_msgs.Pose()
                     pose.position.x = corner.x + offset.x
                     pose.position.y = corner.y + offset.y
@@ -51,7 +51,7 @@ class Mod_ZoneEdit(TM_Module):
             level = manager.world.levels[level_id]
             zone = next(z for z in level.zones if z.name == zone_name)
             offset = self.node._realizer.realize(Position(x=0.0, y=0.0), level_id)
-            zone.corners[index] = attrs.evolve(zone.corners[index], x=pose.position.x - offset.x, y=pose.position.y - offset.y)
+            zone.polygon[index] = attrs.evolve(zone.polygon[index], x=pose.position.x - offset.x, y=pose.position.y - offset.y)
             manager.refresh_world_markers(self.node._simulator.semantics_snapshot())
 
         return move
@@ -59,11 +59,6 @@ class Mod_ZoneEdit(TM_Module):
     async def _save(self) -> None:
         manager = self._ctx.world_manager
         root = manager.loaded_world_path
-        changed = 0
-        for level_id, level in manager.world.levels.items():
-            path = root / level_id / "world.yaml"
-            if not path.is_file():
-                raise FileNotFoundError(f"cannot save level {level_id!r}: {path} does not exist")
-            corners = {zone.name: [(c.x, c.y) for c in zone.corners] for zone in level.zones}
-            changed += await asyncio.to_thread(write_zone_corners, path, corners)
-        self._logger.info(f"saved {changed} corner coordinates to {root}")
+        polygons = {zone.name: [(c.x, c.y) for c in zone.polygon] for level in manager.world.all_levels for zone in level.zones}
+        changed = await asyncio.to_thread(write_zone_polygons, root, polygons, self.node.conf.Arena.KG_DERIVE.value or "auto")
+        self._logger.info(f"saved {changed} polygon coordinates to {root}")

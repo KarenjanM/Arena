@@ -1,0 +1,278 @@
+format: arena-world/2
+schedules:
+- name: fire_alarm
+  semantics:
+  - {preset: schedule, params: {windows: [], regime: alarm}}
+levels:
+- id: '0'
+  zones:
+  - name: central_hallway
+    polygon: [[8.0, 0.0], [12.0, 0.0], [12.0, 34.2], [8.0, 34.2]]
+    floor: Concrete_Smooth
+    semantics:
+    - {state: max_speed, value: 1.0}
+  - name: reception
+    polygon: [[0.0, 0.0], [8.0, 0.0], [8.0, 5.0], [0.0, 5.0]]
+    floor: Oak_Planks
+    semantics:
+    - {state: max_speed, value: 1.0}
+  - name: exam_room_1
+    polygon: [[0.0, 5.05], [8.0, 5.05], [8.0, 10.05], [0.0, 10.05]]
+    floor: Ceramic_Tile_6
+    semantics:
+    - {predicate: restricted, value: true}
+  - name: patient_ward
+    polygon: [[0.0, 10.1], [8.0, 10.1], [8.0, 25.1], [0.0, 25.1]]
+    floor: Oak_Planks
+    semantics:
+    - {predicate: quiet, value: true}
+  - name: pharmacy
+    polygon: [[0.0, 25.15], [8.0, 25.15], [8.0, 30.15], [0.0, 30.15]]
+    floor: Ceramic_Tile_6
+    semantics:
+    - {predicate: restricted, value: true}
+  - name: nurse_resting_room
+    polygon: [[12.0, 0.0], [18.5, 0.0], [18.5, 10.0], [12.0, 10.0]]
+    floor: Walnut_Planks
+    semantics:
+    - {predicate: quiet, value: true}
+  - name: waiting_area
+    polygon: [[18.5, 0.0], [25.0, 0.0], [25.0, 10.0], [18.5, 10.0]]
+    floor: Oak_Planks
+    semantics:
+    - {predicate: quiet, value: true}
+  - name: sub_hallway
+    polygon: [[12.0, 10.05], [25.0, 10.05], [25.0, 13.05], [12.0, 13.05]]
+    floor: Concrete_Smooth
+    semantics:
+    - {state: max_speed, value: 0.8}
+  - name: operating_room
+    polygon: [[12.0, 13.1], [18.0, 13.1], [18.0, 21.6], [12.0, 21.6]]
+    floor: Ceramic_Tile_6
+    semantics:
+    - {predicate: restricted, value: true}
+  - name: laboratory
+    polygon: [[12.0, 21.65], [18.0, 21.65], [18.0, 30.15], [12.0, 30.15]]
+    floor: Ceramic_Tile_6
+    semantics:
+    - {predicate: restricted, value: true}
+  - {name: wc_pharmacy, polygon: [[0.0, 30.2], [8.0, 30.2], [8.0, 34.2], [0.0, 34.2]], floor: Carpet_Cream}
+  - {name: wc_waiting, polygon: [[18.05, 13.1], [22.05, 13.1], [22.05, 17.1], [18.05, 17.1]], floor: Carpet_Cream}
+  - name: doctors_resting_room
+    polygon: [[12.0, 30.2], [18.0, 30.2], [18.0, 34.2], [12.0, 34.2]]
+    floor: Walnut_Planks
+    semantics:
+    - {predicate: quiet, value: true}
+  walls:
+  - {path: [[8.0, 0.0], [9.25, 0.0]], material: Plaster_Wall}
+  - {path: [[10.75, 0.0], [12.0, 0.0]], material: Plaster_Wall}
+  - {path: [[8.0, 34.2], [12.0, 34.2]], material: Plaster_Wall}
+  - {path: [[0.0, 0.0], [0.0, 5.0], [8.0, 5.0], [8.0, 3.25]], material: Paint_Gloss}
+  - {path: [[8.0, 1.75], [8.0, 0.0], [0.0, 0.0]], material: Paint_Gloss}
+  - {path: [[0.0, 5.05], [0.0, 10.05], [8.0, 10.05], [8.0, 8.3]], material: Paint_Gloss}
+  - {path: [[8.0, 6.8], [8.0, 5.05], [0.0, 5.05]], material: Paint_Gloss}
+  - {path: [[0.0, 10.1], [0.0, 25.1], [8.0, 25.1], [8.0, 21.85]], kind: patient_room_walls}
+  - {path: [[8.0, 20.35], [8.0, 14.85]], kind: patient_room_walls}
+  - {path: [[8.0, 13.35], [8.0, 10.1], [0.0, 10.1]], kind: patient_room_walls}
+  - {path: [[0.0, 25.15], [0.0, 30.15], [8.0, 30.15], [8.0, 28.4]], kind: patient_room_walls}
+  - {path: [[8.0, 26.9], [8.0, 25.15], [0.0, 25.15]], kind: patient_room_walls}
+  - {path: [[12.0, 0.0], [12.0, 10.0], [14.25, 10.0]], material: Paint_Gloss}
+  - {path: [[15.75, 10.0], [18.5, 10.0], [18.5, 0.0], [12.0, 0.0]], material: Paint_Gloss}
+  - {path: [[18.5, 0.0], [18.5, 10.0], [21.25, 10.0]], material: Marble}
+  - {path: [[22.75, 10.0], [25.0, 10.0], [25.0, 0.0], [18.5, 0.0]], material: Marble}
+  - {path: [[12.0, 13.05], [19.25, 13.05]], material: Plaster_Wall}
+  - {path: [[20.75, 13.05], [25.0, 13.05], [25.0, 10.05], [22.75, 10.05]], material: Plaster_Wall}
+  - {path: [[21.25, 10.05], [15.75, 10.05]], material: Plaster_Wall}
+  - {path: [[14.25, 10.05], [12.0, 10.05]], material: Plaster_Wall}
+  - {path: [[12.0, 13.1], [12.0, 16.6]], material: Paint_Gloss}
+  - {path: [[12.0, 18.1], [12.0, 21.6], [18.0, 21.6], [18.0, 13.1], [12.0, 13.1]], material: Paint_Gloss}
+  - {path: [[12.0, 21.65], [12.0, 25.15]], material: Paint_Gloss}
+  - {path: [[12.0, 26.65], [12.0, 30.15], [18.0, 30.15], [18.0, 21.65], [12.0, 21.65]], material: Paint_Gloss}
+  - {path: [[0.0, 34.2], [8.0, 34.2], [8.0, 33.0]], material: Paint_Gloss}
+  - {path: [[8.0, 31.5], [8.0, 30.2], [0.0, 30.2], [0.0, 34.2]], material: Paint_Gloss}
+  - {path: [[0.0, 31.5], [2.0, 31.5]], material: Paint_Gloss}
+  - {path: [[0.0, 32.8], [2.0, 32.8]], material: Paint_Gloss}
+  - {path: [[2.0, 30.2], [2.0, 30.5]], material: Paint_Gloss}
+  - {path: [[2.0, 31.2], [2.0, 31.8]], material: Paint_Gloss}
+  - {path: [[2.0, 32.5], [2.0, 33.1]], material: Paint_Gloss}
+  - {path: [[2.0, 33.8], [2.0, 34.2]], material: Paint_Gloss}
+  - {path: [[18.05, 17.1], [22.05, 17.1], [22.05, 13.1], [20.75, 13.1]], material: Paint_Gloss}
+  - {path: [[19.25, 13.1], [18.05, 13.1], [18.05, 17.1]], material: Paint_Gloss}
+  - {path: [[18.05, 14.43], [20.05, 14.43]], material: Paint_Gloss}
+  - {path: [[18.05, 15.77], [20.05, 15.77]], material: Paint_Gloss}
+  - {path: [[20.05, 13.1], [20.05, 13.4]], material: Paint_Gloss}
+  - {path: [[20.05, 14.1], [20.05, 14.43], [20.05, 14.73]], material: Paint_Gloss}
+  - {path: [[20.05, 15.43], [20.05, 15.77], [20.05, 16.07]], material: Paint_Gloss}
+  - {path: [[20.05, 16.77], [20.05, 17.1]], material: Paint_Gloss}
+  - {path: [[12.0, 30.2], [12.0, 31.5]], material: Paint_Gloss}
+  - {path: [[12.0, 33.0], [12.0, 34.2], [18.0, 34.2], [18.0, 30.2], [12.0, 30.2]], material: Paint_Gloss}
+  doors:
+  - {name: main_hallway_entrance, span: [[9.25, 0.0], [10.75, 0.0]]}
+  - {name: reception_door, span: [[8.0, 1.75], [8.0, 3.25]]}
+  - {name: exam_room_1_door, span: [[8.0, 6.8], [8.0, 8.3]]}
+  - {name: patient_ward_door_1, span: [[8.0, 13.35], [8.0, 14.85]]}
+  - {name: patient_ward_door_2, span: [[8.0, 20.35], [8.0, 21.85]]}
+  - {name: pharmacy_door, span: [[8.0, 26.9], [8.0, 28.4]]}
+  - {name: nurse_resting_door, span: [[14.25, 10.0], [15.75, 10.0]]}
+  - {name: waiting_to_sub_2, span: [[21.25, 10.0], [22.75, 10.0]]}
+  - {name: or_door, span: [[12.0, 16.6], [12.0, 18.1]]}
+  - {name: laboratory_door, span: [[12.0, 25.15], [12.0, 26.65]]}
+  - {name: wc_pharmacy_door, span: [[8.0, 31.5], [8.0, 33.0]]}
+  - {name: wc_stall_1_door, span: [[2.0, 30.5], [2.0, 31.2]]}
+  - {name: wc_stall_2_door, span: [[2.0, 31.8], [2.0, 32.5]]}
+  - {name: wc_stall_3_door, span: [[2.0, 33.1], [2.0, 33.8]]}
+  - {name: wc_waiting_door, span: [[19.25, 13.1], [20.75, 13.1]]}
+  - {name: wc_waiting_stall_1_door, span: [[20.05, 13.4], [20.05, 14.1]]}
+  - {name: wc_waiting_stall_2_door, span: [[20.05, 14.73], [20.05, 15.43]]}
+  - {name: wc_waiting_stall_3_door, span: [[20.05, 16.07], [20.05, 16.77]]}
+  - {name: doctors_resting_room_door, span: [[12.0, 31.5], [12.0, 33.0]]}
+  objects:
+  - {name: reception_counter_1, pose: [4.0, 2.8], model: Hospital/SM_ReceptionDesk_01a}
+  - {name: reception_waiting_sofa_1, pose: [1.8, 4.55], model: Hospital/Waiting_Room_Sofa}
+  - {name: reception_waiting_sofa_2, pose: [3.7, 4.55], model: Hospital/Waiting_Room_Sofa}
+  - {name: reception_waiting_sofa_3, pose: [0.45, 3.15, 1.57079], model: Hospital/Waiting_Room_Sofa}
+  - {name: reception_waiting_chair_1, pose: [5.9, 4.7], model: Hospital/SM_Chair_02a}
+  - {name: reception_display_board_1, pose: [0.4, 0.5, 1.57079], model: Hospital/Display_Board}
+  - {name: reception_water_dispenser_1, pose: [7.7, 0.2, -1.57079], model: Hospital/SM_WaterDispenser_01a}
+  - {name: reception_trashcan_1, pose: [7.7, 4.8], model: Hospital/SM_TrashCan}
+  - {name: exam_exam_table_1, pose: [5.0, 7.55, 1.57079], model: Hospital/Exam_Table}
+  - {name: exam_medical_stool_1, pose: [5.1, 7.1], model: Hospital/Medical_Stool}
+  - {name: exam_instrument_table_1, pose: [5.9, 7.0], model: Hospital/Instrument_Table}
+  - {name: exam_vital_signal_station_1, pose: [4.85, 8.2], model: Hospital/Vital_Signal_Station}
+  - {name: exam_exam_table_2, pose: [3.0, 7.55, 1.57079], model: Hospital/Exam_Table}
+  - {name: exam_medical_stool_2, pose: [3.1, 7.1], model: Hospital/Medical_Stool}
+  - {name: exam_instrument_table_2, pose: [3.9, 7.0], model: Hospital/Instrument_Table}
+  - {name: exam_vital_signal_station_2, pose: [2.85, 8.2], model: Hospital/Vital_Signal_Station}
+  - {name: exam_SM_MedicalCabinet_01a_1, pose: [0.65, 9.2, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: exam_SM_MedicalCabinet_01a_2, pose: [0.65, 8.325, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: exam_SM_MedicalCabinet_01a_3, pose: [0.65, 7.45, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: exam_supply_cart_1, pose: [0.55, 5.4], model: Hospital/SM_SupplyCart_01e}
+  - {name: exam_supply_cart_2, pose: [1.7, 5.4], model: Hospital/SM_SupplyCart_01e}
+  - {name: exam_scale_1, pose: [7.6, 5.5, 3.14159], model: Hospital/SM_Scale_01a}
+  - {name: exam_trashcan_1, pose: [7.7, 9.8], model: Hospital/SM_TrashCan}
+  - {name: ward_bed_1, pose: [4.0, 13.6], model: Hospital/SM_HospitalBed_01b}
+  - {name: ward_bedside_table_1, pose: [4.9, 14.4, 1.57079], model: Hospital/SM_BedSideTable_01b}
+  - {name: ward_iv_stand_1, pose: [2.8, 14.5], model: Hospital/IV_Stand}
+  - {name: ward_vital_signal_1, pose: [4.9, 13.4, -1.57079], model: Hospital/Vital_Signal_Station}
+  - {name: ward_privacy_curtain_1, pose: [4.0, 15.1], model: Hospital/Privacy_Curtain_Rail}
+  - {name: ward_armchair_1, pose: [2.2, 13.5, 1.57079], model: Hospital/SM_Chair_04a}
+  - {name: ward_biohazard_container_1, pose: [4.9, 12.4], model: Hospital/Biohazard_Container}
+  - {name: ward_bed_2, pose: [4.0, 19.6], model: Hospital/SM_HospitalBed_01b}
+  - {name: ward_bedside_table_2, pose: [4.9, 20.4, 1.57079], model: Hospital/SM_BedSideTable_01b}
+  - {name: ward_iv_stand_2, pose: [2.8, 20.5], model: Hospital/IV_Stand}
+  - {name: ward_vital_signal_2, pose: [4.9, 19.4, -1.57079], model: Hospital/Vital_Signal_Station}
+  - {name: ward_privacy_curtain_2, pose: [4.0, 21.1], model: Hospital/Privacy_Curtain_Rail}
+  - {name: ward_armchair_2, pose: [2.2, 19.5, 1.57079], model: Hospital/SM_Chair_04a}
+  - {name: ward_biohazard_container_2, pose: [4.9, 18.4], model: Hospital/Biohazard_Container}
+  - {name: ward_SM_MedicalCabinet_01a_1, pose: [0.8, 24.0, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: ward_SM_MedicalCabinet_01a_2, pose: [0.8, 1.2, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: ward_wheelchair_1, pose: [0.7, 18.2], model: Hospital/SM_WheelChair_01a}
+  - {name: ward_wheelchair_2, pose: [0.7, 17.4], model: Hospital/SM_WheelChair_01a}
+  - {name: ward_trashcan_1, pose: [7.7, 10.3], model: Hospital/SM_TrashCan}
+  - {name: pharmacy_desk_1, pose: [4.0, 28.0], model: Hospital/SM_ReceptionDesk_01a}
+  - {name: pharmacy_chair_1, pose: [5.1, 26.6], model: Hospital/SM_Chair_01a}
+  - {name: pharmacy_shelf_1, pose: [0.25, 26.55, 1.57079], model: Hospital/Pharmacy_Shelf}
+  - {name: pharmacy_shelf_2, pose: [0.25, 28.5, 1.57079], model: Hospital/Pharmacy_Shelf}
+  - {name: pharmacy_shelf_3, pose: [3.4, 25.4, 3.14159], model: Hospital/Pharmacy_Shelf}
+  - {name: pharmacy_shelf_4, pose: [1.4, 25.4, 3.14159], model: Hospital/Pharmacy_Shelf}
+  - {name: pharmacy_refrigerated_unit_1, pose: [3.2, 29.6], model: Hospital/Refrigerated_Medicine_Unit}
+  - {name: pharmacy_SM_MedicalCabinet_01a_1, pose: [0.8, 29.4], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: pharmacy_SM_MedicalCabinet_01a_2, pose: [1.7, 29.4], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: pharmacy_med_shelf_1, pose: [4.3, 29.6], model: Hospital/SM_MedShelf_01d}
+  - {name: pharmacy_med_shelf_2, pose: [5.25, 29.6], model: Hospital/SM_MedShelf_01d}
+  - {name: pharmacy_supply_cart_1, pose: [1.3, 28.8], model: Hospital/SM_SupplyCart_01e}
+  - {name: pharmacy_biohazard_container_1, pose: [7.3, 29.8], model: Hospital/Biohazard_Container}
+  - {name: pharmacy_trashcan_1, pose: [7.7, 29.8], model: Hospital/SM_TrashCan}
+  - {name: nurse_resting_bed_1, pose: [13.1, 1.7, 1.57079], model: Hospital/SM_HospitalBed_02d}
+  - {name: nurse_resting_bed_2, pose: [13.1, 3.4, 1.57079], model: Hospital/SM_HospitalBed_02d}
+  - {name: nurse_resting_desk_1, pose: [17.3, 3.3, 1.57079], model: Hospital/SM_Desk_04a}
+  - {name: nurse_resting_desk_chair_1, pose: [17.9, 3.1, -1.57079], model: Hospital/SM_Chair_01a}
+  - {name: nurse_resting_desk_2, pose: [17.3, 5.2, 1.57079], model: Hospital/SM_Desk_04a}
+  - {name: nurse_resting_desk_chair_2, pose: [17.9, 5.0, -1.57079], model: Hospital/SM_Chair_01a}
+  - {name: nurse_resting_chair_1, pose: [12.4, 6.0, 1.57079], model: Hospital/SM_Chair_02a}
+  - {name: nurse_resting_chair_2, pose: [12.4, 8.4, 1.57079], model: Hospital/SM_Chair_02a}
+  - {name: nurse_resting_chair_3, pose: [18.1, 8.4, -1.57079], model: Hospital/SM_Chair_02a}
+  - {name: nurse_resting_sidetable_1, pose: [13.4, 6.0, 1.57079], model: Hospital/SM_SideTable_02a}
+  - {name: nurse_resting_sidetable_2, pose: [13.4, 8.4, 1.57079], model: Hospital/SM_SideTable_02a}
+  - {name: nurse_resting_sidetable_3, pose: [17.1, 8.4, -1.57079], model: Hospital/SM_SideTable_02a}
+  - {name: nurse_resting_cabinet_1, pose: [18.4, 0.6, 3.14159], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: nurse_resting_cabinet_2, pose: [17.5, 0.6, 3.14159], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: nurse_resting_cabinet_3, pose: [16.6, 0.6, 3.14159], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: nurse_resting_cabinet_4, pose: [15.7, 0.6, 3.14159], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: waiting_sofa_3, pose: [20.3, 8.5, 3.14159], model: Hospital/Waiting_Room_Sofa}
+  - {name: waiting_sofa_4, pose: [23.4, 8.5, 3.14159], model: Hospital/Waiting_Room_Sofa}
+  - {name: waiting_chair_8, pose: [20.3, 6.0, 3.14159], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_9, pose: [20.3, 5.2], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_10, pose: [23.2, 6.0, 3.14159], model: Hospital/SM_Chair_02a}
+  - {name: waiting_chair_11, pose: [23.2, 5.2], model: Hospital/SM_Chair_02a}
+  - {name: waiting_bench_3, pose: [20.1, 3.5, 3.14159], model: Hospital/Waiting_Room_Bench}
+  - {name: waiting_bench_4, pose: [23.5, 3.5, 3.14159], model: Hospital/Waiting_Room_Bench}
+  - {name: waiting_side_table_1, pose: [19.6, 4.2], model: Hospital/SM_SideTable_02a}
+  - {name: waiting_side_table_2, pose: [20.6, 4.2], model: Hospital/SM_SideTable_02a}
+  - {name: waiting_side_table_3, pose: [23.0, 4.2], model: Hospital/SM_SideTable_02a}
+  - {name: waiting_side_table_4, pose: [24.0, 4.2], model: Hospital/SM_SideTable_02a}
+  - {name: waiting_trashcan_2, pose: [24.6, 0.3], model: Hospital/SM_TrashCan}
+  - {name: waiting_mop_set_2, pose: [24.7, 0.7], model: Hospital/SM_MopSet_01b}
+  - {name: or_operating_table_1, pose: [15.0, 19.0], model: Hospital/Operating_Table}
+  - {name: or_surgical_table_1, pose: [15.0, 15.5], model: Hospital/Surgical_Table}
+  - {name: or_anesthesia_machine_1, pose: [14.2, 19.0, 1.57079], model: Hospital/Anesthesia_Machine}
+  - {name: or_instrument_table_1, pose: [15.8, 17.7, -1.57079], model: Hospital/Instrument_Table}
+  - {name: or_surgical_tray_1, pose: {x: 15.8, y: 17.7, z: 0.9}, model: Hospital/SM_UtilitiesTray_01e}
+  - {name: or_vital_monitor_1, pose: [15.8, 19.0, -1.57079], model: Hospital/Vital_Signal_Station}
+  - {name: or_defibrillator_1, pose: {x: 15.8, y: 17.6, z: 0.9}, model: Hospital/Defibrillator}
+  - {name: or_ventilator_1, pose: [14.2, 15.35, 1.57079], model: Hospital/Ventilator}
+  - {name: or_SM_MedicalCabinet_01a_1, pose: [12.7, 20.7, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: or_supply_cabinet_1, pose: [17.05, 21.0, -1.57079], model: Hospital/SM_SupplyCabinet_01c}
+  - {name: or_biohazard_container_1, pose: [17.7, 13.7], model: Hospital/Biohazard_Container}
+  - {name: or_trashcan_1, pose: [17.7, 13.3], model: Hospital/SM_TrashCan}
+  - {name: lab_bench_1, pose: [15.0, 26.65], model: Hospital/Lab_Bench}
+  - {name: lab_bench_2, pose: [15.0, 28.65], model: Hospital/Lab_Bench}
+  - {name: lab_microscope_1, pose: {x: 14.4, y: 26.4, z: 0.9}, model: Hospital/Microscope_Station}
+  - {name: lab_microscope_2, pose: {x: 14.4, y: 28.4, z: 0.9}, model: Hospital/Microscope_Station}
+  - {name: lab_stool_1, pose: [14.5, 25.9, 3.14159], model: Hospital/Lab_Stool}
+  - {name: lab_stool_2, pose: [14.5, 27.9, 3.14159], model: Hospital/Lab_Stool}
+  - {name: lab_stool_3, pose: [15.5, 25.9, 3.14159], model: Hospital/Lab_Stool}
+  - {name: lab_SM_MedicalCabinet_01a_1, pose: [12.7, 29.2, 1.57079], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: lab_refrigerated_unit_1, pose: [17.5, 29.65, -1.573185], model: Hospital/Refrigerated_Medicine_Unit}
+  - {name: lab_shelf_1, pose: [12.5, 28.5, 1.57079], model: Hospital/SM_Shelf_06f}
+  - {name: lab_shelf_2, pose: [17.5, 28.5, -1.573185], model: Hospital/SM_Shelf_06f}
+  - {name: lab_shelf_set_1, pose: [12.5, 24.0, 1.57079], model: Hospital/SM_ShelfSet_01a}
+  - {name: lab_shelf_set_2, pose: [17.5, 24.0, -1.57079], model: Hospital/SM_ShelfSet_01a}
+  - {name: lab_biohazard_container_1, pose: [16.0, 26.5], model: Hospital/Biohazard_Container}
+  - {name: lab_biohazard_container_2, pose: [16.0, 28.5], model: Hospital/Biohazard_Container}
+  - {name: lab_autoclave_1, pose: [17.5, 27.5, -1.57079], model: Hospital/Autoclave}
+  - {name: lab_trashcan_1, pose: [16.0, 26.1], model: Hospital/SM_TrashCan}
+  - {name: lab_trashcan_2, pose: [16.0, 28.1], model: Hospital/SM_TrashCan}
+  - {name: wc_pharmacy_washbasin_1, pose: {x: 4.6, y: 34.2, z: 0.8, yaw: -1.57079}, model: Hospital/SM_Washbasin}
+  - {name: wc_pharmacy_washbasin_2, pose: {x: 5.6, y: 34.2, z: 0.8, yaw: -1.57079}, model: Hospital/SM_Washbasin}
+  - {name: wc_pharmacy_washbasin_3, pose: {x: 6.6, y: 34.2, z: 0.8, yaw: -1.57079}, model: Hospital/SM_Washbasin}
+  - {name: wc_pharmacy_washbasin_4, pose: {x: 4.6, y: 30.2, z: 0.8, yaw: 1.57079}, model: Hospital/SM_Washbasin}
+  - {name: wc_pharmacy_washbasin_5, pose: {x: 5.6, y: 30.2, z: 0.8, yaw: 1.57079}, model: Hospital/SM_Washbasin}
+  - {name: wc_pharmacy_washbasin_6, pose: {x: 6.6, y: 30.2, z: 0.8, yaw: 1.57079}, model: Hospital/SM_Washbasin}
+  - {name: wc_pharmacy_toilet_1, pose: {x: 0.5, y: 30.85, z: 0.3}, model: Hospital/SM_Toilet}
+  - {name: wc_pharmacy_toilet_paper_1, pose: {x: 0.5, y: 31.4, z: 0.8}, model: Hospital/SM_ToiletPaper}
+  - {name: wc_pharmacy_toilet_2, pose: {x: 0.5, y: 32.15, z: 0.3}, model: Hospital/SM_Toilet}
+  - {name: wc_pharmacy_toilet_paper_2, pose: {x: 0.5, y: 32.7, z: 0.8}, model: Hospital/SM_ToiletPaper}
+  - {name: wc_pharmacy_toilet_3, pose: {x: 0.5, y: 33.5, z: 0.3}, model: Hospital/SM_Toilet}
+  - {name: wc_pharmacy_toilet_paper_3, pose: {x: 0.5, y: 34.1, z: 0.8}, model: Hospital/SM_ToiletPaper}
+  - {name: wc_waiting_washbasin_1, pose: {x: 21.5, y: 13.8, z: 0.8}, model: Hospital/SM_Washbasin}
+  - {name: wc_waiting_washbasin_2, pose: {x: 21.5, y: 15.1, z: 0.8}, model: Hospital/SM_Washbasin}
+  - {name: wc_waiting_washbasin_3, pose: {x: 21.5, y: 16.4, z: 0.8}, model: Hospital/SM_Washbasin}
+  - {name: wc_waiting_toilet_1, pose: {x: 18.08, y: 13.75, z: 0.3}, model: Hospital/SM_Toilet}
+  - {name: wc_waiting_toilet_paper_1, pose: {x: 18.1, y: 13.75, z: 0.8}, model: Hospital/SM_ToiletPaper}
+  - {name: wc_waiting_toilet_2, pose: {x: 18.08, y: 15.1, z: 0.3}, model: Hospital/SM_Toilet}
+  - {name: wc_waiting_toilet_paper_2, pose: {x: 18.1, y: 15.1, z: 0.8}, model: Hospital/SM_ToiletPaper}
+  - {name: wc_waiting_toilet_3, pose: {x: 18.08, y: 16.42, z: 0.3}, model: Hospital/SM_Toilet}
+  - {name: wc_waiting_toilet_paper_3, pose: {x: 18.1, y: 16.42, z: 0.8}, model: Hospital/SM_ToiletPaper}
+  - {name: doctors_resting_room_bed_1, pose: [17.5, 31.4, 3.14159], model: Hospital/SM_HospitalBed_02d}
+  - {name: doctors_resting_room_desk_1, pose: [15.0, 31.0], model: Hospital/SM_Desk_04a}
+  - {name: doctors_resting_room_desk_chair_1, pose: [14.6, 30.5, 3.14159], model: Hospital/SM_Chair_01a}
+  - {name: doctors_resting_room_sidetable_1, pose: [15.0, 33.0], model: Hospital/SM_SideTable_02a}
+  - {name: doctors_resting_room_cabinet_1, pose: [17.1, 33.6], model: Hospital/SM_MedicalCabinet_01a}
+  - {name: doctors_resting_room_chair_1, pose: [15.0, 33.8], model: Hospital/SM_Chair_02a}
+  sounds:
+  - name: hall_siren
+    asset_id: alarm_loop
+    position: [10.0, 17.0]
+    semantics:
+    - {preset: sound, params: {sound_on: alarm, volume_db: 88.0}}

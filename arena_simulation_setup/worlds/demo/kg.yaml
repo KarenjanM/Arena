@@ -1,0 +1,6 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:demo_zone', props: {description: Demo Zone}}
+facts: []
+constraints: []

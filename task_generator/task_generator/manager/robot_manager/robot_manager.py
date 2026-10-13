@@ -263,6 +263,7 @@ class RobotManager(NodeInterface):
     async def set_up_robot(self):
         self._robot.pose.position.z += self._config.model_params.z_offset
         self._robot = (await self._environment_manager.spawn_robot((self._robot,)))[0]
+        await self._environment_manager.spawn_robot_lights(self.name, [attrs.evolve(light, name=f'{self.name}_{light.name}', frame=self.frame.tf(light.frame)) for light in self._config.model_params.lights])
 
         _gen_goal_topic = self.namespace("goal_pose")
 
@@ -817,3 +818,4 @@ class RobotManager(NodeInterface):
             await self._launch_handle.shutdown()
         self._launch_handle = None
         await self._environment_manager.remove_robot((self.robot,))
+        await self._environment_manager.remove_robot_lights(self.name)

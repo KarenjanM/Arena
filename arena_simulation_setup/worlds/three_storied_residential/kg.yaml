@@ -1,0 +1,8 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:1_bathroom'}
+- {id: 'sound:hall_siren'}
+facts:
+- {subject: 'room:1_bathroom', verb: contains, object: 'sound:hall_siren'}
+constraints: []

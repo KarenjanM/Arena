@@ -21,8 +21,8 @@ from scipy import ndimage
 from arena_simulation_setup.shared import Obstacle
 from arena_simulation_setup.tree import DynamicPaths, Identifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
-from arena_simulation_setup.tree.World import Level, MultiLevelWorldView, WorldIdentifier
-from arena_simulation_setup.tree.World.World import _PASSAGE_CLEARANCE
+from arena_simulation_setup.tree.World import Level, WorldIdentifier, WorldView
+from arena_simulation_setup.tree.World.model import _PASSAGE_CLEARANCE
 
 DEFAULT_RADIUS = 0.267
 SPAWN_CLEARANCE = 0.45
@@ -116,17 +116,17 @@ def _robots_dir() -> Path:
         raise LookupError('arena_robots is not installed in the sourced workspace: pass a robot directory or a radius') from e
 
 
-def resolve_world(raw: str) -> tuple[MultiLevelWorldView, set[str] | None]:
+def resolve_world(raw: str) -> tuple[WorldView, set[str] | None]:
     """World directory, or name with an optional `[level,...]` filter resolved like the runtime (ARENA_WORLD_PATH, installed worlds, world buckets)."""
     name, levels = WorldIdentifier.parse(raw)
     path = Path(name).expanduser()
     if path.is_dir():
-        return MultiLevelWorldView(path.resolve()), levels
+        return WorldView(path.resolve()), levels
     return WorldIdentifier(name).resolve_sync(), levels
 
 
 def nav_at_r(
-    view: MultiLevelWorldView,
+    view: WorldView,
     *,
     radius: float = DEFAULT_RADIUS,
     walls_only: bool = False,
@@ -140,6 +140,7 @@ def nav_at_r(
     world = view.load(validate=False, level_filter=levels)
     single = len(world.levels) == 1
     previous = DynamicPaths.WORLD.path
+    DynamicPaths.LINKED.paths = list(world.sources)
     _point_objects_at(view.path)
     try:
         return {
@@ -176,7 +177,7 @@ def _level_nav_at_r(
     spawn_clearance: float,
     image: Path | None,
 ) -> NavAtR:
-    entities = list(level.all_static_entities)
+    entities = list(level.objects)
     walls_grid, origin = level.render_grid(resolution=resolution)
     clearance = ndimage.distance_transform_edt(walls_grid == _FREE) * resolution
     walls_traversable = clearance >= radius
@@ -216,7 +217,7 @@ def _level_nav_at_r(
         traversable_area=float(cells.sum()) * resolution**2,
         masses=tuple(float(m) for m in masses),
         spawn_shares=tuple(float(s) for s in shares),
-        zones=tuple(_zone_reach(zone.name, zone.corners, ranked, walls_traversable, origin, resolution) for zone in level.zones if len(zone.corners) >= 3),
+        zones=tuple(_zone_reach(zone.name, zone.polygon, ranked, walls_traversable, origin, resolution) for zone in level.zones if len(zone.polygon) >= 3),
         entities=len(entities),
         unresolved=unresolved,
         start_share=start_share,
@@ -237,7 +238,7 @@ def _paint(walls_grid: np.ndarray, grid: np.ndarray, ranked: np.ndarray) -> Imag
 
 
 def _footprints(entities: Iterable[Obstacle]) -> tuple[list[tuple[str, shapely.Polygon]], int]:
-    pending = [entity for entity in entities if not entity.asdict(expand_extra=True).get('bbox')]
+    pending = [entity for entity in entities if not entity.extra.get('bbox')]
 
     async def _gather() -> list[object]:
         return await asyncio.gather(*(_annotation_bbox(entity) for entity in pending))

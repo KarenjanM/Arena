@@ -6,18 +6,17 @@ from types import SimpleNamespace
 
 import attrs
 import pytest
-import yaml
 
 try:
     import rclpy.logging
     from arena_simulation_setup.shared.task import TaskPhase
-    from arena_simulation_setup.tree.World.World import LevelDescription
-    from arena_simulation_setup.utils.cattrs import converter
+    from arena_simulation_setup.tree.World import WorldView
+    from arena_simulation_setup.tree.World.Scenario import ScenarioView
 
     from task_generator.manager.realizer import Realizer
     from task_generator.manager.robot_manager.robot_manager import RobotManager
     from task_generator.manager.robot_manager.task_runner import TaskRunner
-    from task_generator.shared import Orientation, Pose, Position
+    from task_generator.shared import Pose
     from task_generator.tasks.robots.adapters.mobile.vla import VlaAdapter
     from task_generator.tasks.robots.request import kind_of
 except ImportError:
@@ -38,12 +37,11 @@ class _EdgeNode:
 def _scene() -> tuple[TaskPhase, Pose, SimpleNamespace]:
     """The landmark_pharmacy goto and start pose in an env 5 m off the map origin, plus a robot whose pose is not known yet."""
     realizer = Realizer(Realizer._Configuration(x=5.0, y=5.0, prefix="env_1"))
-    robot = yaml.safe_load((HOSPITAL / "scenarios" / "landmark_pharmacy" / "scenario.yaml").read_text())["robots"][0]
+    robot = ScenarioView(HOSPITAL / "scenarios" / "landmark_pharmacy").read()["robots"][0]
     phase = TaskPhase.parse(robot["phases"][0])
-    x, y, yaw = robot["start"]
-    level = converter.structure(yaml.safe_load((HOSPITAL / "0" / "world.yaml").read_text()), LevelDescription)
-    rm = SimpleNamespace(pose=None, _environment_manager=realizer, node=SimpleNamespace(_world_manager=SimpleNamespace(world_compacted=lambda: level)))
-    return attrs.evolve(phase, pose=realizer.realize(phase.pose)), realizer.realize(Pose(position=Position(x, y), orientation=Orientation.from_yaw(yaw))), rm
+    world = WorldView(HOSPITAL).load()
+    rm = SimpleNamespace(pose=None, _environment_manager=realizer, node=SimpleNamespace(_world_manager=SimpleNamespace(world=world, world_compacted=lambda: world.levels["0"])))
+    return attrs.evolve(phase, pose=realizer.realize(phase.pose)), realizer.realize(Pose.parse(robot["start"])), rm
 
 
 def _adapter(rm: SimpleNamespace, phase: TaskPhase) -> VlaAdapter:

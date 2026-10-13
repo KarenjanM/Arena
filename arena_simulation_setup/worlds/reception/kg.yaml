@@ -1,0 +1,9 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:destination', props: {description: Destination zone behind the reception desk}}
+- {id: 'room:entrance', props: {description: Reception Entrance}}
+- {id: 'obj:nurse_station'}
+facts:
+- {subject: 'room:entrance', verb: contains, object: 'obj:nurse_station'}
+constraints: []

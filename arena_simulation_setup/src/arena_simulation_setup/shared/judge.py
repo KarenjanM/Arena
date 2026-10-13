@@ -23,7 +23,7 @@ if typing.TYPE_CHECKING:
     import shapely
 
     from arena_simulation_setup.shared.task import GoToPhase, TaskPhase
-    from arena_simulation_setup.tree.World import LevelDescription
+    from arena_simulation_setup.tree.World import Level
 
 FLOAT_TOLERANCE = 1e-6
 PARK_DRIFT_M = 0.05
@@ -55,7 +55,7 @@ class Sample:
         return False if name in self.known or name in self.peds or name in self.robots else None
 
 
-def zone_polygons(level: LevelDescription) -> dict[str, shapely.Polygon]:
+def zone_polygons(level: Level) -> dict[str, shapely.Polygon]:
     """Zone, door and elevator polygons of a compacted level, keyed by name."""
     import shapely
 

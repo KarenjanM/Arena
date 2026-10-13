@@ -31,7 +31,8 @@ from arena_simulation_setup.shared.judge import (
     zone_polygons,
 )
 from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, TaskPhase
-from arena_simulation_setup.tree.World.World import LevelDescription
+from arena_simulation_setup.shared import Door
+from arena_simulation_setup.tree.World import Level, Zone
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 SQUARE = shapely.Polygon([(0, 0), (0, 4), (4, 4), (4, 0)])
@@ -274,15 +275,17 @@ def test_scoped_conditions_judged_over_the_phase():
 
 
 def test_zone_polygons_from_level():
-    level = LevelDescription(
+    level = Level(
         zones=[
-            LevelDescription.Zone(name="kitchen", corners=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)]),
-            LevelDescription.Zone(name="line", corners=[Position(0, 0), Position(1, 1)]),
-        ]
+            Zone(name="kitchen", polygon=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)]),
+            Zone(name="line", polygon=[Position(0, 0), Position(1, 1)]),
+        ],
+        doors=[Door(name="kitchen_door", start=Position(4, 1), end=Position(4, 2))],
     )
     polygons = zone_polygons(level)
-    assert set(polygons) == {"kitchen"}
+    assert set(polygons) == {"kitchen", "kitchen_door"}
     assert polygons["kitchen"].covers(shapely.Point(2, 2))
+    assert polygons["kitchen_door"].covers(shapely.Point(4.2, 1.5))
 
 
 def test_park_timer_jitter_inside_bounds_keeps_the_anchor():

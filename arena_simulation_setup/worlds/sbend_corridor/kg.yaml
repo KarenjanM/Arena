@@ -1,0 +1,10 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:corridor_south', props: {description: 'Southern corridor, traversed westbound'}}
+- {id: 'room:link_west', props: {description: Western gap joining the southern and middle corridors}}
+- {id: 'room:corridor_middle', props: {description: 'Middle corridor, traversed eastbound'}}
+- {id: 'room:link_east', props: {description: Eastern gap joining the middle and northern corridors}}
+- {id: 'room:corridor_north', props: {description: 'Northern corridor, traversed westbound to the goal'}}
+facts: []
+constraints: []

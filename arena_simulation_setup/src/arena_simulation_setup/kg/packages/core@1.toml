@@ -1,0 +1,105 @@
+# Package "core": rooms, doors, walls, objects, containment and connectivity
+name = "core"
+version = 1
+
+[nodes.floor]
+props = ["label"]
+
+[nodes.material]
+props = ["label", "domain", "color", "desc"]
+
+[nodes.room]
+props = ["type", "description", "area", "boundary", "material", "node_id", "sim"]
+
+[nodes.door]
+props = ["line", "width", "sim"]
+
+[nodes.wall]
+props = []
+authorable = false
+propless = true
+
+[nodes.elevator]
+props = []
+authorable = false
+propless = true
+
+[nodes.obj]
+props = ["label", "model", "pose", "scale", "sim"]
+
+[verbs.contains]
+from = ["floor", "room"]
+to = ["room", "obj", "door", "wall", "elevator"]
+
+[verbs.connects]
+from = ["room"]
+to = ["room"]
+
+[verbs.connects_floor]
+from = ["elevator"]
+to = ["elevator"]
+
+[verbs.left_of]
+from = ["room"]
+to = ["room"]
+
+[verbs.right_of]
+from = ["room"]
+to = ["room"]
+
+[verbs.above]
+from = ["room"]
+to = ["room"]
+
+[verbs.below]
+from = ["room"]
+to = ["room"]
+
+[verbs.floor_material]
+from = ["room"]
+to = ["material"]
+
+[verbs.ceiling_material]
+from = ["room"]
+to = ["material"]
+
+[verbs.on_top]
+from = ["obj"]
+to = ["obj"]
+
+[verbs.beside]
+from = ["obj"]
+to = ["obj"]
+
+[verbs.attr]
+from = "*"
+to = "literal"
+
+[verbs.note]
+from = "*"
+to = "literal"
+
+[constraints.placement]
+arity = 2
+desc = "room A should lie `dir` of room B (left_of/right_of/above/below): an intended layout, not a measured fact"
+params = ["dir"]
+
+[constraints.against_wall]
+arity = 1
+desc = "A must stand against the `wall` wall (north/east/south/west) of its room: ONE thing"
+params = ["wall"]
+
+[constraints.facing]
+arity = 2
+desc = "A must be rotated so that its front faces B: directed: A looks at B, not the other way round"
+params = []
+
+[constraints.adjacent]
+arity = 2
+desc = "A must be placed WITHIN `dist` m of B: an upper bound (put them close). For a minimum distance use min_clearance"
+params = ["dist"]
+
+[constraints.min_clearance]
+arity = 2
+desc = "keep AT LEAST `min` m of free space between A and B: a lower bound, the opposite of adjacent"
+params = ["min"]

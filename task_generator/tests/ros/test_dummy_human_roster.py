@@ -142,8 +142,8 @@ def _scenario(tmp_path: Path, name: str, peds: dict[str, tuple[float, float]]) -
     directory = tmp_path / "scenarios" / name
     directory.mkdir(parents=True)
     entries = [{"name": ped, "model": "arenian", "pose": [x, y, 0.0]} for ped, (x, y) in peds.items()]
-    (directory / "scenario.yaml").write_text(yaml.safe_dump({"dynamic": entries}))
-    return ScenarioView(directory).load().dynamic
+    (directory / "scenario.yaml").write_text(yaml.safe_dump({"format": "arena-scenario/2", "humans": entries}))
+    return ScenarioView(directory).load().humans
 
 
 def test_roster_follows_the_sim_clock(rclpy_context, tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ from PIL import Image, ImageDraw
 from task_generator.shared import Position, PositionRadius, Wall
 
 if TYPE_CHECKING:
-    from arena_simulation_setup.tree.World.World import LevelDescription as WorldDescription
+    from arena_simulation_setup.tree.World import Level
 
 # CONVERTERS
 
@@ -281,8 +281,8 @@ class WorldMap:
         )
 
     @classmethod
-    def from_world_description(cls, description: "WorldDescription", resolution: float, time: Time, _level_origins: dict[str, tuple[float, float]] | None = None) -> "WorldMap":
-        """Rasterize a WorldDescription into a WorldMap. PIL grayscale matches WorldOccupancy (255=EMPTY, 0=FULL)."""
+    def from_world_description(cls, description: "Level", resolution: float, time: Time, _level_origins: dict[str, tuple[float, float]] | None = None) -> "WorldMap":
+        """Rasterize a Level into a WorldMap. PIL grayscale matches WorldOccupancy (255=EMPTY, 0=FULL)."""
         grid, origin = description.render_grid(resolution=resolution)
         return WorldMap(
             occupancy=WorldLayers(walls=WorldOccupancy(grid.copy())),
