@@ -12,6 +12,7 @@ from collections.abc import Iterable, Sequence
 import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
+import attrs
 import launch
 import launch_ros.actions
 from arena_people_msgs.msg import Pedestrians
@@ -141,7 +142,8 @@ class FlatsimSimulator(BaseSim):
 
     def _robot_loader_args(self, robot: Robot, robot_config: arena_robots.Robot.RobotView) -> dict[str, object]:
         args: dict[str, object] = {
-            **robot.asdict(),
+            **robot.extra,
+            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
             'optim': self.node.rosparam[str].get('optim', ''),
             'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
         }

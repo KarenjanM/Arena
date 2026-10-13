@@ -12,6 +12,7 @@ import arena_robots.catalog
 import arena_robots.Robot
 import arena_robots.Sensor
 import arena_simulation_setup.tree.assets.Material
+import attrs
 import geometry_msgs.msg
 import launch
 import launch_ros
@@ -212,7 +213,8 @@ class MujocoSimulator(BaseSim, NodeInterface):
     def _robot_loader_args(self, robot: Robot) -> dict[str, object]:
         robot_config = arena_robots.Robot.RobotIdentifier(robot.model.name).resolve_sync()
         args: dict[str, object] = {
-            **robot.asdict(),
+            **robot.extra,
+            **attrs.asdict(robot, filter=lambda attribute, _: attribute.name != 'extra'),
             'optim': self.node.rosparam[str].get('optim', ''),
             'sensor_topic_patches': arena_robots.Sensor.topic_elements(robot_config.effective_sensors(robot.resolved_request, frames=robot.frames), ''),
         }
