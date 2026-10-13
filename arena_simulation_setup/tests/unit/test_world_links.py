@@ -401,6 +401,7 @@ def test_a_scenario_on_a_linked_world_names_the_prefixed_zones(tmp_path: Path) -
     reception = next(zone for zone in compacted.zones if zone.name == 'hospital_1_reception')
     assert reception.shape().covers(shapely.Point(robot.start.position.x, robot.start.position.y))
     assert robot.phases[0].target == 'office_1_cafeteria'
+    assert robot.start_zone == 'hospital_1_reception'
     assert [identifier.name for identifier in view.identifiers(strict=True) if isinstance(identifier, WorldIdentifier)] == ['hospital_1', 'office_1']
 
 

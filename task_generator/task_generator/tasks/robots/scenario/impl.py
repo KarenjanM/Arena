@@ -50,7 +50,7 @@ class TM_Scenario(TM_Robots):
             )
 
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
-            start_pose = _to_map_frame(config.start, config.level)
+            start_pose = _to_map_frame(config.start, "" if config.start_zone else config.level)
             self._start_poses[robot.name] = start_pose
 
             phases: list[TaskPhase] = []

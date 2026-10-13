@@ -20,6 +20,7 @@ ROBOT_KEYS = frozenset({"start", "level", "goal_level", "phases", "conditions"})
 class RobotGoal(Parseable):
     start: Pose = attrs.field(converter=Pose.converter)
     level: str = attrs.field(default="")
+    start_zone: str = attrs.field(default="")
     goal_level: str = attrs.field(default="")
     phases: list[TaskPhase] = attrs.field(factory=list)
     conditions: list[EpisodeCondition] = attrs.field(factory=list)
@@ -35,6 +36,7 @@ class RobotGoal(Parseable):
             level=str(obj.get("level", "")),
             goal_level=str(obj.get("goal_level", "")),
             start=Pose.parse(obj["start"]),
+            start_zone=obj["start"] if isinstance(obj["start"], str) else "",
             phases=[TaskPhase.parse(p) for p in obj.get("phases") or []],
             conditions=[EpisodeCondition.parse(c) for c in obj.get("conditions", [])],
         )
