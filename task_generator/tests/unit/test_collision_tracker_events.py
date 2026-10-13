@@ -431,14 +431,11 @@ def test_monitor_state_counts_pedestrians_and_ranks_unknown_actions_last(on_stag
     on_stage(body)
 
 
-@pytest.mark.xfail(strict=True, reason="collision_tracker maps a circle without a radius to a zero buffer, whose empty bounds crash the grid lookup")
-def test_circle_without_a_radius_never_hits(on_stage):
+def test_circle_without_a_radius_is_rejected(on_stage):
     async def body(stage: Stage):
         rm, _ = stage.robot_manager()
-        tracker = stage.tracker(rm, {"dot": _spec("dot", "circle", action="stop")}, footprint=None)
-        assert tracker._poly_cache["dot"]["R_c"] == 0.0
-        state = tracker._monitor_state(*IN_MAP, 0.0)
-        assert (state.polygon_name, state.action_type) == ("", 0)
+        with pytest.raises(ValueError, match="'dot': circle without a radius"):
+            stage.tracker(rm, {"dot": _spec("dot", "circle", action="stop")}, footprint=None)
 
     on_stage(body)
 

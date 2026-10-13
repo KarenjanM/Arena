@@ -58,6 +58,9 @@ class CollisionTrackerNode(rclpy.node.Node):
         default_pedestrian_radius: float = 0.3,
         footprint: list[list[float]] | None = None,
     ):
+        for name, spec in polygons.items():
+            if spec.type == 'circle' and spec.radius is None:
+                raise ValueError(f'collision_tracker: polygon {name!r}: circle without a radius')
         super().__init__(
             'collision_tracker',
             namespace=str(robot_manager.namespace),
@@ -82,10 +85,9 @@ class CollisionTrackerNode(rclpy.node.Node):
                     'action_code': _ACTION_CODES.get(spec.action_type, 0),
                 }
             else:
-                r_c = spec.radius if spec.radius is not None else 0.0
                 self._poly_cache[name] = {
                     'type': 'circle',
-                    'R_c': r_c,
+                    'R_c': spec.radius,
                     'action_code': _ACTION_CODES.get(spec.action_type, 0),
                 }
 
