@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import math
-import os
 import typing
 
 import numpy as np
 import pytest
+import shapely
 import yaml
 
 OFFICE = [(0.0, 0.0), (6.0, 0.0), (6.0, 4.0), (0.0, 4.0)]
 LAB = [(10.0, 0.0), (16.0, 0.0), (16.0, 4.0), (10.0, 4.0)]
 OFFICE_TILES = [(1.0, 1.0), (3.0, 1.0), (5.0, 1.0), (1.0, 3.0), (3.0, 3.0), (5.0, 3.0)]
 OUTER_BOX = [(0.0, 0.0), (20.0, 0.0), (20.0, 10.0), (0.0, 10.0), (0.0, 0.0)]
+LEFT_HALF = [(0.0, 0.0), (0.0, 10.0), (10.0, 0.0), (10.0, 10.0)]
+RIGHT_HALF = [(10.0, 0.0), (10.0, 10.0), (20.0, 0.0), (20.0, 10.0)]
+BOX_GROUP = {"name": "box", "size": [1, 1], "margin": 1, "entities": {"static": [{"position": [0.0, 0.0, 0.0], "model": "box"}]}}
 
 
 class Bench:
@@ -22,7 +25,16 @@ class Bench:
         self.tmp_path = tmp_path
         self.configs = 0
 
-    def world(self, *, zones: dict[str, list[tuple[float, float]]] | None = None, walls: typing.Sequence[typing.Sequence[tuple[float, float]]] = ()) -> None:
+    def world(
+        self,
+        *,
+        zones: dict[str, list[tuple[float, float]]] | None = None,
+        walls: typing.Sequence[typing.Sequence[tuple[float, float]]] = (),
+        shape: tuple[int, int] = (60, 60),
+        origin: tuple[float, float] = (0.0, 0.0),
+        resolution: float = 0.5,
+        occupied: typing.Sequence[tuple[slice, slice]] = (),
+    ) -> None:
         from arena_rclpy_mixins.Time import Time
         from arena_simulation_setup.tree.World import Level, World, Zone
         from arena_simulation_setup.tree.World.model import WallPath
@@ -34,8 +46,10 @@ class Bench:
             zones=[Zone(name=name, polygon=[Position(x, y) for x, y in polygon]) for name, polygon in (zones or {}).items()],
             walls=[WallPath(path=[Position(x, y) for x, y in path]) for path in walls],
         )
-        grid = np.full((60, 60), WorldOccupancy.EMPTY, dtype=np.uint8)
-        world_map = WorldMap(occupancy=WorldLayers(walls=WorldOccupancy(grid)), origin=Position(x=0.0, y=0.0), resolution=0.5, time=Time())
+        grid = np.full(shape, WorldOccupancy.EMPTY, dtype=np.uint8)
+        for cells in occupied:
+            grid[cells] = WorldOccupancy.FULL
+        world_map = WorldMap(occupancy=WorldLayers(walls=WorldOccupancy(grid)), origin=Position(x=origin[0], y=origin[1]), resolution=resolution, time=Time())
         self.ctx.world_manager.update_world(world_map, World.from_levels(level))
 
     def mode(self, groups: list[dict] | None = None):
@@ -101,9 +115,11 @@ def _heading(entity) -> tuple[float, float]:
     return math.cos(yaw), math.sin(yaw)
 
 
-def _inside(polygon, x: float, y: float) -> bool:
-    import shapely
+def _corners(room) -> list[tuple[float, float]]:
+    return sorted(room.exterior.coords[:-1])
 
+
+def _inside(polygon, x: float, y: float) -> bool:
     return shapely.Polygon(polygon).covers(shapely.Point(x, y))
 
 
@@ -182,12 +198,21 @@ def test_tiles_outside_a_concave_zone_are_skipped(on_bench):
     on_bench(body)
 
 
-def test_without_zones_rooms_come_from_the_walls_and_skip_the_world_box(on_bench):
+def test_without_zones_a_box_inside_the_walls_is_a_room_and_a_hole_in_the_outer_room(on_bench):
     async def body(bench: Bench):
         bench.world(walls=[OUTER_BOX, [(2.0, 2.0), (6.0, 2.0), (6.0, 5.0), (2.0, 5.0), (2.0, 2.0)]])
-        tm = bench.mode([{"name": "box", "size": [1, 1], "margin": 1, "entities": {"static": [{"position": [0.0, 0.0, 0.0], "model": "box"}]}}])
+        tm = bench.mode([BOX_GROUP])
+        inner, outer = sorted(tm._create_rooms_from_walls(), key=lambda room: room.area)
+        assert inner.equals(shapely.box(2.0, 2.0, 6.0, 5.0))
+        assert outer.equals(shapely.box(0.0, 0.0, 20.0, 10.0).difference(inner))
         static, _ = await tm.reset(seed=0)
-        assert [_xy(entity) for entity in static] == pytest.approx([(3.0, 3.0), (5.0, 3.0)])
+        by_room: dict[str, list[tuple[float, float]]] = {}
+        for entity in static:
+            by_room.setdefault(entity.name.split("_")[2], []).append(_xy(entity))
+        small, large = sorted(by_room.values(), key=len)
+        assert small == pytest.approx([(3.0, 3.0), (5.0, 3.0)])
+        assert sorted(large) == pytest.approx(sorted((x, y) for x in range(1, 20, 2) for y in range(1, 10, 2) if not inner.covers(shapely.Point(x, y))))
+        assert len(large) == 46
 
     on_bench(body)
 
@@ -195,20 +220,10 @@ def test_without_zones_rooms_come_from_the_walls_and_skip_the_world_box(on_bench
 def test_reloading_the_file_parameter_replaces_the_obstacles(on_bench):
     async def body(bench: Bench):
         bench.world(zones={"office": OFFICE})
-        tm = bench.mode([{"name": "box", "size": [1, 1], "margin": 1, "entities": {"static": [{"position": [0.0, 0.0, 0.0], "model": "box"}]}}])
+        tm = bench.mode([BOX_GROUP])
         assert len((await tm.reset(seed=0))[0]) == 6
         bench.load(tm, [{"name": "big", "size": [4, 2], "margin": 0, "entities": {"static": [{"position": [0.0, 0.0, 0.0], "model": "box"}]}}])
         assert [_xy(entity) for entity in (await tm.reset(seed=1))[0]] == pytest.approx([(2.0, 1.0), (2.0, 3.0)])
-
-    on_bench(body)
-
-
-def test_world_bounds_span_every_wall_end(on_bench):
-    async def body(bench: Bench):
-        bench.world(walls=[[(1.0, -2.0), (4.0, 3.0)], [(-1.0, 5.0), (7.0, 5.0)]])
-        assert bench.mode().calculate_world_bounds() == (-1.0, 7.0, -2.0, 5.0)
-        bench.world()
-        assert bench.mode().calculate_world_bounds() == (math.inf, -math.inf, math.inf, -math.inf)
 
     on_bench(body)
 
@@ -218,107 +233,17 @@ def test_merge_walls_joins_collinear_segments_across_door_gaps(on_bench):
         bench.world(walls=[[(0.0, 0.0), (3.0, 0.0)], [(8.0, 0.0), (4.0, 0.0)], [(20.0, 0.0), (25.0, 0.0)], [(0.0, 0.0), (0.0, 2.0)], [(0.0, 9.0), (0.0, 5.0)], [(0.0, 0.0), (3.0, 3.0)]])
         tm = bench.mode()
         assert tm.merge_walls(2.0) == ([(0.0, 0.0, 8.0), (0.0, 20.0, 25.0)], [(0.0, 0.0, 2.0), (0.0, 5.0, 9.0)])
-        assert tm.merge_walls([4.0]) == ([(0.0, 0.0, 8.0), (0.0, 20.0, 25.0)], [(0.0, 0.0, 9.0)])
-        assert tm.merge_walls([]) == tm.merge_walls(2.0)
+        assert tm.merge_walls(4.0) == ([(0.0, 0.0, 8.0), (0.0, 20.0, 25.0)], [(0.0, 0.0, 9.0)])
+        assert tm.merge_walls() == tm.merge_walls(2.0)
 
     on_bench(body)
 
 
-def test_room_search_needs_a_covering_top_wall_and_both_side_walls(on_bench):
-    async def body(bench: Bench):
-        bench.world()
-        tm = bench.mode()
-        horizontal = [(0.0, 0.0, 20.0), (10.0, 0.0, 20.0), (2.0, 2.0, 6.0), (5.0, 2.0, 6.0)]
-        vertical = [(0.0, 0.0, 10.0), (20.0, 10.0, 0.0), (2.0, 2.0, 3.0), (2.0, 4.0, 5.0), (6.0, 2.0, 5.0)]
-        rooms = tm.find_room_polygons(horizontal, vertical, door_threshold=2.0)
-        assert rooms == [[(0.0, 0.0), (20.0, 0.0), (20.0, 10.0), (0.0, 10.0)], [(2.0, 2.0), (6.0, 2.0), (6.0, 5.0), (2.0, 5.0)]]
-        assert tm.find_room_polygons(horizontal, [v for v in vertical if v[0] != 6.0], door_threshold=2.0) == rooms[:1]
-        assert tm.filter_world_rooms(rooms, 0.0, 20.0, 0.0, 10.0) == rooms[1:]
-        assert tm.filter_world_bounds(rooms, 0.0, 20.0, 0.0, 10.0) == rooms[1:]
-        assert tm.find_room_polygons([*horizontal, (5.0, 1.0, 7.0)], vertical, door_threshold=2.0) == rooms
-
-    on_bench(body)
-
-
-def test_vertical_coverage_tolerates_gaps_up_to_the_door_width(on_bench):
-    async def body(bench: Bench):
-        bench.world()
-        tm = bench.mode()
-        assert tm.check_vertical_coverage([(2.5, 5.0), (0.0, 2.0)], 0.0, 5.0, 1.0)
-        assert not tm.check_vertical_coverage([(0.0, 2.0), (4.0, 5.0)], 0.0, 5.0, 1.0)
-        assert not tm.check_vertical_coverage([(0.0, 2.0), (2.0, 3.0)], 0.0, 5.0, 1.0)
-        assert not tm.check_vertical_coverage([], 0.0, 5.0, 1.0)
-        assert tm.check_vertical_coverage([], 5.0, 5.0, 1.0)
-        assert not tm.check_vertical_coverage([(3.0, 9.0)], 0.0, 5.0, 2.0)
-
-    on_bench(body)
-
-
-def test_room_helpers_compare_and_filter_rectangles(on_bench):
-    async def body(bench: Bench):
-        bench.world()
-        tm = bench.mode()
-        room = [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)]
-        assert tm.is_duplicate(list(reversed(room)), [room])
-        assert not tm.is_duplicate(room, [[(0.0, 0.0), (4.0, 0.0), (4.0, 2.0), (0.0, 2.0)]])
-        assert tm.filter_rooms([room, [(0.0, 0.0), (2.0, 0.0), (2.0, 5.0), (0.0, 5.0)], [(0.0, 0.0), (0.0, 0.0), (0.0, 20.0), (0.0, 20.0)]]) == [room]
-        assert tm._is_room_inside([(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 2.0)], room)
-        assert not tm._is_room_inside([(1.0, 1.0), (5.0, 1.0), (5.0, 2.0), (1.0, 2.0)], room)
-        assert tm.find_matching_vertical({2.0: [(0.0, 5.0), (6.0, 9.0)]}, 2.0, 7.0) == [(6.0, 9.0)]
-        assert tm.find_matching_vertical({}, 2.0, 7.0) == []
-        assert tm.has_matching_top_wall({5.0: [(1.0, 7.0)]}, 0.0, 8.0, 5.0)
-        assert not tm.has_matching_top_wall({5.0: [(1.0, 7.0)]}, 2.0, 6.0, 5.0)
-
-    on_bench(body)
-
-
-def test_region_checks_index_the_grid_in_whole_meters(on_bench):
-    async def body(bench: Bench):
-        bench.world()
-        tm = bench.mode()
-        grid = np.zeros((10, 10), dtype=np.uint8)
-        assert tm._is_region_free(grid, 5.0, 5.0, 2.0, 2.0)
-        assert not tm._is_region_free(grid, 1.0, 5.0, 2.0, 2.0, margin=1.0)
-        assert not tm._is_region_free(grid, 5.0, 9.0, 2.0, 2.0)
-        tm._mark_region_occupied(grid, 5.0, 5.0, 2.0, 2.0)
-        assert np.argwhere(grid == 1).tolist() == [[4, 4], [4, 5], [5, 4], [5, 5]]
-        assert not tm._is_region_free(grid, 5.0, 5.0, 2.0, 2.0)
-        tm._mark_region_occupied(grid, 0.0, 0.0, 2.0, 2.0)
-        assert int(grid.sum()) == 4
-
-    on_bench(body)
-
-
-def test_room_visualization_draws_into_test_png(on_bench, tmp_path):
-    pytest.importorskip("matplotlib")
-
-    async def body(bench: Bench):
-        from task_generator.shared import Position, Wall
-
-        bench.world()
-        tm = bench.mode()
-        walls = [Wall(start=Position(0.0, 0.0), end=Position(4.0, 0.0))]
-        room = [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)]
-        cwd = os.getcwd()
-        os.chdir(tmp_path)
-        try:
-            tm.visualize_rooms(walls, [room], {"x_min": 0.0, "x_max": 4.0, "y_min": 0.0, "y_max": 3.0})
-            assert (tmp_path / "test.png").read_bytes().startswith(b"\x89PNG")
-            (tmp_path / "test.png").unlink()
-            tm.visualize_rooms(walls, [room])
-            assert (tmp_path / "test.png").is_file()
-        finally:
-            os.chdir(cwd)
-
-    on_bench(body)
-
-
-@pytest.mark.xfail(strict=True, reason="environment obstacle mode writes its placements into the world map occupancy")
 def test_parsing_an_environment_leaves_the_world_map_untouched(on_bench):
     async def body(bench: Bench):
         bench.world(zones={"office": OFFICE})
         before = bench.ctx.world_manager.map_for_floor().occupancy.grid.copy()
-        tm = bench.mode([{"name": "box", "size": [1, 1], "margin": 1, "entities": {"static": [{"position": [0.0, 0.0, 0.0], "model": "box"}]}}])
+        tm = bench.mode([BOX_GROUP])
         assert len((await tm.reset(seed=0))[0]) == 6
         after = bench.ctx.world_manager.map_for_floor().occupancy.grid
         assert sorted({int(value) for value in after[after != before]}) == []
@@ -326,11 +251,117 @@ def test_parsing_an_environment_leaves_the_world_map_untouched(on_bench):
     on_bench(body)
 
 
-@pytest.mark.xfail(strict=True, reason="environment obstacle mode finds no room whose bottom wall is shared with a wider wall")
 def test_wall_rooms_split_by_a_divider_are_both_found(on_bench):
     async def body(bench: Bench):
         bench.world(walls=[OUTER_BOX, [(10.0, 0.0), (10.0, 10.0)]])
         rooms = bench.mode()._create_rooms_from_walls()
-        assert sorted(map(sorted, rooms)) == [[(0.0, 0.0), (0.0, 10.0), (10.0, 0.0), (10.0, 10.0)], [(10.0, 0.0), (10.0, 10.0), (20.0, 0.0), (20.0, 10.0)]]
+        assert sorted(_corners(room) for room in rooms) == [LEFT_HALF, RIGHT_HALF]
+
+    on_bench(body)
+
+
+def test_a_plain_wall_box_is_one_room(on_bench):
+    async def body(bench: Bench):
+        bench.world(walls=[OUTER_BOX])
+        tm = bench.mode([BOX_GROUP])
+        assert [_corners(room) for room in tm._create_rooms_from_walls()] == [[(0.0, 0.0), (0.0, 10.0), (20.0, 0.0), (20.0, 10.0)]]
+        static, _ = await tm.reset(seed=0)
+        assert sorted(_xy(entity) for entity in static) == pytest.approx(sorted((x, y) for x in range(1, 20, 2) for y in range(1, 10, 2)))
+
+    on_bench(body)
+
+
+def test_wall_rooms_close_across_door_gaps_up_to_the_threshold(on_bench):
+    async def body(bench: Bench):
+        bench.world(walls=[[(4.0, 0.0), (0.0, 0.0), (0.0, 10.0), (20.0, 10.0), (20.0, 0.0), (5.0, 0.0)], [(10.0, 0.0), (10.0, 4.0)], [(10.0, 5.0), (10.0, 10.0)]])
+        assert sorted(_corners(room) for room in bench.mode()._create_rooms_from_walls()) == [LEFT_HALF, RIGHT_HALF]
+        bench.world(walls=[[(4.0, 0.0), (0.0, 0.0), (0.0, 10.0), (20.0, 10.0), (20.0, 0.0), (9.0, 0.0)], [(10.0, 0.0), (10.0, 10.0)]])
+        assert [_corners(room) for room in bench.mode()._create_rooms_from_walls()] == [RIGHT_HALF]
+
+    on_bench(body)
+
+
+def test_non_axis_aligned_walls_bound_rooms(on_bench):
+    async def body(bench: Bench):
+        bench.world(walls=[[(0.0, 0.0), (4.0, 0.0), (0.0, 4.0), (0.0, 0.0)]])
+        assert [_corners(room) for room in bench.mode()._create_rooms_from_walls()] == [[(0.0, 0.0), (0.0, 4.0), (4.0, 0.0)]]
+
+    on_bench(body)
+
+
+def test_tiles_whose_group_footprint_is_occupied_in_the_map_are_skipped(on_bench):
+    async def body(bench: Bench):
+        bench.world(zones={"office": OFFICE}, occupied=[np.s_[57:59, 5:7]])
+        static, _ = await bench.mode([BOX_GROUP]).reset(seed=0)
+        assert [_xy(entity) for entity in static] == pytest.approx([tile for tile in OFFICE_TILES if tile != (3.0, 1.0)])
+
+    on_bench(body)
+
+
+def test_an_occupied_cell_in_the_margin_alone_does_not_block_a_tile(on_bench):
+    async def body(bench: Bench):
+        bench.world(zones={"office": OFFICE}, occupied=[np.s_[57:58, 4:5]])
+        static, _ = await bench.mode([BOX_GROUP]).reset(seed=0)
+        assert [_xy(entity) for entity in static] == pytest.approx(OFFICE_TILES)
+
+    on_bench(body)
+
+
+def test_map_cells_follow_the_map_resolution_origin_and_row_flip(on_bench):
+    async def body(bench: Bench):
+        bench.world(zones={"office": OFFICE}, shape=(40, 48), origin=(-2.0, -1.0), resolution=0.25, occupied=[np.s_[23:24, 20:21]])
+        static, _ = await bench.mode([BOX_GROUP]).reset(seed=0)
+        assert [_xy(entity) for entity in static] == pytest.approx([tile for tile in OFFICE_TILES if tile != (3.0, 3.0)])
+
+    on_bench(body)
+
+
+def test_rotated_groups_are_checked_against_their_turned_footprint(on_bench):
+    async def body(bench: Bench):
+        bench.world(zones={"lab": LAB})
+        tm = bench.mode([{"name": "bar", "size": [1, 3], "margin": 1, "rotations": [90], "entities": {"static": [{"position": [0.0, 0.0, 0.0], "model": "bar"}]}}])
+        static, _ = await tm.reset(seed=0)
+        assert [entity.name for entity in static] == ["G_bar_0_0_bar_0", "G_bar_0_1_bar_0"]
+        assert [_xy(entity) for entity in static] == pytest.approx([(11.0, 2.0), (15.0, 2.0)])
+
+    on_bench(body)
+
+
+def test_placed_groups_block_later_rooms_without_touching_the_map(on_bench):
+    async def body(bench: Bench):
+        from task_generator.manager.world_manager.utils import WorldOccupancy
+
+        bench.world(zones={"office": OFFICE, "office_copy": OFFICE})
+        static, _ = await bench.mode([BOX_GROUP]).reset(seed=0)
+        assert [_xy(entity) for entity in static] == pytest.approx(OFFICE_TILES)
+        assert {entity.name.split("_")[2] for entity in static} == {"0"}
+        assert bool(WorldOccupancy.empty(bench.ctx.world_manager.map_for_floor().occupancy.grid).all())
+
+    on_bench(body)
+
+
+def test_region_checks_and_marks_use_the_grid_frame(on_bench):
+    async def body(bench: Bench):
+        from task_generator.manager.world_manager.utils import GridFrame, WorldOccupancy
+        from task_generator.shared import Position
+
+        bench.world()
+        tm = bench.mode()
+        frame = GridFrame(shape=(8, 12), origin=Position(x=-1.0, y=2.0), resolution=0.5)
+        grid = np.full((8, 12), WorldOccupancy.EMPTY, dtype=np.uint8)
+        assert tm._is_region_free(grid, frame, 1.0, 4.0, 1.0, 1.0)
+        assert not tm._is_region_free(grid, frame, -1.0, 4.0, 1.0, 1.0)
+        assert not tm._is_region_free(grid, frame, 1.0, 2.2, 1.0, 1.0)
+        assert not tm._is_region_free(grid, frame, 4.8, 4.0, 1.0, 1.0)
+        assert not tm._is_region_free(grid, frame, 1.0, 5.8, 1.0, 1.0)
+        tm._mark_region_occupied(grid, frame, 1.0, 4.0, 2.0, 1.0, margin=1.0, rotation_deg=90.0)
+        expected = np.zeros((8, 12), dtype=bool)
+        expected[1:7, 2:6] = True
+        assert WorldOccupancy.full(grid).tolist() == expected.tolist()
+        assert not tm._is_region_free(grid, frame, 1.0, 4.0, 1.0, 1.0)
+        assert tm._is_region_free(grid, frame, 3.0, 4.0, 1.0, 1.0)
+        tm._mark_region_occupied(grid, frame, -1.0, 2.0, 1.0, 1.0)
+        expected[7, 0] = True
+        assert WorldOccupancy.full(grid).tolist() == expected.tolist()
 
     on_bench(body)
