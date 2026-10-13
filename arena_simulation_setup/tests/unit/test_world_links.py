@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from pathlib import Path
 
 import pytest
 import yaml
-from arena_simulation_setup.tree.World import WorldView, parse_world
+from arena_simulation_setup.tree.World import WorldIdentifier, WorldView, parse_world
 from arena_simulation_setup.tree.World.parse import WorldFormatError
+from arena_simulation_setup.tree import SimplePathResolver
+from arena_simulation_setup.tree.World.Scenario import ScenarioView
+from arena_simulation_setup.tree.World.view import ComposedResolver, composite_parts
 
 
 def _floor(level_id: str, elevator: str, destination: str, zone: str) -> dict:
@@ -249,3 +254,161 @@ def test_a_linked_floor_kg_edit_marks_the_world_changed(annotated_house: Path) -
     kg = annotated_house / 'floors' / 'ground' / 'kg.yaml'
     os.utime(kg, (loaded + 5.0, loaded + 5.0))
     assert view.mtime(world.sources) == loaded + 5.0
+
+
+def _composed(root: Path, name: str) -> WorldView:
+    path = asyncio.run(ComposedResolver(root).resolve(WorldIdentifier(name)))
+    assert path is not None
+    return WorldView(path)
+
+
+def test_a_comma_list_splits_outside_the_level_filters() -> None:
+    assert composite_parts('hospital_2[0,1], office_1') == ['hospital_2[0,1]', 'office_1']
+    assert composite_parts('hospital_2[0,1]') == ['hospital_2[0,1]']
+    assert WorldIdentifier.parse('hospital_2[1],office_1') == ('hospital_2[1],office_1', None)
+    assert WorldIdentifier.parse('hospital_2[0,1]') == ('hospital_2', {'0', '1'})
+
+
+def test_a_single_world_is_not_composed(tmp_path: Path) -> None:
+    assert asyncio.run(ComposedResolver(tmp_path).resolve(WorldIdentifier('hospital_1'))) is None
+    assert asyncio.run(ComposedResolver(tmp_path).resolve(WorldIdentifier('hospital_2[1]'))) is None
+
+
+def test_a_comma_list_stacks_the_worlds_as_levels_of_one_world(tmp_path: Path) -> None:
+    view = _composed(tmp_path, 'hospital_1,office_1')
+    assert view.path == tmp_path / 'hospital_1,office_1'
+    assert yaml.safe_load(view.world_path.read_text(encoding='utf-8'))['levels'] == [
+        {'id': '0', 'from': 'hospital_1:0', 'prefix': 'hospital_1_'},
+        {'id': '1', 'from': 'office_1:0', 'prefix': 'office_1_'},
+    ]
+    world = view.load()
+    assert world.level_ids == ['0', '1']
+    assert all(zone.name.startswith('hospital_1_') for zone in world.levels['0'].zones)
+    assert all(zone.name.startswith('office_1_') for zone in world.levels['1'].zones)
+    assert [elevator for level in world.all_levels for elevator in level.elevators] == []
+
+
+def test_a_world_listed_twice_gets_a_second_prefix(tmp_path: Path) -> None:
+    world = _composed(tmp_path, 'map_empty,map_empty').load()
+    assert sorted(elevator.name for elevator in world.levels['1'].elevators) == ['map_empty_2_elevator_ground', 'map_empty_2_elevator_top']
+    assert world.levels['1'].elevators[0].destinations == ['map_empty_2_elevator_top']
+
+
+def test_level_filters_pick_levels_and_free_elevators_ride_between_them(tmp_path: Path) -> None:
+    world = _composed(tmp_path, 'hospital_2[0],three_storied_residential[1]').load()
+    assert world.level_ids == ['0', '1']
+    cabins = {elevator.name: elevator.destinations for level in world.all_levels for elevator in level.elevators}
+    assert cabins == {'hospital_2_elevator_ground': ['three_storied_residential_1_elevator'], 'three_storied_residential_1_elevator': ['hospital_2_elevator_ground']}
+
+
+def test_a_whole_multi_level_world_keeps_its_own_elevators(tmp_path: Path) -> None:
+    world = _composed(tmp_path, 'hospital_2,office_1').load()
+    assert world.level_ids == ['0', '1', '2']
+    cabins = {elevator.name: elevator.destinations for level in world.all_levels for elevator in level.elevators}
+    assert cabins == {'hospital_2_elevator_ground': ['hospital_2_elevator_top'], 'hospital_2_elevator_top': ['hospital_2_elevator_ground']}
+
+
+def test_an_unknown_level_of_a_listed_world_is_named(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match=r"world 'hospital_2' has no level 7, only 0, 1"):
+        _composed(tmp_path, 'hospital_2[7],office_1')
+
+
+def test_composing_again_keeps_the_written_world(tmp_path: Path) -> None:
+    view = _composed(tmp_path, 'hospital_1,office_1')
+    stamp = view.world_path.stat().st_mtime_ns
+    assert _composed(tmp_path, 'hospital_1,office_1').world_path.stat().st_mtime_ns == stamp
+
+
+def test_free_elevators_of_linked_levels_ride_in_a_ring(tmp_path: Path) -> None:
+    for i, name in enumerate('abc'):
+        _write(tmp_path / name, _floor(str(i), f'lift_{name}', 'gone', f'hall_{name}'))
+    world = WorldView(_write(tmp_path / 'main', *({'id': str(i), 'from': f'../{name}'} for i, name in enumerate('abc')))).load()
+    cabins = {elevator.name: elevator.destinations for level in world.all_levels for elevator in level.elevators}
+    assert cabins == {'lift_a': ['lift_b'], 'lift_b': ['lift_c'], 'lift_c': ['lift_a']}
+
+
+class _Collect(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def test_a_level_with_two_free_elevators_stays_out_of_the_ring(tmp_path: Path) -> None:
+    _write(tmp_path / 'a', _floor('0', 'lift_a', 'gone', 'hall_a'))
+    _write(tmp_path / 'b', _floor('1', 'lift_b', 'gone', 'hall_b'))
+    twin = _floor('2', 'lift_c', 'gone', 'hall_c')
+    twin['elevators'].append({'name': 'lift_d', 'position': [8.0, 0.0], 'door_side': '+y', 'destinations': ['gone']})
+    _write(tmp_path / 'c', twin)
+    logger = logging.getLogger('arena_simulation_setup.tree.World.view')
+    collect = _Collect()
+    logger.addHandler(collect)
+    try:
+        world = WorldView(_write(tmp_path / 'main', *({'id': str(i), 'from': f'../{name}'} for i, name in enumerate('abc')))).load()
+    finally:
+        logger.removeHandler(collect)
+    cabins = {elevator.name: elevator.destinations for level in world.all_levels for elevator in level.elevators}
+    assert cabins == {'lift_a': ['lift_b'], 'lift_b': ['lift_a'], 'lift_c': [], 'lift_d': []}
+    assert any("elevators ['lift_c', 'lift_d'] have no destinations" in message for message in collect.messages)
+
+
+def test_a_composite_follows_a_level_added_to_a_listed_world(tmp_path: Path) -> None:
+    worlds = tmp_path / 'worlds'
+    _write(worlds / 'stack_a', _floor('0', 'lift_a', 'lift_a', 'hall_a'))
+    _write(worlds / 'stack_b', _floor('0', 'lift_b', 'lift_b', 'hall_b'))
+    resolver = SimplePathResolver(WorldIdentifier, worlds)
+    WorldIdentifier.use(resolver)
+    try:
+        composer = ComposedResolver(tmp_path / 'composed')
+        identifier = WorldIdentifier('stack_a,stack_b')
+        first = asyncio.run(composer.resolve(identifier))
+        assert first is not None
+        assert WorldView(first).load().level_ids == ['0', '1']
+        stamp = (first / 'world.yaml').stat().st_mtime_ns
+        assert asyncio.run(composer.resolve(identifier)) == first
+        assert (first / 'world.yaml').stat().st_mtime_ns == stamp
+        grown = _write(worlds / 'stack_b', _floor('0', 'lift_b', 'lift_b', 'hall_b'), _floor('1', 'lift_c', 'lift_c', 'hall_c'))
+        later = (grown / 'world.yaml').stat().st_mtime + 5.0
+        os.utime(grown / 'world.yaml', (later, later))
+        assert asyncio.run(composer.resolve(identifier)) == first
+        assert WorldView(first).load().level_ids == ['0', '1', '2']
+    finally:
+        WorldIdentifier._resolvers.remove(resolver)
+
+
+def _custom_world(tmp_path: Path, start: str) -> Path:
+    root = _write(tmp_path / 'custom_world', {'id': '0', 'from': 'hospital_1', 'prefix': 'hospital_1_'}, {'id': '1', 'from': 'office_1:0', 'prefix': 'office_1_'})
+    scenario = root / 'scenarios' / 'cross'
+    scenario.mkdir(parents=True)
+    robot = {'start': start, 'goal_level': '1', 'phases': [{'goto': 'office_1_cafeteria'}]}
+    (scenario / 'scenario.yaml').write_text(yaml.safe_dump({'format': 'arena-scenario/2', 'robots': [robot]}), encoding='utf-8')
+    return root
+
+
+def test_a_scenario_on_a_linked_world_names_the_prefixed_zones(tmp_path: Path) -> None:
+    import numpy as np
+    import shapely
+
+    root = _custom_world(tmp_path, 'hospital_1_reception')
+    view = WorldView(root)
+    world = view.load()
+    assert world.level_ids == ['0', '1']
+    compacted = world.compact_world(origins=world.level_origins())
+    scenario = view.scenario('cross').resolve_sync().load(converter=compacted.zone_converter(np.random.default_rng(0)))
+    robot = scenario.robots[0]
+    reception = next(zone for zone in compacted.zones if zone.name == 'hospital_1_reception')
+    assert reception.shape().covers(shapely.Point(robot.start.position.x, robot.start.position.y))
+    assert robot.phases[0].target == 'office_1_cafeteria'
+    assert [identifier.name for identifier in view.identifiers(strict=True) if isinstance(identifier, WorldIdentifier)] == ['hospital_1', 'office_1']
+
+
+def test_an_unprefixed_zone_in_a_linked_world_scenario_is_an_error(tmp_path: Path) -> None:
+    import numpy as np
+
+    root = _custom_world(tmp_path, 'reception')
+    world = WorldView(root).load()
+    compacted = world.compact_world(origins=world.level_origins())
+    with pytest.raises(RuntimeError, match=r"robots\[0\]: could not parse .*'start': 'reception'"):
+        ScenarioView(root / 'scenarios' / 'cross').load(converter=compacted.zone_converter(np.random.default_rng(0)))

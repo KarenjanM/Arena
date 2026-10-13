@@ -145,6 +145,23 @@ after this world's own. Saving the world writes the links, not the levels
 they name. `arena asset push world` refuses a world whose `./` or `../` link
 leaves its folder, or that links a world only this machine has.
 
+A linked level cannot set the destinations of its elevators, so the
+destinations that leave the composed world are dropped and the linked levels
+whose elevators are then left without one ride between each other: every
+linked level with exactly one such cabin joins a ring in level order (two
+levels ride to each other, three as 0 to 1, 1 to 2, 2 to 0). A level with
+several such cabins stays out of the ring with a warning naming them.
+
+Any world name also takes a comma list, `world:=hospital_1,office_1`, which
+stacks the listed worlds as the levels of one world without writing a file:
+each level of each world links in order with ids from `0`, a level filter
+picks levels (`world:=hospital_2[0],three_storied_residential[1]`), and every
+name gets the world name as prefix (`hospital_1_`, a second listing of the
+same world `hospital_1_2_`). The composed world is written to
+`$ARENA_ASSETS_DIR/_composed/<list>/world.yaml` and loads like any linked
+world, the elevator ring included. It has no scenarios, the worlds' own
+scenarios name the unprefixed entities.
+
 ### Ceilings
 
 `ceiling:` on a zone is `false` for an open zone or a mapping of `height`

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import typing
 import warnings
 from collections.abc import Iterable, Iterator
@@ -10,7 +11,7 @@ import numpy as np
 import yaml
 from typing_extensions import Self
 
-from arena_simulation_setup import ASS_DIR
+from arena_simulation_setup import ARENA_ASSETS_DIR, ASS_DIR
 from arena_simulation_setup.tree import (
     WORLD_PROVIDERS,
     FallbackResolver,
@@ -18,12 +19,13 @@ from arena_simulation_setup.tree import (
     NetResolver,
     PathView,
     References,
+    ResolverBase,
     SimplePathResolver,
 )
 
 from .legacy import is_legacy, upgrade
 from .Map import Map
-from .model import Level, World
+from .model import FORMAT, Level, World
 from .parse import parse_world
 from .Scenario import ScenarioView
 from .write import to_yaml, write_world
@@ -184,6 +186,7 @@ class WorldView(PathView):
         world = self._parse((self.path.resolve(),), sources, data, kg)
         world.sources = sources
         _drop_foreign_destinations(world)
+        _ring_free_cabins(world)
         all_ids = set(world.levels)
         if level_filter is not None:
             world.levels = {level_id: level for level_id, level in world.levels.items() if level_id in level_filter}
@@ -343,6 +346,25 @@ def _drop_foreign_destinations(world: World) -> None:
                 elevator.destinations = [name for name in elevator.destinations if name in cabins]
 
 
+def _ring_free_cabins(world: World) -> None:
+    """Connect the linked levels that each have exactly one cabin without destinations, in level order, the last back to the first."""
+    ring: list[tuple[str, str]] = []
+    for level in world.all_levels:
+        if not level.source:
+            continue
+        free = [elevator for elevator in level.elevators if not elevator.destinations]
+        if len(free) == 1:
+            ring.append((level.id, free[0].name))
+        elif free:
+            logger.warning('level %s from %s: elevators %s have no destinations, the ring takes a level with exactly one', level.id, level.source, [elevator.name for elevator in free])
+    if len(ring) < 2:
+        return
+    cabins = {elevator.name: elevator for level in world.all_levels for elevator in level.elevators}
+    for (_, name), (_, target) in zip(ring, ring[1:] + ring[:1], strict=True):
+        cabins[name].destinations = [target]
+    logger.info('linked levels %s ride their free elevators %s in a ring', [level_id for level_id, _ in ring], [name for _, name in ring])
+
+
 def check_kg(world: World, scene: 'Scene') -> None:
     """Raise when the KG names something the world does not have or carries geometry the world owns."""
     from arena_simulation_setup.kg import check_against_world
@@ -383,12 +405,90 @@ class WorldIdentifier(Identifier[WorldView]):
 
         ``'myworld'`` returns ``('myworld', None)``.
         ``'myworld[1,3]'`` returns ``('myworld', {'1', '3'})``.
+        A composite ``'a,b[1]'`` returns ``('a,b[1]', None)``, its parts carry their own filters.
         """
-        if '[' not in raw:
+        if '[' not in raw or len(composite_parts(raw)) > 1:
             return raw, None
         name, _, rest = raw.partition('[')
         ids = {s.strip() for s in rest.rstrip(']').split(',') if s.strip()}
         return name, ids or None
+
+
+def composite_parts(raw: str) -> list[str]:
+    """The worlds of a comma list, commas inside a level filter kept."""
+    parts = ['']
+    depth = 0
+    for char in raw:
+        depth += {'[': 1, ']': -1}.get(char, 0)
+        if char == ',' and depth == 0:
+            parts.append('')
+        else:
+            parts[-1] += char
+    return [part.strip() for part in parts]
+
+
+async def composite_world(raw: str) -> tuple[dict, list[WorldView]]:
+    """The format 2 mapping of a comma list of worlds, their levels linked in order with ids from 0, each world's names prefixed with the world name, and the listed worlds."""
+    levels: list[dict] = []
+    views: list[WorldView] = []
+    seen: dict[str, int] = {}
+    for part in composite_parts(raw):
+        name, wanted = WorldIdentifier.parse(part)
+        if not name:
+            raise ValueError(f'world {raw!r} has an empty entry, write it as <world>[,<world>...]')
+        view = await WorldIdentifier(name).resolve()
+        views.append(view)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            data, _, _ = view.read()
+        ids = [str(level['id']) for level in data.get('levels') or []]
+        if wanted is not None:
+            missing = sorted(wanted - set(ids))
+            if missing:
+                raise ValueError(f'world {name!r} has no level {", ".join(missing)}, only {", ".join(ids)}')
+            ids = [level_id for level_id in ids if level_id in wanted]
+        seen[name] = seen.get(name, 0) + 1
+        stem = re.sub(r'[^A-Za-z0-9_]', '_', name)
+        prefix = f'{stem}_' if seen[name] == 1 else f'{stem}_{seen[name]}_'
+        levels += [{'id': str(len(levels) + i), 'from': f'{name}:{level_id}', 'prefix': prefix} for i, level_id in enumerate(ids)]
+    return {'format': FORMAT, 'levels': levels}, views
+
+
+def _stamp(views: list[WorldView]) -> list[tuple[Path, float, float]]:
+    return [(view.path, view.mtime(), view.path.stat().st_mtime) for view in views]
+
+
+class ComposedResolver(ResolverBase[WorldIdentifier]):
+    """Writes a world named as a comma list of worlds to `root`/<name>/world.yaml, a world of linked levels, and resolves it there, rewritten when a listed world's files or folder change."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(WorldIdentifier)
+        self._root = root
+        self._parts: dict[WorldIdentifier, tuple[list[WorldView], list[tuple[Path, float, float]]]] = {}
+
+    async def resolve(self, identifier: WorldIdentifier) -> Path | None:
+        if len(composite_parts(identifier.name)) < 2:
+            return None
+        if identifier in self._cache and identifier in self._parts:
+            views, stamp = self._parts[identifier]
+            if _stamp(views) == stamp:
+                return self._cache[identifier]
+        data, views = await composite_world(identifier.name)
+        target = self._root / identifier.name
+        text = to_yaml(data)
+        path = target / 'world.yaml'
+        if not path.is_file() or path.read_text(encoding='utf-8') != text:
+            target.mkdir(parents=True, exist_ok=True)
+            partial = target / f'world.yaml.{os.getpid()}.partial'
+            partial.write_text(text, encoding='utf-8')
+            os.replace(partial, path)
+        self._cache[identifier] = target
+        self._parts[identifier] = (views, _stamp(views))
+        return target
+
+    def invalidate(self) -> None:
+        super().invalidate()
+        self._parts.clear()
 
 
 def _world_search_roots() -> list[Path]:
@@ -396,6 +496,7 @@ def _world_search_roots() -> list[Path]:
     return [Path(p) for p in os.environ.get('ARENA_WORLD_PATH', '').split(':') if p]
 
 
+WorldIdentifier.use(ComposedResolver(ARENA_ASSETS_DIR / '_composed'))
 WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _world_search_roots()))
 WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
 WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))
