@@ -1,25 +1,4 @@
 repositories:
-  # build deps
-  deps/pcl_msgs:
-    type: git
-    url: https://github.com/ros-perception/pcl_msgs.git
-    version: ros2
-  deps/actuator_msgs:
-    type: git
-    url: https://github.com/rudislabs/actuator_msgs.git
-  deps/gps_umd:
-    type: git
-    url: https://github.com/swri-robotics/gps_umd.git
-    version: ros2-devel
-  deps/vision_msgs:
-    type: git
-    url: https://github.com/ros-perception/vision_msgs.git
-    version: jazzy
-  deps/vision_opencv:
-    type: git
-    url: https://github.com/ros-perception/vision_opencv.git
-    version: humble
-
   # internal python toolchains
   deps/ament_cmake_venv:
     type: git
@@ -29,12 +8,6 @@ repositories:
     type: git
     url: https://github.com/voshch/ament_cmake_venv_uv
     version: jazzy
-
-  # AAAAAAAA WHY IS #118 NOT VENDORED
-  deps/topic_based_hardware_interfaces:
-    type: git
-    url: https://github.com/voshch/topic_based_hardware_interfaces
-    version: main
 
   # upstream PR #28 (slider int() cast) stranded on rolling, never backported
   deps/rqt_robot_steering:
@@ -71,11 +44,6 @@ repositories:
   deps/nav2/nav2_mask_overlay_layer:
     type: git
     url: https://github.com/voshch/nav2_mask_overlay_layer
-    version: jazzy
-  
-  deps/slam_toolbox:
-    type: git
-    url: https://github.com/SteveMacenski/slam_toolbox.git
     version: jazzy
 
   deps/hunav/hunav_sim:
