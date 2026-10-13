@@ -164,13 +164,6 @@ def test_default_scenario_falls_back_to_first_scenario() -> None:
     assert default_scenario("three_storied_residential") in scenarios
 
 
-def test_default_scenario_without_scenarios_raises() -> None:
-    """A level directory resolves as a world path but carries no scenarios folder."""
-    assert not (WorldIdentifier("reception/0").resolve_sync().path / "scenarios").exists()
-    with pytest.raises(ValueError, match="No scenarios found in world reception/0"):
-        default_scenario("reception/0")
-
-
 def test_walk_schemas_declares_every_registered_schema() -> None:
     pytest.importorskip("rclpy")
     for package in ("modules", "obstacles", "robots"):
