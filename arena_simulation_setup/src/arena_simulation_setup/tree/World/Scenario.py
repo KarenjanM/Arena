@@ -170,7 +170,7 @@ class ScenarioView(PathView):
             return
         yield from referenced_clips(agent)
         agent_type = agent.get('agent_type')
-        if isinstance(agent_type, str) and agent_type.endswith(('.yaml', '.yml')):
+        if isinstance(agent_type, str) and ('/' in agent_type or agent_type.endswith('.yaml')):
             with open(self.path / agent_type) as f:
                 yield from referenced_clips(yaml.safe_load(f))
 
