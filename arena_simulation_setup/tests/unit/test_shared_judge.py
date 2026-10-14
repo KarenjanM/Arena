@@ -434,6 +434,19 @@ def test_wall_grid_of_level_leaves_doors_open():
     assert grid.clear((1.0, 1.5), (3.0, 1.5))
 
 
+def test_wall_grid_of_level_blocks_diagonal_walls_at_every_crossing():
+    level = Level(
+        zones=[Zone(name="room", polygon=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)])],
+        walls=[WallPath(path=[Position(0, 0), Position(4, 4)])],
+    )
+    grid = WallGrid.of_level(level, resolution=0.05)
+    for k in range(40):
+        y = 0.5 + k * 0.07
+        assert not grid.clear((0.2, y + 1.0), (3.5, y - 1.0))
+        assert not grid.clear((0.3, y + 0.013), (3.7, y + 0.013))
+    assert grid.clear((0.5, 3.0), (1.0, 3.5))
+
+
 def test_wall_grid_of_level_defaults_to_the_shared_resolution():
     level = Level(
         zones=[Zone(name="room", polygon=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)])],

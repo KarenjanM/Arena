@@ -49,9 +49,15 @@ class WallGrid:
 
     @classmethod
     def of_level(cls, level: Level, resolution: float = WALL_GRID_RESOLUTION_M) -> WallGrid:
-        """The level's walls rasterized at `resolution`, doors and elevator cabins left open."""
+        """The level's walls rasterized at `resolution` and thickened by one cell, doors and elevator cabins left open."""
         grid, origin = level.render_grid(resolution=resolution)
-        return cls(cells=grid < 128, origin=(float(origin[0]), float(origin[1])), resolution=resolution)
+        walls = grid < 128
+        cells = walls.copy()
+        cells[1:, :] |= walls[:-1, :]
+        cells[:-1, :] |= walls[1:, :]
+        cells[:, 1:] |= walls[:, :-1]
+        cells[:, :-1] |= walls[:, 1:]
+        return cls(cells=cells, origin=(float(origin[0]), float(origin[1])), resolution=resolution)
 
     def cell(self, x: float, y: float) -> tuple[int, int]:
         rows, cols = self.cells.shape
@@ -61,7 +67,7 @@ class WallGrid:
 
     def clear(self, a: tuple[float, float], b: tuple[float, float]) -> bool:
         """Whether no wall cell lies on the segment from `a` to `b`."""
-        steps = max(2, int(math.hypot(b[0] - a[0], b[1] - a[1]) / self.resolution) + 1)
+        steps = int(math.hypot(b[0] - a[0], b[1] - a[1]) / self.resolution) + 2
         for i in range(steps):
             f = i / (steps - 1)
             row, col = self.cell(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
