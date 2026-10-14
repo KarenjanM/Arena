@@ -37,12 +37,12 @@ class AnimationClip:
     def fps(self) -> float:
         return float(self.meta.get('fps', 20.0))
 
-    def frames(self) -> list[dict]:
-        """Per-frame dicts in the shape the players consume."""
+    def frames(self, joints: Sequence[str] = ()) -> list[dict]:
+        """Per-frame dicts in the shape the players consume, `joints` the clip lacks filled with 0.0."""
         return [
             {
                 't': float(self.t[k]),
-                'angles': dict(zip(self.joint_names, self.angles[k].tolist(), strict=True)),
+                'angles': {**dict.fromkeys(joints, 0.0), **dict(zip(self.joint_names, self.angles[k].tolist(), strict=True))},
                 'root_xy_yaw': self.root_xy_yaw[k].tolist(),
                 'animation_state': int(self.animation_state[k]),
             }

@@ -194,8 +194,7 @@ class AnimationManager:
 
     def _from_clip(self, name: str, clip: AnimationClip, loop: bool | None) -> Animation:
         meta = clip.meta
-        # recordings that predate a wire DOF (the wrists) carry it as 0.0
-        frames = [{**frame, "angles": {**dict.fromkeys(JOINT_NAMES, 0.0), **frame["angles"]}} for frame in clip.frames()]
+        frames = clip.frames(JOINT_NAMES)
         n_frames = len(frames)
         is_loop = loop if loop is not None else bool(meta.get("loop", name not in self.one_shot_animations))
         is_reverse = bool(meta.get("reverse", False))
