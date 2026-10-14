@@ -287,6 +287,49 @@ class YAMLRetrieveSubstitution(launch.Substitution):
         return str(obj)
 
 
+class YAMLSelectSubstitution(YAMLFileSubstitution):
+    """Mapping under the top-level `key` of `obj`, empty when absent."""
+
+    _obj: YAMLFileSubstitution
+    _key: list[launch.Substitution]
+
+    def __init__(
+        self,
+        obj: YAMLFileSubstitution,
+        key: launch.SomeSubstitutionsType,
+    ):
+        YAMLFileSubstitution.__init__(self, path=[], default={})
+        self._obj = obj
+        self._key = launch.utilities.normalize_to_list_of_substitutions(key)
+
+    def perform(self, context: launch.LaunchContext) -> str:
+        key = launch.utilities.perform_substitutions(context, self._key)
+        contents = self._obj.perform_load(context).get(key, {})
+        return YAMLFileSubstitution.from_dict(contents, substitute=False).perform(context)
+
+
+class YAMLDropSubstitution(YAMLFileSubstitution):
+    """`obj` without its top-level `key`."""
+
+    _obj: YAMLFileSubstitution
+    _key: list[launch.Substitution]
+
+    def __init__(
+        self,
+        obj: YAMLFileSubstitution,
+        key: launch.SomeSubstitutionsType,
+    ):
+        YAMLFileSubstitution.__init__(self, path=[], default={})
+        self._obj = obj
+        self._key = launch.utilities.normalize_to_list_of_substitutions(key)
+
+    def perform(self, context: launch.LaunchContext) -> str:
+        key = launch.utilities.perform_substitutions(context, self._key)
+        contents = self._obj.perform_load(context)
+        contents.pop(key, None)
+        return YAMLFileSubstitution.from_dict(contents, substitute=False).perform(context)
+
+
 class YAMLMergeSubstitution(launch.Substitution):
     _base: YAMLFileSubstitution
     _yamls: typing.Iterable[YAMLFileSubstitution]

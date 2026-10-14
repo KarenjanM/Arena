@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import attrs
-import numpy as np
 import rclpy
-import yaml
 
+from .clips import AssetClips, ClipSource, joint_mask
 from .gait import GaitGenerator
 from .profile import PoseProfile
 
@@ -17,6 +15,7 @@ JOINT_NAMES = GaitGenerator.JOINT_NAMES
 
 if TYPE_CHECKING:
     import rclpy.impl.rcutils_logger
+    from arena_simulation_setup.tree.assets.Animation import AnimationClip
     from builtin_interfaces.msg import Time
     from sensor_msgs.msg import JointState
 else:
@@ -24,9 +23,6 @@ else:
         from sensor_msgs.msg import JointState
     except ImportError:
         JointState = None  # type: ignore[assignment,misc]
-
-
-ANNOTATIONS_FILE = "annotations.yaml"  # per clip: loop (bool), joints (the ones the clip moves, see gestures/annotate.py)
 
 
 @attrs.define
@@ -39,9 +35,21 @@ class Animation:
     fps: float = 20.0
     loop_from: int = 0  # looping clips wrap back to this frame, so an intro plays once
     joints: tuple[str, ...] = ()  # joints the clip moves, empty = all (canned clips carry this from annotations)
+    reverse: bool = False  # loop forward then backward
 
     def __len__(self) -> int:
         return len(self.frames)
+
+    @property
+    def cycle_frames(self) -> int:
+        """Frames in one loop cycle: a reverse clip plays out and back without repeating its end frames."""
+        return 2 * self.n_frames - 2 if self.reverse and self.n_frames > 1 else self.n_frames
+
+    def frame_index(self, position: int) -> int:
+        """Clip frame at a cycle position, folding the return leg of a reverse clip."""
+        cycle = self.cycle_frames
+        position %= cycle
+        return position if position < self.n_frames else cycle - position
 
     def __getitem__(self, index: int) -> dict:
         return self.frames[index]
@@ -114,26 +122,26 @@ class AnimationManager:
 
     def __init__(
         self,
-        animation_database_path: str | Path,
         logger: rclpy.impl.rcutils_logger.RcutilsLogger,
         fps: float = 20.0,
+        clips: ClipSource | None = None,
     ) -> None:
         """
         Args:
-            animation_database_path: path to animation database.
-            fps: playback rate of the source clip (MoMask/HumanML3D clips
-                are commonly 20 fps).
+            fps: playback rate of synthesized and transient clips (MoMask/HumanML3D clips
+                are commonly 20 fps), canned clips carry their own.
+            clips: where canned clips come from, default the Animation assets.
         """
         self.logger = logger
-        self.database_path = Path(animation_database_path)
-        assert self.database_path.is_dir(), f"Path does not exist {str(self.database_path.absolute())}"
         self._fps = fps
+        self._clips = AssetClips() if clips is None else clips
+        self._unavailable: set[str] = set()  # clip() already failed to load these
 
         self.animations: dict[str, Animation] = {}
         # Default one-shot animation list
         self.one_shot_animations = {"t-pose", "jump", "seated", "sit", "lie", "collapse_to_ground"}
 
-        self.cache_animations()
+        self.cache_animations([])
 
         # Core playhead tracking (per agent)
         self._playhead: dict[int, float] = {}
@@ -160,59 +168,60 @@ class AnimationManager:
         """
         self.state_to_animation_map[state] = anim_name
 
-    def cache_animations(self, animation_name: list[str] | None = None, loop_mapping: dict[str, bool] | None = None) -> None:
+    def cache_animations(self, animation_name: Sequence[str] | None = None, loop_mapping: dict[str, bool] | None = None) -> None:
         """
-        Load animations from database and cache them.
+        Load canned clips from the clip source and cache them.
 
         Args:
-            animation_name: List of animation names to load, default every .npy in the database.
-            loop_mapping: Loop override per clip, else annotations.yaml, else loop unless listed in one_shot_animations.
+            animation_name: Clips to load, default every clip the source has.
+            loop_mapping: Loop override per clip, else the clip's annotation, else loop unless listed in one_shot_animations.
         """
         if loop_mapping is None:
             loop_mapping = {}
 
-        annotations: dict[str, dict] = {}
-        annotations_path = self.database_path / ANNOTATIONS_FILE
-        if annotations_path.is_file():
-            with open(annotations_path) as f:
-                annotations = yaml.safe_load(f) or {}
-
-        if animation_name is None:
-            animation_name = [f.stem for f in self.database_path.glob("*.npy")]
-
         for name in self.USE_SYNTHESIS:
             self.animations[name] = Animation(name=name, frames=[], n_frames=0, duration=0.0, loop=True, fps=self._fps)
-            self.logger.info(f"Animation loaded (default, use systhesis): [{name}]")
 
-        for name in animation_name:
-            if name in self.animations.keys():
+        names = self._clips.names() if animation_name is None else list(animation_name)
+        for name, clip in self._clips.load(names).items():
+            if isinstance(clip, Exception):
+                self.logger.warning(f"Animation `{name}` could not be loaded: {clip}")
+                continue
+            if name in self.animations:
                 self.logger.warning(f"Animation `{name}` is already cached, overiding...")
+            self.animations[name] = anim = self._from_clip(name, clip, loop_mapping.get(name))
+            self.logger.info(f"Animation loaded: [{name}]: [{anim.n_frames} frames - {anim.duration}s at {anim.fps}, loop={anim.loop}{', reverse' if anim.reverse else ''}]")
 
-            path = self.database_path / f"{name}.npy"
-            assert path.is_file(), f"Animation {name} does not appear at {str(path)}"
+    def _from_clip(self, name: str, clip: AnimationClip, loop: bool | None) -> Animation:
+        meta = clip.meta
+        frames = clip.frames(JOINT_NAMES)
+        n_frames = len(frames)
+        is_loop = loop if loop is not None else bool(meta.get("loop", name not in self.one_shot_animations))
+        is_reverse = bool(meta.get("reverse", False))
 
-            anim_frames = np.load(path, allow_pickle=True)
-            for frame in anim_frames:
-                for joint in JOINT_NAMES:
-                    frame["angles"].setdefault(joint, 0.0)
-            n_frames = len(anim_frames)
-            duration = n_frames / self._fps
-            annotation = annotations.get(name, {})
-            is_loop = loop_mapping.get(name, annotation.get("loop", name not in self.one_shot_animations))
+        assert n_frames > 0, "Animation does not contain any frames"
+        assert not (is_reverse and not is_loop), f"Animation {name} is reverse but does not loop"
 
-            assert n_frames > 0, "Animation does not contain any frames"
-            assert duration > 0.0, f"Animation duration is invalid, got: {duration}"
+        cycle = 2 * n_frames - 2 if is_reverse and n_frames > 1 else n_frames
+        return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, joints=joint_mask(meta.get("joints")), reverse=is_reverse)
 
-            self.animations[name] = Animation(name=name, frames=anim_frames, n_frames=n_frames, duration=duration, loop=is_loop, fps=self._fps, joints=tuple(annotation.get("joints", ())))
-            self.logger.info(f"Animation loaded: [{name}]: [{n_frames} frames - {duration}s at {self._fps}, loop={is_loop}]")
+    def clip(self, name: str) -> Animation | None:
+        """A cached clip, loaded from the clip source on first request (a clip published after launch). Failures are not retried."""
+        if name not in self.animations and name not in self._unavailable:
+            self.cache_animations([name])
+            if name not in self.animations:
+                self._unavailable.add(name)
+        return self.animations.get(name)
 
-    def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0) -> Animation:
+    def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0, reverse: bool = False) -> Animation:
         """Register a generated clip (list of {"angles": ...} frames) under ``name``, optionally owned by an agent."""
         fps = self._fps if fps is None else fps
         n_frames = len(frames)
         assert n_frames > 0, "Animation does not contain any frames"
         assert 0 <= loop_from < n_frames, f"loop_from {loop_from} outside the clip"
-        anim = Animation(name=name, frames=list(frames), n_frames=n_frames, duration=n_frames / fps, loop=loop, fps=fps, loop_from=loop_from)
+        assert not (reverse and not loop), f"Animation {name} is reverse but does not loop"
+        cycle = 2 * n_frames - 2 if reverse and n_frames > 1 else n_frames
+        anim = Animation(name=name, frames=list(frames), n_frames=n_frames, duration=cycle / fps, loop=loop, fps=fps, loop_from=loop_from, reverse=reverse)
         self.animations[name] = anim
         if owner is not None:
             self._transients.setdefault(owner, set()).add(name)
@@ -295,7 +304,7 @@ class AnimationManager:
 
         # Check
         self.check_animations_cached()
-        if anim_name not in self.animations:
+        if self.clip(anim_name) is None:
             raise ValueError(f"Animation '{anim_name}' is not loaded.")
 
         # Set active base
@@ -320,6 +329,7 @@ class AnimationManager:
         on_end: Callable[[int], None] | None = None,
         slot: str = "arm",
         carry_ramps: bool = False,
+        start_s: float | None = None,
     ) -> None:
         """
         Register an overlay animation that blends over specific joints (e.g. waving arms).
@@ -337,6 +347,8 @@ class AnimationManager:
             on_end: Called once with agent_id when a non-looping overlay reaches its end or a fade-out completes.
             slot: Overlay slot. Slots are independent (own playhead, envelope, on_end) and applied in insertion order.
             carry_ramps: When replacing a live overlay in this slot, keep its blend set and per-joint ramps instead of blend_joints.
+            start_s: Playhead to start from, None = the per-agent stagger for looping clips. Partners of a
+                     contact clip pass the same value so they play in phase.
         """
         if overlay is None:
             self.clear_ped_blend(agent_id, slot=slot)
@@ -344,9 +356,10 @@ class AnimationManager:
 
         if isinstance(overlay, str):
             self.check_animations_cached()
-            if overlay not in self.animations:
+            anim = self.clip(overlay)
+            if anim is None:
                 raise ValueError(f"Animation '{overlay}' is not loaded.")
-            overlay = self.animations[overlay]
+            overlay = anim
 
         if blend_joints is None:
             # Default to left and right arms (collar, shoulder, elbow joints)
@@ -369,7 +382,15 @@ class AnimationManager:
             new.ramps = {joint: list(ramp) for joint, ramp in current.ramps.items()}
         slots[slot] = new
         # Safe reset/initialization for the overlay playhead
-        self._overlay_playhead[(agent_id, slot)] = self._overlay_start(agent_id, new)
+        self._overlay_playhead[(agent_id, slot)] = self._overlay_start(agent_id, new) if start_s is None else start_s
+
+    def overlays(self, agent_id: int) -> list[tuple[str, Overlay, float, float]]:
+        """Live overlays in blend order: (slot, overlay, playhead s, blend weight after the envelope)."""
+        out = []
+        for slot, overlay in self._ped_blend.get(agent_id, {}).items():
+            playhead = self._overlay_playhead.get((agent_id, slot), 0.0)
+            out.append((slot, overlay, playhead, overlay.weight * self._envelope(overlay, playhead)))
+        return out
 
     def set_overlay_joints(self, agent_id: int, slot: str, joints: set[str], fade_s: float = 0.0) -> None:
         """Change a live overlay's blend set in place: leaving joints ramp to 0 and entering joints ramp to 1 over fade_s, playhead and envelope untouched."""
@@ -580,13 +601,14 @@ class AnimationManager:
         if not anim.loop and frame >= anim.n_frames - 1:
             return dict(anim[-1]["angles"])
 
-        frame %= anim.n_frames
+        cycle = anim.cycle_frames
+        frame %= cycle
         next_frame = frame + 1
-        if next_frame >= anim.n_frames:
+        if next_frame >= cycle:
             next_frame = anim.loop_from
 
-        current_angles = anim[frame]["angles"]
-        next_angles = anim[next_frame]["angles"]
+        current_angles = anim[anim.frame_index(frame)]["angles"]
+        next_angles = anim[anim.frame_index(next_frame)]["angles"]
 
         return {name: current_angles[name] * (1.0 - frac) + next_angles[name] * frac for name in JOINT_NAMES if name in current_angles and name in next_angles}
 

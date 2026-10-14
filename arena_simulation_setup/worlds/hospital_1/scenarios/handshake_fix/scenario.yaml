@@ -1,0 +1,17 @@
+# The v7 handshake held across the robot's path through the central_hallway
+robots:
+- start: [7.5, 15.6, 0.0]
+  phases:
+  - goto: [11.0, 15.6, 0.0]
+
+dynamic:
+- name: shaker_doctor
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [8.9, 16.6, 0.0]
+  agent: {agent_type: ./shaker.yaml}
+  waypoints: [[8.9, 16.6]]
+- name: shaker_visitor
+  model: Office/office_male_caucasian_middleage
+  pose: [9.5, 16.6, 3.14159]
+  agent: {agent_type: ./shaker.yaml}
+  waypoints: [[9.5, 16.6]]

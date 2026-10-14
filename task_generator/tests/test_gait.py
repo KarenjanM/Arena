@@ -211,6 +211,7 @@ def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
     from pathlib import Path
 
     from task_generator.simulators.human.animation_manager import AnimationManager
+    from task_generator.simulators.human.clips import NoClips
     from task_generator.simulators.human.profile import resolve_pose_profile
 
     class _Logger:
@@ -220,8 +221,7 @@ def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
         def warning(self, msg: str) -> None:
             pass
 
-    animations = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
-    mgr = AnimationManager(animations, logger=_Logger(), fps=20.0)
+    mgr = AnimationManager(logger=_Logger(), fps=20.0, clips=NoClips())
     profile = resolve_pose_profile({"walk": {"joints": {"knee": {"scale": 0.5}}}})
     expected = GaitGenerator().compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile)
     assert mgr.compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile) == expected

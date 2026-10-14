@@ -3,7 +3,7 @@ import itertools
 import os
 import typing
 import warnings
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import attrs
 import yaml
@@ -11,6 +11,7 @@ import yaml
 from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Light, Obstacle, Pose, Position, Sound, TaskPhase
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.tree import Identifier, PathView
+from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier, referenced_clips
 from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, converter
 
 ROBOT_KEYS = frozenset({"start", "level", "goal_level", "phases", "conditions"})
@@ -223,8 +224,7 @@ class ScenarioView(PathView):
         return notes
 
     def identifiers(self, converter: ArenaConverter = converter) -> Iterable[Identifier]:
-        """Every asset this scenario references. Pass the world's zone converter to read a
-        scenario that addresses zones by name."""
+        """Every asset this scenario references, sounds and animation clips included, under the given zone converter."""
         from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
 
         scenario = self.load(converter=converter)
@@ -232,6 +232,19 @@ class ScenarioView(PathView):
             yield obstacle.model
         for sound in scenario.sounds:
             yield SoundIdentifier.parse(sound.asset_id)
+        for obstacle in scenario.humans:
+            for name in self.agent_clips(obstacle.agent):
+                yield AnimationIdentifier.parse(name)
+
+    def agent_clips(self, agent: object) -> Iterator[str]:
+        """Clip names an agent entry plays, from its inline config and the scenario-local agent file it names."""
+        if not isinstance(agent, dict):
+            return
+        yield from referenced_clips(agent)
+        agent_type = agent.get('agent_type')
+        if isinstance(agent_type, str) and ('/' in agent_type or agent_type.endswith('.yaml')):
+            with open(self.path / agent_type) as f:
+                yield from referenced_clips(yaml.safe_load(f))
 
     def load(self, converter: ArenaConverter = converter) -> Scenario:
         try:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -28,7 +27,7 @@ from task_generator.simulators.human.gestures.look import HEAD, LookGesture, Loo
 from task_generator.simulators.human.gestures.point import PointGesture
 from task_generator.simulators.human.pointing.contract import LIMITS, arm_dofs
 
-ANIMATIONS = Path(__file__).resolve().parents[1] / "task_generator" / "simulators" / "human" / "animations"
+pytestmark = pytest.mark.clips("point_to_right", "wave", "hug", "shake_hand", "talk_with_arm_gesture")
 DT = 0.05
 POSE = (1.0, 2.0, math.pi / 2)  # facing +y: world -x is the ped's left
 
@@ -47,7 +46,7 @@ class StubLogger:
 @pytest.fixture()
 def rig() -> tuple[AnimationManager, GestureLayer, StubLogger]:
     log = StubLogger()
-    mgr = AnimationManager(ANIMATIONS, logger=log, fps=20.0)
+    mgr = AnimationManager(logger=log, fps=20.0)
     layer = GestureLayer(mgr, log)
     mgr.gesture_hook = layer
     return mgr, layer, log
@@ -672,7 +671,7 @@ def test_clip_channel_whole_body_when_unannotated(rig):
 def test_clip_channel_releases_with_fade_and_unknown_clip_drops(rig):
     mgr, layer, log = rig
     r = req(body("wave"))
-    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.animations["wave"].n_frames + 4)
+    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.clip("wave").n_frames + 4)
     tick(mgr, 1, req(), n=int(FADE_S / DT) + 4)
     assert 1 not in layer._agents
     tick(mgr, 2, req(body("no_such_clip")), n=2)
@@ -686,3 +685,80 @@ def test_clip_and_point_share_a_ped(rig):
     tick(mgr, 1, r, n=3)
     slots = layer._agents[1].slots
     assert set(slots) == {"arm", "body"}
+
+
+def body(clip: str, lock: bool = False) -> Channel:
+    return Channel(slot="body", at=(0.0, 0.0, 0.0), clip=clip, lock=lock)
+
+
+def _body_playhead(mgr: AnimationManager, agent: int) -> float:
+    return next(playhead for slot, _, playhead, _ in mgr.overlays(agent) if slot == "body")
+
+
+@pytest.mark.parametrize("clip", ["hug", "shake_hand"])
+def test_locked_contact_clips_play_in_phase_across_partners(rig, clip: str) -> None:
+    mgr, _, _ = rig
+    a, b = 3, 200
+    for _ in range(12):
+        for agent in (a, b):
+            mgr.compute(agent, 0, 0.0, DT, gesture=req(body(clip, lock=True)))
+    assert _body_playhead(mgr, a) == pytest.approx(_body_playhead(mgr, b))
+
+
+def test_unlocked_loop_clips_keep_the_per_agent_stagger(rig) -> None:
+    mgr, _, _ = rig
+    for agent in (3, 200):
+        mgr.compute(agent, 0, 0.0, DT, gesture=req(body("talk_with_arm_gesture")))
+    assert _body_playhead(mgr, 3) != pytest.approx(_body_playhead(mgr, 200))
+
+
+def test_phases_reports_kind_channel_phase_and_clip(rig) -> None:
+    mgr, layer, _ = rig
+    mgr.compute(7, 0, 0.0, DT, gesture=req(body("hug", lock=True)))
+    assert layer.phases(7) == {"body": ("clip", "body", "ramp", "hug")}
+    mgr.compute(7, 0, 0.0, DT, gesture=req(body("hug", lock=True)))
+    assert layer.phases(7)["body"][2] == "hold"
+    slots = mgr.overlays(7)
+    assert [s for s, *_ in slots] == ["body"]
+    _, overlay, playhead, weight = slots[0]
+    assert overlay.loop and 0.0 <= playhead < overlay.anim.duration
+    assert 0.0 < weight < 1.0
+    seen = []
+    for _ in range(int((HOLD_MIN_S + 2 * FADE_S) / DT) + 4):
+        mgr.compute(7, 0, 0.0, DT, gesture=req())
+        seen.append(layer.phases(7).get("body", (None, None, None, None))[2])
+    assert seen[: int(HOLD_MIN_S / DT) - 2] == ["hold"] * (int(HOLD_MIN_S / DT) - 2)
+    assert seen[-1] is None
+    assert layer.phases(99) == {}
+
+
+def test_starting_to_walk_keeps_a_canned_clip_playing(rig) -> None:
+    mgr, _, _ = rig
+    ch = body("hug", lock=True)
+    prev, heads = None, []
+    for i in range(60):
+        moving = i >= 40
+        angles = mgr.compute(9, 1 if moving else 0, 1.2 if moving else 0.0, DT, gesture=req(ch, moving=moving))
+        heads.append(_body_playhead(mgr, 9))
+        if prev is not None and i == 40:
+            assert abs(angles["l_elbow"] - prev["l_elbow"]) < 0.1
+        prev = angles
+    assert heads[40] > heads[39]
+
+
+def test_the_gate_covers_every_looping_canned_clip() -> None:
+    from task_generator.simulators.human.gestures import qa
+
+    loops = qa.looping_clips()
+    assert "talk_with_arm_gesture" in loops and "hug" in loops
+    cases = {c.name for c in qa.default_cases()}
+    assert {f"loop_{name}" for name in loops} <= cases
+
+
+def test_a_reverse_clip_keeps_its_wrap_through_the_layer() -> None:
+    from task_generator.simulators.human.animation_manager import AnimationManager
+    from task_generator.simulators.human.gestures.clip import ClipGesture
+
+    mgr = AnimationManager(logger=StubLogger(), fps=20.0)
+    clip = ClipGesture(mgr).start(np.zeros(3), {"clip": "talk_with_arm_gesture"})
+    assert clip.loop and clip.reverse

@@ -65,6 +65,8 @@ __pycache__/
 
 # folders
 /_assets
+arena_simulation_setup/assets/*/Animation/
+arena_simulation_setup/worlds/*/assets/*/Animation/
 .venv/
 
 # Local development and test artifacts

@@ -142,6 +142,19 @@ stream itself carries only the 40. Renderers resolve them through `BONE_MAP` lik
 any other wire joint and skip them on a skeleton without the bone. The ros4hri URDF
 has no such joints, so the RViz skeleton ignores them.
 
+### Wrists (v4)
+
+`l/r_r_wrist`, `l/r_wrist`: two DOFs per hand at the distal end of the forearm, chain
+`elbow -> r_wrist -> wrist`. The rest hand hangs along the forearm, fingers down, thumb
+forward, palm toward the thigh. `r_wrist` is forearm pronation (positive turns the palm
+backward, both sides), `wrist` is the hand hinge (positive = extension, back of the hand
+toward the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
+(`r_wrist`: `(0,0,-1)` left / `(0,0,1)` right, `wrist`: `(1,0,0)` left / `(-1,0,0)`
+right), so the RViz adapter passes both through untouched. Only the `halt` gesture
+writes them, everything else leaves them at 0.0. Recordings that predate them carry no
+wrist values and are read as 0.0 (the loaders zero-fill, same migration as the spine
+stack).
+
 ### Gait synthesis
 
 Phase `phi` per agent integrates from speed: `phi += 2*pi*cadence*dt`, where
@@ -156,7 +169,7 @@ opposite leg).
   so L/R antiphase is exact by construction. Antiphase means `l(phi) = r(phi + pi)`,
   NOT `l = -r`: the profiles carry nonzero means (hips average forward-flexed, elbows
   ~18 deg bent). Torso roll/yaw, the spine/chest triples, collars, ankles (both
-  DOFs), and shoulder azimuth/twist stay 0.0 (the baked profile predates the spine
+  DOFs), wrists, and shoulder azimuth/twist stay 0.0 (the baked profile predates the spine
   stack and stays lumped on the waist triple).
 - **run** (`RUNNING`): the same profiles at 1.6x amplitude, `cadence` higher.
 - **idle** (`IDLE` and the behavior states `PANIC/SURPRISED/CURIOUS/THREATENING` for now):

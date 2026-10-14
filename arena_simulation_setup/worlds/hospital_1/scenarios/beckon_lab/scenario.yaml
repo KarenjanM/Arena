@@ -1,0 +1,43 @@
+robots:
+- start:
+  - 4.0
+  - 2.5
+  - 1.5708
+  phases:
+  - loop:
+    - goto:
+      - 5.0
+      - 6.0
+      - 1.5708
+      tolerance_radius: 1.2
+    - goto:
+      - 11.0
+      - 6.6
+      - 0.0
+      tolerance_radius: 1.2
+    - goto:
+      - 5.0
+      - 15.0
+      - 1.5708
+      tolerance_radius: 1.2
+    - goto:
+      - 4.0
+      - 2.5
+      - -1.5708
+      tolerance_radius: 1.2
+    until: robot sees caller within 12 and caller plays beckon for 0.5 or robot within 2.5 of caller
+  - goto: caller
+    tolerance_radius: 2.5
+    hold_time: 0.0
+dynamic:
+- name: caller
+  model: female_adult_business_02
+  pose:
+  - 10.0
+  - 20.0
+  - 3.14159
+  agent:
+    agent_type: ./caller.yaml
+  waypoints:
+  - - 10.0
+    - 20.0

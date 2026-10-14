@@ -36,3 +36,8 @@ string agent_type
 # Resolved local SDF path for this ped's actor, read once per name by the spawner.
 string model_uri
 
+# Active humansim interaction, -1 = none.
+int32 interaction_id -1
+# Kind of that interaction, meaningful only when interaction_id >= 0.
+uint8 interaction_type
+

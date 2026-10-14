@@ -53,6 +53,11 @@ def arm_dofs(side: str) -> list[str]:
     ]
 
 
+def wrist_dofs(side: str) -> list[str]:
+    """Pronation, then extension (JOINTS.md Wrists). Pointing leaves both at 0."""
+    return [f"{side}_r_wrist", f"{side}_wrist"]
+
+
 def clamp(name: str, value: float, limits: dict[str, tuple[float, float]] = EMIT_LIMITS) -> float:
     lo, hi = limits[name]
     return float(np.clip(value, lo, hi))
