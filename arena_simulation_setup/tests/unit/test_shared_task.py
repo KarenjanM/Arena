@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from arena_simulation_setup.shared.conditions import EpisodeCondition
-from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
+from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
@@ -156,3 +156,37 @@ def test_parse_instruction_is_text():
     assert TaskPhase.parse({"goto": [1.0, 2.0, 0.0], "instruction": "go to the blue door"}).text == "go to the blue door"
     assert TaskPhase.parse({"goto": [1.0, 2.0, 0.0], "instruction": "ignored", "text": "wins"}).text == "wins"
     assert TaskPhase.parse({"goto": [1.0, 2.0, 0.0]}).text == ""
+
+
+def test_parse_until_with_dwell_and_conjunction():
+    phase = TaskPhase.parse({"goto": "caller", "until": "robot sees caller within 12 and caller plays beckon for 0.5"})
+    assert phase.until == "robot sees caller within 12 and caller plays beckon for 0.5"
+    assert TaskPhase.parse(phase.serialize()) == phase
+    assert TaskPhase.parse({"goto": "caller", "until": "caller plays beckon for 0.5 or robot within 2.5 of caller"}).until == "caller plays beckon for 0.5 or robot within 2.5 of caller"
+    with pytest.raises(ValueError):
+        TaskPhase.parse({"goto": "caller", "until": "robot sees caller for x"})
+    with pytest.raises(ValueError):
+        TaskPhase.parse({"goto": "caller", "until": "robot sees caller or"})
+
+
+def test_parse_loop_phase():
+    phase = TaskPhase.parse({"loop": [{"goto": [10.0, 18.0, 0.0]}, {"goto": [10.0, 2.0, 0.0]}], "until": "robot sees caller within 12 for 0.5", "text": "Patrol the hallway."})
+    assert isinstance(phase, LoopPhase)
+    assert [type(p) for p in phase.phases] == [GoToPhase, GoToPhase]
+    assert phase.until == "robot sees caller within 12 for 0.5"
+    assert phase.text == "Patrol the hallway."
+    assert TaskPhase.parse(phase.serialize()) == phase
+    assert TaskPhase.parse({"loop": [{"goto": "kitchen"}]}).until is None
+
+
+@pytest.mark.parametrize("value", [{"loop": []}, {"loop": [{"goto": "kitchen"}], "hold_time": 2}, {"loop": [{"goto": "kitchen"}], "conditions": [{"op": "never", "p": "robot in hallway"}]}, {"loop": [{"goto": "kitchen"}], "until": "nonsense"}])
+def test_parse_loop_rejects_other_keys_and_empty_loops(value):
+    with pytest.raises(ValueError):
+        TaskPhase.parse(value)
+
+
+def test_request_with_loop_round_trips():
+    request = TaskRequest.parse({"phases": [{"loop": [{"goto": [10.0, 18.0]}, {"goto": [10.0, 2.0]}], "until": "robot sees caller and caller plays beckon for 0.5"}, {"goto": "caller", "tolerance_radius": 2.5, "hold_time": 0}]})
+    assert request.kind is None
+    assert TaskRequest.parse(request.serialize()) == request
+    assert request.serialize()["phases"][0]["loop"] == [{"goto": [10.0, 18.0, 0.0]}, {"goto": [10.0, 2.0, 0.0]}]

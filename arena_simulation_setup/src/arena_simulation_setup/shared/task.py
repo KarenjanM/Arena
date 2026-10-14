@@ -8,7 +8,7 @@ from collections.abc import Mapping, Sequence
 
 import attrs
 
-from arena_simulation_setup.shared.conditions import EpisodeCondition, OnFailure, parse_atom
+from arena_simulation_setup.shared.conditions import EpisodeCondition, OnFailure, parse_until
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Pose
 
@@ -35,12 +35,17 @@ class TaskPhase(ABC):
 
     def __attrs_post_init__(self) -> None:
         if self.until is not None:
-            parse_atom(self.until)
+            parse_until(self.until)
 
     @classmethod
     def parse(cls, value: Mapping[str, object]) -> TaskPhase:
-        """Pick the phase type by key presence: `goto`, `gesture`, `reach`, or a hold phase with neither."""
+        """Pick the phase type by key presence: `loop`, `goto`, `gesture`, `reach`, or a hold phase with none."""
         data = dict(value)
+        if "loop" in data:
+            loop = LoopPhase(phases=[TaskPhase.parse(p) for p in data.pop("loop")], until=None if data.get("until") is None else str(data.pop("until")), text=str(data.pop("text", "")))
+            if data:
+                raise ValueError(f"unknown phase keys {sorted(data)} for LoopPhase")
+            return loop
         until = data.pop("until", None)
         instruction = str(data.pop("instruction", ""))
         common = {
@@ -212,6 +217,25 @@ class PlayGesturePhase(TaskPhase):
 
 
 @attrs.define
+class LoopPhase(TaskPhase):
+    """Phases repeated in order until `until` holds, which drops the running one and continues after the loop."""
+
+    kind: typing.ClassVar[str] = "loop"
+
+    phases: list[TaskPhase] = attrs.field(factory=list)
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        if not self.phases:
+            raise ValueError("LoopPhase requires at least one phase")
+
+    def serialize(self) -> dict:
+        result = super().serialize()
+        result["loop"] = [p.serialize() for p in self.phases]
+        return result
+
+
+@attrs.define
 class TaskRequest:
     """Typed sequence of phases submitted to a robot, with conditions over the whole request."""
 
@@ -252,6 +276,7 @@ converter.register_structure_hook(TaskRequest, lambda v, _t: TaskRequest.parse(v
 
 __all__ = [
     "GoToPhase",
+    "LoopPhase",
     "PlayGesturePhase",
     "ReachPhase",
     "TaskPhase",

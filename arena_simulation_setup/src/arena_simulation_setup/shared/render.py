@@ -9,10 +9,15 @@ from arena_simulation_setup.shared.conditions import (
     EpisodeCondition,
     MembershipAtom,
     NotAtom,
+    PlaysAtom,
+    SeesAtom,
+    Until,
+    UntilClause,
     WithinAtom,
     parse_atom,
+    parse_until,
 )
-from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, ReachPhase, TaskPhase
+from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase
 
 Nouns = Mapping[str, str]
 
@@ -31,12 +36,34 @@ def render_atom_text(atom: Atom, nouns: Nouns | None = None, robot: str = "you")
             return f"{_subject(inner.subject, nouns, robot)} {_be(inner.subject)} not in {noun(inner.zone, nouns)}"
         if isinstance(inner, WithinAtom):
             return f"{_subject(inner.subject, nouns, robot)} {_be(inner.subject)} more than {inner.radius:g} m from {_subject(inner.other, nouns, robot)}"
+        if isinstance(inner, SeesAtom):
+            return f"{_subject(inner.subject, nouns, robot)} cannot see {_subject(inner.other, nouns, robot)} within {inner.range:g} m"
+        if isinstance(inner, PlaysAtom):
+            return f"{_subject(inner.subject, nouns, robot)} {_be(inner.subject)} not {_playing(inner.clip, nouns)}"
         return f"{noun(inner.entity, nouns)} {inner.field.replace('_', ' ')} is not {inner.value}"
     if isinstance(atom, MembershipAtom):
         return f"{_subject(atom.subject, nouns, robot)} {_be(atom.subject)} in {noun(atom.zone, nouns)}"
     if isinstance(atom, WithinAtom):
         return f"{_subject(atom.subject, nouns, robot)} {_be(atom.subject)} within {atom.radius:g} m of {_subject(atom.other, nouns, robot)}"
+    if isinstance(atom, SeesAtom):
+        return f"{_subject(atom.subject, nouns, robot)} can see {_subject(atom.other, nouns, robot)} within {atom.range:g} m"
+    if isinstance(atom, PlaysAtom):
+        return f"{_subject(atom.subject, nouns, robot)} {_be(atom.subject)} {_playing(atom.clip, nouns)}"
     return f"{noun(atom.entity, nouns)} {atom.field.replace('_', ' ')} is {atom.value}"
+
+
+def render_until_text(until: Until, nouns: Nouns | None = None, robot: str = "you") -> str:
+    """Clauses joined by `or`, each its atoms joined by `and` with the dwell as a trailing `for <n> seconds`."""
+    return " or ".join(_clause_text(clause, nouns, robot) for clause in until.clauses)
+
+
+def _clause_text(clause: UntilClause, nouns: Nouns | None, robot: str) -> str:
+    text = " and ".join(render_atom_text(atom, nouns, robot) for atom in clause.atoms)
+    return f"{text} for {clause.dwell:g} seconds" if clause.dwell > 0 else text
+
+
+def _playing(clip: str, nouns: Nouns | None) -> str:
+    return f"making the {noun(clip, nouns)} gesture"
 
 
 def _subject(subject: str, nouns: Nouns | None, robot: str) -> str:
@@ -69,6 +96,8 @@ def render_phase(phase: TaskPhase, nouns: Nouns | None = None) -> str:
     """One sentence per phase kind, the authored `text` winning when set."""
     if phase.text:
         return phase.text
+    if isinstance(phase, LoopPhase):
+        return _render_loop(phase, nouns)
     if isinstance(phase, GoToPhase):
         sentence = _render_goto(phase, nouns)
     elif isinstance(phase, PlayGesturePhase):
@@ -83,10 +112,17 @@ def render_phase(phase: TaskPhase, nouns: Nouns | None = None) -> str:
     else:
         sentence = "Carry out the step"
     if phase.until is not None:
-        sentence += f" and wait until {render_atom_text(parse_atom(phase.until), nouns)}"
+        sentence += f" and wait until {render_until_text(parse_until(phase.until), nouns)}"
     for condition in phase.conditions:
         sentence += ", " + _condition_clause(condition, nouns)
     return sentence + "."
+
+
+def _render_loop(phase: LoopPhase, nouns: Nouns | None) -> str:
+    steps = render_phases(phase.phases, nouns)
+    if phase.until is None:
+        return f"Keep repeating these steps: {steps}"
+    return f"Repeat these steps until {render_until_text(parse_until(phase.until), nouns)}: {steps}"
 
 
 def _render_goto(phase: GoToPhase, nouns: Nouns | None) -> str:
@@ -130,4 +166,4 @@ def render_phases(phases: Sequence[TaskPhase], nouns: Nouns | None = None, condi
     return " ".join(sentences)
 
 
-__all__ = ["Nouns", "noun", "render_atom_text", "render_condition", "render_phase", "render_phases"]
+__all__ = ["Nouns", "noun", "render_atom_text", "render_condition", "render_phase", "render_phases", "render_until_text"]

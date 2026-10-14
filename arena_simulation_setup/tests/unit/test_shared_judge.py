@@ -25,14 +25,18 @@ from arena_simulation_setup.shared.judge import (
     ParkTimer,
     PhaseMonitor,
     Sample,
+    UntilMonitor,
+    WallGrid,
     arrived,
     atom_holds,
     operator_verdict,
+    until_holds,
     zone_polygons,
 )
+from arena_simulation_setup.shared.conditions import parse_until
 from arena_simulation_setup.shared.task import GoToPhase, PlayGesturePhase, TaskPhase
 from arena_simulation_setup.shared import Door
-from arena_simulation_setup.tree.World import Level, Zone
+from arena_simulation_setup.tree.World import Level, WallPath, Zone
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 SQUARE = shapely.Polygon([(0, 0), (0, 4), (4, 4), (4, 0)])
@@ -396,3 +400,127 @@ def test_signal_on_absent_target_measures_distance_to_the_dispatch_pose():
     absent = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, known=frozenset({"alice"}))
     assert monitor.step(absent, ZONES, signal="arrived") is False
     assert monitor.misfire == "signaled arrived 5.00 m from goal"
+
+
+RESOLUTION = 0.05
+SHAPE = (200, 200)
+
+
+def wall_grid(x: float | None = None) -> WallGrid:
+    """A 10 m x 10 m open grid, with a full-height wall three cells wide at world x when given."""
+    cells = np.zeros(SHAPE, dtype=bool)
+    if x is not None:
+        col = int(x / RESOLUTION)
+        cells[:, col - 1 : col + 2] = True
+    return WallGrid(cells=cells, origin=(0.0, 0.0), resolution=RESOLUTION)
+
+
+def test_wall_grid_clear_across_open_space_and_blocked_by_a_wall():
+    assert wall_grid().clear((1.0, 5.0), (9.0, 5.0))
+    assert not wall_grid(5.0).clear((1.0, 5.0), (9.0, 5.0))
+    assert wall_grid(5.0).clear((1.0, 5.0), (4.0, 5.0))
+    assert not wall_grid(5.0).clear((1.0, 8.0), (9.0, 8.0))
+
+
+def test_wall_grid_of_level_leaves_doors_open():
+    level = Level(
+        zones=[Zone(name="room", polygon=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)])],
+        walls=[WallPath(path=[Position(2, 0), Position(2, 4)])],
+        doors=[Door(name="room_door", start=Position(2, 1), end=Position(2, 2))],
+    )
+    grid = WallGrid.of_level(level, resolution=0.05)
+    assert not grid.clear((1.0, 3.0), (3.0, 3.0))
+    assert grid.clear((1.0, 1.5), (3.0, 1.5))
+
+
+def test_sees_needs_range_and_sight():
+    near = Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, walls=wall_grid(5.0))
+    assert atom_holds(parse_atom("robot sees caller within 4"), near, ZONES, "robot_0") is True
+    behind = Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (8.0, 5.0)}, walls=wall_grid(5.0))
+    assert atom_holds(parse_atom("robot sees caller within 4"), behind, ZONES, "robot_0") is False
+    assert atom_holds(parse_atom("robot sees caller within 12"), behind, ZONES, "robot_0") is False
+    assert atom_holds(parse_atom("caller within 12 of robot"), behind, ZONES, "robot_0") is True
+    open_space = Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (8.0, 5.0)}, walls=wall_grid())
+    assert atom_holds(parse_atom("robot sees caller"), open_space, ZONES, "robot_0") is True
+
+
+def test_sees_unknown_without_walls_or_subject():
+    no_walls = Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)})
+    assert atom_holds(parse_atom("robot sees caller"), no_walls, ZONES, "robot_0") is None
+    assert atom_holds(parse_atom("robot sees caller within 1"), no_walls, ZONES, "robot_0") is False
+    assert atom_holds(parse_atom("robot sees bob"), Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, walls=wall_grid()), ZONES, "robot_0") is None
+    absent = Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, known=frozenset({"caller"}), walls=wall_grid())
+    assert atom_holds(parse_atom("robot sees caller"), absent, ZONES, "robot_0") is False
+
+
+def test_plays_reads_the_pedestrian_clips():
+    s = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 1.0), "bystander": (2.0, 2.0)}, clips={"caller": frozenset({"beckon", "gaze"}), "bystander": frozenset()})
+    assert atom_holds(parse_atom("caller plays beckon"), s, ZONES, "robot_0") is True
+    assert atom_holds(parse_atom("bystander plays beckon"), s, ZONES, "robot_0") is False
+    assert atom_holds(parse_atom("not caller plays wave"), s, ZONES, "robot_0") is True
+    assert atom_holds(parse_atom("bob plays beckon"), s, ZONES, "robot_0") is None
+    absent = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, known=frozenset({"caller"}))
+    assert atom_holds(parse_atom("caller plays beckon"), absent, ZONES, "robot_0") is False
+
+
+def test_until_holds_is_a_conjunction():
+    until = parse_until("robot within 2 of caller and caller plays beckon")
+    near = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips={"caller": frozenset({"beckon"})})
+    assert until_holds(until, near, ZONES, "robot_0") is True
+    silent = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips={"caller": frozenset()})
+    assert until_holds(until, silent, ZONES, "robot_0") is False
+    far_and_unknown = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)})
+    assert until_holds(until, far_and_unknown, ZONES, "robot_0") is False
+    unknown = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)})
+    assert until_holds(until, unknown, ZONES, "robot_0") is None
+
+
+def test_until_monitor_requires_the_dwell_without_a_gap():
+    monitor = UntilMonitor(parse_until("robot sees caller within 12 and caller plays beckon for 0.5"), "robot_0")
+    seen = {"caller": frozenset({"beckon"})}
+    assert monitor.step(Sample(t=0.0, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, clips=seen, walls=wall_grid()), ZONES) is False
+    assert monitor.step(Sample(t=0.4, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, clips=seen, walls=wall_grid()), ZONES) is False
+    assert monitor.step(Sample(t=0.6, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, clips={"caller": frozenset()}, walls=wall_grid()), ZONES) is False
+    assert monitor.step(Sample(t=0.8, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, clips=seen, walls=wall_grid()), ZONES) is False
+    assert monitor.step(Sample(t=1.2, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, clips=seen, walls=wall_grid()), ZONES) is False
+    assert monitor.step(Sample(t=1.3, robots={"robot_0": (1.0, 5.0, 0.0)}, peds={"caller": (3.0, 5.0)}, clips=seen, walls=wall_grid()), ZONES) is True
+
+
+def test_goto_phase_until_dwell_counts_after_arrival():
+    phase = GoToPhase(pose=Pose(Position(1.0, 1.0), Orientation.identity()), tolerance_radius=0.5, tolerance_angle=0.0, until="alice in kitchen for 2")
+    monitor = PhaseMonitor(phase, "robot_0")
+    assert monitor.step(sample(t=0.0, robot=(1.0, 1.0, 0.0), peds={"alice": (2.0, 2.0)}), ZONES) is False
+    assert monitor.waiting is True
+    assert monitor.step(sample(t=1.0, robot=(1.0, 1.0, 0.0), peds={"alice": (2.0, 2.0)}), ZONES) is False
+    assert monitor.step(sample(t=1.5, robot=(1.0, 1.0, 0.0), peds={"alice": (12.0, 2.0)}), ZONES) is False
+    assert monitor.step(sample(t=2.0, robot=(1.0, 1.0, 0.0), peds={"alice": (2.0, 2.0)}), ZONES) is False
+    assert monitor.step(sample(t=4.0, robot=(1.0, 1.0, 0.0), peds={"alice": (2.0, 2.0)}), ZONES) is True
+    assert monitor.met_at == 4.0
+
+
+def test_until_holds_is_a_disjunction_of_clauses():
+    until = parse_until("robot sees caller within 12 and caller plays beckon or robot within 2.5 of caller")
+    near_and_silent = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips={"caller": frozenset()}, walls=wall_grid())
+    assert until_holds(until, near_and_silent, ZONES, "robot_0") is True
+    far_and_seen = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)}, clips={"caller": frozenset({"beckon"})}, walls=wall_grid())
+    assert until_holds(until, far_and_seen, ZONES, "robot_0") is True
+    far_and_silent = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)}, clips={"caller": frozenset()}, walls=wall_grid())
+    assert until_holds(until, far_and_silent, ZONES, "robot_0") is False
+    far_without_clips = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)}, walls=wall_grid())
+    assert until_holds(until, far_without_clips, ZONES, "robot_0") is None
+    near_without_clips = Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, walls=wall_grid())
+    assert until_holds(until, near_without_clips, ZONES, "robot_0") is True
+
+
+def test_until_monitor_times_each_clause_on_its_own():
+    monitor = UntilMonitor(parse_until("caller plays beckon for 1 or robot within 2.5 of caller for 0.5"), "robot_0")
+    calling = {"caller": frozenset({"beckon"})}
+    silent = {"caller": frozenset()}
+    assert monitor.step(Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)}, clips=calling), ZONES) is False
+    assert monitor.step(Sample(t=0.6, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips=calling), ZONES) is False
+    assert monitor.step(Sample(t=0.9, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)}, clips=calling), ZONES) is False
+    assert monitor.step(Sample(t=1.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (5.0, 0.0)}, clips=calling), ZONES) is True
+    restarted = UntilMonitor(parse_until("caller plays beckon for 1 or robot within 2.5 of caller for 0.5"), "robot_0")
+    assert restarted.step(Sample(t=0.0, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips=silent), ZONES) is False
+    assert restarted.step(Sample(t=0.3, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips=calling), ZONES) is False
+    assert restarted.step(Sample(t=0.5, robots={"robot_0": (0.0, 0.0, 0.0)}, peds={"caller": (1.0, 0.0)}, clips=silent), ZONES) is True

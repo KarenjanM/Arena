@@ -22,6 +22,10 @@ NOUNS = {"kitchen": "the kitchen", "sofa": "the sofa", "hallway": "the hallway",
         ("door_1.open == true", "door 1 open is true"),
         ("not lift.target == L2", "lift target is not L2"),
         ("robot_1 in hallway", "robot 1 is in the hallway"),
+        ("robot sees alice within 12", "you can see the visitor within 12 m"),
+        ("not robot sees alice", "you cannot see the visitor within 12 m"),
+        ("alice plays beckon", "the visitor is making the beckon gesture"),
+        ("not alice plays beckon", "the visitor is not making the beckon gesture"),
     ],
 )
 def test_render_atom_text(atom, text):
@@ -50,6 +54,11 @@ def test_render_atom_text(atom, text):
         ({"goto": "sofa", "conditions": [{"op": "never", "p": "robot in hallway", "text": "keeping out of the hallway"}]}, "Go to the sofa, keeping out of the hallway."),
         ({"goto": "sofa", "conditions": [{"op": "never", "p": "robot in hallway"}, {"op": "eventually", "p": "alice in kitchen"}]}, "Go to the sofa, never letting it happen that you are in the hallway, making sure that at some point the visitor is in the kitchen."),
         ({"goto": "sofa", "text": "Head over to the couch."}, "Head over to the couch."),
+        ({"goto": "sofa", "until": "robot sees alice within 12 and alice plays beckon for 0.5"}, "Go to the sofa and wait until you can see the visitor within 12 m and the visitor is making the beckon gesture for 0.5 seconds."),
+        ({"loop": [{"goto": "kitchen"}, {"goto": "sofa"}], "until": "robot sees alice for 0.5"}, "Repeat these steps until you can see the visitor within 12 m for 0.5 seconds: Go to the kitchen. Then go to the sofa."),
+        ({"loop": [{"goto": "kitchen"}]}, "Keep repeating these steps: Go to the kitchen."),
+        ({"goto": "sofa", "until": "alice plays beckon for 1 or robot within 2.5 of alice"}, "Go to the sofa and wait until the visitor is making the beckon gesture for 1 seconds or you are within 2.5 m of the visitor."),
+        ({"loop": [{"goto": "kitchen"}], "text": "Patrol the kitchen."}, "Patrol the kitchen."),
     ],
 )
 def test_render_phase(phase, text):
@@ -83,6 +92,11 @@ def test_render_request_joins_phases_and_conditions():
 
 def test_render_without_nouns_uses_names():
     assert render_phase(TaskPhase.parse({"goto": "ward_a"})) == "Go to ward a."
+
+
+def test_render_request_with_a_loop():
+    request = TaskRequest.parse({"phases": [{"loop": [{"goto": "kitchen"}, {"goto": "sofa"}], "until": "alice plays beckon"}, {"goto": "alice", "hold_time": 2}]})
+    assert render_phases(request.phases, NOUNS) == "Repeat these steps until the visitor is making the beckon gesture: Go to the kitchen. Then go to the sofa. Then go to the visitor and stay there for 2 seconds."
 
 
 @attrs.define

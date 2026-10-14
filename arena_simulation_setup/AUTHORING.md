@@ -569,8 +569,13 @@ robots:
 An empty scenario (robot start and phases only) is valid. Phases run in order
 and are `{goto: <pose or zone/door/elevator/pedestrian name>}`, `{gesture: <name>}`,
 `{reach: <named target | random | pose>}`, or a hold phase with neither (the robot
-stays where it is). Every phase takes `until: "<atom>"` (completes once the atom
-holds, after arrival for a goto), `hold_time` (park seconds on a goto), `signal`
+stays where it is), or `{loop: [<phases>], until: "<...>"}` (the phases repeated
+in order until the `until` holds, which drops the running phase and continues
+after the loop). Every phase takes `until: "<clause>[ or <clause>...]"`, a
+clause being `<atom>[ and <atom>...][ for <seconds>]` (completes once any clause
+has held, every atom together, for its dwell, after arrival for a goto, so
+`caller plays beckon for 0.5 or robot within 2.5 of caller`), `hold_time` (park
+seconds on a goto), `signal`
 (the robot ends the goto itself by sending that signal, such as `arrived`, and
 is judged against the tolerance at that moment), `conditions:` (clauses judged
 over this phase only), `text:` (the instruction handed to language-conditioned
@@ -585,7 +590,19 @@ robots:
       - {goto: kitchen}
       - {until: "not visitor_1 in kitchen"}
       - {goto: sofa, hold_time: 2, conditions: [{op: never, p: "robot in hallway"}]}
+      - loop:
+        - {goto: [10.0, 18.0, 1.5708]}
+        - {goto: [10.0, 2.0, -1.5708]}
+        until: "robot sees caller within 12 and caller plays beckon for 0.5"
+      - {goto: caller, tolerance_radius: 2.5, hold_time: 0}
 ```
+
+Atoms are the `conditions:` grammar of [worlds/README.md](worlds/README.md):
+`<entity>.<field> == <value>`, `<subject> in <zone>`, `<subject> within <r> of
+<subject>`, `<subject> sees <subject> [within <r>]` (in range, default 12 m, with
+no wall of the rendered wall grid between them), `<ped> plays <clip>` and `not
+<atom>`. A goto to a pedestrian by name is judged by `tolerance_radius` around
+the pedestrian.
 
 Add static obstacles under `objects:` and pedestrians under `humans:`, with
 the same schema as a world level's lists plus `level` (the level an entry

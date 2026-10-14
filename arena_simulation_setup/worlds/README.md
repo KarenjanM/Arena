@@ -264,13 +264,21 @@ robots:
       - {gesture: wave}          #   arm gesture, "random" allowed, optional instance: <mount>
       - {reach: stow}            #   arm reach: named target, "random", or a pose (optional frame:)
       - {until: "door_1.open == true"}  # hold where the robot is until the atom holds
+      - {loop: [{goto: [x, y, yaw]}, {goto: [x, y, yaw]}], until: "robot sees caller within 12 and caller plays beckon for 0.5"}
     conditions: []               # optional, clauses judged over this robot's whole phase list
 ```
 
-Every phase also takes `until: "<atom>"` (completes once the atom holds, after
-arrival for a goto), `hold_time: <s>` (park time at a goto goal), `conditions:`
-(clauses judged over this phase only), `text:` (instruction for
-language-conditioned planners) and `on_failure: continue | stop_task | abort_episode`.
+Every phase also takes `until: "<clause>[ or <clause>...]"` with a clause being
+`<atom>[ and <atom>...][ for <seconds>]` (` or ` binds loosest, a ` for ` dwell
+belongs to its clause, ` and ` binds tightest; the phase completes once any
+clause has held, every atom together, for its dwell, after arrival for a goto),
+`hold_time: <s>` (park time at a goto goal), `conditions:` (clauses judged
+over this phase only), `text:` (instruction for language-conditioned planners)
+and `on_failure: continue | stop_task | abort_episode`. A `loop:` entry repeats
+its phases in order; its `until` is judged on every tick, drops the running
+phase the moment it holds and continues with the entry after the loop (without
+`until` the loop runs until the episode ends). A loop takes only `until` and
+`text`.
 A pose given as a bare string samples a point inside that zone with identity
 orientation, and a named `goto` is judged met by zone membership rather than by
 distance to the sampled point. Which robot model and adapter runs is not part of
@@ -362,8 +370,12 @@ conditions:
 
 An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
 <value>` (an entity field test), `<subject> in <zone>` (zone membership),
-`<subject> within <r> of <subject>` (planar distance) and `not <atom>`. A subject
-is `robot` (the robot being judged), another robot's name or a pedestrian's name.
+`<subject> within <r> of <subject>` (planar distance), `<subject> sees <subject>
+[within <r>]` (planar distance at most `r`, default 12, and no wall cell of the
+world's rendered wall grid on the segment between them, doors open), `<ped>
+plays <clip>` (the pedestrian publishes that gesture clip) and `not <atom>`. A
+subject is `robot` (the robot being judged), another robot's name or a
+pedestrian's name.
 Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
 `failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
 A world entity (zone, door, elevator, schedule, sound) is named

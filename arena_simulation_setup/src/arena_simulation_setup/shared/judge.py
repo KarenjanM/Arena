@@ -15,8 +15,13 @@ from arena_simulation_setup.shared.conditions import (
     EpisodeCondition,
     MembershipAtom,
     NotAtom,
+    PlaysAtom,
+    SeesAtom,
+    Until,
+    UntilClause,
     WithinAtom,
     parse_atom,
+    parse_until,
 )
 
 if typing.TYPE_CHECKING:
@@ -34,14 +39,47 @@ FieldLookup = Callable[[str, str], str | None]
 
 
 @attrs.frozen
+class WallGrid:
+    """Wall cells of the flattened world as a north-up boolean grid (row 0 is the top edge), `origin` its lower-left corner."""
+
+    cells: np.ndarray
+    origin: tuple[float, float]
+    resolution: float
+
+    @classmethod
+    def of_level(cls, level: Level, resolution: float = 0.05) -> WallGrid:
+        """The level's walls rasterized at `resolution`, doors and elevator cabins left open."""
+        grid, origin = level.render_grid(resolution=resolution)
+        return cls(cells=grid < 128, origin=(float(origin[0]), float(origin[1])), resolution=resolution)
+
+    def cell(self, x: float, y: float) -> tuple[int, int]:
+        rows, cols = self.cells.shape
+        row = min(max(int(rows - (y - self.origin[1]) / self.resolution), 0), rows - 1)
+        col = min(max(int((x - self.origin[0]) / self.resolution), 0), cols - 1)
+        return row, col
+
+    def clear(self, a: tuple[float, float], b: tuple[float, float]) -> bool:
+        """Whether no wall cell lies on the segment from `a` to `b`."""
+        steps = max(2, int(math.hypot(b[0] - a[0], b[1] - a[1]) / self.resolution) + 1)
+        for i in range(steps):
+            f = i / (steps - 1)
+            row, col = self.cell(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)
+            if self.cells[row, col]:
+                return False
+        return True
+
+
+@attrs.frozen
 class Sample:
-    """World state at one instant: robot poses (x, y, yaw) and ped positions (x, y) by name, a missing subject is nowhere if in `known`, else unresolvable."""
+    """World state at one instant: robot poses (x, y, yaw), ped positions (x, y) and ped gesture clips by name, a missing subject is nowhere if in `known`, else unresolvable."""
 
     t: float
     robots: Mapping[str, tuple[float, float, float]] = attrs.field(factory=dict)
     peds: Mapping[str, tuple[float, float]] = attrs.field(factory=dict)
     field: FieldLookup = attrs.field(default=lambda entity, name: None)
     known: frozenset[str] = attrs.field(factory=frozenset)
+    clips: Mapping[str, frozenset[str]] = attrs.field(factory=dict)
+    walls: WallGrid | None = None
 
     def point(self, subject: str, robot: str) -> tuple[float, float] | None | typing.Literal[False]:
         """Planar position of a subject, False when it is known but absent, None when it is unknown."""
@@ -94,13 +132,61 @@ def atom_holds(atom: Atom, sample: Sample, zones: Zones, robot: str = 'robot') -
         if point is False:
             return False
         return bool(polygon.covers(shapely.Point(point)))
+    if isinstance(atom, PlaysAtom):
+        clips = sample.clips.get(atom.subject)
+        if clips is not None:
+            return atom.clip in clips
+        return False if atom.subject in sample.known and atom.subject not in sample.peds else None
     a = sample.point(atom.subject, robot)
     b = sample.point(atom.other, robot)
     if a is None or b is None:
         return None
     if a is False or b is False:
         return False
+    if isinstance(atom, SeesAtom):
+        if math.hypot(a[0] - b[0], a[1] - b[1]) > atom.range:
+            return False
+        return None if sample.walls is None else sample.walls.clear(a, b)
     return math.hypot(a[0] - b[0], a[1] - b[1]) <= atom.radius
+
+
+def clause_holds(clause: UntilClause, sample: Sample, zones: Zones, robot: str = 'robot') -> bool | None:
+    """Truth of every atom of a clause on one sample, None when none is false and one is unresolvable."""
+    verdicts = [atom_holds(atom, sample, zones, robot) for atom in clause.atoms]
+    if any(v is False for v in verdicts):
+        return False
+    return None if any(v is None for v in verdicts) else True
+
+
+def until_holds(until: Until, sample: Sample, zones: Zones, robot: str = 'robot') -> bool | None:
+    """Truth of any clause of an until on one sample, None when none is true and one is unresolvable."""
+    verdicts = [clause_holds(clause, sample, zones, robot) for clause in until.clauses]
+    if any(v is True for v in verdicts):
+        return True
+    return None if any(v is None for v in verdicts) else False
+
+
+@attrs.define
+class UntilMonitor:
+    """Sim seconds each clause of an until has held without a gap, met once any reaches its dwell."""
+
+    until: Until
+    robot: str = 'robot'
+    _since: list[float | None] = attrs.field(init=False)
+
+    def __attrs_post_init__(self) -> None:
+        self._since = [None] * len(self.until.clauses)
+
+    def step(self, sample: Sample, zones: Zones) -> bool:
+        met = False
+        for i, clause in enumerate(self.until.clauses):
+            if clause_holds(clause, sample, zones, self.robot) is not True:
+                self._since[i] = None
+                continue
+            if self._since[i] is None:
+                self._since[i] = sample.t
+            met = met or sample.t - self._since[i] >= clause.dwell
+        return met
 
 
 def operator_verdict(
@@ -263,7 +349,7 @@ class PhaseMonitor:
 
     phase: TaskPhase
     robot: str = 'robot'
-    _until: Atom | None = attrs.field(init=False)
+    _until: UntilMonitor | None = attrs.field(init=False)
     _park: ParkTimer = attrs.field(factory=ParkTimer, init=False)
     conditions: list[ConditionMonitor] = attrs.field(init=False)
     arrived_at: float | None = attrs.field(default=None, init=False)
@@ -272,7 +358,7 @@ class PhaseMonitor:
     misfire: str | None = attrs.field(default=None, init=False)
 
     def __attrs_post_init__(self) -> None:
-        self._until = parse_atom(self.phase.until) if self.phase.until is not None else None
+        self._until = UntilMonitor(parse_until(self.phase.until), self.robot) if self.phase.until is not None else None
         self.conditions = [ConditionMonitor(c, self.robot) for c in self.phase.conditions]
 
     @property
@@ -326,7 +412,7 @@ class PhaseMonitor:
 
         if not self.held:
             return False
-        if self._until is not None and atom_holds(self._until, sample, zones, self.robot) is not True:
+        if self._until is not None and not self._until.step(sample, zones):
             return False
         self.met_at = sample.t
         return True
@@ -357,10 +443,14 @@ __all__ = [
     'ParkTimer',
     'PhaseMonitor',
     'Sample',
+    'UntilMonitor',
+    'WallGrid',
     'Zones',
     'arrived',
     'atom_holds',
+    'clause_holds',
     'operator_verdict',
+    'until_holds',
     'values_equal',
     'zone_polygons',
 ]
