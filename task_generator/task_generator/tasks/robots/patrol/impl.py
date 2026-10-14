@@ -41,8 +41,6 @@ class TM_Patrol(TM_Robots):
         if not self._service_agent.value:
             raise ValueError(f"patrol: set {self.namespace('service_agent')} to the pedestrian whose call the robot answers")
         self._route = []
-        self._route_local = []
-        self._frame_offset = (0.0, 0.0)
         self._index = 0
         self._current_goal = None
         self._walls_cache = None
@@ -56,8 +54,7 @@ class TM_Patrol(TM_Robots):
         robots = list(self._ctx.robots.values())
         for robot, config in zip(robots, scenario.robots, strict=False):
             self._start_poses[robot.name] = config.start
-            self._scenario_start = config.start
-            self._route_local = [phase.goto for phase in config.phase_list() if isinstance(phase, ScenarioGotoPhase)]
+            self._route = [phase.goto for phase in config.phase_list() if isinstance(phase, ScenarioGotoPhase)]
             await robot.move(config.start)
             break  # one robot patrols
 
@@ -69,16 +66,6 @@ class TM_Patrol(TM_Robots):
                 qos_profile_sensor_data,
             )
 
-    def _adopt_frame(self, spawn_pose: Pose) -> None:
-        """Shift the route by the offset between the robot's reported pose and the scenario start, when it exceeds a meter."""
-        ox = spawn_pose.position.x - self._scenario_start.position.x
-        oy = spawn_pose.position.y - self._scenario_start.position.y
-        if math.hypot(ox, oy) < 1.0:
-            ox = oy = 0.0
-        self._frame_offset = (ox, oy)
-        self._route = [Pose(position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z), orientation=pose.orientation) for pose in self._route_local]
-        self._logger.info(f"patrol route in the robot's frame, offset ({ox:.2f}, {oy:.2f}): {[(round(p.position.x, 1), round(p.position.y, 1)) for p in self._route]}")
-
     ARRIVED_M = 1.2
 
     def _next_checkpoint(self) -> TaskRequest:
@@ -86,8 +73,7 @@ class TM_Patrol(TM_Robots):
         i = self._index % len(self._route)
         self._current_goal = self._route[i]
         self._index += 1
-        # the adapter adds the env offset itself, so the goal is handed over in the scenario frame
-        return TaskRequest(phases=[GoToPhase(pose=self._route_local[i])])
+        return TaskRequest(phases=[GoToPhase(pose=self._route[i])])
 
     def _on_peds(self, msg: Pedestrians) -> None:
         """Keep the latest pedestrians, everything else happens on the episode tick."""
@@ -106,7 +92,7 @@ class TM_Patrol(TM_Robots):
         elif self._service_dwell.value > 0.0:
             self._served_since = None
 
-        if self._diverted or not self._route:
+        if self._diverted:
             return
         calling = self._calling()
         if calling is None or not self._perceives(pose, calling[1]):
@@ -169,18 +155,10 @@ class TM_Patrol(TM_Robots):
         cols = np.clip(np.array(cols), 0, walls.shape[1] - 1)
         return not bool(walls[rows, cols].any())
 
-    def _to_scenario_frame(self, p: Position) -> Position:
-        """Robot-frame position -> the frame of the world map and its wall grid."""
-        ox, oy = self._frame_offset
-        return Position(p.x - ox, p.y - oy, p.z)
-
-    def _to_scenario_pose(self, pose: Pose) -> Pose:
-        return Pose(position=self._to_scenario_frame(pose.position), orientation=pose.orientation)
-
     def _perceives(self, robot_pose: Pose, ped: Position) -> bool:
         if math.dist((robot_pose.position.x, robot_pose.position.y), (ped.x, ped.y)) > self._sensor_range.value:
             return False
-        return not self._require_los.value or self._line_of_sight(self._to_scenario_frame(robot_pose.position), self._to_scenario_frame(ped))
+        return not self._require_los.value or self._line_of_sight(robot_pose.position, ped)
 
     # -- episode -------------------------------------------------------------------------------
 
@@ -188,15 +166,14 @@ class TM_Patrol(TM_Robots):
     async def done(self) -> bool:
         """Answer a perceived call, keep the loop running, and end the episode once the caller is served."""
         robots = list(self._ctx.robots.values())
-        if not robots or not self._route_local:
+        if not robots or not self._route:
             return False
         robot = robots[0]
         pose = robot.pose
         if pose is None:
             return False
 
-        if not self._route:
-            self._adopt_frame(pose)
+        if self._current_goal is None:
             await robot.submit_task(self._next_checkpoint())
             return False
 
@@ -207,7 +184,7 @@ class TM_Patrol(TM_Robots):
             return True
 
         if self._divert_pending and not self._diverted and self._service_goal is not None:
-            await robot.submit_task(TaskRequest(phases=[GoToPhase(pose=self._to_scenario_pose(self._service_goal))]))
+            await robot.submit_task(TaskRequest(phases=[GoToPhase(pose=self._service_goal)]))
             self._diverted = True
             self._divert_pending = False
             self._logger.info(f"goal overridden by the caller at ({self._service_goal.position.x:.1f}, {self._service_goal.position.y:.1f})")
@@ -236,12 +213,9 @@ class TM_Patrol(TM_Robots):
         self._subscription = None
         self._peds: Pedestrians | None = None
         self._route: list[Pose] = []
-        self._route_local: list[Pose] = []
-        self._frame_offset: tuple[float, float] = (0.0, 0.0)
         self._index = 0
         self._current_goal: Pose | None = None
         self._walls_cache: np.ndarray | None = None
-        self._scenario_start = Pose()
         self._service_goal: Pose | None = None
         self._divert_pending = False
         self._served_since: float | None = None

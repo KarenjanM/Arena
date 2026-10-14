@@ -22,7 +22,7 @@ def _param(value: object) -> SimpleNamespace:
     return SimpleNamespace(value=value)
 
 
-def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, require_los: bool = True, agent: str = "caller", clip: str = "beckon", frame_offset: tuple[float, float] = (0.0, 0.0)) -> TM_Patrol:
+def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, require_los: bool = True, agent: str = "caller", clip: str = "beckon") -> TM_Patrol:
     """A TM_Patrol with only the fields its pure helpers read."""
     mode = object.__new__(TM_Patrol)
     grid = np.full(SHAPE, WorldOccupancy.EMPTY, dtype=np.uint8) if walls is None else walls
@@ -41,7 +41,6 @@ def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, requir
     mode._clip = _param(clip)
     mode._peds = None
     mode._walls_cache = None
-    mode._frame_offset = frame_offset
     return mode
 
 
@@ -91,27 +90,21 @@ def test_perception_needs_range_and_sight() -> None:
     assert blind._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))
 
 
-def test_sightlines_are_traced_in_the_scenario_frame() -> None:
-    """Robot-frame poses are shifted by the env offset before they meet the wall grid."""
-    wall = _wall_at(5.0)
-    shifted = _mode(walls=wall, frame_offset=(5.0, 5.0))
-    assert shifted._perceives(_pose(6.0, 10.0), Position(9.0, 10.0, 0.0))
-    assert not shifted._perceives(_pose(6.0, 10.0), Position(13.0, 10.0, 0.0))
-    unshifted = _mode(walls=wall)
-    assert unshifted._perceives(_pose(6.0, 8.0), Position(9.0, 8.0, 0.0))
+def test_sightlines_are_traced_against_the_wall_grid() -> None:
+    mode = _mode(walls=_wall_at(5.0))
+    assert mode._perceives(_pose(1.0, 8.0), Position(4.0, 8.0, 0.0))
+    assert not mode._perceives(_pose(1.0, 8.0), Position(9.0, 8.0, 0.0))
 
 
-def test_goals_are_submitted_in_the_scenario_frame() -> None:
-    """Arrival is checked in the robot's frame, goals are submitted in the scenario frame."""
-    mode = _mode(frame_offset=(5.0, 5.0))
-    mode._route_local = [Pose(position=Position(10.6, 11.6, 0.0), orientation=Orientation.from_yaw(0.0))]
-    mode._route = [Pose(position=Position(15.6, 16.6, 0.0), orientation=Orientation.from_yaw(0.0))]
+def test_checkpoints_are_submitted_as_the_scenario_wrote_them() -> None:
+    mode = _mode()
+    mode._route = [Pose(position=Position(10.6, 11.6, 0.0), orientation=Orientation.from_yaw(0.0)), Pose(position=Position(13.2, 11.5, 0.0), orientation=Orientation.from_yaw(0.0))]
     mode._index = 0
-    goal = mode._next_checkpoint().phases[0].pose
-    assert (goal.position.x, goal.position.y) == (10.6, 11.6)
-    assert (mode._current_goal.position.x, mode._current_goal.position.y) == (15.6, 16.6)
-    service = mode._to_scenario_pose(Pose(position=Position(18.5, 16.6, 0.0), orientation=Orientation.from_yaw(0.0)))
-    assert (service.position.x, service.position.y) == pytest.approx((13.5, 11.6))
+    first = mode._next_checkpoint().phases[0].pose
+    assert (first.position.x, first.position.y) == (10.6, 11.6)
+    assert mode._current_goal is mode._route[0]
+    second = mode._next_checkpoint().phases[0].pose
+    assert (second.position.x, second.position.y) == (13.2, 11.5)
 
 
 def test_only_the_named_agent_playing_the_call_clip_counts() -> None:
