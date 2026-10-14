@@ -21,6 +21,7 @@ from arena_simulation_setup.shared.conditions import (
 from arena_simulation_setup.shared.judge import (
     PARK_DRIFT_M,
     PARK_TURN_RAD,
+    WALL_GRID_RESOLUTION_M,
     ConditionMonitor,
     ParkTimer,
     PhaseMonitor,
@@ -431,6 +432,19 @@ def test_wall_grid_of_level_leaves_doors_open():
     grid = WallGrid.of_level(level, resolution=0.05)
     assert not grid.clear((1.0, 3.0), (3.0, 3.0))
     assert grid.clear((1.0, 1.5), (3.0, 1.5))
+
+
+def test_wall_grid_of_level_defaults_to_the_shared_resolution():
+    level = Level(
+        zones=[Zone(name="room", polygon=[Position(0, 0), Position(0, 4), Position(4, 4), Position(4, 0)])],
+        walls=[WallPath(path=[Position(2, 0), Position(2, 4)])],
+    )
+    grid = WallGrid.of_level(level)
+    explicit = WallGrid.of_level(level, resolution=WALL_GRID_RESOLUTION_M)
+    assert grid.resolution == WALL_GRID_RESOLUTION_M
+    assert grid.origin == explicit.origin
+    assert np.array_equal(grid.cells, explicit.cells)
+    assert grid.cells.shape != WallGrid.of_level(level, resolution=2 * WALL_GRID_RESOLUTION_M).cells.shape
 
 
 def test_sees_needs_range_and_sight():

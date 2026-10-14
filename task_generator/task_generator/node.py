@@ -35,6 +35,7 @@ from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.shared.judge import Sample, WallGrid, atom_holds, zone_polygons
+from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
@@ -57,7 +58,6 @@ from task_generator.interactive.entities import EntityHandles
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.realizer import Realizer
 from task_generator.manager.robot_manager import RobotsManager
-from task_generator.manager.world_manager.utils import WorldOccupancy
 from task_generator.manager.world_manager.world_manager_ros import (
     WorldManagerROS as WorldManager,
 )
@@ -999,10 +999,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._known_subjects.update(robots)
         return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls)
 
-    def _wall_grid(self) -> WallGrid:
-        """The loaded world's wall layer in the frame the judge samples in."""
-        world_map = self._world_manager.map
-        return WallGrid(cells=WorldOccupancy.fullish(world_map.occupancy.walls), origin=(world_map.origin.x, world_map.origin.y), resolution=world_map.resolution)
+    def _wall_grid(self, compacted: Level) -> WallGrid:
+        """The loaded world's walls rasterized the way the replay judge rasterizes them."""
+        return WallGrid.of_level(compacted)
 
     async def _tick_robots(self) -> None:
         if self._robots_manager is None:
@@ -1380,8 +1379,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     await self._world_manager.apply_world(record.world)
                 await self._task.reset(seed=record.seed)
             finally:
-                self._judge_zones = zone_polygons(self._world_manager.world_compacted())
-                self._judge_walls = self._wall_grid()
+                compacted = self._world_manager.world_compacted()
+                self._judge_zones = zone_polygons(compacted)
+                self._judge_walls = self._wall_grid(compacted)
                 for manager in self._robots_manager.managers.values():
                     manager.set_episode_conditions(self._episode_conditions)
                 await self.release("reset")

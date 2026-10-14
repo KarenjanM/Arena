@@ -33,6 +33,7 @@ if typing.TYPE_CHECKING:
 FLOAT_TOLERANCE = 1e-6
 PARK_DRIFT_M = 0.05
 PARK_TURN_RAD = math.radians(5.0)
+WALL_GRID_RESOLUTION_M = 0.05
 
 Zones = Mapping[str, 'shapely.Polygon']
 FieldLookup = Callable[[str, str], str | None]
@@ -47,7 +48,7 @@ class WallGrid:
     resolution: float
 
     @classmethod
-    def of_level(cls, level: Level, resolution: float = 0.05) -> WallGrid:
+    def of_level(cls, level: Level, resolution: float = WALL_GRID_RESOLUTION_M) -> WallGrid:
         """The level's walls rasterized at `resolution`, doors and elevator cabins left open."""
         grid, origin = level.render_grid(resolution=resolution)
         return cls(cells=grid < 128, origin=(float(origin[0]), float(origin[1])), resolution=resolution)
@@ -438,6 +439,7 @@ __all__ = [
     'FLOAT_TOLERANCE',
     'PARK_DRIFT_M',
     'PARK_TURN_RAD',
+    'WALL_GRID_RESOLUTION_M',
     'ConditionMonitor',
     'FieldLookup',
     'ParkTimer',
