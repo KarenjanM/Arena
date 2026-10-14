@@ -47,7 +47,13 @@ class _Harness:
             self.retuned.append({k: dict(v) for k, v in changes.items()})
             return len(changes)
 
-        self.driver = WaypointDriver("/pytest_waypoints", reroute=reroute, robot_pose=lambda: self.pose, submit=submit, retune=retune, depart_after_m=depart_after_m)
+        self.stimulated: list[tuple[list[str], str, float]] = []
+
+        async def stimulus(names, need, intensity):
+            self.stimulated.append((list(names), need, intensity))
+            return len(names) - 1
+
+        self.driver = WaypointDriver("/pytest_waypoints", reroute=reroute, robot_pose=lambda: self.pose, submit=submit, retune=retune, stimulus=stimulus, depart_after_m=depart_after_m)
         self.driver._now = lambda: self.now
 
     def arm(self, *entries, origin=None):
@@ -276,6 +282,24 @@ def test_a_retune_fires_once_through_the_hook(harness) -> None:
     assert len(harness.retuned) == 1 and harness.retuned[0]["a"]["desired_velocity"] == 0.6
     (outcome,) = harness.driver.outcomes()
     assert outcome.issued == 2 and outcome.t_first == pytest.approx(3.5 - 1e-6) and harness.sent == []
+
+
+def test_a_stimulus_fires_once_and_counts_who_it_missed(harness) -> None:
+    harness.arm(_plan("stimulus", at=8.0, need="alarm", intensity=0.8))
+    harness.run(at=7.0)
+    assert harness.stimulated == []
+    harness.run(at=8.5)
+    harness.run(at=20.0)
+    assert harness.stimulated == [(["a", "b"], "alarm", 0.8)] and harness.sent == []
+    (outcome,) = harness.driver.outcomes()
+    assert outcome.issued == 1 and outcome.failures == 1 and outcome.mode == "stimulus"
+
+
+def test_a_stimulus_plan_needs_a_need() -> None:
+    from task_generator.tasks.obstacles.edge_case.waypoints import WaypointError
+
+    with pytest.raises(WaypointError, match="needs a need"):
+        _plan("stimulus")
 
 
 def test_the_case_clock_waits_for_the_robot_to_set_off() -> None:

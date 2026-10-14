@@ -41,6 +41,9 @@ class Mode(enum.StrEnum):
     RETUNE = "retune"
     """Respawn each owned agent where it stands with new parameters, once."""
 
+    STIMULUS = "stimulus"
+    """Raise a need on every owned agent, once."""
+
 
 class WaypointError(Exception):
     """A plan cannot be executed."""
@@ -72,6 +75,9 @@ class Plan:
     points: dict[str, Point] = attrs.Factory(dict)
     #: `retune`: agent name -> the new `agent:` block (agent_type, desired_velocity).
     retune: dict[str, dict[str, Any]] = attrs.Factory(dict)
+    #: `stimulus`: the need raised, to 100 x `intensity`.
+    need: str = ""
+    intensity: float = 1.0
     label: str = ""
 
     def __attrs_post_init__(self) -> None:
@@ -79,6 +85,8 @@ class Plan:
             raise WaypointError(f"{self.label or self.mode}: a plan owns no agents")
         if self.mode is Mode.RALLY and set(self.targets) != set(self.homes):
             raise WaypointError(f"{self.label or self.mode}: a rally needs a target for every owned agent")
+        if self.mode is Mode.STIMULUS and not self.need:
+            raise WaypointError(f"{self.label or self.mode}: a stimulus needs a need to raise")
         for name in self.resume:
             if name not in self.homes:
                 raise WaypointError(f"{self.label or self.mode}: resume point for {name!r}, which the plan does not own")
@@ -95,6 +103,7 @@ class Plan:
             "duration": self.duration,
             "targets": {k: list(v) for k, v in sorted(self.targets.items())},
             "retune": {k: dict(v) for k, v in sorted(self.retune.items())},
+            **({"need": self.need, "intensity": self.intensity} if self.mode is Mode.STIMULUS else {}),
         }
 
     def shuffle_routes(self, step: int) -> dict[str, list[Point]]:

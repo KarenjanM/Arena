@@ -20,6 +20,7 @@ and what depends on the live robot is solved at reset:
 | `track_robot` | re-issue the robot's position as the goal | same |
 | `hold` | pin the agents in scope, then release them to their own goal | same |
 | `retune` | change the agents in scope to another `profile` and/or `speed` / `speed_scale`, once, in place (position, velocity and route continue). HumanSim has no in-place update, so under `human:=arena` every retune counts as failures on the plan's outcome | same, [`impl.py`](impl.py) `_retune_agents` |
+| `stimulus` | raise a `need` (to 100 x `intensity`, default 1) on the agents in scope, once, through HumanSim's `notify_stimulus`; each agent reacts after its own `reaction_time`. A behaviour-tree type with a `transitions` entry keyed on that need switches sequence: behaviour changes without a respawn, parameters do not | same, [`impl.py`](impl.py) `_stimulate_agents` |
 | `objects:` | a hand-authored object timeline (not written by the generator) | [`object_driver.py`](object_driver.py) |
 
 Every effect carries a `when`: `{at: s}`, `{robot_within: m, of: zone|[x,y]}`,
@@ -67,6 +68,7 @@ effects:
 - {type: rally, label: A:evacuation, scope: [normal_1, normal_2], target: central_hallway, when: {at: 8.0}}
 - {type: scatter, label: D:formation_break, scope: [d_1, d_2, d_3], radius: 2.0, when: {robot_within: 3.0, of: [12.1, 4.0]}}
 - {type: retune, label: A:blackout, scope: [normal_1, normal_3], profile: ./types/adult__vision_range_low.yaml, speed_scale: 0.545, when: {at: 10.0}}
+- {type: stimulus, label: A:evacuation, scope: [break_1, break_2], need: alarm, when: {at: 8.0}}
 formation: {centre: [12.1, 4.0], radius: 1.8, variant: circle, at: {at: 8.0}}   # where Step D's group forms
 decisions: {...}      # the generator's typed decisions, for review
 provenance: {...}     # prompt hash, model, response hashes, generator version
@@ -99,6 +101,17 @@ Injected agents are named `edge_0`, `edge_1`, … in block order.
 ### Scopes
 
 `all` (every placed agent), `injected` (the `edge_*` agents), or an explicit list of names.
+
+### `stimulus`
+
+Every agent in scope must be a `mode: behavior_tree` type that declares the `need`, or the case
+**aborts**: HumanSim ignores an undeclared need and a `mode: simple` agent has no tree to switch,
+so either would be a silent no-op. The generator's evacuation writes this pairing: talkers get a
+derived `./types/talker__evacuate.yaml` (an `alarm` need latched at 0, an `evacuate` sequence
+walking to the exit, a transition into it from every other sequence) and the stimulus, while the
+plain walkers get the `rally`. A `rally` on a behaviour-tree agent swaps its movement for a
+waypoint route its still-ticking tree then writes commands onto, which can crash HumanSim; keep
+trees out of route rewrites.
 
 ---
 

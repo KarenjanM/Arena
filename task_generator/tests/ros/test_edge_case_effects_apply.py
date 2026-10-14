@@ -297,6 +297,54 @@ def test_a_prompt_scenario_name_yields_its_base(tmp_path, monkeypatch) -> None:
         tm._apply_prompt()
 
 
+# Stimulus: a need switches a behaviour tree's sequence
+# -----------------------------------------------------
+
+
+def _tree_type(tmp_path, need="alarm"):
+    path = tmp_path / "evacuating.yaml"
+    path.write_text(
+        "name: evacuating\nmode: behavior_tree\nextends: adult\n"
+        f"needs: {{{need}: {{initial: 0.0, decay_rate: 0.0}}}}\n"
+        "initial_sequence: chat\n"
+        "sequences:\n"
+        "  chat: {steps: {talk: {interaction: GROUP_CONVERSATION, duration: 30.0}}, then: chat, transitions: [{when: {alarm: {above: 50.0}}, goto: leave}]}\n"
+        "  leave: {steps: {go: {kind: go_to, target_pose: {x: 1.0, y: 2.0, theta: 0.0}}}}\n"
+    )
+    return str(path)
+
+
+def test_stimulus_plans_the_need_on_behaviour_trees(tmp_path) -> None:
+    talker = _tree_type(tmp_path)
+    population = [obstacle("talker_1", (5.0, 5.0), [], agent_type=talker), obstacle("talker_2", (6.0, 5.0), [], agent_type=talker), *_population()]
+    tm = _mode(
+        tmp_path,
+        population=population,
+        block=_block(
+            effects=[
+                {"type": "stimulus", "scope": ["talker_1", "talker_2"], "need": "alarm", "label": "A:evacuation", "when": {"at": 8}},
+            ]
+        ),
+    )
+    _run(tm)
+    assert not tm.aborted
+    ((plan, _t, _r),) = tm.driver.entries
+    assert plan.mode == "stimulus" and plan.need == "alarm" and plan.intensity == 1.0 and plan.at == 8.0 and sorted(plan.homes) == ["talker_1", "talker_2"]
+    (row,) = _records(tmp_path)
+    assert row["plans"][0]["need"] == "alarm"
+    assert asyncio.run(tm._stimulate_agents(["talker_1"], "alarm", 1.0)) == 1
+    assert tm._ctx.environment_manager.stimulated == [(["talker_1"], "alarm", 1.0)]
+
+
+def test_stimulus_on_an_agent_that_cannot_react_aborts(tmp_path) -> None:
+    deaf = _tree_type(tmp_path, need="social")
+    population = [obstacle("talker_1", (5.0, 5.0), [], agent_type=deaf), *_population()]
+    tm = _mode(tmp_path, population=population, block=_block(effects=[{"type": "stimulus", "scope": ["talker_1", "walker_a"], "need": "alarm"}]))
+    _run(tm)
+    assert tm.aborted and "reaches no behaviour tree" in tm.aborted[0]
+    assert "talker_1" in tm.aborted[0] and "walker_a (adult)" in tm.aborted[0]
+
+
 # Retune: parameters change when the case runs, not at t=0
 # ----------------------------------------------------------
 

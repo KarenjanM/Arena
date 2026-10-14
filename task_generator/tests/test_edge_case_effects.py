@@ -134,3 +134,17 @@ def test_retune_needs_a_change() -> None:
     e = parse_effect({"type": "retune", "scope": ["a"], "profile": "./types/adult__vision_range_low.yaml", "speed_scale": 0.55, "when": {"at": 10}})
     assert isinstance(e, Retune) and e.speed_scale == 0.55 and e.when.at == 10.0
     assert parse_effect({"type": "retune", "speed": 0.6}).speed == 0.6
+
+
+def test_stimulus_needs_a_need_and_an_intensity_within_one() -> None:
+    from task_generator.tasks.obstacles.edge_case.effects import Stimulus
+
+    with pytest.raises(EffectError, match="needs a 'need'"):
+        parse_effect({"type": "stimulus", "scope": ["a"]})
+    with pytest.raises(EffectError, match=r"within \[0, 1\]"):
+        parse_effect({"type": "stimulus", "need": "alarm", "intensity": 1.5})
+    with pytest.raises(EffectError, match="unknown key"):
+        parse_effect({"type": "stimulus", "need": "alarm", "stimulus": "alarm"})
+    e = parse_effect({"type": "stimulus", "scope": ["talker_1"], "need": " alarm ", "when": {"at": 8}})
+    assert isinstance(e, Stimulus) and e.need == "alarm" and e.intensity == 1.0 and e.when.at == 8.0
+    assert e.as_dict()["type"] == "stimulus" and e.as_dict()["scope"] == ["talker_1"]

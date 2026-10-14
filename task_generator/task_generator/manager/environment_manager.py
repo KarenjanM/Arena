@@ -504,6 +504,10 @@ class EnvironmentManager(NodeInterface):
         `update_agents`). No frame work: nothing moves."""
         return await self._human_simulator.update_agents(obstacles)
 
+    async def stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> int:
+        """Raise a need on spawned agents, mid-episode (see the human simulator's `stimulate_agents`)."""
+        return await self._human_simulator.stimulate_agents(names, need, intensity)
+
     async def set_agent_waypoints(
         self,
         routes: Mapping[str, Sequence[tuple[float, float]]],

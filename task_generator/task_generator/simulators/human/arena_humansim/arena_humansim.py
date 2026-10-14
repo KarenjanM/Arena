@@ -1173,7 +1173,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         finally:
             self._spawns_in_flight -= 1
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
+    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> bool:
         request = NotifyStimulus.Request()
         request.agent_id = agent_id
         request.stimulus = stimulus
@@ -1182,9 +1182,25 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             response = await self._notify_stimulus_client.call_timeout(request)
         except Exception as e:
             self._logger.error(f"NotifyStimulus call failed: {e}")
-            return
-        if response is not None and not response.success:
+            return False
+        if response is None:
+            self._logger.error("NotifyStimulus timed out")
+            return False
+        if not response.success:
             self._logger.error(f"NotifyStimulus failed: {response.message}")
+        return bool(response.success)
+
+    async def _stimulate_impl(self, names: Sequence[str], need: str, intensity: float) -> int:
+        """`NotifyStimulus` per named agent, resolved through `_agent_names` like `_set_waypoints_impl`."""
+        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        reached = 0
+        for name in names:
+            agent_id = by_name.get(name)
+            if agent_id is None:
+                self._logger.warning(f"NotifyStimulus: {name!r} is not a known agent")
+                continue
+            reached += int(await self.notify_stimulus(agent_id, need, intensity))
+        return reached
 
     async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
         """Remove static obstacles (and their matching world objects) from arena_humansim."""

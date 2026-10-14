@@ -46,6 +46,7 @@ from .effects import (
     Rally,
     Retune,
     Shuffle,
+    Stimulus,
     TrackRobot,
     When,
 )
@@ -452,6 +453,7 @@ class TM_EdgeCase(TM_Obstacles):
                 submit=submit_to(self.node.event_loop),
                 rate_hz=WAYPOINT_RATE_HZ,
                 retune=self._retune_agents,
+                stimulus=self._stimulate_agents,
                 depart_after_m=ROBOT_DEPART_M,
             )
             self.node.executor.add_node(driver)
@@ -475,6 +477,9 @@ class TM_EdgeCase(TM_Obstacles):
 
     def _reroute(self, routes: dict[str, Sequence[Point]]) -> Work:
         return self._ctx.environment_manager.set_agent_waypoints(routes)
+
+    def _stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> Work:
+        return self._ctx.environment_manager.stimulate_agents(names, need, intensity)
 
     async def _retune_agents(self, changes: Mapping[str, Mapping[str, Any]]) -> int:
         """Change the named agents' parameters in place (`update_agents`): new `agent:` block, same
@@ -761,11 +766,30 @@ class TM_EdgeCase(TM_Obstacles):
                 plan = Plan(mode=WaypointMode.HOLD, homes=homes, at=at, duration=effect.duration, resume=self._goals_of(homes, dynamic), label=label)
             elif isinstance(effect, Retune):
                 plan = Plan(mode=WaypointMode.RETUNE, homes=homes, at=at, retune=self._retune_blocks(effect, homes, dynamic), label=label)
+            elif isinstance(effect, Stimulus):
+                self._check_reacts(effect, homes, dynamic, where=where)
+                plan = Plan(mode=WaypointMode.STIMULUS, homes=homes, at=at, need=effect.need, intensity=effect.intensity, label=label)
             else:  # pragma: no cover - parse() only builds the kinds above
                 raise CaseAborted(f"{where}: no runtime for this effect")
         except WaypointError as exc:
             raise CaseAborted(f"{where}: {exc}") from None
         return plan, trigger, reference
+
+    def _check_reacts(self, effect: Stimulus, homes: dict[str, Point], dynamic: Sequence[DynamicObstacle], *, where: str) -> None:
+        """Every agent in scope must be a behaviour tree declaring the need: HumanSim ignores an
+        undeclared need, and a simple agent has no tree to switch, so either would be a silent no-op."""
+        deaf: list[str] = []
+        for agent in dynamic:
+            if str(agent.name) not in homes:
+                continue
+            try:
+                raw = self._resolved_type(agent)
+            except AgentTypeError as exc:
+                raise CaseAborted(f"{where}: {agent.name}: {exc}") from None
+            if raw.get("mode") != "behavior_tree" or effect.need not in (raw.get("needs") or {}):
+                deaf.append(f"{agent.name} ({self._agent_type_of(agent) or 'adult'})")
+        if deaf:
+            raise CaseAborted(f"{where}: need {effect.need!r} reaches no behaviour tree on {deaf}")
 
     def _retune_blocks(self, effect: Retune, homes: dict[str, Point], dynamic: Sequence[DynamicObstacle]) -> dict[str, dict[str, Any]]:
         """The new `agent:` block per owned agent: the effect's profile (resolved beside the

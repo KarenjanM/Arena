@@ -83,6 +83,7 @@ class WaypointDriver(rclpy.node.Node):
         submit: Callable[[Work], None],
         rate_hz: float = DEFAULT_RATE_HZ,
         retune: Callable[[Mapping[str, Mapping[str, Any]]], Work] | None = None,
+        stimulus: Callable[[Sequence[str], str, float], Work] | None = None,
         depart_after_m: float | None = None,
     ) -> None:
         super().__init__(
@@ -93,6 +94,7 @@ class WaypointDriver(rclpy.node.Node):
         )
         self._reroute = reroute
         self._retune = retune
+        self._stimulus = stimulus
         self._robot_pose = robot_pose
         self._submit = submit
         self._armed: list[Armed] = []
@@ -253,11 +255,11 @@ class WaypointDriver(rclpy.node.Node):
         if armed.last is not None and elapsed - armed.last < plan.period:
             return
 
-        if plan.mode is Mode.RETUNE:
+        if plan.mode in (Mode.RETUNE, Mode.STIMULUS):
             armed.done = True
             armed.issues += 1
             armed.outcome.t_first = elapsed
-            self._send_retune(armed, elapsed)
+            self._send_once(armed, elapsed)
             return
 
         routes = self._routes(armed, robot)
@@ -288,31 +290,39 @@ class WaypointDriver(rclpy.node.Node):
             return plan.hold_routes()
         return plan.shuffle_routes(armed.issues)
 
-    def _send_retune(self, armed: Armed, elapsed: float) -> None:
-        if self._retune is None:
+    def _send_once(self, armed: Armed, elapsed: float) -> None:
+        if (self._retune if armed.plan.mode is Mode.RETUNE else self._stimulus) is None:
             armed.outcome.failures += 1
-            armed.outcome.reason = "no retune hook"
+            armed.outcome.reason = f"no {armed.plan.mode} hook"
             return
-        work = self._run_retune(armed, elapsed)
+        work = self._run_once(armed, elapsed)
         try:
             self._submit(work)
         except Exception as exc:
             work.close()
             self._fail(f"could not schedule: {exc!r}")
 
-    async def _run_retune(self, armed: Armed, elapsed: float) -> None:
-        assert self._retune is not None
+    async def _run_once(self, armed: Armed, elapsed: float) -> None:
+        plan = armed.plan
+        retune = plan.mode is Mode.RETUNE
+        wanted = len(plan.retune) if retune else len(plan.homes)
         try:
-            ok = await self._retune(armed.plan.retune)
+            if retune:
+                assert self._retune is not None
+                ok = await self._retune(plan.retune)
+            else:
+                assert self._stimulus is not None
+                ok = await self._stimulus(sorted(plan.homes), plan.need, plan.intensity)
         except Exception as exc:
             armed.outcome.failures += 1
-            self.get_logger().warn(f"edge_case: retune at t={elapsed:.1f}s failed ({exc!r})")
+            self.get_logger().warn(f"edge_case: {plan.mode} at t={elapsed:.1f}s failed ({exc!r})")
             return
-        n = int(ok) if isinstance(ok, int) and not isinstance(ok, bool) else (len(armed.plan.retune) if ok else 0)
+        n = int(ok) if isinstance(ok, int) and not isinstance(ok, bool) else (wanted if ok else 0)
         armed.outcome.issued += n
-        if n < len(armed.plan.retune):
-            armed.outcome.failures += len(armed.plan.retune) - n
-        self.get_logger().warn(f"edge_case: {armed.plan.label or 'retune'} at t={elapsed:.1f}s - {n} of {len(armed.plan.retune)} agent(s) retuned")
+        if n < wanted:
+            armed.outcome.failures += wanted - n
+        done = "retuned" if retune else f"stimulated ({plan.need})"
+        self.get_logger().warn(f"edge_case: {plan.label or plan.mode} at t={elapsed:.1f}s - {n} of {wanted} agent(s) {done}")
 
     def _send(self, armed: Armed, routes: Mapping[str, Sequence[Point]], elapsed: float) -> None:
         work = self._run(armed, routes, elapsed)

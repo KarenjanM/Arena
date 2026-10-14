@@ -83,12 +83,17 @@ class _Env:
         self.removed: list[list[str]] = []
         self.spawned: list[list] = []
         self.updated: list[list] = []
+        self.stimulated: list[tuple[list[str], str, float]] = []
         self.update_ok = True
         self.set_agent_waypoints = None
 
     async def update_agents(self, obstacles):
         self.updated.append(list(obstacles))
         return self.update_ok
+
+    async def stimulate_agents(self, names, need, intensity):
+        self.stimulated.append((list(names), need, intensity))
+        return len(names)
 
     def ezilear(self, p):
         return p

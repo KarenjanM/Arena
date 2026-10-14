@@ -865,11 +865,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if not routes:
             return True
 
-        index: dict[str, str] = {}
-        for name, known in self._known_obstacles.items():
-            sim_path = str(getattr(known.obstacle, "sim_path", "") or name)
-            index.setdefault(name, sim_path)
-            index.setdefault(sim_path, sim_path)
+        index = self._sim_path_index()
 
         resolved = {index.get(name, name): points for name, points in routes.items()}
         return await self._set_waypoints_impl(resolved)
@@ -889,13 +885,30 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """
         if not obstacles:
             return True
+        index = self._sim_path_index()
+        resolved = {index.get(str(getattr(o, "sim_path", "") or o.name), index.get(str(o.name), str(o.name))): o for o in obstacles}
+        return await self._update_agents_impl(resolved)
+
+    def _sim_path_index(self) -> dict[str, str]:
+        """Plain name and sim_path -> sim_path, for every known obstacle."""
         index: dict[str, str] = {}
         for name, known in self._known_obstacles.items():
             sim_path = str(getattr(known.obstacle, "sim_path", "") or name)
             index.setdefault(name, sim_path)
             index.setdefault(sim_path, sim_path)
-        resolved = {index.get(str(getattr(o, "sim_path", "") or o.name), index.get(str(o.name), str(o.name))): o for o in obstacles}
-        return await self._update_agents_impl(resolved)
+        return index
+
+    async def stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> int:
+        """Raise `need` to 100 x `intensity` on named agents, mid-episode, so a behaviour-tree type with a
+        `transitions` entry on it switches sequence. Names resolve as in :meth:`set_agent_waypoints`;
+        returns how many agents the backend reached."""
+        index = self._sim_path_index()
+        return await self._stimulate_impl([index.get(n, n) for n in names], need, intensity)
+
+    async def _stimulate_impl(self, names: Sequence[str], need: str, intensity: float) -> int:
+        """Backend hook for :meth:`stimulate_agents`; defaults to "this backend cannot" (0)."""
+        del names, need, intensity
+        return 0
 
     async def _update_agents_impl(self, obstacles: Mapping[str, DynamicObstacle]) -> bool:
         """Backend hook for :meth:`update_agents`; defaults to "this backend cannot" (False)
@@ -1141,8 +1154,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def unpause(self):
         pass
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
-        pass
+    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> bool:
+        return False
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""

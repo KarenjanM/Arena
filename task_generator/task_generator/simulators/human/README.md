@@ -36,7 +36,8 @@ human-sim `_*_impl` methods:
 | `set_agent_waypoints(routes)` | mid-episode reroute; names and `sim_path`s resolve through the known-obstacle registry, `_set_waypoints_impl` does the work (default: False) |
 | `remove_obstacles_by_id(ids)` | mid-episode removal of any known obstacle, world and scenario furniture included; returns `(removed, missing)`. Pedestrians go through `_remove_pedestrian_names_impl` (default: False, arena_humansim implements it) |
 | `update_agents(obstacles)` | mid-episode in-place update through `_update_agents_impl`; no backend implements it (returns False) |
-| `notify_stimulus(agent_id, stimulus, intensity)` | stimulus seam, no-op by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) |
+| `stimulate_agents(names, need, intensity)` | raise a need on named agents mid-episode (the edge_case `stimulus` effect) through `_stimulate_impl`; returns how many were reached (default 0) |
+| `notify_stimulus(agent_id, stimulus, intensity)` | stimulus seam, returns False by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) |
 
 ### `HumanSimulator` Protocol surface
 

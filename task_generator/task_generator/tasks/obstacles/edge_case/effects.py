@@ -55,6 +55,7 @@ class Kind(enum.StrEnum):
     TRACK_ROBOT = "track_robot"
     HOLD = "hold"
     RETUNE = "retune"
+    STIMULUS = "stimulus"
 
 
 class After(enum.StrEnum):
@@ -297,6 +298,18 @@ class Hold(Effect):
     duration: float = 10.0
 
 
+@attrs.frozen(kw_only=True)
+class Stimulus(Effect):
+    """Raise `need` on the agents in scope at `when`: a behaviour-tree type with a `transitions`
+    entry keyed on it switches sequence, so behaviour changes without a respawn."""
+
+    kind: Kind = Kind.STIMULUS
+    scope: Scope = SCOPE_ALL
+    need: str = ""
+    #: The backend sets the need to 100 x intensity.
+    intensity: float = 1.0
+
+
 _COMMON = frozenset({"type", "when", "label"})
 _KEYS: dict[Kind, frozenset[str]] = {
     Kind.INTERCEPT: _COMMON | {"profile", "model", "angle", "route_fraction", "speed", "offset", "lead_out", "search", "after", "duration", "veer_to", "waypoint_mode"},
@@ -306,6 +319,7 @@ _KEYS: dict[Kind, frozenset[str]] = {
     Kind.TRACK_ROBOT: _COMMON | {"scope", "period", "duration"},
     Kind.HOLD: _COMMON | {"scope", "duration"},
     Kind.RETUNE: _COMMON | {"scope", "profile", "speed", "speed_scale"},
+    Kind.STIMULUS: _COMMON | {"scope", "need", "intensity"},
 }
 
 _WAYPOINT_MODES = ("reverse", "once", "repeat", "random")
@@ -401,6 +415,15 @@ def parse_effect(spec: object, *, index: int = 0) -> Effect:
         if not profile and not speed and abs(scale - 1.0) < 1e-9:
             raise EffectError(f"{where}: a retune needs a 'profile', a 'speed' or a 'speed_scale' - it would change nothing")
         return Retune(when=when, label=label, scope=scope, profile=profile, speed=speed, speed_scale=scale)
+
+    if kind is Kind.STIMULUS:
+        need = str(spec.get("need", "") or "").strip()
+        if not need:
+            raise EffectError(f"{where}: a stimulus needs a 'need' - the agent type's need it raises")
+        intensity = _number(spec, "intensity", 1.0, where=where)
+        if not 0.0 <= intensity <= 1.0:
+            raise EffectError(f"{where}.intensity: must be within [0, 1], got {intensity}")
+        return Stimulus(when=when, label=label, scope=scope, need=need, intensity=intensity)
 
     return Hold(when=when, label=label, scope=scope, duration=_number(spec, "duration", 10.0, where=where, positive=True))
 
