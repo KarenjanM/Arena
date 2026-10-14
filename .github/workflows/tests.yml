@@ -1,0 +1,63 @@
+name: tests
+
+on:
+  push:
+    branches: [jazzy]
+  pull_request:
+    branches: [jazzy]
+
+jobs:
+  suites:
+    runs-on: ubuntu-latest
+    container: ros:jazzy
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git python3-vcstool
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: fetch the dependency repos
+        run: |
+          git config --global --add safe.directory '*'
+          vcs import --shallow --recursive --input _meta/repos/arena.repos .
+      - name: fetch the default robot
+        run: |
+          for path in $(python3 -c 'import pathlib, re, sys; sys.path.insert(0, "_meta"); from arena_cli.features.robots import robot_submodules; robot = re.search(r"_ARENA_DEFAULT_ROBOT = \"(\w+)\"", pathlib.Path("task_generator/task_generator/manager/robot_manager/robots_manager.py").read_text()).group(1); print(*robot_submodules(pathlib.Path("."))[robot])'); do
+            git -C arena_robots submodule update --init --recursive --checkout --depth 1 "${path#arena_robots/}"
+          done
+      - name: list the packages with tests
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon list --base-paths . -t | while read -r name path _; do
+            case "$path" in deps/* | */deps/* | arena_tools* | arena_planners/planners/*) continue ;; esac
+            if [ -d "$path/test" ] || [ -d "$path/tests" ]; then echo "$name"; fi
+          done | sort -u > tested.txt
+          cat tested.txt
+      - name: install the system dependencies
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          rosdep update --rosdistro jazzy
+          rosdep install --ignore-src -r -y --rosdistro jazzy --from-paths $(colcon list --packages-up-to $(cat tested.txt) -p)
+      - name: install the locked python dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          python3 _meta/tools/uv_workspace.py compose
+          uv venv --system-site-packages /opt/venv
+          export VIRTUAL_ENV=/opt/venv
+          members=$(python3 -c 'import sys, tomllib, pathlib; ws = pathlib.Path(".uv-workspace"); tested = set(pathlib.Path("tested.txt").read_text().split()); [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if n in tested]')
+          uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $members)
+      - name: build the packages
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          export PATH=/opt/venv/bin:$PATH
+          colcon build --symlink-install --packages-up-to $(cat tested.txt) --cmake-args -DPython3_EXECUTABLE=/opt/venv/bin/python
+      - name: run every test suite
+        run: |
+          source install/setup.bash
+          export PATH=/opt/venv/bin:$PATH
+          colcon test --packages-select $(cat tested.txt) --event-handlers console_cohesion+ --return-code-on-test-failure
+      - name: list the test results
+        if: always()
+        run: /opt/venv/bin/colcon test-result --verbose
