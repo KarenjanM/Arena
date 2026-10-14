@@ -536,6 +536,7 @@ class RobotManager(NodeInterface):
             routed_phases.append(phase)
             return routed_phases
 
+        self.node._known_subjects.update(pedestrians)
         phases = [self._with_defaults(routed) for phase in request.phases for routed in route(phase)]
         for phase in leaf_phases(phases):
             if isinstance(phase, GoToPhase) and phase.signal:
