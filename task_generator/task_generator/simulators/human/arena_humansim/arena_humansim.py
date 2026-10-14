@@ -242,7 +242,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         self._spawns_in_flight: int = 0
-        self._contact_config: tuple[str, float] = ("enabled", 1.2)  # humansim launch defaults
+        self._contact_config: tuple[str, float] = ("enabled", 1.2)
         self._gesture_config: str = "enabled"
 
         self._agents_lock: asyncio.Lock = asyncio.Lock()

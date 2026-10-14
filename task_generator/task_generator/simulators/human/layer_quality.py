@@ -34,8 +34,8 @@ DT = 1.0 / FPS
 IDLE, WALKING = 0, 1
 WALK_SPEED = 1.2  # m/s
 
-CONTACT_HEIGHT_M = 0.05  # a foot this close to the floor is planted
-SKID_M_PER_FRAME = 0.025  # a planted foot moving further than this in one 20 fps frame skates
+CONTACT_HEIGHT_M = 0.05
+SKID_M_PER_FRAME = 0.025
 LINKS = ("l_wrist", "r_wrist", "l_elbow", "r_elbow", "head")
 FEET = ("l_ankle", "r_ankle", "l_foot", "r_foot")
 
