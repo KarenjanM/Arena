@@ -197,6 +197,7 @@ class _Log:
 
 def clip_report(sources: dict[str, Path]) -> list[dict]:
     mgr = AnimationManager(logger=_Log(), fps=FPS)
+    mgr.cache_animations()
     body = S.Body(BODY_HEIGHT)
     rows = []
     for name, anim in sorted(mgr.animations.items()):

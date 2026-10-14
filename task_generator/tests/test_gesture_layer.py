@@ -671,7 +671,7 @@ def test_clip_channel_whole_body_when_unannotated(rig):
 def test_clip_channel_releases_with_fade_and_unknown_clip_drops(rig):
     mgr, layer, log = rig
     r = req(body("wave"))
-    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.animations["wave"].n_frames + 4)
+    tick(mgr, 1, r, n=int(HOLD_MIN_S / DT) + mgr.clip("wave").n_frames + 4)
     tick(mgr, 1, req(), n=int(FADE_S / DT) + 4)
     assert 1 not in layer._agents
     tick(mgr, 2, req(body("no_such_clip")), n=2)

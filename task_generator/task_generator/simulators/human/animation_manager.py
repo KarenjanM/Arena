@@ -141,7 +141,7 @@ class AnimationManager:
         # Default one-shot animation list
         self.one_shot_animations = {"t-pose", "jump", "seated", "sit", "lie", "collapse_to_ground"}
 
-        self.cache_animations()
+        self.cache_animations([])
 
         # Core playhead tracking (per agent)
         self._playhead: dict[int, float] = {}

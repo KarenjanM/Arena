@@ -175,11 +175,13 @@ def _database() -> AnimationManager:
 
 
 def looping_clips() -> list[str]:
-    """Canned clips that loop."""
-    return sorted(name for name, anim in _database().animations.items() if anim.loop and anim.frames)
+    """Every clip of the source that loops."""
+    database = _database()
+    database.cache_animations()
+    return sorted(name for name, anim in database.animations.items() if anim.loop and anim.frames)
 
 
-def default_cases() -> list[Case]:
+def default_cases(loops: Sequence[str] | None = None) -> list[Case]:
     p = _pose(10.0, 2.5, 180.0)  # facing west
     fan = [(5.0, 0.5, 1.0), (5.0, 2.5, 1.5), (6.0, 1.0, 2.2), (4.0, 3.5, 0.3), (7.0, 2.0, 1.8)]
     burst = [Cue(0.9 * i, [arm(at)], p) for i, at in enumerate(fan)] + [Cue(0.9 * len(fan), [], p)]
@@ -204,12 +206,15 @@ def default_cases() -> list[Case]:
         Case("walker_tracks", walk, 10.0 + 2.0, min_clips=8),
         Case("halt_level", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.5, [], p)], 5.0),
         Case("halt_switch", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.0, [Channel("halt_r", (5.0, 4.5, 1.2))], p), Cue(4.0, [], p)], 6.5),
-        *[Case(f"loop_{name}", [Cue(0.0, [Channel("body", (0.0, 0.0, 0.0), clip=name)], p)], 3.0 * _clip_seconds(name) + 1.0, collar_limit=math.inf, aim_limit=math.inf) for name in looping_clips()],
+        *[Case(f"loop_{name}", [Cue(0.0, [Channel("body", (0.0, 0.0, 0.0), clip=name)], p)], 3.0 * _clip_seconds(name) + 1.0, collar_limit=math.inf, aim_limit=math.inf) for name in (looping_clips() if loops is None else loops)],
     ]
 
 
 def _clip_seconds(name: str) -> float:
-    return float(_database().animations[name].duration)
+    anim = _database().clip(name)
+    if anim is None:
+        raise FileNotFoundError(f"animation clip {name!r} not found")
+    return float(anim.duration)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

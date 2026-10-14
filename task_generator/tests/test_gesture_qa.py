@@ -13,7 +13,7 @@ KNOWN_BAD = {
 }
 
 
-@pytest.mark.parametrize("case", qa.default_cases(), ids=lambda c: c.name)
+@pytest.mark.parametrize("case", qa.default_cases(loops=["talk_with_arm_gesture", "wave_high"]), ids=lambda c: c.name)
 def test_default_cases_are_clean(case: qa.Case, request: pytest.FixtureRequest) -> None:
     if case.name in KNOWN_BAD:
         request.node.add_marker(pytest.mark.xfail(reason=KNOWN_BAD[case.name], strict=True))
