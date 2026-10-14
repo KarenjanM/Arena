@@ -3,6 +3,7 @@
 import array
 import asyncio
 import math
+import time
 import traceback
 from collections.abc import Mapping, Sequence
 
@@ -122,6 +123,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     @classmethod
     def _register_task_modes(cls):
+        from task_generator.tasks.obstacles.edge_case import NS as EDGE_CASE_NS
+        from task_generator.tasks.obstacles.edge_case import declare_schema as edge_case_schema
         from task_generator.tasks.obstacles.prompt import NS, declare_schema
         from task_generator.tasks.registry import OBSTACLES_MODES
 
@@ -130,6 +133,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             from task_generator.tasks.obstacles.prompt.arena import TM_Prompt
 
             return TM_Prompt
+
+        @OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.EDGE_CASE, namespace=EDGE_CASE_NS, schema=edge_case_schema)
+        def _edge_case() -> type:
+            from task_generator.tasks.obstacles.edge_case.impl import TM_EdgeCase
+
+            return TM_EdgeCase
 
     SERVICE_SPAWN_AGENTS = "spawn_agents"
     SERVICE_REMOVE_AGENTS = "remove_agents"
@@ -278,12 +287,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         # Subscribe to agent_states topic from arena_humansim
-        self.node.create_subscription(
+        self._agent_states_sub = self.node.create_subscription(
             AgentFrameMsg,
             self.node.service_namespace("agent_states"),
             self._agent_states_callback,
             10,
         )
+        self._agent_states_wall: float = time.monotonic()
+        self._roster_empty_seen: bool = True
 
         self._debug_markers_sub = LazySubscription(
             self.node,
@@ -353,6 +364,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     def _agent_states_callback(self, msg: AgentFrameMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
+        self._agent_states_wall = time.monotonic()
+        empty = not msg.agent_id
+        if empty != self._roster_empty_seen:
+            self._roster_empty_seen = empty
+            if empty:
+                self._logger.warning("received agent_states roster went EMPTY")
+            else:
+                self._logger.warning(f"received agent_states roster non-empty: {len(msg.agent_id)} agent(s)")
         self._prev_agent_states = self._curr_agent_states
         self._curr_agent_states = msg
         self._engine_stamp_ns = msg.header.stamp.sec * int(1e9) + msg.header.stamp.nanosec
@@ -406,8 +425,32 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if response is not None and all(result.successful for result in response.results):
             self._viz_config = cfg
 
+    #: Wall seconds without an agent_states message before the subscription is recreated.
+    #: arena_humansim publishes the roster continuously once its node is up (~6 Hz even
+    #: pre-spawn), so sustained silence means the subscription died, not the publisher.
+    _AGENT_STATES_STALE_S = 10.0
+
+    def _resubscribe_agent_states(self, stale: float) -> None:
+        # A subscription that goes silent while the topic still flows is recreated, which re-runs
+        # discovery.
+        self._logger.warning(f"agent_states silent for {stale:.0f} s (wall) - recreating the subscription")
+        try:
+            self.node.destroy_subscription(self._agent_states_sub)
+        except Exception as e:  # a dead handle must not kill the interpolation loop
+            self._logger.warning(f"agent_states resubscribe: destroy failed ({e})")
+        self._agent_states_wall = time.monotonic()
+        self._agent_states_sub = self.node.create_subscription(
+            AgentFrameMsg,
+            self.node.service_namespace("agent_states"),
+            self._agent_states_callback,
+            10,
+        )
+
     async def _publish_interpolated(self) -> None:
         """Interpolate at the current sim time, never before the engine's latest frame, and publish the roster."""
+        stale = time.monotonic() - self._agent_states_wall
+        if stale > self._AGENT_STATES_STALE_S:
+            self._resubscribe_agent_states(stale)
         now = self.node.sim_time
         now_ns = now.sec * int(1e9) + now.nanosec
         if self._engine_stamp_ns is not None:
@@ -418,6 +461,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         peds = self._agent_states_to_pedestrians(states)
         async with self._agents_lock:
             self._arena_pedestrians = peds
+        if not self.node.context.ok():
+            return  # shutting down: the publisher's context is already gone (a traceback per pending task otherwise)
         self.publish_arena_peds(peds)
 
     def _interpolate_agent_states(self, now_ns: int) -> AgentFrameMsg | None:
@@ -602,7 +647,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     TICK_RATE = 50.0  # Hz, local interpolation rate
     FLOW_META_TICKS = 50
-    FLOW_MODEL = "default"
+    # no asset is named "default": a failed provider fetch per flow spawn starves the human simulator
+    FLOW_MODEL = BaseHumanSimulator._PEDESTRIAN_FALLBACK
     FEEDBACK_RATE = 20.0  # Hz, matches the possession stream rate
 
     async def _interpolation_loop(self):
@@ -1199,6 +1245,99 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         except Exception as e:
             self._logger.error(f"RemoveAgents call failed: {e}")
             return False
+
+    async def _set_waypoints_impl(
+        self,
+        routes: Mapping[str, Sequence[tuple[float, float]]],
+    ) -> bool:
+        """Rewrite the routes of named agents through `SetWaypoints`.
+
+        `_agent_names` maps id -> sim_path for the pedestrian bus, so the reverse lookup is
+        the whole of the resolution, exactly as in `_remove_pedestrian_names_impl`.
+
+        `MODE_ONCE`: a rewritten route is a destination, not a patrol. Leaving the default
+        `MODE_REPEAT` would send an evacuating crowd back out of the exit and round again.
+
+        One call per agent because the service takes one agent. An unknown name is skipped
+        with a warning rather than failing the batch - a crowd where one agent despawned
+        mid-episode should still evacuate - but a request where *nothing* resolved returns
+        False, so a rewrite that reached no one cannot be reported as a success.
+        """
+        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        sent = 0
+        for name, points in routes.items():
+            agent_id = by_name.get(name)
+            if agent_id is None:
+                self._logger.warning(f"SetWaypoints: {name!r} is not a known agent")
+                continue
+
+            request = SetWaypoints.Request()
+            request.agent_id = agent_id
+            request.name = name
+            wp_msg = WaypointsMsg()
+            wp_msg.mode = WaypointsMsg.MODE_ONCE
+            for x, y in points:
+                # the points arrive realized into `map`; the engine runs in the world frame, as at spawn
+                ex, ey = self._to_engine(x, y)
+                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=ex, y=ey, theta=0.0)))
+            request.waypoints = wp_msg
+
+            try:
+                response = await self._set_waypoints_client.call_timeout(request)
+            except Exception as e:
+                self._logger.error(f"SetWaypoints call failed for {name!r}: {e}")
+                continue
+            if not response.success:
+                self._logger.error(f"SetWaypoints failed for {name!r}: {response.message}")
+                continue
+            sent += 1
+
+        if not sent:
+            self._logger.warning(f"SetWaypoints: none of {list(routes)} could be rerouted")
+            return False
+        self._logger.info(f"SetWaypoints: rerouted {sent} of {len(routes)} agent(s)")
+        return True
+
+    async def _remove_pedestrian_names_impl(self, names: Sequence[str]) -> bool:
+        """Remove *specific* agents, named by ``sim_path``.
+
+        `RemoveAgents` has always taken an id list - the reset path just passes an empty one
+        meaning "all". `_agent_names` already maps id -> sim_path for the pedestrian bus, so
+        the reverse lookup is the whole of it.
+
+        An unknown name is not a failure: the agent is gone, which is the state the caller
+        wanted. Only a request where *nothing* resolved and the caller asked for something
+        returns False, so a despawn of a never-spawned agent cannot be reported as success.
+        """
+        if not names:
+            return True
+
+        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        agent_ids = [by_name[name] for name in names if name in by_name]
+        if not agent_ids:
+            self._logger.warning(f"RemoveAgents: none of {list(names)} is a known agent")
+            return False
+
+        request = RemoveAgents.Request()
+        request.agent_ids = agent_ids
+        try:
+            response = await self._remove_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"RemoveAgents call failed: {e}")
+            return False
+
+        if not response.success:
+            self._logger.error(f"RemoveAgents failed: {response.message}")
+            return False
+
+        # Only the removed agents are forgotten. `_next_id` is deliberately NOT rewound:
+        # reusing an id whose removal the simulator has not finished processing would
+        # rebind a fresh agent onto a dying one.
+        for aid in agent_ids:
+            self._agent_names.pop(aid, None)
+            self._bridge_agent_ids.discard(aid)
+            self._flow_agent_ids.discard(aid)
+        return True
 
     async def _spawn_walls_impl(self, walls: Mapping[str, Wall]) -> bool:
         return await self._add_walls(walls)

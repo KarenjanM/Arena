@@ -478,6 +478,6 @@ def test_collision_fails_the_episode_only_under_fail_on_collision(on_stage):
         assert stage.node._task.abort_reason is None
         stage.place(rm, *IN_MAP, after=3.0)
         assert len(await stage.tick(tracker, received)) == 1
-        assert stage.node._task.abort_reason == "collision"
+        assert (stage.node._task.abort_reason or "").startswith("static collision: ")
 
     on_stage(body)

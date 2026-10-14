@@ -1,0 +1,14 @@
+# Remove an obstacle spawned at runtime via SpawnStatic / SpawnDynamic.
+#
+# `id` is what that call returned: the entity's `sim_path`, not its bare name. The two
+# differ - the adapter registers world objects under an env-prefixed path - and taking the
+# name here would fail to match for exactly the entities this service exists to remove.
+#
+# Any obstacle the human simulator knows resolves, world and scenario furniture included.
+# A removed world-layer entity is not restored on reset.
+string id
+---
+bool success
+# False when nothing was removed: the id resolved to nothing, or the backend refused it.
+bool found
+string error_msg

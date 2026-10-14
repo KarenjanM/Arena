@@ -17,7 +17,7 @@ setup(
         include=[f'{package_name}*']
     ),
     package_dir={'': '.'},
-    package_data={package_name: ['simulators/human/profiles/*.yaml']},
+    package_data={package_name: ['simulators/human/profiles/*.yaml', 'tasks/obstacles/edge_case/timelines/*.yaml']},
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),
@@ -37,6 +37,10 @@ setup(
          existing('launch/hearing/*.launch.py', 'launch/hearing/*.md')),
         (os.path.join('share', package_name, 'launch', 'hearing', 'arena'),
          existing('launch/hearing/arena/*.launch.py')),
+        # Edge-case object timelines. Resolved via the share dir at runtime, with an
+        # in-package fallback so a source tree works without installing.
+        (os.path.join('share', package_name, 'edge_case', 'timelines'),
+         existing('task_generator/tasks/obstacles/edge_case/timelines/*.yaml')),
     ],
     zip_safe=True,
     maintainer='Name',

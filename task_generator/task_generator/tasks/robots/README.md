@@ -56,6 +56,7 @@ an async `done` flag. Shipped modes:
 | `guided` | [`guided/`](guided/) | external controller drives the goal sequence. 2D Nav Goal clicks append waypoints, which show as numbered drag handles with Delete, Insert after and Clear chain menus |
 | `stationary` | [`stationary/`](stationary/) | robot stays parked at start pose without goal dispatch |
 | `scenario` | [`scenario/`](scenario/) | reads `start`/`goal` pairs from the world's scenario YAML |
+| `edge_case` | [`edge_case/`](edge_case/README.md) | extends `scenario`: the scenario route as `2N-1` traversal legs, start hold, near-goal acceptance, blocked watchdog that ends the episode FAILED |
 | `characterization` | [`characterization/`](characterization/) | open-loop maneuver sweep: publishes exact `cmd_vel` profiles through the robot's rated envelope (no nav goals), tags each maneuver with `characterization_phase` markers, odom stall watchdog |
 | `null` | [`composite.py`](composite.py) | idle sink for robots unallocated by the fleet manager |
 | `composite` | [`composite.py`](composite.py) | fan-out: each sub-TM sees a scoped `TaskContext` covering only its allocated robots |

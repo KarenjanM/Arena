@@ -116,6 +116,73 @@ separately.
 
 ---
 
+### 3b. Edge-case generation (`task.obstacles:=edge_case`)
+
+The mode takes the base population from the scenario mode and adds runtime **effects** on top:
+pedestrians whose spawn geometry is solved so they meet the robot at a designed point on its
+route (`intercept`), and mid-episode rewrites of the crowd (`rally`, `shuffle`, `scatter`,
+`track_robot`, `hold`, `retune`, `stimulus`).
+
+```bash
+arena launch sim:=gazebo world:=hospital_1 robot:=jackal human:=arena \
+    task.robots:=edge_case task.obstacles:=edge_case \
+    task.scenario.file:=<case>
+```
+
+`task.robots:=edge_case` is the matching robot mode. It takes its route from the scenario's
+`robots:` block and sets its goal during `reset()`, before the obstacle mode designs against
+that route; it ends the episode on completion, obstruction or timeout. Its parameters live
+under `task.edge_case_robot.*`; see
+[that mode's README](../task_generator/task_generator/tasks/robots/edge_case/README.md).
+Under `task.robots:=explore` the goal is still unset when the crowd is generated, and
+episodes never end.
+
+#### The case lives in the scenario
+
+A case is a scenario directory with an `edge_case.yaml` beside its `scenario.yaml`, listing
+the runtime effects, each with a `when`; everything static - the population, derived profiles, a placed formation - is
+baked into the file by the generator
+([`evaluation generate promptgen`](../arena_evaluation/arena_evaluation/arena_evaluation/generation/promptgen/README.md)).
+There is no knob surface any more: to run a case, launch its scenario.
+
+```bash
+arena launch sim:=gazebo world:=hospital_1 robot:=jackal human:=arena headless:=true \
+    task.robots:=edge_case task.obstacles:=edge_case task.episode.auto_reset:=true \
+    task.scenario.file:=normal__u_004
+```
+
+`normal__u_004` stands for any generated case (`<base>__<prompt id>`); the repo ships none.
+
+`task.scenario.file` is the node parameter; `task.scenario` is a deprecated alias of it.
+
+| Parameter | Meaning |
+|---|---|
+| `task.edge_case.robot_speed` | Speed in m/s the encounter geometry and object events are designed against (default 1.0); the intercept release itself waits for the robot's measured arrival time. |
+| `task.edge_case.read_scenario_block` | Off runs the base population alone - the control arm. |
+| `task.edge_case.prompt` | A natural-language situation; the scenario is generated from it at reset (`<base>__rviz_<hash>`, model answers cached) and run instead of `task.scenario.file`. This is the RViz panel's input. |
+| `task.edge_case.prompt_base` | Base scenario for the prompt; empty uses `task.scenario.file`. |
+| `task.edge_case.record_dir` | Where `cases.jsonl` / `scores.jsonl` are written; empty uses `$ARENA_DATA_DIR/edge_case`. |
+| `task.edge_case.score` / `score_rate_hz` / `score_scope` | The per-episode criticality panel. |
+| `task.edge_case.objects` | A hand-authored object timeline, overriding the block's `objects:`. |
+
+Mode reference:
+[`task_generator/tasks/obstacles/edge_case/README.md`](../task_generator/task_generator/tasks/obstacles/edge_case/README.md).
+
+**Requires `human:=arena`** — the mode drives `arena_humansim` agents and is registered by
+that adapter.
+
+#### Running several cases
+
+Cases are scenario files, so a sweep is a list of scenarios: cycled against one stack
+(`ros2 param set` on `task.scenario.file`, then `reset_episode`), or a benchmark suite with one stage per scenario, written by
+`ros2 run arena_evaluation evaluation generate suite <world...>` and run by
+`arena evaluation benchmark` (see the
+[generation README](../arena_evaluation/arena_evaluation/arena_evaluation/generation/README.md)).
+The mode writes `cases.jsonl` (what was perturbed) and `scores.jsonl` (what the episode did),
+joined on `run_seed` + `episode_id`.
+
+---
+
 ### 4. Isaac + multi-robot via task.config
 
 Isaac must be installed and `arena feature isaac` must be set up before launch.
@@ -488,9 +555,11 @@ given) and will be removed in a future release.
 | `episodes` | `task.episode.count` |
 | `auto_reset` | `task.episode.auto_reset` |
 | `fail_on_collision` | `task.episode.fail_on_collision` |
+| `fail_on_static_collision` | `task.episode.fail_on_static_collision` |
 | `task.episodes` | `task.episode.count` |
 | `task.auto_reset` | `task.episode.auto_reset` |
 | `task.fail_on_collision` | `task.episode.fail_on_collision` |
+| `task.fail_on_static_collision` | `task.episode.fail_on_static_collision` |
 | `mobile`, `mobile.<key>` | `robot.mobile`, `robot.mobile.<key>` |
 | `arm`, `arm.<key>` | `robot.arm`, `robot.arm.<key>` |
 | `planner` | `robot.planner` |

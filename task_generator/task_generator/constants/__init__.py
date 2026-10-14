@@ -34,6 +34,7 @@ class Constants:
             SCENARIO = "scenario"
             ENVIRONMENT = "environment"
             PROMPT = "prompt"
+            EDGE_CASE = "edge_case"
 
             @classmethod
             def default(cls) -> "Constants.TaskMode.TM_Obstacles":
@@ -46,6 +47,7 @@ class Constants:
             RANDOM = "random"
             SCENARIO = "scenario"
             DEMO = "demo"
+            EDGE_CASE = "edge_case"
             STATIONARY = "stationary"
             CHARACTERIZATION = "characterization"
 

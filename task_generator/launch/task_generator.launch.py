@@ -224,6 +224,11 @@ def generate_launch_description() -> launch.LaunchDescription:
         default_value="",
         description="comma list of debug tokens (e.g. aiomonitor,map_server); also debug.<token>:=true",
     )
+    run_seed = LaunchArgument(
+        name="task.run_seed",
+        default_value="",
+        description="Pins per-episode seed derivation (blake2b(run_seed|world|episode_id)) for reproducible runs; empty = random per boot.",
+    )
     train_mode = LaunchArgument(name="robot.train", default_value="false")
     parameter_file = LaunchArgument(
         name="task.params",
@@ -461,6 +466,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "world.lighting": world_lighting.param_value(str),
                     "kg.derive": kg_derive.param_value(str),
                     "auditory.static_sounds": auditory_static_sounds.param_value(str),
+                    "run_seed": run_seed.param_value(str),
                     "robot.train": train_mode.param_value(bool),
                     "env_id": allocated_id,
                     "prefix": prefix_val,

@@ -183,6 +183,14 @@ class TaskRunner:
         self._end_phase(state, failed, reason or "", transition)
         return transition
 
+    def complete_active(self) -> Transition:
+        """End the active phase as met without waiting for the judge."""
+        transition = Transition()
+        state = self.active_state
+        if state is not None:
+            self._end_phase(state, False, "", transition)
+        return transition
+
     def fail_active(self, reason: str) -> Transition:
         """End the active phase as failed without waiting for the judge."""
         transition = Transition()

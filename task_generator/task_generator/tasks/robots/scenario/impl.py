@@ -5,6 +5,7 @@ from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
 
 from task_generator.shared import Pose, Position, PositionRadius
+from task_generator.tasks.obstacles._validation import make_is_valid
 from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
@@ -15,12 +16,32 @@ class TM_Scenario(TM_Robots):
     _linger_after_completion: ROSParamT[bool]
     _idle_robots: set[str]
 
+    def _spawn_clearance(self) -> float:
+        """Free radius a robot start/goal must have, in metres.
+
+        Not `Obstacles.SAFE_DIST`, which is the clearance a **pedestrian** needs: nav2's collision
+        monitor stops on anything inside its stop polygon and its costmap inflates obstacles further,
+        so a start placed to pedestrian tolerances is a start the robot cannot drive out of.
+        `Robot.SPAWN_ROBOT_SAFE_DIST` plus the robot's radius (`RobotManager.safe_distance`) is the
+        constant for this; the largest managed robot's value when robots exist, a conservative
+        nominal radius otherwise.
+        """
+        managed = [r.safe_distance for r in self._ctx.robots.values()] if self._ctx.robots else []
+        if managed:
+            return max(managed)
+        nominal_radius = 0.3
+        return nominal_radius + self.node.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
+
     async def reset(self) -> None:
         await super().reset()
 
         self._idle_robots = set()
 
-        zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self.node.conf.General.RNG.stream("robots", "scenario"))
+        is_valid = make_is_valid(self._ctx.world_manager.map, self._spawn_clearance())
+        zone_conv = self._ctx.world_manager.world_compacted().zone_converter(
+            self.node.conf.General.RNG.stream("robots", "scenario"),
+            is_valid=is_valid,
+        )
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(self._config.value).resolve_sync()
         scenario = scenario_view.load(converter=zone_conv)
         SCENARIO_ROBOTS = scenario.robots
