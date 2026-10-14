@@ -228,6 +228,8 @@ class LoopPhase(TaskPhase):
         super().__attrs_post_init__()
         if not self.phases:
             raise ValueError("LoopPhase requires at least one phase")
+        if any(isinstance(phase, LoopPhase) for phase in self.phases):
+            raise ValueError("LoopPhase cannot nest another loop")
 
     def serialize(self) -> dict:
         result = super().serialize()
