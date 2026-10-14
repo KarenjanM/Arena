@@ -34,7 +34,7 @@ from task_generator.manager.robot_manager.task_runner import PhaseState, TaskRun
 from task_generator.shared import Orientation, Pose, Position, Robot
 
 if typing.TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
     from arena_simulation_setup.shared.conditions import EpisodeCondition
     from arena_simulation_setup.shared.judge import Sample, Zones
@@ -505,8 +505,8 @@ class RobotManager(NodeInterface):
             position = world.point_resolver(self.node.conf.General.RNG.stream("robots", "target", self.name)).resolve(phase.target)
         return attrs.evolve(phase, pose=Pose(position=position, orientation=Orientation.identity()))
 
-    async def submit_task(self, request: TaskRequest, start: Pose | None = None) -> None:
-        """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted."""
+    async def submit_task(self, request: TaskRequest, start: Pose | None = None, pedestrians: Iterable[str] = ()) -> None:
+        """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted, `pedestrians` names the episode's declared pedestrians that are not spawned yet."""
         from task_generator.tasks.robots.request import GoToPhase, LoopPhase, kind_of, leaf_phases
 
         if not request.phases:
@@ -544,7 +544,7 @@ class RobotManager(NodeInterface):
                 if phase.signal not in signals:
                     raise ValueError(f"robot {self.name!r}: goto phase expects signal {phase.signal!r}, its {phase.kind} adapter can send {sorted(signals)}")
             if isinstance(phase, GoToPhase) and phase.target is not None:
-                known = set(world_manager.world_compacted().zone_ref_names()) | set(self.node.ped_names())
+                known = set(world_manager.world_compacted().zone_ref_names()) | set(self.node.ped_names()) | set(pedestrians)
                 if phase.target not in known:
                     raise ValueError(f"robot {self.name!r}: goto target {phase.target!r} is neither a zone, door, elevator nor a pedestrian")
             if kind_of(phase) not in self._adapters and kind_of(phase) not in self._unsupported_kinds_logged:

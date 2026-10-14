@@ -22,7 +22,9 @@ class TM_Scenario(TM_Robots):
 
         zone_conv = self._ctx.world_manager.world_compacted().zone_converter(self.node.conf.General.RNG.stream("robots", "scenario"))
         scenario_view = WorldIdentifier(self._ctx.world_manager.loaded_world).resolve_sync().scenario(self._config.value).resolve_sync()
-        SCENARIO_ROBOTS = scenario_view.load(converter=zone_conv).robots
+        scenario = scenario_view.load(converter=zone_conv)
+        SCENARIO_ROBOTS = scenario.robots
+        declared_pedestrians = frozenset(human.name for human in scenario.humans)
 
         managed_robots = list(self._ctx.robots.values())
 
@@ -73,7 +75,7 @@ class TM_Scenario(TM_Robots):
             # timeout (or until another non-idle robot finishes) so that
             # recordings can capture pedestrians passing a parked robot.
             if phases:
-                await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)), start_pose)
+                await robot.submit_task(TaskRequest(phases=phases, conditions=list(config.conditions)), start_pose, pedestrians=declared_pedestrians)
             else:
                 self._idle_robots.add(robot.name)
             self._ctx.world_manager.forbid(forbidden)
