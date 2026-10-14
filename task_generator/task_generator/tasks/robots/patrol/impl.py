@@ -38,6 +38,8 @@ class TM_Patrol(TM_Robots):
         name = self._scenario_file.value or default_scenario(self._ctx.world_manager.loaded_world)
         scenario = world.resolve_sync().scenario(name).resolve_sync().load(converter=zone_conv)
 
+        if not self._service_agent.value:
+            raise ValueError(f"patrol: set {self.namespace('service_agent')} to the pedestrian whose call the robot answers")
         self._route = []
         self._route_local = []
         self._frame_offset = (0.0, 0.0)
@@ -130,7 +132,7 @@ class TM_Patrol(TM_Robots):
             return None
         wanted = self._service_agent.value
         for ped in msg.pedestrians:
-            if wanted and _short_name(ped.name) != wanted:
+            if _short_name(ped.name) != wanted:
                 continue
             if any(g.clip == self._clip.value for g in ped.gestures):
                 return ped.name, Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z)
@@ -141,7 +143,7 @@ class TM_Patrol(TM_Robots):
         if msg is None:
             return None
         for ped in msg.pedestrians:
-            if not name or _short_name(ped.name) == name:
+            if _short_name(ped.name) == name:
                 return Position(ped.pose.position.x, ped.pose.position.y, ped.pose.position.z)
         return None
 

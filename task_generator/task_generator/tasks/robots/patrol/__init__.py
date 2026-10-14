@@ -17,7 +17,7 @@ DEFAULT_CLIP = "beckon"
 
 def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
     """Patrol-with-service: the robot walks the scenario's checkpoints on a loop until a pedestrian's call reaches it."""
-    declare_string(node, ns("service_agent"), "", label="Service agent", description="Name of the pedestrian whose call ends the episode when answered. Empty = the first pedestrian that beckons.")
+    declare_string(node, ns("service_agent"), "", label="Service agent", description="Name of the pedestrian whose call ends the episode when answered. Required.")
     declare_string(node, ns("clip"), DEFAULT_CLIP, label="Call clip", description="Body clip that counts as a call for help.")
     declare_double(node, ns("service_radius"), 2.5, label="Service radius", description="The pedestrian counts as served once the robot holds within this distance for service_dwell.", lo=0.3, hi=10.0)
     declare_double(node, ns("service_dwell"), 0.0, label="Service dwell", description="Seconds the robot must hold inside service_radius. 0 = answered on arrival.", lo=0.0, hi=30.0)
