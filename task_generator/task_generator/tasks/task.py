@@ -354,12 +354,12 @@ class Task(NodeInterface):
     async def set_robot_position(self, pose: Pose):
         """Broadcast a teleport to all robots (back-compat shim for RViz / training UI)."""
         await self.tm_robots.set_position(pose)
-        self.node._flip_integrity()
+        self.node._compromise("robots moved by hand")
 
     async def set_robot_goal(self, pose: Pose):
         """Broadcast a goal to all robots (back-compat shim for RViz / training UI)."""
         await self.tm_robots.set_goal(pose)
-        self.node._flip_integrity()
+        self.node._compromise("robot goal set by hand")
 
     async def submit_task(self, request: TaskRequest, robot_name: str) -> None:
         """Submit a typed task request to a specific robot; bypasses TM_Robots."""

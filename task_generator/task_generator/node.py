@@ -116,7 +116,7 @@ class EpisodeRecord:
     goal_dist_start: float = 0.0
     goal_dist_min: float = 0.0
     path_length: float = 0.0
-    integrity: bool = True
+    integrity: list[str] = attrs.Factory(list)
     start_time: Time = attrs.Factory(Time)
 
 
@@ -369,7 +369,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.outcome_state = task_generator_msgs.msg.EpisodeRecord.QUEUED
         msg.outcome_info = ""
         msg.goal_uuid = ""
-        msg.integrity = True
+        msg.integrity = []
         msg.obstacles_params = self._params_for_mode(current_obstacles)
         msg.robots_params = self._params_for_mode(current_robots)
         self._pub_state_queue.publish(msg)
@@ -561,6 +561,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             env_id=self._env_id,
         )
         self._simulator.set_semantics_callback(self._on_semantics_changed)
+        self._simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up human simulator")
         self._human_simulator = await HumanSimulatorRegistry.get(
@@ -596,9 +597,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     # RUNTIME
 
-    def _flip_integrity(self) -> None:
-        """Mark current episode as externally mutated and republish state."""
-        self._episodes.current.integrity = False
+    def _compromise(self, reason: str) -> None:
+        """Record why the current episode is compromised and republish state."""
+        if reason not in self._episodes.current.integrity:
+            self._episodes.current.integrity.append(reason)
         self._publish_episode_state()
 
     def _params_for_mode(self, mode: str) -> list[RclParameter]:
@@ -630,7 +632,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.goal_dist_start = record.goal_dist_start
         msg.goal_dist_min = record.goal_dist_min
         msg.path_length = record.path_length
-        msg.integrity = record.integrity
+        msg.integrity = list(record.integrity)
         msg.start_time = record.start_time.to_msg()
         msg.conditions = json.dumps([c.serialize() for c in self._episode_conditions])
         msg.phases = self._phases_json()
@@ -1304,7 +1306,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.outcome_state = task_generator_msgs.msg.EpisodeRecord.QUEUED
         msg.outcome_info = ""
         msg.goal_uuid = ""
-        msg.integrity = True
+        msg.integrity = []
         msg.obstacles_params = [RclParameter(name=k, value=v) for k, v in obstacles_map.items()]
         msg.robots_params = [RclParameter(name=k, value=v) for k, v in robots_map.items()]
         msg.human_params = [RclParameter(name=k, value=v) for k, v in (self._human_params | self._staged_human_params).items()]
@@ -1347,7 +1349,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             tm_robots=tm_robots,
             tm_obstacles=tm_obstacles,
             tm_modules=tm_modules,
-            integrity=True,
         )
         self._goal_progress.reset()
 
@@ -1659,7 +1660,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         mid_episode = self._episodes.action_in_flight and self._episodes.current.episode_id > 0
         if mid_episode:
-            self._episodes.current.integrity = False
+            self._compromise("task parameters changed mid-episode")
 
         self._publish_queue_state()
 
@@ -1747,7 +1748,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.STATIC, request.model, pose)
             self._entities.add(obstacle)
-            self._flip_integrity()
+            self._compromise(f"static {request.model} spawned by hand")
             response.id = obstacle.sim_path
             response.success = True
         except Exception as e:
@@ -1763,7 +1764,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         try:
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.DYNAMIC, request.model, pose)
-            self._flip_integrity()
+            self._compromise(f"dynamic {request.model} spawned by hand")
             response.id = obstacle.sim_path
             response.success = True
         except Exception as e:
@@ -1788,7 +1789,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 async with self._reset_lock:
                     await self._robots_manager.spawn_now(name_out, pose)
             self._robots_manager.publish_queue()
-            self._flip_integrity()
+            self._compromise(f"robot {name_out} spawned by hand")
             response.name = name_out
             response.success = True
         except Exception as e:
@@ -1822,7 +1823,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     response.success = False
                     response.error_msg = f"unknown entity {request.entity!r}"
                     return response
-            self._flip_integrity()
+            self._compromise(f"{request.entity} moved by hand")
             response.success = True
         except Exception as e:
             response.success = False
@@ -1841,7 +1842,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         try:
             self._robots_manager.remove_pending(request.name)
             self._robots_manager.publish_queue()
-            self._flip_integrity()
+            self._compromise(f"robot {request.name} despawned by hand")
             response.success = True
         except Exception as e:
             response.success = False

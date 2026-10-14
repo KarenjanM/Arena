@@ -191,8 +191,8 @@ method for spawning additional entities into a running episode:
 - `TM_Robots.extend(model, name=None, pose=None) -> str`: spawn an additional
   robot. Same placement semantics. Returns the assigned robot name.
 
-Calling `extend()` via the `runtime/spawn_*` services flips
-`EpisodeRecord.integrity = False` for the current episode.
+Calling `extend()` via the `runtime/spawn_*` services adds a reason to
+`EpisodeRecord.integrity` for the current episode.
 
 ## `EpisodeRecord`
 
@@ -200,5 +200,9 @@ Episode state is tracked in `EpisodeRecord` (an `attrs.define` dataclass on the
 node). Key fields: `episode_id`, `world`, `seed` (derived via blake2b from
 `run_seed|world|episode_id`), snapshot task-mode strings, `outcome_state`,
 `outcome_info`, `goal_uuid`, and `integrity`. A new record is created at every
-NEXT reset; integrity starts `True` and flips `False` on any manual mutation
-(`extend()`, `set_robot_position`, `set_robot_goal`).
+NEXT reset. `integrity` lists why the episode is compromised and starts empty:
+every manual mutation (`extend()`, `runtime/move`, `runtime/despawn_robot`,
+`set_robot_position`, `set_robot_goal`, task parameters changed mid-episode) and
+every failure the simulator adapter cannot recover from (`set_incident_callback`)
+adds a reason.
+Consumers treat `not record.integrity` as intact.

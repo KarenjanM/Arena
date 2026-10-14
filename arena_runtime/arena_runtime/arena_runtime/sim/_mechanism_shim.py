@@ -499,6 +499,12 @@ async def _loop(mech: MechanismITF) -> None:
                 logger.warning(f"mechanism shim tick failed: {e!r}")
 
 
+def _report_incident(mech: MechanismITF, reason: str) -> None:
+    mech.node.get_logger().warning(reason)
+    if mech._incident_callback is not None:
+        mech._incident_callback(reason)
+
+
 async def _tick(mech: MechanismITF, dt: float) -> None:
     """Single tick: update triggers, advance state machines, dispatch move_box and teleports."""
     robot_discs = list(mech.robot_discs())
@@ -568,15 +574,19 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             z = current.position.z if current is not None else 0.0
             orientation = current.orientation if current is not None else Orientation(1, 0, 0, 0)
             try:
-                await mech.set_robot_pose(sim_path, Pose(position=Position(x, y, z), orientation=orientation))
+                failure = "" if await mech.set_robot_pose(sim_path, Pose(position=Position(x, y, z), orientation=orientation)) else "the simulator refused the move"
             except Exception as e:
-                logger.warning(f"Elevator robot teleport {source_name!r} -> {dest_name!r} failed for {sim_path!r}: {e!r}")
+                failure = repr(e)
+            if failure:
+                _report_incident(mech, f"{sim_path}: elevator teleport {source_name!r} -> {dest_name!r} failed: {failure}")
         if ped_destinations:
             if mech._human_simulator is not None:
                 try:
-                    await mech._human_simulator.pedestrian_teleport(ped_destinations)
+                    failure = "" if await mech._human_simulator.pedestrian_teleport(ped_destinations) else "the human simulator refused the move"
                 except Exception as e:
-                    logger.warning(f"Elevator ped teleport {source_name!r} -> {dest_name!r} failed: {e!r}")
+                    failure = repr(e)
+                if failure:
+                    _report_incident(mech, f"{', '.join(ped_destinations)}: elevator teleport {source_name!r} -> {dest_name!r} failed: {failure}")
             else:
                 logger.info(f"Elevator teleport (no-op, no human sim): {len(ped_destinations)} peds {source_name!r} -> {dest_name!r}")
 

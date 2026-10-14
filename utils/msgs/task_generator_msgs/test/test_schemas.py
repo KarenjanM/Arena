@@ -22,7 +22,7 @@ def test_episode_record_fields():
     r.outcome_state = EpisodeRecord.SUCCESS
     r.outcome_info = "reached goal"
     r.goal_uuid = "abc-123"
-    r.integrity = True
+    r.integrity = ["env_0/jackal moved by hand"]
 
     p = Parameter()
     p.name = "static.n"
@@ -43,7 +43,7 @@ def test_episode_record_fields():
     assert r.outcome_state == EpisodeRecord.SUCCESS
     assert r.outcome_info == "reached goal"
     assert r.goal_uuid == "abc-123"
-    assert r.integrity is True
+    assert list(r.integrity) == ["env_0/jackal moved by hand"]
     assert len(r.obstacles_params) == 1
     assert r.obstacles_params[0].name == "static.n"
     assert r.obstacles_params[0].value.integer_value == 4

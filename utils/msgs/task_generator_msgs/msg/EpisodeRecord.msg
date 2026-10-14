@@ -22,8 +22,8 @@ float32 goal_dist_start
 float32 goal_dist_min
 float32 path_length
 builtin_interfaces/Time start_time
-# False = manually mutated mid-episode.
-bool integrity
+# Why the episode is compromised, empty when intact
+string[] integrity
 # Effective params for tm_obstacles only; live values overlaid with staged dict for queued records.
 rcl_interfaces/Parameter[] obstacles_params
 # Effective params for tm_robots only; live values overlaid with staged dict for queued records.

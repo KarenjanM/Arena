@@ -293,6 +293,7 @@ class MechanismITF:
         _lights: dict[str, Light]
         _light_outputs: dict[str, tuple[float, float]]
         _light_poses: dict[str, tuple[Position, float]]
+        _incident_callback: Callable[[str], None] | None
 
     SIM_NAME: typing.ClassVar[str]
 
@@ -315,6 +316,7 @@ class MechanismITF:
         self._lights = {}
         self._light_outputs = {}
         self._light_poses = {}
+        self._incident_callback = None
 
     def _register_agent_robot(self, robot: Robot, model_params: "arena_robots.Robot.ModelParams") -> None:
         """Track a spawned robot for disc and pose reads, bringing up the TF machinery on first use."""
@@ -401,6 +403,10 @@ class MechanismITF:
 
     def set_semantics_callback(self, cb: "Callable[[Sequence[SemanticChange]], None]") -> None:
         self._semantics.set_change_callback(cb)
+
+    def set_incident_callback(self, cb: "Callable[[str], None]") -> None:
+        """Receives the reason of every failure the mechanisms cannot recover from."""
+        self._incident_callback = cb
 
     def attach_semantics(self, kind: str, entity: str, cfgs: "Sequence[SemanticCfg]", *, polygon: "Sequence[tuple[float, float]] | None" = None) -> bool:
         from ._mechanism_shim import _ensure_loop

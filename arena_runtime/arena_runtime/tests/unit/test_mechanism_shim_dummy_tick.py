@@ -183,6 +183,8 @@ def test_departure_to_an_unknown_cabin_reopens_the_door(shim, on_dummy_sim):
 
 def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_dummy_sim):
     async def body(sim, jackal):
+        reasons: list[str] = []
+        sim.set_incident_callback(reasons.append)
         a, a_door = _elevator(shim, sim, "a", 0.0, "b")
         b, b_door = _elevator(shim, sim, "b", 10.0, "a")
         _place(sim, jackal, 0.0, 0.0)
@@ -196,6 +198,7 @@ def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_d
         assert b.just_arrived == {"jackal": False}
         assert b_door.last_trigger_sim_time == 0.0
         assert b_door.state == shim._DoorState.OPENING
+        assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
 
     on_dummy_sim(body, jackal=True)
 
@@ -226,6 +229,18 @@ def test_failed_teleport_of_an_untracked_rider_does_not_abort_the_tick(shim, on_
         assert sim._light_outputs == {"lamp": (1.0, 0.0)}
 
     on_dummy_sim(body)
+
+
+def test_failed_teleport_without_an_incident_callback_only_logs(shim, on_dummy_sim):
+    async def body(sim, jackal):
+        _elevator(shim, sim, "a", 0.0, "b")
+        b, _ = _elevator(shim, sim, "b", 10.0, "a")
+        _place(sim, jackal, 0.0, 0.0)
+        await shim._tick(sim, DT)
+        await shim._tick(sim, DT)
+        assert b.just_arrived == {"jackal": False}
+
+    on_dummy_sim(body, jackal=True)
 
 
 def test_light_output_is_pushed_once_per_change(shim, on_dummy_sim):
@@ -318,6 +333,8 @@ def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_d
     from task_generator.simulators.human.noop import NoopHumanSimulator
 
     async def body(sim, jackal):
+        reasons: list[str] = []
+        sim.set_incident_callback(reasons.append)
         acoustics = await AcousticsSimulatorRegistry.get(Constants.AcousticsSimulator.NONE, node=sim.node, namespace=sim._namespace)
         human = NoopHumanSimulator(node=sim.node, namespace=sim._namespace, simulator=sim, realizer=sim._realizer, acoustics=acoustics)
         sim.attach_human_simulator(human)
@@ -334,5 +351,6 @@ def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_d
         assert a.dispatched == {"walker", "jackal"}
         assert b.just_arrived == {"walker": False, "jackal": False}
         assert {name: xy for name, xy, _ in human.pedestrian_discs()} == {"walker": pytest.approx((10.5, 0.3))}
+        assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
 
     on_dummy_sim(body, jackal=True)
