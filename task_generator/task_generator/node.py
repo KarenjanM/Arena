@@ -34,7 +34,7 @@ from arena_rclpy_mixins.Time import Time
 from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import parse_atom
-from arena_simulation_setup.shared.judge import Sample, atom_holds, zone_polygons
+from arena_simulation_setup.shared.judge import Sample, WallGrid, atom_holds, zone_polygons
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
@@ -57,6 +57,7 @@ from task_generator.interactive.entities import EntityHandles
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.realizer import Realizer
 from task_generator.manager.robot_manager import RobotsManager
+from task_generator.manager.world_manager.utils import WorldOccupancy
 from task_generator.manager.world_manager.world_manager_ros import (
     WorldManagerROS as WorldManager,
 )
@@ -256,6 +257,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline_t0: float | None = None
         self._episode_conditions: list[EpisodeCondition] = []
         self._judge_zones: dict = {}
+        self._judge_walls: WallGrid | None = None
         self._known_subjects: set[str] = set()
         self._sample = Sample(t=0.0)
         self._tick_loop_task: asyncio.Task | None = None
@@ -992,9 +994,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         for name, (x, y), _radius in self._human_simulator.pedestrian_discs():
             local = self._environment_manager.ezilear(Pose(Position(x, y), Orientation.identity()))
             peds[_strip_env(name)] = (local.position.x, local.position.y)
+        clips = {_strip_env(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
         self._known_subjects.update(peds)
         self._known_subjects.update(robots)
-        return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects))
+        return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls)
+
+    def _wall_grid(self) -> WallGrid:
+        """The loaded world's wall layer in the frame the judge samples in."""
+        world_map = self._world_manager.map
+        return WallGrid(cells=WorldOccupancy.fullish(world_map.occupancy.walls), origin=(world_map.origin.x, world_map.origin.y), resolution=world_map.resolution)
 
     async def _tick_robots(self) -> None:
         if self._robots_manager is None:
@@ -1373,6 +1381,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 await self._task.reset(seed=record.seed)
             finally:
                 self._judge_zones = zone_polygons(self._world_manager.world_compacted())
+                self._judge_walls = self._wall_grid()
                 for manager in self._robots_manager.managers.values():
                     manager.set_episode_conditions(self._episode_conditions)
                 await self.release("reset")

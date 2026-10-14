@@ -167,6 +167,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
         self._ped_orientations: dict[str, QuaternionMsg] = {}
+        self._ped_clips: dict[str, frozenset[str]] = {}
         self._gait = AnimationManager(logger=self._logger, fps=20.0)
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
@@ -338,9 +339,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     def _on_arena_peds(self, msg: Pedestrians) -> None:
         self._ped_positions_xy = {p.name: (p.pose.position.x, p.pose.position.y) for p in msg.pedestrians}
         self._ped_orientations = {p.name: p.pose.orientation for p in msg.pedestrians}
+        self._ped_clips = {p.name: frozenset(g.clip for g in p.gestures) for p in msg.pedestrians}
 
     def pedestrian_discs(self) -> Iterable[tuple[str, tuple[float, float], float]]:
         return [(name, xy, PED_RADIUS) for name, xy in self._ped_positions_xy.items()]
+
+    def pedestrian_clips(self) -> Mapping[str, frozenset[str]]:
+        """Gesture clips each tracked pedestrian is playing, under the name it is published with."""
+        return self._ped_clips
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
         """Teleport tracked pedestrians to given (x, y), keeping their facing. Default impl asks the sim to move them."""

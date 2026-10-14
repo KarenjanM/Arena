@@ -30,7 +30,7 @@ from arena_runtime.sim._interface import SimUnavailable
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.robot_manager.controller_manager_client import ControllerManagerClient
 from task_generator.manager.robot_manager.controller_transitions import next_transition
-from task_generator.manager.robot_manager.task_runner import PhaseState, TaskRunner, Transition
+from task_generator.manager.robot_manager.task_runner import PhaseState, TaskRunner, Transition, standoff_pose
 from task_generator.shared import Orientation, Pose, Position, Robot
 
 if typing.TYPE_CHECKING:
@@ -375,18 +375,29 @@ class RobotManager(NodeInterface):
     def finish_episode(self) -> None:
         self._runner.finish_episode()
 
+    def _dispatch_pose(self, phase: GoToPhase) -> Pose | None:
+        """Pose a goto without one dispatches to: the robot's own for a hold, a standoff next to the pedestrian for a ped target, None while either is unknown."""
+        pose = self.pose
+        if pose is None:
+            return None
+        here = self._environment_manager.ezilear(pose)
+        if phase.hold:
+            return here
+        ped = self.node._sample.peds.get(phase.target)
+        return None if ped is None else standoff_pose((here.position.x, here.position.y), ped)
+
     async def _dispatch(self, state_index: int) -> None:
-        """Dispatch one phase to its adapter, a hold phase first taking the robot's current pose."""
+        """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state."""
         from task_generator.tasks.robots.adapters.mobile import MobileAdapter
         from task_generator.tasks.robots.request import GoToPhase, kind_of
 
         state = self._runner.phases[state_index]
         phase = state.phase
-        if isinstance(phase, GoToPhase) and phase.hold:
-            pose = self.pose
+        if isinstance(phase, GoToPhase) and phase.pose is None:
+            pose = self._dispatch_pose(phase)
             if pose is None:
                 return
-            phase = attrs.evolve(phase, pose=self._environment_manager.ezilear(pose))
+            phase = attrs.evolve(phase, pose=pose)
             state.phase = phase
             state.monitor.phase = phase
             self.node.on_task_submitted(self)
@@ -448,6 +459,8 @@ class RobotManager(NodeInterface):
         ended = transition.ended
         if ended is not None and ended.outcome == "failed":
             self._logger.info(f"robot {self.name!r} phase {ended.index} ({ended.phase.kind}) failed ({ended.reason})")
+        elif ended is not None and ended.outcome == "dropped" and ended.loop is not None:
+            self._logger.info(f"robot {self.name!r} left its loop at phase {ended.index} ({ended.loop.phase.until})")
         for scoped in transition.violated:
             self._logger.info(f"robot {self.name!r} condition {scoped.id} violated: {scoped.condition.p}")
         if transition.stop:
@@ -494,7 +507,7 @@ class RobotManager(NodeInterface):
 
     async def submit_task(self, request: TaskRequest, start: Pose | None = None) -> None:
         """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted."""
-        from task_generator.tasks.robots.request import GoToPhase, kind_of
+        from task_generator.tasks.robots.request import GoToPhase, LoopPhase, kind_of, leaf_phases
 
         if not request.phases:
             raise ValueError(f"TaskRequest has no phases; nothing to dispatch (robot={self.name!r})")
@@ -505,20 +518,26 @@ class RobotManager(NodeInterface):
             start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
         current_level = world_manager.level_of_point(start.position.x, start.position.y)
         boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
-        routed_phases: list[TaskPhase] = []
-        for phase in request.phases:
-            if isinstance(phase, GoToPhase):
-                phase = self._resolve_target(phase)
-                if phase.pose is not None:
-                    goal_level = world_manager.level_of_point(phase.pose.position.x, phase.pose.position.y)
-                    if current_level and goal_level and goal_level != current_level:
-                        for elevator_position, boarding_radius in world_manager.elevator_route(current_level, goal_level, self.radius):
-                            routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_radius=min(boarding_tolerance, boarding_radius), tolerance_angle=math.pi))
-                        current_level = goal_level
-            routed_phases.append(phase)
 
-        phases = [self._with_defaults(phase) for phase in routed_phases]
-        for phase in phases:
+        def route(phase: TaskPhase) -> list[TaskPhase]:
+            nonlocal current_level
+            if isinstance(phase, LoopPhase):
+                return [attrs.evolve(phase, phases=[routed for inner in phase.phases for routed in route(inner)])]
+            if not isinstance(phase, GoToPhase):
+                return [phase]
+            phase = self._resolve_target(phase)
+            routed_phases: list[TaskPhase] = []
+            if phase.pose is not None:
+                goal_level = world_manager.level_of_point(phase.pose.position.x, phase.pose.position.y)
+                if current_level and goal_level and goal_level != current_level:
+                    for elevator_position, boarding_radius in world_manager.elevator_route(current_level, goal_level, self.radius):
+                        routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_radius=min(boarding_tolerance, boarding_radius), tolerance_angle=math.pi))
+                    current_level = goal_level
+            routed_phases.append(phase)
+            return routed_phases
+
+        phases = [self._with_defaults(routed) for phase in request.phases for routed in route(phase)]
+        for phase in leaf_phases(phases):
             if isinstance(phase, GoToPhase) and phase.signal:
                 adapter = self._adapters.get(kind_of(phase))
                 signals = frozenset() if adapter is None else adapter.signals
@@ -538,8 +557,10 @@ class RobotManager(NodeInterface):
 
     def _with_defaults(self, phase: TaskPhase) -> TaskPhase:
         """Fill unset goto tolerances, hold time and signal from the launch parameters, zero angle for robots without heading control."""
-        from task_generator.tasks.robots.request import GoToPhase
+        from task_generator.tasks.robots.request import GoToPhase, LoopPhase
 
+        if isinstance(phase, LoopPhase):
+            return attrs.evolve(phase, phases=[self._with_defaults(inner) for inner in phase.phases])
         if not isinstance(phase, GoToPhase):
             return phase
         conf = self.node.conf.Robot

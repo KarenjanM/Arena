@@ -7,7 +7,7 @@ from arena_simulation_setup.tree.World import WorldIdentifier
 from task_generator.shared import Pose, Position, PositionRadius
 from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
-from task_generator.tasks.robots.request import GoToPhase, TaskPhase, TaskRequest
+from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 
 
 class TM_Scenario(TM_Robots):
@@ -49,20 +49,23 @@ class TM_Scenario(TM_Robots):
                 orientation=pose.orientation,
             )
 
+        def localize(phase: TaskPhase, goal_level: str, forbidden: list[PositionRadius], safe_distance: float) -> TaskPhase:
+            if isinstance(phase, LoopPhase):
+                return attrs.evolve(phase, phases=[localize(inner, goal_level, forbidden, safe_distance) for inner in phase.phases])
+            if isinstance(phase, GoToPhase) and phase.pose is not None:
+                goto_pose = _to_map_frame(phase.pose, goal_level)
+                forbidden.append(PositionRadius(x=goto_pose.position.x, y=goto_pose.position.y, radius=safe_distance))
+                return attrs.evolve(phase, pose=goto_pose)
+            return phase
+
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
             start_pose = _to_map_frame(config.start, "" if config.start_zone else config.level)
             self._start_poses[robot.name] = start_pose
 
-            phases: list[TaskPhase] = []
             forbidden: list[PositionRadius] = [
                 PositionRadius(x=start_pose.position.x, y=start_pose.position.y, radius=robot.safe_distance),
             ]
-            for phase in config.phases:
-                if isinstance(phase, GoToPhase) and phase.pose is not None:
-                    goto_pose = _to_map_frame(phase.pose, config.goal_level)
-                    phase = attrs.evolve(phase, pose=goto_pose)
-                    forbidden.append(PositionRadius(x=goto_pose.position.x, y=goto_pose.position.y, radius=robot.safe_distance))
-                phases.append(phase)
+            phases = [localize(phase, config.goal_level, forbidden, robot.safe_distance) for phase in config.phases]
 
             # An empty phase list intentionally describes a stationary robot.
             # Do not submit it to RobotManager: an empty TaskRequest has no

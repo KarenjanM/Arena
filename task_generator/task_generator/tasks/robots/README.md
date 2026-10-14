@@ -74,16 +74,24 @@ share one definition. [`request.py`](request.py) re-exports them with
 `kind_of(phase) -> TaskKind`, the action kind an adapter dispatches.
 
 - `TaskPhase`: one step. Every phase takes `on_failure`
-  (`continue` | `stop_task` | `abort_episode`), `until` (an atom in the
-  `conditions:` grammar, the phase completes once it holds, counted from
-  arrival for a goto), `conditions` (clauses judged over the phase only) and
-  `text` (an authored instruction overriding the rendered one).
+  (`continue` | `stop_task` | `abort_episode`), `until` (clauses joined by
+  ` or `, each atoms of the `conditions:` grammar joined by ` and ` with an
+  optional ` for <seconds>` dwell; the phase completes once any clause has
+  held, its atoms together, for its dwell, counted from arrival for a goto),
+  `conditions` (clauses judged over the phase only)
+  and `text` (an authored instruction overriding the rendered one).
+- `LoopPhase(phases, until?)`: the phases repeated in order; the `until` is
+  judged on every tick and, once it holds, drops the running phase and
+  continues with the phase after the loop.
 - `GoToPhase(pose | target, tolerance_radius?, tolerance_angle?, hold_time?, signal?)`:
   navigate to a pose, or to a zone, door, elevator or pedestrian by name. A
   zone target dispatches to a free map cell inside the zone with the robot's
   spawn clearance, a door or elevator to a point inside its polygon, and a
   `pose` authored next to the name (`{goto: pharmacy, pose: [4.0, 27.5, 0.0]}`)
   is kept as the dispatch pose.
+  A pedestrian target dispatches to a standoff pose 0.8 m short of the
+  pedestrian on the robot's side, facing them, taken from the judge's sample
+  when the phase starts (`standoff_pose` in the task runner).
   Arrival on a named zone is `robot in <zone>`, on a pedestrian
   `robot within tolerance_radius of <ped>`. `hold_time` is the park time
   (stationary within 5 cm and 5 degrees) before the phase counts as met. With
@@ -101,7 +109,12 @@ share one definition. [`request.py`](request.py) re-exports them with
 Unset tolerances, hold time and signal take the `task.episode.goto_pose.*` launch
 parameters at submit. Phase indices are episode-wide: a second `submit_task`
 appends its phases and marks the unfinished ones of the previous request
-dropped. Everything is judged by the task runner
+dropped. A `LoopPhase` is expanded at submit: its first iteration takes the
+indices where the loop stands, every further iteration is appended at the end
+of the list when the previous one ends, and the loop's `until` is judged on
+every tick a loop phase is active. Once it holds, the running phase and the
+rest of its iteration are marked dropped and the phase after the loop becomes
+active. A loop without `until` repeats until the episode ends. Everything is judged by the task runner
 ([`manager/robot_manager/task_runner.py`](../../manager/robot_manager/task_runner.py))
 on the node's 30 Hz sim tick from a `Sample` of robot poses, ped positions and
 semantic fields, with the same predicate code arena_evaluation replays offline

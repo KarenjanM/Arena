@@ -44,6 +44,7 @@ specialized teleport semantics (e.g. resetting an internal agent list).
 | Method | Signature |
 | --- | --- |
 | `pedestrian_discs()` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, reads `_ped_positions_xy`, radius is `PED_RADIUS`) |
+| `pedestrian_clips()` | `() -> Mapping[str, frozenset[str]]` (sync, the gesture clips each ped is playing, from the same `arena_peds` message) |
 | `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`) |
 | `configure(params)` | `(Sequence[rcl_interfaces.msg.Parameter]) -> list[Parameter]` (async). It runs at every episode reset with `QueueEpisode.human_params`. It strips the prefix from the names under `PARAM_NAMESPACE`, sorts them, and hands them to `_configure_impl`, also when there are none. It returns the accepted ones. |
 

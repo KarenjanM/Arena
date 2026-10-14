@@ -2,15 +2,36 @@
 
 from __future__ import annotations
 
+import math
 import typing
 from collections.abc import Sequence
 
 import attrs
-from arena_simulation_setup.shared.conditions import EpisodeCondition, OnFailure
-from arena_simulation_setup.shared.judge import ConditionMonitor, PhaseMonitor, Sample, Zones
-from arena_simulation_setup.shared.task import TaskPhase
+from arena_simulation_setup.shared.conditions import EpisodeCondition, OnFailure, parse_until
+from arena_simulation_setup.shared.judge import ConditionMonitor, PhaseMonitor, Sample, UntilMonitor, Zones
+from arena_simulation_setup.shared.task import LoopPhase, TaskPhase
+from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
 
 Outcome = typing.Literal["pending", "met", "failed", "dropped"]
+
+PED_STANDOFF_M = 0.8
+
+
+def standoff_pose(robot: tuple[float, float], ped: tuple[float, float], standoff: float = PED_STANDOFF_M) -> Pose:
+    """A pose `standoff` short of the pedestrian on the robot's side, facing them, the robot's own spot when it is already closer."""
+    dx, dy = ped[0] - robot[0], ped[1] - robot[1]
+    yaw = math.atan2(dy, dx)
+    reach = min(standoff, math.hypot(dx, dy))
+    return Pose(position=Position(ped[0] - math.cos(yaw) * reach, ped[1] - math.sin(yaw) * reach, 0.0), orientation=Orientation.from_yaw(yaw))
+
+
+@attrs.define
+class LoopRun:
+    """One LoopPhase in flight: its body, its exit monitor and the index of the phase after it."""
+
+    phase: LoopPhase
+    monitor: UntilMonitor | None
+    resume: int | None = None
 
 
 @attrs.define
@@ -22,6 +43,8 @@ class PhaseState:
     reason: str = ""
     dispatched: bool = False
     instruction: dict[str, str] | None = None
+    loop: LoopRun | None = None
+    slot: int = 0
 
 
 @attrs.define
@@ -83,14 +106,29 @@ class TaskRunner:
             if scoped.last is None and not scoped.id.startswith("e"):
                 scoped.last = len(self.phases) - 1
         first = len(self.phases)
-        states = [PhaseState(index=first + i, phase=phase, monitor=PhaseMonitor(phase, self.robot)) for i, phase in enumerate(phases)]
+        states: list[PhaseState] = []
+        runs: list[LoopRun] = []
+        for phase in phases:
+            if isinstance(phase, LoopPhase):
+                run = LoopRun(phase=phase, monitor=UntilMonitor(parse_until(phase.until), self.robot) if phase.until is not None else None)
+                states.extend(self._iteration(run, first + len(states)))
+                run.resume = first + len(states)
+                runs.append(run)
+            else:
+                states.append(PhaseState(index=first + len(states), phase=phase, monitor=PhaseMonitor(phase, self.robot)))
         self.phases.extend(states)
+        for run in runs:
+            if run.resume == len(self.phases):
+                run.resume = None
         request = self._requests
         self._requests += 1
         self.scoped.extend(ScopedCondition(id=f"r{request}:{i}", condition=c, monitor=ConditionMonitor(c, self.robot), first=first) for i, c in enumerate(conditions))
         self.active = first if states else None
         self.changed = True
         return states
+
+    def _iteration(self, run: LoopRun, first: int) -> list[PhaseState]:
+        return [PhaseState(index=first + slot, phase=phase, monitor=PhaseMonitor(phase, self.robot), loop=run, slot=slot) for slot, phase in enumerate(run.phase.phases)]
 
     def stop(self) -> None:
         for state in self.phases:
@@ -123,6 +161,9 @@ class TaskRunner:
             if scoped.covers(self.active) and not scoped.monitor.decided and scoped.monitor.update(sample, zones) is False:
                 self._violate(scoped, transition)
         if state is None:
+            return transition
+        if state.loop is not None and state.loop.monitor is not None and state.loop.monitor.step(sample, zones):
+            self._exit_loop(state, transition)
             return transition
         met = state.monitor.step(sample, zones, action_done, signal)
         for i, monitor in enumerate(state.monitor.conditions):
@@ -164,8 +205,23 @@ class TaskRunner:
             return
         if transition.stop:
             return
-        nxt = state.index + 1
-        self.active = nxt if nxt < len(self.phases) and self.phases[nxt].outcome == "pending" else None
+        run = state.loop
+        if run is not None and state.slot == len(run.phase.phases) - 1:
+            self.phases.extend(self._iteration(run, len(self.phases)))
+            self._advance(len(self.phases) - len(run.phase.phases), transition)
+            return
+        self._advance(state.index + 1, transition)
+
+    def _exit_loop(self, state: PhaseState, transition: Transition) -> None:
+        for other in self.phases:
+            if other.loop is state.loop and other.outcome == "pending":
+                other.outcome = "dropped"
+        transition.ended = state
+        self.changed = True
+        self._advance(state.loop.resume, transition)
+
+    def _advance(self, nxt: int | None, transition: Transition) -> None:
+        self.active = nxt if nxt is not None and nxt < len(self.phases) and self.phases[nxt].outcome == "pending" else None
         if self.active is None:
             for scoped in self.scoped:
                 if not scoped.id.startswith("e") and not scoped.monitor.decided:
@@ -203,4 +259,4 @@ class TaskRunner:
         }
 
 
-__all__ = ["Outcome", "PhaseState", "ScopedCondition", "TaskRunner", "Transition"]
+__all__ = ["PED_STANDOFF_M", "LoopRun", "Outcome", "PhaseState", "ScopedCondition", "TaskRunner", "Transition", "standoff_pose"]
