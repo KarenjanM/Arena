@@ -1,4 +1,4 @@
-# office_male_asian_middleage + worker_male_asian_middleage share one skeleton (1.76 m) (LOCKED): one clip, palms meet at the midpoint of a 0.88 m dyad.
+# Handshake (shake_hand_v7_men_pair): office_male_asian_middleage + worker_male_asian_middleage, palms meet at the midpoint of a 0.88 m dyad
 name: shaker
 mode: behavior_tree
 extends: adult

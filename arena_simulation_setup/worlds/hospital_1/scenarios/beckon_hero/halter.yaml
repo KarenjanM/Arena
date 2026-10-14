@@ -1,4 +1,4 @@
-# Aimed at the junction point the robot turns through, see caller.yaml.
+# Aimed at the junction point the robot turns through
 name: halter
 mode: behavior_tree
 extends: adult

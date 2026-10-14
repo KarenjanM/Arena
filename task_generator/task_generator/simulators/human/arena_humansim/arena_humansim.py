@@ -790,7 +790,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         n = len(msg.agent_id)
         gait_phase = msg.gait_phase if len(msg.gait_phase) == n else [0.0] * n
         gait_cadence = msg.gait_cadence if len(msg.gait_cadence) == n else [0.0] * n
-        # the active interaction per agent, for group-aware consumers (arena_social_cost_layer); a frame without it reads as none
         interaction_ids = msg.interaction_id if len(msg.interaction_id) == n else [-1] * n
         interaction_types = msg.interaction_type if len(msg.interaction_type) == n else [0] * n
         for agent_id, ex, ey, yaw, vx, vy, animation_state, phase, cadence, interaction_id, interaction_type in zip(msg.agent_id, msg.x, msg.y, msg.theta, msg.vx, msg.vy, msg.animation_state, gait_phase, gait_cadence, interaction_ids, interaction_types, strict=True):

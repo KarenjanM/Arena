@@ -1,8 +1,8 @@
 # One overlay slot of a ped's animation layer, as rendered this frame
 string slot                  # head | arm | body
-string kind                  # gesture generator: look | point | halt | clip, empty = raw overlay
-string channel               # wire slot the gesture serves (arm_l, halt, body, ...), empty = raw overlay
-string phase                 # gesture phase: requested | ramp | hold | transition | release, empty = raw overlay
+string kind                  # look | point | halt | clip, empty = raw overlay
+string channel               # wire slot served (arm_l, halt, ...), empty = raw
+string phase                 # requested|ramp|hold|transition|release, "" = raw
 string clip                  # body clip name, empty otherwise
 string animation             # AnimationManager clip the slot plays
 float32 playhead             # seconds into that clip

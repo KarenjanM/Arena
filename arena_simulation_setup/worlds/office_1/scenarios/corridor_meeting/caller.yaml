@@ -1,4 +1,4 @@
-# The call is aimed at the point in the hallway the robot passes; beckon_v3 is the hero come-here call (Isaac rig).
+# The call is aimed at the point in the hallway the robot passes
 name: caller
 mode: behavior_tree
 extends: adult

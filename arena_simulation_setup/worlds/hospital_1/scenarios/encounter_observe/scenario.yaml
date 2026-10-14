@@ -1,13 +1,12 @@
-# Observe-an-encounter figure (panel "observe another encounter first"): the robot stands in the central_hallway
+# Observe-an-encounter figure: the robot stands in the central_hallway
 # and watches a target pedestrian negotiate passage with an oncoming one, with through-traffic around them.
 # Framed from behind and above the robot, looking straight up the hallway (+y).
 #
 #   target      doctor walking down the hallway diagonally, toward the robot
-#   negotiator  walks up the hallway on the crossing diagonal, they meet around y ~ 18 about 5 s in
+#   negotiator  walks up the hallway on the crossing diagonal, they meet around y = 18 about 5 s in
 #   background  four walkers, two far up the hallway, one passing the robot, one crossing at the sub_hallway
 #
-# Run with tm_robots=stationary (pos_x=9.3 pos_y=11.0 pos_theta=1.5708), not scenario: a scenario robot whose goal
-# equals its start is done at once, and the episode resets every step, respawning the crowd at its spawn poses.
+# Run with tm_robots=stationary (pos_x=9.3 pos_y=11.0 pos_theta=1.5708)
 robots:
 - start: [9.3, 11.0, 1.5708]
 

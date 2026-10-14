@@ -1,7 +1,7 @@
 # Airport check-in hall: three queue lines (Personenleitsystem rails already in worlds/airport/0/world.yaml, x 8-14, at the
 # three reception desks x=5 y=6/16/26), an officer beside each desk, background walkers throughout the hall. The person at the
 # back of line 1 (reunion_w) and the back of line 2 (reunion_m) spot each other, wave, then jog to meet and hug (queue_wave_hugger_*.yaml):
-# WAVE_AT then HUG with an enlarged interaction_radius, so they pair and converge across the ~10 m gap between the lines instead of
+# WAVE_AT then HUG with an enlarged interaction_radius, so they pair and converge across the 10 m gap between the lines instead of
 # only at contact range. The robot's straight route (y=10) runs right between the two lines, through the point where they meet,
 # to show it routing around the embracing pair (or not, with the social cost layer off).
 robots:

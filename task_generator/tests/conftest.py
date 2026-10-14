@@ -21,7 +21,7 @@ def _clip_error(name: str) -> str | None:
     try:
         from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 
-        AnimationIdentifier.parse(name).resolve_sync().clip  # noqa: B018
+        _ = AnimationIdentifier.parse(name).resolve_sync().clip
     except Exception as exc:
         return f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"
     return None

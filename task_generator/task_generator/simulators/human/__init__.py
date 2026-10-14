@@ -140,7 +140,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
         self._arena_peds_publisher = self.node.create_publisher(Pedestrians, self._namespace("arena_peds"), 10)
-        # what the animation layer renders per ped (clip, playhead, gesture phase), for recording
         self._animation_states_publisher = self.node.create_publisher(AnimationStates, self._namespace("animation_states"), 10)
         self._marker_publisher = LazyPublisher(
             self.node.create_publisher(
@@ -272,7 +271,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         for slot, overlay, playhead, weight in self._gait.overlays(ped.id):
             kind, channel, phase, clip = phases.get(slot, ("", "", "", ""))
             if not phase and overlay.releasing:
-                phase = "release"  # the gesture slot ended, the overlay is fading out
+                phase = "release"
             state.slots.append(
                 AnimationSlot(
                     slot=slot,

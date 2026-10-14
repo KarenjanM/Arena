@@ -32,7 +32,7 @@ def test_planted_feet_sliding_skate_and_sunk_feet_penetrate() -> None:
     sunk = LQ.plausibility(_feet(np.full(t, -0.03), np.zeros(t)), np.zeros((t, 5, 3)))
     assert sunk["penetration_cm"] == pytest.approx(3.0) and sunk["penetration_max_cm"] == pytest.approx(3.0)
     lifted = LQ.plausibility(_feet(np.full(t, 0.2), np.arange(t) * 0.05), np.zeros((t, 5, 3)))
-    assert np.isnan(lifted["skate_ratio"])  # no planted frame: sliding in the air is not skating
+    assert np.isnan(lifted["skate_ratio"])
     assert lifted["lowest_foot_cm"] == pytest.approx(20.0)
 
 
@@ -59,7 +59,7 @@ def test_masked_joints_are_the_only_ones_played() -> None:
     frames = [{"angles": {**dict.fromkeys(ROS_JOINT_ORDER, 0.0), "l_knee": -1.0, "r_elbow": 1.0}}]
     masked = LQ.rig_positions(frames, body, joints=("r_elbow",))
     rest = LQ.rig_positions(_frames([0.0]), body)
-    assert np.allclose(masked["l_ankle"], rest["l_ankle"])  # the knee is outside the mask
+    assert np.allclose(masked["l_ankle"], rest["l_ankle"])
     assert not np.allclose(masked["r_wrist"], rest["r_wrist"])
 
 
@@ -75,7 +75,7 @@ def test_halt_is_on_its_bearing_from_the_body() -> None:
     body = LQ.aim_errors("halt", near, moving=False, origin="body")
     wrist = LQ.aim_errors("halt", near, moving=False)
     assert body is not None and wrist is not None
-    assert body["median_deg"] < 2.0 < wrist["median_deg"]  # the hand sits off the body axis: parallax at close range
+    assert body["median_deg"] < 2.0 < wrist["median_deg"]
 
 
 def test_reverse_loop_has_no_seam() -> None:
@@ -83,5 +83,5 @@ def test_reverse_loop_has_no_seam() -> None:
     ramp = _frames(list(np.linspace(0.0, 2.4, 40)))
     assert not LQ.loop_seam(ramp, body, None)["passes_gate"]
     out_and_back = LQ.loop_seam(ramp, body, None, reverse=True)
-    assert out_and_back["passes_gate"]  # the wrap lands on frame 1, one ordinary step away from frame 0
+    assert out_and_back["passes_gate"]
     assert out_and_back["seam_over_p95"] <= 1.5

@@ -9,8 +9,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from arena_simulation_setup.tree.assets.Animation import AnimationClip
 
-# Masks an annotation can name instead of listing joints. Authored by body group: capture noise and twist wraps make
-# per-joint motion a poor guide. The contact clips turn the forearm, so theirs also carry the wrist pair.
+# Masks an annotation can name instead of listing joints
 _TORSO_HEAD = ("r_waist", "y_waist", "waist", "r_spine", "y_spine", "spine", "r_chest", "y_chest", "chest", "r_head", "y_head", "p_head")
 _ARM = ("y_collar", "p_collar", "y_shoulder", "p_shoulder", "r_shoulder", "elbow")
 _WRIST = ("r_wrist", "wrist")
@@ -51,14 +50,13 @@ class AssetClips:
         from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 
         async def resolve_all() -> list:
-            # resolved together, so the bucket fetches batch into one request
             return await asyncio.gather(*(AnimationIdentifier.parse(name).resolve() for name in names), return_exceptions=True)
 
         out: dict[str, AnimationClip | Exception] = {}
         for name, view in zip(names, AnimationIdentifier._run_sync(resolve_all()), strict=True):
             try:
                 out[name] = view if isinstance(view, Exception) else view.clip
-            except Exception as exc:  # unreadable payload
+            except Exception as exc:
                 out[name] = exc
         return out
 

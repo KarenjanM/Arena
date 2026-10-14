@@ -1,4 +1,4 @@
-# Waves at the camera, continuously, from the first second - so the take can start whenever.
+# Waves at the camera continuously from the first second
 name: waver
 mode: behavior_tree
 extends: adult

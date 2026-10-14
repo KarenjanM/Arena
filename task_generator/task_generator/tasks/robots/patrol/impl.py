@@ -1,10 +1,4 @@
-"""Patrol-with-service: the robot loops the scenario's checkpoints until a pedestrian's call reaches it.
-
-The call only reaches the robot if the robot could perceive it: the pedestrian publishes the call clip,
-stands within sensor range, and is not behind a wall. Nothing about the call is handed to the robot out of
-band, so the gesture-off control arm (`tm_obstacles.scenario.gesture_mode=disabled`) is simply a scenario in
-which no call is ever published and the pedestrian is served only if the patrol happens to pass them.
-"""
+"""Patrol-with-service: the robot loops the scenario's checkpoints until it perceives a pedestrian's call (call clip published, within sensor range, not behind a wall)."""
 
 from __future__ import annotations
 
@@ -22,6 +16,8 @@ from task_generator.shared import Orientation, Pose, Position
 from task_generator.tasks.registry import _REGISTRY_NAMESPACE, default_scenario
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, TaskRequest
+
+from . import DEFAULT_CLIP
 
 _SCENARIO_NS = _REGISTRY_NAMESPACE("scenario")
 
@@ -48,12 +44,10 @@ class TM_Patrol(TM_Robots):
         self._index = 0
         self._current_goal = None
         self._walls_cache = None
-        self._last_look = -1e9
         self._served_since = None
         self._visible_since = None
         self._diverted = False
         self._divert_pending = False
-        self._last_pose = None
         self._service_goal = None
         self._peds = None
 
@@ -62,10 +56,8 @@ class TM_Patrol(TM_Robots):
             self._start_poses[robot.name] = config.start
             self._scenario_start = config.start
             self._route_local = [phase.goto for phase in config.phase_list() if isinstance(phase, ScenarioGotoPhase)]
-            # place the robot where the scenario says: without this it keeps whatever pose it was left in, and
-            # every route and sightline in the scenario is measured from somewhere else
             await robot.move(config.start)
-            break  # one robot patrols; any others are left to their own mode
+            break  # one robot patrols
 
         if self._subscription is None:
             self._subscription = self.node.create_subscription(
@@ -76,41 +68,27 @@ class TM_Patrol(TM_Robots):
             )
 
     def _adopt_frame(self, spawn_pose: Pose) -> None:
-        """Take the route as the scenario wrote it, correcting only a genuine frame offset.
-
-        The robot is moved to the scenario's start pose at reset, so the two should agree; a residual of more
-        than a metre means the world reports poses in a different frame than its scenarios are written in, and
-        the route is shifted by that much rather than left broken.
-        """
+        """Shift the route by the offset between the robot's reported pose and the scenario start, when it exceeds a meter."""
         ox = spawn_pose.position.x - self._scenario_start.position.x
         oy = spawn_pose.position.y - self._scenario_start.position.y
-        if math.hypot(ox, oy) < 1.0:  # the robot is where the scenario put it
+        if math.hypot(ox, oy) < 1.0:
             ox = oy = 0.0
         self._frame_offset = (ox, oy)
         self._route = [Pose(position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z), orientation=pose.orientation) for pose in self._route_local]
         self._logger.info(f"patrol route in the robot's frame, offset ({ox:.2f}, {oy:.2f}): {[(round(p.position.x, 1), round(p.position.y, 1)) for p in self._route]}")
 
     ARRIVED_M = 1.2
-    LOOK_INTERVAL_S = 0.2
 
     def _next_checkpoint(self) -> TaskRequest:
-        """One checkpoint per request, advanced on arrival rather than on the adapter's verdict.
-
-        Re-submitting a goal makes the adapter re-dispatch it, which stops the robot for a moment; driving the
-        loop off ``is_done`` cost roughly half the robot's average speed, so arrival is measured here instead.
-        """
+        """One checkpoint per request, advanced on arrival rather than on the adapter's verdict."""
         i = self._index % len(self._route)
-        self._current_goal = self._route[i]  # robot frame: arrival is measured against the robot's own pose
+        self._current_goal = self._route[i]
         self._index += 1
-        # goals are handed over in the scenario frame: the adapter adds the env offset itself, so the offset-shifted route would be shifted twice
+        # the adapter adds the env offset itself, so the goal is handed over in the scenario frame
         return TaskRequest(phases=[GoToPhase(pose=self._route_local[i])])
 
     def _on_peds(self, msg: Pedestrians) -> None:
-        """Keep the latest pedestrians; everything else happens on the episode tick.
-
-        The callback stays a pure assignment on purpose: doing the sightline and arrival work here left the
-        robot without a dispatched goal for the whole episode.
-        """
+        """Keep the latest pedestrians, everything else happens on the episode tick."""
         self._peds = msg
 
     def _look(self, pose: Pose) -> None:
@@ -168,12 +146,7 @@ class TM_Patrol(TM_Robots):
         return None
 
     def _walls(self) -> np.ndarray:
-        """The wall layer as a boolean grid, resolved once.
-
-        Rasterising the whole map per call is what this replaces: the check runs on every pedestrian message,
-        and rebuilding a 694x510 mask at that rate starved the executor badly enough that the robot never
-        received a goal at all.
-        """
+        """The wall layer as a boolean grid, resolved once."""
         if self._walls_cache is None:
             self._walls_cache = WorldOccupancy.fullish(self._ctx.world_manager.map.occupancy.walls)
         return self._walls_cache
@@ -195,7 +168,7 @@ class TM_Patrol(TM_Robots):
         return not bool(walls[rows, cols].any())
 
     def _to_scenario_frame(self, p: Position) -> Position:
-        """Robot-frame position -> the frame of the world map and its wall grid (they differ by the env offset, e.g. (5, 5) in hospital_1)."""
+        """Robot-frame position -> the frame of the world map and its wall grid."""
         ox, oy = self._frame_offset
         return Position(p.x - ox, p.y - oy, p.z)
 
@@ -220,20 +193,17 @@ class TM_Patrol(TM_Robots):
         if pose is None:
             return False
 
-        if not self._route:  # the first pose the robot reports fixes the frame, then the patrol starts
+        if not self._route:
             self._adopt_frame(pose)
             await robot.submit_task(self._next_checkpoint())
             return False
 
-        self._last_pose = pose
         self._look(pose)
         now = self._now()
 
-        # the caller was reached, whatever brought the robot there
         if self._served_since is not None and now - self._served_since >= self._service_dwell.value:
             return True
 
-        # a call the robot could perceive overrides the patrol, once
         if self._divert_pending and not self._diverted and self._service_goal is not None:
             await robot.submit_task(TaskRequest(phases=[GoToPhase(pose=self._to_scenario_pose(self._service_goal))]))
             self._diverted = True
@@ -269,22 +239,19 @@ class TM_Patrol(TM_Robots):
         self._index = 0
         self._current_goal: Pose | None = None
         self._walls_cache: np.ndarray | None = None
-        self._last_look = -1e9
         self._scenario_start = Pose()
         self._service_goal: Pose | None = None
         self._divert_pending = False
-        self._last_pose: Pose | None = None
         self._served_since: float | None = None
         self._visible_since: float | None = None
         self._diverted = False
 
-        # resolved at reset, not here: the mode is built before a world is loaded, and there is no default then
         self._scenario_file = self.node.ROSParam[str](_SCENARIO_NS("file"), "")
         self._service_agent = self.node.ROSParam[str](self.namespace("service_agent"), "")
-        self._clip = self.node.ROSParam[str](self.namespace("clip"), "beckon")
-        self._service_radius = self.node.ROSParam[float](self.namespace("service_radius"), 1.5)
-        self._service_dwell = self.node.ROSParam[float](self.namespace("service_dwell"), 2.0)
-        self._service_standoff = self.node.ROSParam[float](self.namespace("service_standoff"), 1.0)
+        self._clip = self.node.ROSParam[str](self.namespace("clip"), DEFAULT_CLIP)
+        self._service_radius = self.node.ROSParam[float](self.namespace("service_radius"), 2.5)
+        self._service_dwell = self.node.ROSParam[float](self.namespace("service_dwell"), 0.0)
+        self._service_standoff = self.node.ROSParam[float](self.namespace("service_standoff"), 0.8)
         self._sensor_range = self.node.ROSParam[float](self.namespace("sensor_range"), 12.0)
         self._require_los = self.node.ROSParam[bool](self.namespace("require_line_of_sight"), True)
         self._recognition_dwell = self.node.ROSParam[float](self.namespace("recognition_dwell"), 0.5)

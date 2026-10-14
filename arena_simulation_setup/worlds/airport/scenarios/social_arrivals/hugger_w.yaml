@@ -1,5 +1,4 @@
-# Hug (hug_v7_air_*): office_female_caucasian_young + worker_male_asian_middleage, dyad separation 0.3126 m; designed against the skinned meshes (over-under arms,
-# heads side by side, no interpenetration). The head pose is part of the clip, so no gaze override.
+# Hug (hug_v7_air_*): office_female_caucasian_young + worker_male_asian_middleage, dyad separation 0.3126 m, head pose in the clip
 name: hugger_w
 mode: behavior_tree
 extends: adult

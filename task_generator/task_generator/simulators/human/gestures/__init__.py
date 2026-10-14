@@ -66,7 +66,7 @@ class Channel:
     at: tuple[float, float, float]
     clip: str = ""
     hand: str = ""
-    lock: bool = False  # contact clip: start at frame 0 so the partner playing it the same tick stays in phase
+    lock: bool = False  # play from frame 0 instead of the per-agent stagger
 
     @property
     def opts(self) -> dict:
@@ -102,7 +102,7 @@ class GestureClip:
     release: Sequence[dict] | None = None  # lowering arc from the park pose, None = keep the previous one
     joints: frozenset[str] | None = None  # blend set fixed by the clip itself, None = ask ``Gesture.joints``
     loop: bool = False  # loop the whole clip on the hold instead of parking on ``hold_end``
-    reverse: bool = False  # loop out and back, for a clip whose end does not meet its start
+    reverse: bool = False  # loop out and back
 
 
 class Gesture(typing.Protocol):
@@ -354,8 +354,6 @@ class GestureLayer:
                 self._manager.set_overlay_joints(agent_id, st.slot, joints, FADE_S)
             if st.bound.get("moving") != ag.moving:
                 st.bound = {**st.bound, "moving": ag.moving}
-                # a canned clip is not aimed, so there is nothing to re-solve, and reinstalling it would
-                # restart it from frame 0 at full weight: a one-tick snap of every masked joint
                 if st.phase == "hold" and st.kind != "clip":
                     self._retarget(agent_id, st, st.local)
 
@@ -436,7 +434,7 @@ class GestureLayer:
             loop=loops,
             owner=agent_id,
             loop_from=loop_from or 0,
-            reverse=clip.reverse and loops and loop_from is None,  # a breathing park loop wraps on its own
+            reverse=clip.reverse and loops and loop_from is None,
         )
         self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, fade_in_s=FADE_S if fresh else 0.0, slot=st.slot, carry_ramps=not fresh, start_s=0.0 if st.locked else None)
 

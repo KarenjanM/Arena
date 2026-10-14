@@ -1,7 +1,6 @@
 # map_empty: a row of people facing the camera and waving, for the closing thank-you card.
 # The robot stands at the left end of the row. Camera sits at (15.0, 7.2, 1.62) looking at the middle of the line.
-# The robot drives slowly along the FRONT of the row (1 m nearer the camera than the wavers). A near-zero goal
-# made the episode complete instantly and auto-reset in a loop, which tore down the recorder's lockstep hold.
+# The robot drives slowly along the front of the row (1 m nearer the camera than the wavers).
 robots:
 - start: [10.1, 11.0, 0.0]
   phases:

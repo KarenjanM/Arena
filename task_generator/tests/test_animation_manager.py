@@ -291,7 +291,7 @@ def test_start_s_overrides_the_loop_stagger(mgr):
 def test_overlays_report_weight_after_envelope(mgr):
     anim = mgr.register_transient("wave_t", const_frames(1.0, 40), loop=False)
     mgr.set_ped_blend(1, anim, blend_weight=0.5, fade_in_s=1.0)
-    step(mgr, 1, n=5)  # 0.5 s into a 1 s fade
+    step(mgr, 1, n=5)
     [(slot, overlay, playhead, weight)] = mgr.overlays(1)
     assert slot == "arm" and overlay.anim is anim
     assert playhead == pytest.approx(0.5)
@@ -304,9 +304,9 @@ def test_reverse_clip_plays_out_and_back(mgr):
     ov = mgr.register_transient("pingpong", frames, loop=True, reverse=True)
     assert ov.cycle_frames == 4 and ov.duration == pytest.approx(4 / FPS)
     assert [ov.frame_index(i) for i in range(6)] == [0, 1, 2, 1, 0, 1]
-    mgr.set_ped_blend(360, ov, blend_joints=ARMS)  # agent 360 gets the zero start offset
+    mgr.set_ped_blend(360, ov, blend_joints=ARMS)
     seq = [step(mgr, 360, dt=1 / FPS)["l_elbow"] for _ in range(8)]
-    assert seq == pytest.approx([1.0, 2.0, 1.0, 0.0, 1.0, 2.0, 1.0, 0.0])  # out and back; never cuts from the end to the start
+    assert seq == pytest.approx([1.0, 2.0, 1.0, 0.0, 1.0, 2.0, 1.0, 0.0])
 
 
 def test_a_reverse_clip_must_loop(mgr):

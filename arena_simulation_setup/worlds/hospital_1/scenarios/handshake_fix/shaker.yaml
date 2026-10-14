@@ -1,5 +1,4 @@
-# Handshake for the video (LOCKED): doctor_male_caucasian_middleage + office_male_caucasian_middleage share one skeleton and are within 3 cm of each
-# other in height, so one clip serves both (shake_hand_v7_doctor_pair, palms meet at the midpoint of a 0.88 m dyad).
+# Handshake (shake_hand_v7_doctor_pair): doctor_male_caucasian_middleage + office_male_caucasian_middleage, palms meet at the midpoint of a 0.88 m dyad
 name: shaker
 mode: behavior_tree
 extends: adult

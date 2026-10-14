@@ -1,5 +1,4 @@
-# Hug for the video (hug_v7_hero_*): designed against the skinned meshes, no two body parts interpenetrate. Over-under: he holds her over the shoulders,
-# she holds his waist; the heads pass side by side (part of the clip, so no gaze override). Roles per pair: office_female_asian_young + arenian, dyad separation 0.2838 m.
+# Hug (hug_v7_hero_*): office_female_asian_young + arenian, dyad separation 0.2838 m, head pose in the clip
 name: hugger_m
 mode: behavior_tree
 extends: adult

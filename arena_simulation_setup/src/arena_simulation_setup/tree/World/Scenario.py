@@ -152,8 +152,7 @@ class ScenarioView(PathView):
         )
 
     def identifiers(self, converter: ArenaConverter = converter) -> Iterable[Identifier]:
-        """Every asset this scenario references, the sounds it plays and the animation clips its agents play included.
-        Pass the world's zone converter to read a scenario that addresses zones by name."""
+        """Every asset this scenario references, sounds and animation clips included, under the given zone converter."""
         from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
 
         scenario = self.load(converter=converter)
@@ -166,8 +165,7 @@ class ScenarioView(PathView):
                 yield AnimationIdentifier.parse(name)
 
     def agent_clips(self, agent: object) -> Iterator[str]:
-        """Clip names an agent entry plays: its inline config, then the scenario-local agent file it names
-        (``agent_type: ./caller.yaml``). Built-in agent types (adult, elder) carry no clips."""
+        """Clip names an agent entry plays, from its inline config and the scenario-local agent file it names."""
         if not isinstance(agent, dict):
             return
         yield from referenced_clips(agent)

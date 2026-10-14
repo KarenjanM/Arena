@@ -1,12 +1,11 @@
-# Crowd-in-the-corridor figure (panel "real data supports the mechanism"): the robot stands in the middle of the
+# Crowd-in-the-corridor figure: the robot stands in the middle of the
 # central_hallway facing the camera while a crowd walks past it in both directions. Framed at eye height, looking
 # straight up the hallway (+y).
 #
 #   target      doctor walking toward the camera just right of the robot
 #   crowd       seven walkers in both directions spread over the depth of the hallway
 #
-# Run with tm_robots=stationary (pos_x=10.0 pos_y=9.0 pos_theta=-1.5708), not scenario: a scenario robot whose goal
-# equals its start is done at once, and the episode resets every step, respawning the crowd at its spawn poses.
+# Run with tm_robots=stationary (pos_x=10.0 pos_y=9.0 pos_theta=-1.5708)
 robots:
 - start: [10.0, 9.0, -1.5708]
 

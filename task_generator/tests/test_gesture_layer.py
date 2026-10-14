@@ -687,9 +687,6 @@ def test_clip_and_point_share_a_ped(rig):
     assert set(slots) == {"arm", "body"}
 
 
-# contact phase lock + recording snapshot
-
-
 def body(clip: str, lock: bool = False) -> Channel:
     return Channel(slot="body", at=(0.0, 0.0, 0.0), clip=clip, lock=lock)
 
@@ -701,7 +698,7 @@ def _body_playhead(mgr: AnimationManager, agent: int) -> float:
 @pytest.mark.parametrize("clip", ["hug", "shake_hand"])
 def test_locked_contact_clips_play_in_phase_across_partners(rig, clip: str) -> None:
     mgr, _, _ = rig
-    a, b = 3, 200  # ids far apart: the default stagger would split them by half a clip
+    a, b = 3, 200
     for _ in range(12):
         for agent in (a, b):
             mgr.compute(agent, 0, 0.0, DT, gesture=req(body(clip, lock=True)))
@@ -720,17 +717,16 @@ def test_phases_reports_kind_channel_phase_and_clip(rig) -> None:
     mgr.compute(7, 0, 0.0, DT, gesture=req(body("hug", lock=True)))
     assert layer.phases(7) == {"body": ("clip", "body", "ramp", "hug")}
     mgr.compute(7, 0, 0.0, DT, gesture=req(body("hug", lock=True)))
-    assert layer.phases(7)["body"][2] == "hold"  # looping clips hold from frame 0
+    assert layer.phases(7)["body"][2] == "hold"
     slots = mgr.overlays(7)
     assert [s for s, *_ in slots] == ["body"]
     _, overlay, playhead, weight = slots[0]
     assert overlay.loop and 0.0 <= playhead < overlay.anim.duration
-    assert 0.0 < weight < 1.0  # still fading in
+    assert 0.0 < weight < 1.0
     seen = []
     for _ in range(int((HOLD_MIN_S + 2 * FADE_S) / DT) + 4):
         mgr.compute(7, 0, 0.0, DT, gesture=req())
         seen.append(layer.phases(7).get("body", (None, None, None, None))[2])
-    # clips have no lowering arc: the slot ends after the minimum hold and the overlay fades out on its own
     assert seen[: int(HOLD_MIN_S / DT) - 2] == ["hold"] * (int(HOLD_MIN_S / DT) - 2)
     assert seen[-1] is None
     assert layer.phases(99) == {}
@@ -745,9 +741,9 @@ def test_starting_to_walk_keeps_a_canned_clip_playing(rig) -> None:
         angles = mgr.compute(9, 1 if moving else 0, 1.2 if moving else 0.0, DT, gesture=req(ch, moving=moving))
         heads.append(_body_playhead(mgr, 9))
         if prev is not None and i == 40:
-            assert abs(angles["l_elbow"] - prev["l_elbow"]) < 0.1  # no reinstall snap
+            assert abs(angles["l_elbow"] - prev["l_elbow"]) < 0.1
         prev = angles
-    assert heads[40] > heads[39]  # the playhead keeps running instead of restarting at frame 0
+    assert heads[40] > heads[39]
 
 
 def test_the_gate_covers_every_looping_canned_clip() -> None:
@@ -756,7 +752,7 @@ def test_the_gate_covers_every_looping_canned_clip() -> None:
     loops = qa.looping_clips()
     assert "talk_with_arm_gesture" in loops and "hug" in loops
     cases = {c.name for c in qa.default_cases()}
-    assert {f"loop_{name}" for name in loops} <= cases  # a clip's wrap is judged as it plays, not in isolation
+    assert {f"loop_{name}" for name in loops} <= cases
 
 
 def test_a_reverse_clip_keeps_its_wrap_through_the_layer() -> None:
@@ -765,4 +761,4 @@ def test_a_reverse_clip_keeps_its_wrap_through_the_layer() -> None:
 
     mgr = AnimationManager(logger=StubLogger(), fps=20.0)
     clip = ClipGesture(mgr).start(np.zeros(3), {"clip": "talk_with_arm_gesture"})
-    assert clip.loop and clip.reverse  # the database's wrap survives into what the layer plays
+    assert clip.loop and clip.reverse

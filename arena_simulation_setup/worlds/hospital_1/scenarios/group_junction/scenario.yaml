@@ -1,7 +1,5 @@
-# Minimal comparison scene: the central_hallway x sub_hallway junction from beckon_hero_video, with one small group
-# conversation (3 people) standing just off the robot's straight line through the junction. Two takes of this scenario are
-# recorded, identical except for robot.mobile.social_cost_layer (true / false), to show side by side what the social cost
-# layer buys: with it on the robot bends around the group's personal-space halo, with it off it cuts closer / through it.
+# Social cost layer comparison: the central_hallway x sub_hallway junction from beckon_hero_video, with one small group
+# conversation (3 people) standing just off the robot's straight line through the junction.
 robots:
 - start: [9.3, 11.55, 0.0]
   phases:

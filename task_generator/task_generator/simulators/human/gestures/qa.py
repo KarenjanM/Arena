@@ -49,7 +49,7 @@ class Case:
     duration: float
     min_clips: int = 0  # arm clips the layer must install (a tracking arm retargets many times)
     rest_windows: Sequence[tuple[float, float]] = ()  # the arm must hang at some tick inside each (t0, t1)
-    collar_limit: float = MAX_COLLAR_RAD  # canned clips raise the clavicle on purpose; the shrug check is the solver's
+    collar_limit: float = MAX_COLLAR_RAD
     aim_limit: float = MAX_HOLD_AIM_DEG
 
 
@@ -175,7 +175,7 @@ def _database() -> AnimationManager:
 
 
 def looping_clips() -> list[str]:
-    """Canned clips the database loops, so the gate covers their wrap as it is played."""
+    """Canned clips that loop."""
     return sorted(name for name, anim in _database().animations.items() if anim.loop and anim.frames)
 
 
@@ -204,7 +204,6 @@ def default_cases() -> list[Case]:
         Case("walker_tracks", walk, 10.0 + 2.0, min_clips=8),
         Case("halt_level", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.5, [], p)], 5.0),
         Case("halt_switch", [Cue(0.0, [halt((5.0, 0.5, 1.2))], p), Cue(2.0, [Channel("halt_r", (5.0, 4.5, 1.2))], p), Cue(4.0, [], p)], 6.5),
-        # every looping canned clip, played long enough to wrap at least twice: the seam is judged as it plays
         *[Case(f"loop_{name}", [Cue(0.0, [Channel("body", (0.0, 0.0, 0.0), clip=name)], p)], 3.0 * _clip_seconds(name) + 1.0, collar_limit=math.inf, aim_limit=math.inf) for name in looping_clips()],
     ]
 

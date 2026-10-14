@@ -1,4 +1,3 @@
-# hug_v2 is the hero-figure copy of the kind's clip (data/recordings/hero_anim/make_hero_clips.py).
 name: hugger
 mode: behavior_tree
 extends: adult

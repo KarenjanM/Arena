@@ -9,7 +9,6 @@ import pytest
 import yaml
 
 from arena_simulation_setup.tree import SimplePathResolver
-from arena_simulation_setup.tree.assets import Animation
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier, AnimationView, referenced_clips, write_clip
 from arena_simulation_setup.tree.World.Scenario import ScenarioView
 
@@ -20,7 +19,7 @@ def _frames(n: int = 4) -> list[dict]:
 
 def test_clip_round_trips_frames_and_meta(tmp_path: Path) -> None:
     frames = _frames()
-    frames[0]["angles"].pop("r_elbow")  # a recording that predates a DOF reads it back as 0.0
+    frames[0]["angles"].pop("r_elbow")
     directory = write_clip(tmp_path / "Common" / "Animation" / "wave_test", frames, {"fps": 20.0, "loop": True, "joints": "upper_body"})
 
     view = AnimationIdentifier("wave_test").load(directory)
@@ -55,15 +54,16 @@ def test_referenced_clips_reads_every_attention_clip_form() -> None:
         "sequences": {
             "a": {"steps": {"call": {"attention": {"clip": "beckon_v3", "gaze": {"x": 1.0}}}}},
             "b": {"steps": {"wave": {"attention": {"clip": {"name": "wave", "when": "bound"}}}}},
-            "c": {"steps": [{"attention": {"clip": {"when": "bound"}}}, {"attention": {"point": "target"}}]},  # no name: no reference
+            "c": {"steps": [{"attention": {"clip": {"when": "bound"}}}, {"attention": {"point": "target"}}]},
         },
-        "desired_velocity": {"mean": 1.2, "clip_low": 0.5},  # clip_low is a parameter bound, not a clip
+        "desired_velocity": {"mean": 1.2, "clip_low": 0.5},
     }
     assert sorted(referenced_clips(config)) == ["beckon_v3", "wave"]
 
 
-def test_referenced_clips_adds_interaction_defaults_unless_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(Animation, "_interaction_clip", {"HUG": "hug", "QUEUE_USE": None}.get)
+def test_referenced_clips_adds_interaction_defaults_unless_overridden() -> None:
+    kinds = pytest.importorskip("arena_humansim.core.interaction_kinds")
+    assert kinds.InteractionType.HUG.kind.clip == "hug" and not kinds.InteractionType.QUEUE_USE.kind.clip
     steps = [
         {"interaction": "HUG"},
         {"interaction": "HUG", "attention": {"clip": "hug_v7_air_w"}},
@@ -93,7 +93,6 @@ def test_scenario_identifiers_include_inline_agent_clips_and_skip_builtin_types(
 
 
 def test_scenario_identifiers_raise_on_a_missing_agent_file(tmp_path: Path) -> None:
-    """A strict publish check must not read an unreadable agent file as one that plays no clips."""
     view = _scenario(tmp_path, {"agent_type": "./missing.yaml"})
     with pytest.raises(FileNotFoundError):
         list(view.identifiers())

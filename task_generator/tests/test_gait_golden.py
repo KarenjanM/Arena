@@ -30,7 +30,6 @@ def test_default_profile_matches_golden_grid(agent_id: int, state: int, speed: f
     gen = GaitGenerator()
     for step, frame in enumerate(expected):
         angles = gen.compute(agent_id, state, speed, DT)
-        # the grid predates the wrists: the recorded joints replay bit-exact, the wrists the gait never moves stay 0.0
         assert list(angles) == [*frame, *WRIST_JOINTS]
         for name, value in frame.items():
             assert angles[name] == float(value), f"{name} at step {step}"

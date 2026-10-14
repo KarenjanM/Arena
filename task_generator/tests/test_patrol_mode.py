@@ -41,7 +41,6 @@ def _mode(*, walls: np.ndarray | None = None, sensor_range: float = 12.0, requir
     mode._clip = _param(clip)
     mode._peds = None
     mode._walls_cache = None
-    mode._last_look = -1e9
     mode._frame_offset = frame_offset
     return mode
 
@@ -77,43 +76,40 @@ def test_open_space_is_visible_and_a_wall_blocks_it() -> None:
 
     blocked = _mode(walls=_wall_at(5.0))
     assert not blocked._line_of_sight(Position(1.0, 5.0, 0.0), Position(9.0, 5.0, 0.0))
-    assert blocked._line_of_sight(Position(1.0, 5.0, 0.0), Position(4.0, 5.0, 0.0))  # same side of the wall
+    assert blocked._line_of_sight(Position(1.0, 5.0, 0.0), Position(4.0, 5.0, 0.0))
 
 
 def test_perception_needs_range_and_sight() -> None:
     mode = _mode(walls=_wall_at(5.0), sensor_range=4.0)
     near_ped = Position(3.0, 5.0, 0.0)
     assert mode._perceives(_pose(1.0, 5.0), near_ped)
-    assert not mode._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))  # out of range and behind the wall
+    assert not mode._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))
 
     far = _mode(walls=_wall_at(5.0), sensor_range=12.0)
-    assert not far._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))  # in range, but the wall blocks it
+    assert not far._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))
     blind = _mode(walls=_wall_at(5.0), sensor_range=12.0, require_los=False)
-    assert blind._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))  # the control that ignores what it could see
+    assert blind._perceives(_pose(1.0, 5.0), Position(8.0, 5.0, 0.0))
 
 
 def test_sightlines_are_traced_in_the_scenario_frame() -> None:
-    """hospital_1's env sits at (+5, +5) in the map the robot reports in: poses are shifted by that before they meet the wall grid."""
-    wall = _wall_at(5.0)  # scenario frame
+    """Robot-frame poses are shifted by the env offset before they meet the wall grid."""
+    wall = _wall_at(5.0)
     shifted = _mode(walls=wall, frame_offset=(5.0, 5.0))
-    # robot and caller on the same side of the wall (scenario x = 1 and 4): visible; in the robot's frame they are at x = 6 and 9
     assert shifted._perceives(_pose(6.0, 10.0), Position(9.0, 10.0, 0.0))
-    # across the wall (scenario x = 1 and 8): blocked
     assert not shifted._perceives(_pose(6.0, 10.0), Position(13.0, 10.0, 0.0))
-    # without the offset the same robot-frame poses would be looked up at the wrong cells (x = 6..13 is past the wall): no shift, no block
     unshifted = _mode(walls=wall)
     assert unshifted._perceives(_pose(6.0, 8.0), Position(9.0, 8.0, 0.0))
 
 
 def test_goals_are_submitted_in_the_scenario_frame() -> None:
-    """The route is shifted into the robot's frame for arrival checks, but the adapter adds the env offset to goals again: submit the unshifted pose."""
+    """Arrival is checked in the robot's frame, goals are submitted in the scenario frame."""
     mode = _mode(frame_offset=(5.0, 5.0))
     mode._route_local = [Pose(position=Position(10.6, 11.6, 0.0), orientation=Orientation.from_yaw(0.0))]
     mode._route = [Pose(position=Position(15.6, 16.6, 0.0), orientation=Orientation.from_yaw(0.0))]
     mode._index = 0
     goal = mode._next_checkpoint().phases[0].pose
-    assert (goal.position.x, goal.position.y) == (10.6, 11.6)  # scenario frame
-    assert (mode._current_goal.position.x, mode._current_goal.position.y) == (15.6, 16.6)  # arrival is checked in the robot's frame
+    assert (goal.position.x, goal.position.y) == (10.6, 11.6)
+    assert (mode._current_goal.position.x, mode._current_goal.position.y) == (15.6, 16.6)
     service = mode._to_scenario_pose(Pose(position=Position(18.5, 16.6, 0.0), orientation=Orientation.from_yaw(0.0)))
     assert (service.position.x, service.position.y) == pytest.approx((13.5, 11.6))
 
@@ -121,7 +117,7 @@ def test_goals_are_submitted_in_the_scenario_frame() -> None:
 def test_only_the_named_agent_playing_the_call_clip_counts() -> None:
     mode = _mode()
     mode._peds = _peds(("bystander", 2.0, 2.0, ("beckon",)), ("caller", 4.0, 4.0, ("wave",)))
-    assert mode._calling() is None  # the caller is waving, the beckoner is someone else
+    assert mode._calling() is None
 
     mode._peds = _peds(("bystander", 2.0, 2.0, ()), ("caller", 4.0, 4.0, ("beckon",)))
     calling = mode._calling()

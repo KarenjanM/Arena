@@ -1,5 +1,4 @@
-# Conversation pair; the 1.8 m gap between them comes from their spawn poses (TALK_TO does not move them):
-# a gap wide enough to drive through, which the social layer must keep closed.
+# Conversation pair, 1.8 m apart by their spawn poses (TALK_TO does not move them)
 name: talker
 mode: behavior_tree
 extends: adult

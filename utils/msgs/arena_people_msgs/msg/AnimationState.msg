@@ -1,4 +1,4 @@
-# Animation layer state of one ped (task_generator AnimationManager + GestureLayer)
+# Animation layer state of one ped (AnimationManager + GestureLayer)
 uint32 id                    # Pedestrian.id
 string name                  # Pedestrian.name
 string base                  # base animation (idle | walk | run | canned clip)

@@ -7,7 +7,7 @@
 # World coordinates. Furniture: check-in desks x~5, queue rails x 8-14, information island x 20-23.5 y 12-18,
 # chair blocks x 30-40; the hall is open between x 15 and 29.
 robots:
-- start: [14.0, 9.5, 0.0]   # 6 m before the talkers: their cost halo (2.5 m) must not enclose the start
+- start: [14.0, 9.5, 0.0]
   phases:
   - goto: [27.0, 9.5, 0.0]
 

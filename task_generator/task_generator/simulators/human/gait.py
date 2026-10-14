@@ -68,9 +68,9 @@ LIMITS: tuple[tuple[float, float], ...] = (
     (-0.6, 0.6),  # r_y_ankle
     (-0.9, 0.6),  # r_ankle
     (-1.4, 1.4),  # l_r_wrist
-    (-1.3, 1.3),  # l_wrist
+    (-1.4, 1.2),  # l_wrist
     (-1.4, 1.4),  # r_r_wrist
-    (-1.3, 1.3),  # r_wrist
+    (-1.4, 1.2),  # r_wrist
 )
 
 

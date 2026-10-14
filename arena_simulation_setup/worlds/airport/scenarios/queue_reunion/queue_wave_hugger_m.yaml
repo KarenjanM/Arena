@@ -1,7 +1,5 @@
 # The man at the back of check-in line 2: waits, waves back at his friend at the back of line 1 (fixed gaze target, no WAVE_AT
-# pairing needed), then walks to a shared meeting point between the two lines and hugs him there (scripted, per
-# arena_simulation_setup/worlds/hospital_1/scenarios/social_hugging/hugger_*.yaml: kind: go_to, then interact: HUG).
-# Uses the locked airport hug clip (hug_v7_air_m, office_female_caucasian_young + worker_male_asian_middleage, dyad separation 0.3126).
+# pairing needed), then walks to a shared meeting point between the two lines and hugs him there.
 name: queue_wave_hugger_m
 mode: behavior_tree
 extends: adult

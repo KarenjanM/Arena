@@ -1,6 +1,4 @@
-# FAST minimal clip: the locked v7 handshake (wider stance) on the robot's path, RViz curated (human cylinders + proximity/vision
-# debug off, Map/Alpha 0.99), aura blinking twice. Built to quickly re-verify the fixes that the full hero take still lacks
-# (that take predates the v7 handshake and the RViz cylinder fix).
+# The v7 handshake held across the robot's path through the central_hallway
 robots:
 - start: [7.5, 15.6, 0.0]
   phases:

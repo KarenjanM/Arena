@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import os
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -15,9 +14,8 @@ from task_generator.simulators.human.pointing.generator import direction_from_an
 from . import BODY_HEIGHT, GestureClip
 from .point import PointGesture
 
-# hold elevation above the horizontal; ARENA_HALT_ELEVATION_DEG overrides it for a launch (e.g. a figure render)
-HOLD_ELEVATION_DEG = float(os.environ.get("ARENA_HALT_ELEVATION_DEG", "15.0"))
-EXTENSION_RAD = math.radians(70.0)  # wrist extension on the hold: fingers up, palm at the target
+HOLD_ELEVATION_DEG = 15.0  # above the horizontal
+EXTENSION_RAD = math.radians(70.0)  # wrist extension on the hold
 
 
 class HaltGesture(PointGesture):
@@ -37,7 +35,6 @@ class HaltGesture(PointGesture):
 
     def start(self, local: np.ndarray, opts: dict) -> GestureClip:
         clip = super().start(local, opts)
-        # one twist for the whole swing: it is only defined once the forearm has left the vertical
         twist = self._palm_twist(self._forearm(clip.frames[clip.hold_end], clip.side, opts), clip.side)
         return self._palm_out(clip, opts, lambda _fore: twist, ramp=True)
 
@@ -47,7 +44,6 @@ class HaltGesture(PointGesture):
         prev = [self._palm_twist(self._forearm(clip.frames[0], side, opts), side)]
 
         def track(fore: np.ndarray) -> float:
-            # the arm stays raised through the transition, so the palm follows it frame by frame
             prev[0] += float(wrap_pi(self._palm_twist(fore, side) - prev[0]))
             return prev[0]
 
@@ -66,7 +62,7 @@ class HaltGesture(PointGesture):
     def _palm_twist(fore: np.ndarray, side: str) -> float:
         """Pronation that turns the back of the hand up, so the extension lifts the fingers and faces the palm down the aim."""
         axis = fore @ S.WRIST_AXES[side][0]
-        dorsal = fore @ np.array([0.0, S.REFLECT[side], 0.0])  # back of the hand at zero pronation
+        dorsal = fore @ np.array([0.0, S.REFLECT[side], 0.0])
         up = S.perp_component(fore @ S.DOWN, S.UP)
         return math.atan2(float(axis @ np.cross(dorsal, up)), float(dorsal @ up))
 

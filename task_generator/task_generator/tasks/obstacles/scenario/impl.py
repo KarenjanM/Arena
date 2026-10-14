@@ -17,7 +17,6 @@ class TM_Scenario(TM_Obstacles):
 
     async def reset(self, *, seed: int) -> Obstacles:
         scenario_name = self._config.value
-        # before any ped spawns, contact interactions read the mode when they form
         await self._ctx.environment_manager.configure_contact(self._contact_mode.value, self._standing_distance.value)
         await self._ctx.environment_manager.configure_gestures(self._gesture_mode.value)
         world_description = self._ctx.world_manager.world_compacted()
@@ -70,7 +69,7 @@ class TM_Scenario(TM_Obstacles):
         return scenario.static, scenario.dynamic
 
     async def _check_clips(self, scenario_view: ScenarioView, scenario: Scenario) -> None:
-        """Resolve the clips the scenario's agents play, fetching bucket clips before the first agent needs one, and name any that will not play."""
+        """Resolve the clips the scenario's agents play and warn about the ones that will not."""
         try:
             names = sorted({name for obstacle in scenario.dynamic for name in scenario_view.agent_clips(obstacle.extra.get("agent"))})
         except OSError as e:

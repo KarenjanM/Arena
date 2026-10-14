@@ -35,7 +35,7 @@ class Animation:
     fps: float = 20.0
     loop_from: int = 0  # looping clips wrap back to this frame, so an intro plays once
     joints: tuple[str, ...] = ()  # joints the clip moves, empty = all (canned clips carry this from annotations)
-    reverse: bool = False  # loop forward then backward, for clips whose end does not meet their start
+    reverse: bool = False  # loop forward then backward
 
     def __len__(self) -> int:
         return len(self.frames)
@@ -203,7 +203,7 @@ class AnimationManager:
         assert n_frames > 0, "Animation does not contain any frames"
         assert not (is_reverse and not is_loop), f"Animation {name} is reverse but does not loop"
 
-        cycle = 2 * n_frames - 2 if is_reverse else n_frames  # a reverse cycle is the clip out and back
+        cycle = 2 * n_frames - 2 if is_reverse and n_frames > 1 else n_frames
         return Animation(name=name, frames=frames, n_frames=n_frames, duration=cycle / clip.fps, loop=is_loop, fps=clip.fps, joints=joint_mask(meta.get("joints")), reverse=is_reverse)
 
     def clip(self, name: str) -> Animation | None:

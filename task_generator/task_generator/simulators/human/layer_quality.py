@@ -1,4 +1,4 @@
-"""Offline layer-quality measurements on the shipped clips and the aim solver (manuscript §4.4).
+"""Offline layer-quality measurements on the shipped clips and the aim solver.
 
 Prompt-free, every number read from joint states through the rig's own FK (``pointing.skeleton.fk``):
 
@@ -25,27 +25,22 @@ import numpy as np
 
 from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.gestures import BODY_HEIGHT, Channel, GestureLayer, GestureRequest, world_to_local
+from task_generator.simulators.human.gestures.qa import MAX_HOLD_AIM_DEG, MAX_LINK_STEP_M
 from task_generator.simulators.human.pointing import skeleton as S
 from task_generator.simulators.human.pointing.contract import ROS_JOINT_ORDER
 
 FPS = 20.0
 DT = 1.0 / FPS
 IDLE, WALKING = 0, 1
-WALK_SPEED = 1.2  # m/s, gait speed while an invocation runs on a walker
+WALK_SPEED = 1.2  # m/s
 
 CONTACT_HEIGHT_M = 0.05  # a foot this close to the floor is planted
 SKID_M_PER_FRAME = 0.025  # a planted foot moving further than this in one 20 fps frame skates
-GATE_LINK_STEP_M = 0.25  # playback gate (gestures/qa.py MAX_LINK_STEP_M): a link step that reads as a snap
 LINKS = ("l_wrist", "r_wrist", "l_elbow", "r_elbow", "head")
 FEET = ("l_ankle", "r_ankle", "l_foot", "r_foot")
 
-# HumanML3D joint order (22) -> rig link; the rig roots both clavicles at the top of the spine stack
-H3D_TO_RIG = (
-    "pelvis", "l_hip", "r_hip", "spine", "l_knee", "r_knee", "chest", "l_ankle", "r_ankle", "torso", "l_foot",
-    "r_foot", "neck", "torso", "torso", "head", "l_shoulder", "r_shoulder", "l_elbow", "r_elbow", "l_wrist", "r_wrist",
-)  # fmt: skip
-H3D_FEET = (7, 8, 10, 11)  # l/r ankle, l/r foot
-H3D_LINKS = (20, 21, 18, 19, 15)  # l/r wrist, l/r elbow, head
+H3D_FEET = (7, 8, 10, 11)  # HumanML3D l/r ankle, l/r foot
+H3D_LINKS = (20, 21, 18, 19, 15)  # HumanML3D l/r wrist, l/r elbow, head
 
 
 # -- positions ---------------------------------------------------------------------------------
@@ -75,13 +70,7 @@ def h3d_z_up(positions: np.ndarray) -> np.ndarray:
 
 
 def plausibility(feet: np.ndarray, links: np.ndarray, fps: float = FPS) -> dict[str, float]:
-    """feet (T, F, 3) and links (T, L, 3), z up, floor at z = 0.
-
-    skate_ratio: frames where a planted foot (below CONTACT_HEIGHT_M) skids more than SKID_M_PER_FRAME,
-    over frames with a planted foot. penetration_cm: mean depth of the lowest foot below the floor.
-    lowest_foot_cm: mean height of the lowest foot (0 when standing, >0 floating or in flight).
-    jerk: mean third-derivative magnitude of the links, m/s^3.
-    """
+    """Skating, floor penetration, lowest-foot height and link jerk of feet (T, F, 3) and links (T, L, 3), z up, floor at z = 0."""
     feet = np.asarray(feet, dtype=float)
     low = feet[..., 2].min(axis=1)
     planted = feet[:-1, :, 2] < CONTACT_HEIGHT_M
@@ -112,10 +101,7 @@ def source_plausibility(positions: np.ndarray) -> dict[str, float]:
 
 
 def loop_seam(frames: Sequence[dict], body: S.Body, joints: Sequence[str] | None, loop_from: int = 0, reverse: bool = False) -> dict[str, float]:
-    """Link jump from the last frame to the loop-in frame, next to the clip's own per-frame link motion.
-
-    A reverse clip loops out and back, so the wrap lands on frame 1 and the seam is one ordinary step.
-    """
+    """Link jump from the last played frame to the loop-in frame, next to the clip's own per-frame link motion."""
     pos = rig_positions(frames, body, joints)
     tracks = np.stack([pos[k] for k in LINKS], axis=1)  # (T, L, 3)
     steps = np.linalg.norm(np.diff(tracks, axis=0), axis=-1).max(axis=1)  # worst link per frame
@@ -133,7 +119,7 @@ def loop_seam(frames: Sequence[dict], body: S.Body, joints: Sequence[str] | None
         "step_p95_m": float(np.percentile(steps, 95)),
         "seam_over_p95": float(seam[worst] / np.percentile(steps, 95)) if np.percentile(steps, 95) > 0 else float("inf"),
         "seam_joint_rad": float(ang.max()) if len(ang) else 0.0,
-        "passes_gate": bool(seam[worst] <= GATE_LINK_STEP_M),
+        "passes_gate": bool(seam[worst] <= MAX_LINK_STEP_M),
     }
 
 
@@ -146,13 +132,7 @@ def targeting_grid(azimuths_deg: Sequence[float] = tuple(range(-90, 91, 15)), di
 
 
 def aim_errors(slot: str, target_local: Sequence[float], *, moving: bool, hold_s: float = 2.5, origin: str = "wrist") -> dict[str, float] | None:
-    """One invocation through the real GestureLayer: per-tick error over the parked hold, summarized by its median.
-
-    point: 3-D angle between the forearm ray (elbow -> wrist) and the wrist -> target direction.
-    halt: the same angle in the horizontal plane only, since halt holds a fixed elevation by design.
-    origin "body" measures the target direction from the pelvis instead of the wrist: the bearing halt's solver
-    aims on, so the error is the solver's alone, without the parallax of the hand sitting off the body axis.
-    """
+    """One invocation through the real GestureLayer: forearm-to-target angle per tick over the parked hold (horizontal only for halt), measured from the wrist or the pelvis (``origin``)."""
     log = _Log()
     mgr = AnimationManager(logger=log, fps=FPS)
     layer = GestureLayer(mgr, log)
@@ -199,7 +179,7 @@ def targeting(slot: str, moving: bool, grid: Sequence[tuple[float, float, float]
         "median_deg": float(np.median(med)) if len(med) else None,
         "p90_deg": float(np.percentile(med, 90)) if len(med) else None,
         "max_deg": float(med.max()) if len(med) else None,
-        "over_gate": int((med > 10.0).sum()),  # the playback gate's MAX_HOLD_AIM_DEG
+        "over_gate": int((med > MAX_HOLD_AIM_DEG).sum()),
         "rows": rows,
     }
 
@@ -225,7 +205,6 @@ def clip_report(sources: dict[str, Path]) -> list[dict]:
         joints = anim.joints or None
         frames = anim.frames
         row: dict = {"clip": name, "frames": len(frames), "loop": anim.loop, "mask": "upper-body" if joints else "whole-body"}
-        # the lower body of an upper-body clip is the gait synthesizer's at runtime, not the clip's
         after = rig_plausibility(frames, body, joints)
         row.update({f"rig_{k}": v for k, v in after.items()})
         if joints:

@@ -1,9 +1,7 @@
-# Video variant of beckon_hero (fig:intro): same layout and people. Differences: the fountain queue lookup is race-free
-# (drinker.yaml settles for a tick first), the robot starts closer (10.4, 7.0) and walker_2 starts ahead of the robot.
+# Video variant of beckon_hero: same layout and people, the drinkers settle for a tick before the fountain queue lookup,
+# the robot starts closer (10.4, 7.0) and walker_2 starts ahead of it. Every gesture class and both contact clips
+# around the central_hallway x sub_hallway junction, with a queue, a conversation and through-traffic behind them.
 # Route: the junction opening (facing east), then the caller-side pose; run with tm_robots=scenario.
-# (The original hero waypoint (10.6, 9.5) faces north: the robot overshoots the junction and doubles back.) Original (paper figure): every gesture class and both contact clips around the central_hallway x sub_hallway
-# junction, with a queue, a conversation and through-traffic behind them. The robot drives up the corridor and
-# turns toward the caller.
 #
 #   A  caller          beckons the robot from the sub-hallway
 #   B  shaker_*        handshake held in the corridor's west lane, by the ward door
@@ -13,7 +11,7 @@
 robots:
 - start: [10.4, 7.0, 1.5708]
   phases:
-  - goto: [10.6, 11.6, 0.0]   # the junction opening, facing east: no U-turn when the goal switches
+  - goto: [10.6, 11.6, 0.0]
   - goto: [13.2, 11.5, 0.0]
 
 dynamic:
@@ -52,7 +50,7 @@ dynamic:
   waypoints: [[11.3, 17.0]]
 
 - name: hugger_1
-  model: Office/office_female_asian_young  # short hair: a long hair plate (the nurse) makes a collision-free hug impossible
+  model: Office/office_female_asian_young
   pose: [9.3, 24.0, 0.0]
   agent: {agent_type: ./hugger_w.yaml}
   waypoints: [[9.3, 24.0]]

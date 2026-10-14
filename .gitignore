@@ -65,7 +65,6 @@ __pycache__/
 
 # folders
 /_assets
-# animation clips live in the asset bucket (arena asset push animation <name>), local copies are work in progress
 arena_simulation_setup/assets/*/Animation/
 arena_simulation_setup/worlds/*/assets/*/Animation/
 .venv/

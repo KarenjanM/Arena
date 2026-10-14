@@ -36,9 +36,8 @@ string agent_type
 # Resolved local SDF path for this ped's actor, read once per name by the spawner.
 string model_uri
 
-# Active interaction (humansim InteractionManager), for consumers doing
-# group-aware reasoning (e.g. arena_social_cost_layer). -1 = no active interaction;
-# interaction_type is only meaningful when interaction_id >= 0.
+# Active humansim interaction, -1 = none.
 int32 interaction_id -1
+# Kind of that interaction, meaningful only when interaction_id >= 0.
 uint8 interaction_type
 

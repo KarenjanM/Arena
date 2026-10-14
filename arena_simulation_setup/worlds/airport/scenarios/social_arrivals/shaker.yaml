@@ -1,4 +1,4 @@
-# Handshake (LOCKED): office_female_african_young + casual_female_african_young (same rig, 1.75 / 1.76 m), palms meet at the midpoint of a 0.84 m dyad.
+# Handshake (shake_hand_v7_women_pair): office_female_african_young + casual_female_african_young, palms meet at the midpoint of a 0.84 m dyad
 name: shaker
 mode: behavior_tree
 extends: adult

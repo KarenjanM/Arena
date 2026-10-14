@@ -1,13 +1,4 @@
-"""Pedestrian animation clips: one joint-angle recording per asset directory.
-
-    <domain>/Animation/<name>/
-        annotation.yaml   playback (fps, loop, reverse, joints) and provenance, also the bucket's listing sentinel
-        <name>.npz        joint_names (J,), angles (T, J), t (T,), root_xy_yaw (T, 3), animation_state (T,)
-        <extra>.npz       optional data derived from the clip, e.g. the baked pointing table (table.npz)
-
-Clips never ship in the repo: they resolve from the world/local asset dirs (work in progress, gitignored) and the
-asset bucket (`arena asset push animation <name>` publishes one).
-"""
+"""Pedestrian animation clips: one joint-angle recording per asset directory."""
 
 from __future__ import annotations
 
@@ -47,7 +38,7 @@ class AnimationClip:
         return float(self.meta.get('fps', 20.0))
 
     def frames(self) -> list[dict]:
-        """Per-frame dicts ({'t', 'angles': {joint: rad}, 'root_xy_yaw', 'animation_state'}), the shape the players consume."""
+        """Per-frame dicts in the shape the players consume."""
         return [
             {
                 't': float(self.t[k]),
@@ -103,7 +94,6 @@ def write_clip(directory: Path, frames: Sequence[dict], meta: dict) -> Path:
     np.savez_compressed(
         directory / f'{name}.npz',
         joint_names=np.array(joint_names),
-        # a joint missing from a frame (recordings that predate a DOF) reads as 0.0
         angles=np.array([[f['angles'].get(j, 0.0) for j in joint_names] for f in frames], dtype=np.float64),
         t=np.array([f.get('t', k / meta.get('fps', 20.0)) for k, f in enumerate(frames)], dtype=np.float64),
         root_xy_yaw=np.array([f.get('root_xy_yaw', (0.0, 0.0, 0.0)) for f in frames], dtype=np.float64).reshape(len(frames), 3),
@@ -114,8 +104,7 @@ def write_clip(directory: Path, frames: Sequence[dict], meta: dict) -> Path:
 
 
 def referenced_clips(config: object) -> Iterator[str]:
-    """Clip names a humansim agent config plays: every attention ``clip`` (a name or {name, when}), plus the
-    default clip of each interaction step that sets none of its own. Repeats are not filtered."""
+    """Clip names a humansim agent config plays: every attention clip plus the default clip of each interaction step."""
     if isinstance(config, list):
         for item in config:
             yield from referenced_clips(item)

@@ -133,17 +133,16 @@ has no such joints, so the RViz skeleton ignores them.
 
 ### Wrists (v4)
 
-`l/r_r_wrist`, `l/r_wrist`: two DOFs per hand at the distal end of the forearm,
-chain `elbow -> r_wrist -> wrist` (the link `l/r_wrist` sits where the old fixed
-wrist was). The rest hand hangs along the forearm, fingers down, thumb forward, palm
-toward the thigh. `r_wrist` is forearm pronation (positive turns the palm backward,
-both sides), `wrist` is the hand hinge (positive = extension, back of the hand toward
-the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
+`l/r_r_wrist`, `l/r_wrist`: two DOFs per hand at the distal end of the forearm, chain
+`elbow -> r_wrist -> wrist`. The rest hand hangs along the forearm, fingers down, thumb
+forward, palm toward the thigh. `r_wrist` is forearm pronation (positive turns the palm
+backward, both sides), `wrist` is the hand hinge (positive = extension, back of the hand
+toward the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
 (`r_wrist`: `(0,0,-1)` left / `(0,0,1)` right, `wrist`: `(1,0,0)` left / `(-1,0,0)`
 right), so the RViz adapter passes both through untouched. Only the `halt` gesture
-writes them, everything else leaves them at 0.0. Recordings that predate them carry
-no wrist values and are read as 0.0 (the loaders zero-fill, same migration as the
-spine stack).
+writes them, everything else leaves them at 0.0. Recordings that predate them carry no
+wrist values and are read as 0.0 (the loaders zero-fill, same migration as the spine
+stack).
 
 ### Gait synthesis
 

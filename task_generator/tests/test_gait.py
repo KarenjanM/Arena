@@ -219,7 +219,7 @@ def test_animation_manager_hands_phase_and_profile_to_the_gait() -> None:
         def warning(self, msg: str) -> None:
             pass
 
-    mgr = AnimationManager(logger=_Logger(), fps=20.0, clips=NoClips())  # walking is synthesized, no canned clip involved
+    mgr = AnimationManager(logger=_Logger(), fps=20.0, clips=NoClips())
     profile = resolve_pose_profile({"walk": {"joints": {"knee": {"scale": 0.5}}}})
     expected = GaitGenerator().compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile)
     assert mgr.compute(11, _WALKING, 1.0, 0.05, phase=1.25, profile=profile) == expected

@@ -20,9 +20,7 @@ def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
     declare_string(node, ns("service_agent"), "", label="Service agent", description="Name of the pedestrian whose call ends the episode when answered. Empty = the first pedestrian that beckons.")
     declare_string(node, ns("clip"), DEFAULT_CLIP, label="Call clip", description="Body clip that counts as a call for help.")
     declare_double(node, ns("service_radius"), 2.5, label="Service radius", description="The pedestrian counts as served once the robot holds within this distance for service_dwell.", lo=0.3, hi=10.0)
-    declare_double(
-        node, ns("service_dwell"), 0.0, label="Service dwell", description="Seconds the robot must hold inside service_radius. 0 = the call counts as answered the moment the robot gets there, which a pass at walking pace satisfies; a dwell can outlast the few seconds a pass spends inside the radius.", lo=0.0, hi=30.0
-    )
+    declare_double(node, ns("service_dwell"), 0.0, label="Service dwell", description="Seconds the robot must hold inside service_radius. 0 = answered on arrival.", lo=0.0, hi=30.0)
     declare_double(node, ns("service_standoff"), 0.8, label="Service standoff", description="Distance in m from the pedestrian at which the service goal is placed.", lo=0.3, hi=5.0)
     declare_double(node, ns("sensor_range"), 12.0, label="Sensor range", description="Maximum range at which a call can be perceived, the platform's range-sensor reach.", lo=1.0, hi=50.0)
     declare_bool(node, ns("require_line_of_sight"), True, label="Require line of sight", description="A call behind a wall is not perceived. Off = the robot is told regardless of what it could see.")
