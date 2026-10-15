@@ -208,7 +208,8 @@ a period strictly above its interval. The arena_humansim engine ticks off
 still owes it the tick the gate is waiting for.
 
 `sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`)
-starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced,
+starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced
+while gates hold the pace and wall rate while no channel is registered,
 `ungated` free-steps ignoring every gate. Hard channels freeze-and-wait: the
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by

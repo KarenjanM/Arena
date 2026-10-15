@@ -94,11 +94,14 @@ async def _gated_run(rig: Rig) -> None:
     assert probe.status_tick() == pytest.approx(tick + PERIOD, abs=1e-6)
     assert (await rig.frozen(0.3)) == pytest.approx(tick + PERIOD, abs=1e-3)
 
-    # deregistering the stalled channel unblocks the tick, with no gates the run free-steps
+    # deregistering the stalled channel unblocks the tick, with no gates the unpaced run steps at wall rate
     response = await probe.register_channels([])
     assert response.success
-    await rig.until(lambda: probe.clock() > tick + 2.0, 3.0, "free-stepping clock")
-    await rig.until(lambda: probe.status is not None and probe.status.measured_rtf > 1.0, 3.0, "measured rtf")
+    await rig.until(lambda: probe.clock() > tick + 0.5, 3.0, "unblocked clock")
+    t0 = probe.clock()
+    await asyncio.sleep(1.0)
+    assert 0.6 < probe.clock() - t0 < 1.4
+    await rig.until(lambda: probe.status is not None and 0.6 < probe.status.measured_rtf < 1.4, 3.0, "measured rtf near wall rate")
 
     # stop returns promptly, frees the hold, and the clock runs at wall rate again
     t0 = asyncio.get_running_loop().time()
@@ -122,6 +125,18 @@ async def _paced_run(rig: Rig) -> None:
     await asyncio.sleep(1.0)
     assert 1.5 < probe.clock() - t0 < 2.6
     await rig.until(lambda: probe.status is not None and 1.5 < probe.status.measured_rtf < 2.6, 3.0, "measured rtf near target")
+    await probe.stop_run()
+
+
+async def _ungated_run(rig: Rig) -> None:
+    """An unpaced ungated run free-steps past wall rate."""
+    probe = rig.probe
+    await probe.start_run(ungated=True)
+    await rig.until(lambda: probe.status is not None and probe.status.active, 2.0, "active status")
+    t0 = probe.clock()
+    await asyncio.sleep(1.0)
+    assert probe.clock() - t0 > 2.0
+    await rig.until(lambda: probe.status is not None and probe.status.measured_rtf > 2.0, 3.0, "measured rtf")
     await probe.stop_run()
 
 
@@ -154,6 +169,10 @@ def test_gated_run(arena_rig) -> None:
 
 def test_paced_run(arena_rig) -> None:
     arena_rig(_paced_run)
+
+
+def test_ungated_run(arena_rig) -> None:
+    arena_rig(_ungated_run)
 
 
 def test_channel_dropped_after_its_last_beat(arena_rig) -> None:
