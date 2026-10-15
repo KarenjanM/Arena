@@ -34,7 +34,9 @@ uses it to redispatch a finished action while the judge has not seen the robot a
 never while `robot.waiting`). Mobile adapters inherit
 [`MobileAdapter`](mobile/__init__.py), whose `on_reset` teleports the robot
 to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
-any post-teleport work.
+any post-teleport work. The episode's first phase is dispatched before `on_reset`
+runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
+again after the teleport (rosnav_rl) or redispatches it on a later tick (Nav2).
 
 ## Existing kinds
 
