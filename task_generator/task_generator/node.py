@@ -491,9 +491,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     async def teardown(self) -> None:
         self._heartbeat_stop.set()
-        for t in (self._tick_loop_task, self._check_status_task, self._episode_task):
-            if t is not None and not t.done():
-                t.cancel()
+        running = [t for t in (self._tick_loop_task, self._check_status_task, self._episode_task) if t is not None and not t.done()]
+        for t in running:
+            t.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
         if self._task is not None:
             await self._task.teardown()
         if self._robots_manager is not None:
@@ -1389,7 +1390,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             record.robots = [m.model_name for m in self._robots_manager.managers.values()]
 
             self._pub_task_reset.publish(Int16(data=record.episode_id - 1))
-            self._send_end_message_on_end()
 
             self._pub_state_world.publish(String(data=record.world))
 
@@ -1472,13 +1472,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             self.get_logger().error(f"Error in termination watcher: {e}\n{traceback.format_exc()}")
             raise
 
-    def _send_end_message_on_end(self):
+    def _send_end_message_on_end(self) -> bool:
         desired = self.conf.General.DESIRED_EPISODES.value
         if desired < 0 or self._episodes.current.episode_id < desired:
-            return
+            return False
 
         self.get_logger().info(f"Shutting down. All {int(desired)} tasks completed")
         self.request_shutdown("all episodes completed")
+        return True
 
     def _close_condition_scopes(self) -> None:
         """Judge every robot's still open condition scope at episode end."""
@@ -1980,6 +1981,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 log.info(f"  duration: {duration:.2f}s")
                 log.warn(f"EPISODE FINISHED #{episode_id}")
                 log.warn("=============")
+                if self._send_end_message_on_end():
+                    respawn = False
         finally:
             self._episodes.action_in_flight = False
             self._episodes.pending_outcomes.pop(episode_id, None)
