@@ -102,8 +102,9 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
    Gets back `env_id`, `ns`, and the active `sim` name.
 2. **Launch**: env starts `task_generator_node` under the allocated `ns`;
    `managed=true` skips re-registration.
-3. **Confirm world**: once the env knows its world extent, it calls
-   `confirm_world`; the shelf packer places the slot and returns `reference`.
+3. **Confirm world**: once the env has rendered its world map, it calls
+   `confirm_world` with the map bounds, which cover every level as laid out
+   side by side; the shelf packer places the slot and returns `reference`.
    `reallocated=true` in the response means the env must translate all entity
    coordinates by the new `reference` offset and republishes its latched
    `map -> env_<n>/map` transform with it.

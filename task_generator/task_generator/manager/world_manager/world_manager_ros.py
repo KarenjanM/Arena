@@ -214,19 +214,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             disk_level = disk_levels[0]
             disk_map = multi_level_map.get_map(disk_level)
 
-        floors = [floor for level in world.all_levels for floor in level.all_floors]
-        extent = arena_runtime_msgs.msg.WorldExtent()
         if disk_mode:
-            rows, cols = disk_map.shape
-            extent.x_min = float(disk_map.origin.x)
-            extent.y_min = float(disk_map.origin.y)
-            extent.x_max = float(disk_map.origin.x + cols * disk_map.resolution)
-            extent.y_max = float(disk_map.origin.y + rows * disk_map.resolution)
-        elif floors:
-            extent.x_min = float(min(f.pos.x - f.x_length / 2 for f in floors))
-            extent.y_min = float(min(f.pos.y - f.y_length / 2 for f in floors))
-            extent.x_max = float(max(f.pos.x + f.x_length / 2 for f in floors))
-            extent.y_max = float(max(f.pos.y + f.y_length / 2 for f in floors))
+            world_map = disk_map
+        else:
+            world_map = WorldMap.from_world_description(compacted_description, resolution=_DEFAULT_RESOLUTION, time=self.node.sim_time, _level_origins=level_origins)
+        x_min, y_min, x_max, y_max = world_map.bounds
+        extent = arena_runtime_msgs.msg.WorldExtent(x_min=float(x_min), y_min=float(y_min), x_max=float(x_max), y_max=float(y_max))
 
         req = arena_runtime_msgs.srv.ConfirmWorld.Request()
         req.env_id = self.node._env_id
@@ -252,12 +245,6 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         self._logger.warn(f'Loading World {world_name}')
 
-        if disk_mode:
-            world_map = disk_map
-        else:
-            if compacted_description is None:
-                compacted_description = world.compact_world(origins={fid: (0.0, 0.0) for fid in world.level_ids})
-            world_map = WorldMap.from_world_description(compacted_description, resolution=_DEFAULT_RESOLUTION, time=self.node.sim_time, _level_origins=level_origins)
         DynamicPaths.WORLD.path = world_view.path
         DynamicPaths.LINKED.paths = list(world.sources)
         static_footprints = await asyncio.gather(*(o.footprint() for o in world.all_static_entities))

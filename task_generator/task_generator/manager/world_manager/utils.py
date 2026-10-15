@@ -306,6 +306,12 @@ class WorldMap:
         return self.occupancy.shape
 
     @property
+    def bounds(self) -> tuple[float, float, float, float]:
+        """(x_min, y_min, x_max, y_max) of the raster in the map frame."""
+        rows, cols = self.shape[:2]
+        return self.origin.x, self.origin.y, self.origin.x + cols * self.resolution, self.origin.y + rows * self.resolution
+
+    @property
     def frame(self) -> GridFrame:
         return GridFrame(shape=self.shape, origin=self.origin, resolution=self.resolution)
 
