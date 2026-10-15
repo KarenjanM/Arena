@@ -539,7 +539,8 @@ class EnvironmentManager(NodeInterface):
         """
         Configure regions (sources/sinks) on the human simulator.
         """
-        return await self._human_simulator.setup_regions(regions)
+        realized = [attrs.evolve(region, polygon=[self._realizer.realize(vertex) for vertex in region.polygon]) for region in regions]
+        return await self._human_simulator.setup_regions(realized)
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact mode of the human simulator for the episode about to spawn."""
