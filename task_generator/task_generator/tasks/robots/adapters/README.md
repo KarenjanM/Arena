@@ -36,7 +36,7 @@ never while `robot.waiting`). Mobile adapters inherit
 to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
 any post-teleport work. The episode's first phase is dispatched before `on_reset`
 runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
-again after the teleport (rosnav_rl) or redispatches it on a later tick (Nav2).
+again after the teleport (rosnav_rl, external) or redispatches it on a later tick (Nav2).
 
 ## Existing kinds
 

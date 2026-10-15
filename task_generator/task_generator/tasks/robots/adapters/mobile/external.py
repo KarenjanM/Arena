@@ -40,15 +40,21 @@ class ExternalAdapter(MobileAdapter):
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
         if self.client.is_done() is False:
             self.client.cancel()
-        goal = GotoPose.Goal()
-        goal.target = self._phase_to_pose_stamped(phase, robot)
-        goal.pose_tolerance, goal.yaw_tolerance = self._resolve_tolerances(phase, robot)
-        await self.client.send_goal(goal)
+        await self._send_goal(phase, robot)
 
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
         if self.client.is_done() is False:
             self.client.cancel()
         await super().on_reset(robot, ctx)
+        phase = robot.active_dispatch_phase()
+        if isinstance(phase, GoToPhase):
+            await self._send_goal(phase, robot)
+
+    async def _send_goal(self, phase: GoToPhase, robot: RobotManager) -> None:
+        goal = GotoPose.Goal()
+        goal.target = self._phase_to_pose_stamped(phase, robot)
+        goal.pose_tolerance, goal.yaw_tolerance = self._resolve_tolerances(phase, robot)
+        await self.client.send_goal(goal)
 
     def _phase_to_pose_stamped(
         self,
