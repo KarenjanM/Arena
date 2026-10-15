@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 
 import pytest
 
@@ -10,6 +11,7 @@ from conftest import Rig
 
 PERIOD = 0.1
 ROBOT_NS = "/arena/env_0/jackal"
+RATE_WINDOW_S = 5.0
 
 
 def _robot_node(rig: Rig):
@@ -85,6 +87,27 @@ async def _silence_holds_without_grace(rig: Rig) -> None:
     await probe.stop_run()
 
 
+async def _keepalive_paces_at_wall_rate(rig: Rig, period: float) -> None:
+    from arena_robots.lockstep_beat import LockstepBeat
+
+    probe = rig.probe
+    node = _robot_node(rig)
+    beat = LockstepBeat(node, "nav", sleep=asyncio.sleep)
+    await probe.start_run()
+    await beat.acquire(period)
+    await rig.until(lambda: probe.stalled_on("nav/jackal"), 5.0, "stall on nav beat")
+    tick = probe.status_tick()
+    await rig.until(lambda: probe.clock() > tick, 5.0, "keepalive engaged")
+
+    loop = asyncio.get_running_loop()
+    sim0, wall0 = probe.clock(), loop.time()
+    await asyncio.sleep(RATE_WINDOW_S)
+    rate = (probe.clock() - sim0) / (loop.time() - wall0)
+    assert rate == pytest.approx(1.0, abs=0.2), f"keepalive paced the sim at {rate:.2f}x wall rate"
+    await beat.release()
+    await probe.stop_run()
+
+
 async def _release_during_register(rig: Rig) -> None:
     """release racing the in-flight register call must leave nothing registered."""
     from arena_robots.lockstep_beat import LockstepBeat
@@ -108,6 +131,11 @@ def test_refcount_and_grace(arena_rig) -> None:
 
 def test_silence_holds_without_grace(arena_rig) -> None:
     arena_rig(_silence_holds_without_grace)
+
+
+@pytest.mark.parametrize("period", [0.1, 0.25, 0.5])
+def test_keepalive_paces_at_wall_rate(arena_rig, period: float) -> None:
+    arena_rig(functools.partial(_keepalive_paces_at_wall_rate, period=period))
 
 
 def test_release_during_register(arena_rig) -> None:
