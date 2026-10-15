@@ -57,7 +57,7 @@ jobs:
         run: |
           source install/setup.bash
           export PATH=/opt/venv/bin:$PATH
-          colcon test --packages-select $(cat tested.txt) --event-handlers console_cohesion+ --return-code-on-test-failure
+          colcon test --packages-select $(cat tested.txt) --executor sequential --event-handlers console_cohesion+ --return-code-on-test-failure
       - name: list the test results
         if: always()
         run: /opt/venv/bin/colcon test-result --verbose

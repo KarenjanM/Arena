@@ -63,8 +63,8 @@ jobs:
           python3 _meta/tools/uv_workspace.py compose
           uv venv --system-site-packages /opt/venv
           export VIRTUAL_ENV=/opt/venv
-          uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' $PACKAGES)
-          uv pip install coverage diff-cover==10.6.0 hypothesis pytest
+          uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $PACKAGES)
+          uv pip install coverage diff-cover==10.6.0
       - name: build the packages
         if: steps.diff.outputs.gated == 'true'
         run: |
