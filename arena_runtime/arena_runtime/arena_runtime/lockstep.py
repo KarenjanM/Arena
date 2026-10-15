@@ -284,6 +284,7 @@ class LockstepScheduler:
                 if drift != 0.0:
                     sim_before = ledger.now
 
+                version = self._registry.version
                 if not config.ungated:
                     removed, added = ledger.refresh(self._desired())
                     for ch in removed:
@@ -300,7 +301,7 @@ class LockstepScheduler:
                     due = ledger.due()
                     hard_due = [ch for ch in due if ch.hard]
                     if hard_due:
-                        await self._await_hard(ledger, hard_due)
+                        await self._await_hard(ledger, hard_due, version)
                     ledger.complete(due)
 
                 window_advance += ledger.now - sim_before
@@ -344,12 +345,11 @@ class LockstepScheduler:
 
         return self._node.create_subscription(get_message(channel.spec.type_name), channel.topic, _cb, 10)
 
-    async def _await_hard(self, ledger: GateLedger, hard_due: list[Channel]) -> None:
+    async def _await_hard(self, ledger: GateLedger, hard_due: list[Channel], version: int) -> None:
         start = self._node.wall_time
         next_warn = 10.0
         stalled = False
         nudged = False
-        version = self._registry.version
         due_time = Time.from_float(ledger.tick)
         while True:
             self._arrived.clear()

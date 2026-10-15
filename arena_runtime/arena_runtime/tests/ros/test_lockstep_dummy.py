@@ -125,6 +125,25 @@ async def _paced_run(rig: Rig) -> None:
     await probe.stop_run()
 
 
+async def _channel_dropped_after_its_last_beat(rig: Rig) -> None:
+    """A hard channel deregistered right after its last beat never stalls the run."""
+    from arena_runtime_msgs.msg import LockstepChannel
+
+    probe = rig.probe
+    beat = LockstepChannel(name="beat", topic=probe.beat_topic, type=HEARTBEAT, period_s=PERIOD, hard=True)
+    await probe.start_run()
+    for _ in range(20):
+        response = await probe.register_channels([beat])
+        assert response.success, response.error_msg
+        await rig.until(lambda: probe.stalled_on("beat"), 5.0, "stall on beat")
+        tick = probe.status_tick()
+        probe.pulse(tick)
+        response = await probe.register_channels([])
+        assert response.success, response.error_msg
+        await rig.until(lambda tick=tick: probe.clock() > tick + 1.0, 3.0, "clock past the dropped channel")
+    await probe.stop_run()
+
+
 def test_held_step(arena_rig) -> None:
     arena_rig(_held_step)
 
@@ -135,3 +154,7 @@ def test_gated_run(arena_rig) -> None:
 
 def test_paced_run(arena_rig) -> None:
     arena_rig(_paced_run)
+
+
+def test_channel_dropped_after_its_last_beat(arena_rig) -> None:
+    arena_rig(_channel_dropped_after_its_last_beat)
