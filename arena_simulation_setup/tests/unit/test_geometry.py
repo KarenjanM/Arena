@@ -317,6 +317,7 @@ def test_pose_to_2d():
 
 def test_positionradius_parse_2d():
     pr = PositionRadius.parse([1.0, 2.0])
+    assert (pr.x, pr.y, pr.z) == pytest.approx((1.0, 2.0, 0.0))
     assert pr.radius == pytest.approx(1.0)
 
 
@@ -324,8 +325,19 @@ def test_positionradius_parse_3d():
     pr = PositionRadius.parse([1.0, 2.0, 0.5])
     assert pr.x == pytest.approx(1.0)
     assert pr.y == pytest.approx(2.0)
-    assert pr.z == pytest.approx(0.5)
-    assert pr.radius == pytest.approx(1.0)
+    assert pr.z == pytest.approx(0.0)
+    assert pr.radius == pytest.approx(0.5)
+
+
+def test_positionradius_parse_4d():
+    pr = PositionRadius.parse([1.0, 2.0, 0.3, 0.5])
+    assert (pr.x, pr.y, pr.z) == pytest.approx((1.0, 2.0, 0.3))
+    assert pr.radius == pytest.approx(0.5)
+
+
+def test_positionradius_parse_rejects_other_lengths():
+    with pytest.raises(ValueError):
+        PositionRadius.parse([1.0, 2.0, 0.3, 0.5, 9.0])
 
 
 def test_positionradius_iter():

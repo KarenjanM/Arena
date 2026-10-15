@@ -374,18 +374,21 @@ class PositionRadius(Position, Idempotent):
     def parse(cls, value: geometry_msgs.msg.Point | Sequence[float]) -> Self:
         """
         parse value into PositionRadius
-        formats: [x,y,radius], [x,y,z,radius]
+        formats: [x,y], [x,y,radius], [x,y,z,radius]
         """
         if isinstance(value, geometry_msgs.msg.Point):
             return cls(value.x, value.y, value.z, 1.0)
 
+        if len(value) == 2:
+            return cls(value[0], value[1])
+
         if len(value) == 3:
+            return cls(value[0], value[1], radius=value[2])
+
+        if len(value) == 4:
             return cls(*value)
 
-        if len(value) == 2:
-            return cls(value[0], value[1], 1.0)
-
-        raise ValueError(f"PositionRadius must be [x,y] or [x,y,z,radius], got {value}")
+        raise ValueError(f"PositionRadius must be [x,y], [x,y,radius] or [x,y,z,radius], got {value}")
 
     def __iter__(self) -> Iterator[float]:
         yield from super().__iter__()

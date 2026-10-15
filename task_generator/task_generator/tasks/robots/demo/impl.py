@@ -122,7 +122,7 @@ class TM_Demo(TM_Robots):
             await robot.submit_task(TaskRequest(phases=phases), center_pose)
             self._ctx.world_manager.forbid(
                 [
-                    PositionRadius(center.x, center.y, biggest_robot),
-                    *(PositionRadius(v.position.x, v.position.y, biggest_robot) for v in vertices),
+                    PositionRadius(x=center.x, y=center.y, radius=biggest_robot),
+                    *(PositionRadius(x=v.position.x, y=v.position.y, radius=biggest_robot) for v in vertices),
                 ]
             )
