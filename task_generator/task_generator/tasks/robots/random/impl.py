@@ -1,8 +1,14 @@
 import math
+from collections.abc import Sequence
 
-from task_generator.shared import Orientation, Pose
+from task_generator.shared import Orientation, Pose, Position, PositionRadius
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, ReachPhase, TaskPhase, TaskRequest
+
+
+def goal_clearance(goals: Sequence[Position], tolerance: float) -> list[PositionRadius]:
+    """Zones a start must stay out of so that no robot begins inside a goal's tolerance."""
+    return [PositionRadius(x=goal.x, y=goal.y, radius=tolerance) for goal in goals]
 
 
 class TM_Random(TM_Robots):
@@ -16,7 +22,8 @@ class TM_Random(TM_Robots):
         n = len(self._ctx.robots)
 
         goal_positions = self._ctx.world_manager.get_positions_on_map(n=n, safe_dist=0)
-        start_positions = self._ctx.world_manager.get_positions_on_map(n=n, safe_dist=biggest_robot)
+        tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
+        start_positions = self._ctx.world_manager.get_positions_on_map(n=n, safe_dist=biggest_robot, forbidden_zones=goal_clearance(goal_positions, tolerance))
 
         starts = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in start_positions]
         goals = [Pose(p, Orientation.from_yaw(2 * math.pi * rng.random())) for p in goal_positions]
