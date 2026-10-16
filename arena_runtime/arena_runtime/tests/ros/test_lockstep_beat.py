@@ -125,6 +125,23 @@ async def _release_during_register(rig: Rig) -> None:
     await probe.stop_run()
 
 
+async def _release_after_node_destroyed(rig: Rig) -> None:
+    """release on a destroyed node returns without deregistering."""
+    from arena_robots.lockstep_beat import LockstepBeat
+
+    probe = rig.probe
+    node = _robot_node(rig)
+    beat = LockstepBeat(node, "nav", sleep=asyncio.sleep)
+    await probe.start_run()
+    await beat.acquire(PERIOD)
+    await rig.until(lambda: probe.registered_callers() == [f"{ROBOT_NS}/lockstep/nav"], 3.0, "beat registration")
+    rig.executor.remove_node(node)
+    node.destroy_node()
+    await beat.release()
+    assert probe.registered_callers() == [f"{ROBOT_NS}/lockstep/nav"]
+    await probe.stop_run()
+
+
 def test_refcount_and_grace(arena_rig) -> None:
     arena_rig(_refcount_and_grace)
 
@@ -140,3 +157,7 @@ def test_keepalive_paces_at_wall_rate(arena_rig, period: float) -> None:
 
 def test_release_during_register(arena_rig) -> None:
     arena_rig(_release_during_register)
+
+
+def test_release_after_node_destroyed(arena_rig) -> None:
+    arena_rig(_release_after_node_destroyed)
