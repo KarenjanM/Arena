@@ -305,11 +305,6 @@ class GazeboHost(SimLifecycle):
 class GazeboSimulator(BaseSim):
     SIM_NAME = 'gazebo'
 
-    # gz create CLI ack timeout (ms), kept generous so a slow server-side ack
-    # under heavy load is not mistaken for a spawn failure, which would leak an
-    # untracked orphan model.
-    _SPAWN_TIMEOUT_MS = 60000
-
     def __init__(self, *args: object, namespace: Namespace, **kwargs: object) -> None:
         super().__init__(*args, namespace=namespace, **kwargs)
 
@@ -774,43 +769,18 @@ class GazeboSimulator(BaseSim):
     async def _spawn_model(self, name: str, model: Model, pose: Pose) -> bool:
         """Spawn an already-resolved model under `name` at `pose`. Caller holds self._semaphore."""
         if model.path and model.type not in (ModelType.URDF,):
-            # direct path available, use gz cli call
-            sdf_path = _sdf_file(model.path)
-
-            req_payload = f'sdf_filename: "{sdf_path}", name: "{name}", pose: {{   position: {{ x: {pose.position.x}, y: {pose.position.y}, z: {pose.position.z} }}   orientation: {{ x: {pose.orientation.x}, y: {pose.orientation.y}, z: {pose.orientation.z}, w: {pose.orientation.w} }} }}'
-
-            process = await asyncio.create_subprocess_exec('gz', 'service', '-s', '/world/default/create', '--reqtype', 'gz.msgs.EntityFactory', '--reptype', 'gz.msgs.Boolean', '--timeout', str(self._SPAWN_TIMEOUT_MS), '--req', req_payload, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-
-            _, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                self._spawned_names.add(name)
-                return True
-
-            # A non-zero return covers both a timed-out ack and an outright
-            # rejection, but the create may have landed server-side anyway.
-            # Reconcile against the live model list: track it if it exists, else
-            # best-effort delete in case the create lands just after this check,
-            # so a slow ack never leaves an orphan that survives every reset.
-            if name in await _list_models():
-                self._spawned_names.add(name)
-                return True
-
-            self._logger.error(f"Failed to spawn {name}. Error: {stderr.decode().strip()}")
-            req = DeleteEntity.Request()
-            req.entity = EntityMsg(name=name, type=EntityMsg.MODEL)
-            await self._service_delete_entity.call_timeout(req)
-            return False
-
+            return await self._spawn_factory(name, EntityFactory(sdf_filename=str(_sdf_file(model.path))), pose)
         return await self._spawn_sdf(name, model.description, pose)
 
     async def _spawn_sdf(self, name: str, sdf: str, pose: Pose) -> bool:
         """Spawn from an in-memory SDF via ros_gz_bridge. Caller holds self._semaphore."""
-        request = SpawnEntity.Request()
-        request.entity_factory = EntityFactory()
-        request.entity_factory.name = name
-        request.entity_factory.sdf = sdf
-        request.entity_factory.pose = pose.to_msg()
+        return await self._spawn_factory(name, EntityFactory(sdf=sdf), pose)
+
+    async def _spawn_factory(self, name: str, factory: EntityFactory, pose: Pose) -> bool:
+        """Create `factory` as `name` at `pose` through the bridged create service. Caller holds self._semaphore."""
+        factory.name = name
+        factory.pose = pose.to_msg()
+        request = SpawnEntity.Request(entity_factory=factory)
 
         try:
             result = await self._service_spawn_entity.call_timeout(request)
