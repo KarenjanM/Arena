@@ -1,7 +1,10 @@
+import os
+
 import launch
 import launch.event_handlers
 import launch_ros.actions
 from arena_bringup.actions import IsolatedGroupAction
+from arena_bringup.defaults import gz_discovery_env
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from launch.substitutions import PathJoinSubstitution
@@ -188,6 +191,7 @@ def generate_launch_description():
     return launch.LaunchDescription(
         [
             launch.actions.OpaqueFunction(function=_aliases),
+            *(launch.actions.SetEnvironmentVariable(k, v) for k, v in gz_discovery_env(int(os.environ.get('ROS_DOMAIN_ID', '0'))).items()),
             *ld_items,
             SetGlobalLogLevelAction(log_level.substitution),
             IsolatedGroupAction([launch_sim]),

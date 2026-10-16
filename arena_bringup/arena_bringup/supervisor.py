@@ -123,7 +123,7 @@ class Supervisor:
 
 
 from arena_bringup import viz_backends
-from arena_bringup.defaults import default_human
+from arena_bringup.defaults import default_human, gz_discovery_env
 from arena_bringup.substitutions import DEPRECATED_LAUNCH_ARGS, resolve_deprecated_args
 
 
@@ -303,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     args = parse_args(argv)
 
+    os.environ.update(gz_discovery_env(int(os.environ.get('ROS_DOMAIN_ID', '0'))))
     rclpy.init(args=[])
     node = rclpy.create_node('arena_supervisor')
     sup = Supervisor(node)
