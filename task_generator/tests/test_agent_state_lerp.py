@@ -25,10 +25,11 @@ def _frame(sec: int, nanosec: int = 0, **columns: list) -> AgentFrame:
     return msg
 
 
-def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0)) -> ArenaHumanSimulator:
+def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0), engine_stamp_ns: int | None = None) -> ArenaHumanSimulator:
     adapter = object.__new__(ArenaHumanSimulator)
     adapter._prev_agent_states = prev
     adapter._curr_agent_states = curr
+    adapter._engine_stamp_ns = engine_stamp_ns
     adapter._agent_gestures = {}
     adapter._agent_names = {}
     adapter._agent_types = {}
@@ -210,3 +211,16 @@ def test_pedestrians_default_gait_fields_when_the_frame_has_none() -> None:
     frame = _frame(1, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0], animation_state=[1, 1])
     peds = _adapter()._agent_states_to_pedestrians(frame).pedestrians
     assert [(p.gait_phase, p.gait_cadence, p.agent_type) for p in peds] == [(0.0, 0.0, ""), (0.0, 0.0, "")]
+
+
+def test_roster_after_removal_covers_the_engines_last_frame() -> None:
+    adapter = _adapter(engine_stamp_ns=5216 * int(1e9) + 778_000_000)
+    peds = adapter._agent_states_to_pedestrians(adapter._interpolate_agent_states(5216 * int(1e9) + 811_300_000))
+
+    assert (peds.header.stamp.sec, peds.header.stamp.nanosec) == (5216, 778_000_000)
+    assert peds.header.frame_id == "map"
+    assert list(peds.pedestrians) == []
+
+
+def test_no_roster_before_the_engine_has_published() -> None:
+    assert _adapter()._interpolate_agent_states(int(1e9)) is None

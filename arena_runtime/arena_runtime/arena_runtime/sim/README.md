@@ -161,7 +161,10 @@ Components self-register their data channels via
 a `caller` replaces its set, an empty `channels[]` clears it, per-env
 registrations drop when their env despawns, and registrations merge into a
 running lockstep live. The arena_humansim adapter self-registers `engine`
-and `peds` (both hard). The hunav adapter self-registers `roster` (hard).
+and `peds` (both hard). Its roster never trails the engine: every `arena_peds`
+is stamped no earlier than the last engine frame, and removing all agents
+publishes an empty roster at that stamp, so `peds` is covered whenever
+`engine` is. The hunav adapter self-registers `roster` (hard).
 The arena_auditory `array_renderer` registers `audio/<robot>` (hard, one
 render block, 20 ms for `auditory.array.spec:=four_mic`) and renders off
 `/clock` for the same reason as the humansim engine below.

@@ -249,6 +249,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._agents_lock: asyncio.Lock = asyncio.Lock()
         self._prev_agent_states: AgentFrameMsg | None = None
         self._curr_agent_states: AgentFrameMsg | None = None
+        self._engine_stamp_ns: int | None = None
         self._agent_gestures: dict[int, list[EngineGestureMsg]] = {}
         self._agent_types: dict[int, str] = {}
         self._agent_type_paths: dict[str, str] = {}
@@ -354,6 +355,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
         self._prev_agent_states = self._curr_agent_states
         self._curr_agent_states = msg
+        self._engine_stamp_ns = msg.header.stamp.sec * int(1e9) + msg.header.stamp.nanosec
         # publish on receipt (the rate loop can race a stepped clock burst), but
         # coalesced: one roster compute per burst, not per engine tick
         if self._publish_pending:
@@ -405,9 +407,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._viz_config = cfg
 
     async def _publish_interpolated(self) -> None:
-        """Interpolate at the current sim time and publish the roster."""
+        """Interpolate at the current sim time, never before the engine's latest frame, and publish the roster."""
         now = self.node.sim_time
-        states = self._interpolate_agent_states(now.sec * int(1e9) + now.nanosec)
+        now_ns = now.sec * int(1e9) + now.nanosec
+        if self._engine_stamp_ns is not None:
+            now_ns = max(now_ns, self._engine_stamp_ns)
+        states = self._interpolate_agent_states(now_ns)
         if states is None:
             return
         peds = self._agent_states_to_pedestrians(states)
@@ -416,10 +421,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self.publish_arena_peds(peds)
 
     def _interpolate_agent_states(self, now_ns: int) -> AgentFrameMsg | None:
-        """Lerp between prev and curr agent states at the given timestamp."""
+        """Lerp between prev and curr agent states at the given timestamp, an empty frame at the engine's latest stamp once its agents are removed."""
         curr = self._curr_agent_states
         if curr is None:
-            return None
+            if self._engine_stamp_ns is None:
+                return None
+            empty = AgentFrameMsg()
+            empty.header.stamp.sec = self._engine_stamp_ns // int(1e9)
+            empty.header.stamp.nanosec = self._engine_stamp_ns % int(1e9)
+            empty.header.frame_id = "map"
+            return empty
         prev = self._prev_agent_states
         if prev is None:
             return curr
@@ -1178,6 +1189,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._agent_types = {}
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
+            await self._publish_interpolated()
             if response.success:
                 self._logger.info(response.message)
                 return True
