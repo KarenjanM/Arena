@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import functools
 import inspect
+import os
 import traceback
 import typing
 import warnings
@@ -55,12 +56,49 @@ class LaunchHandle:
         await asyncio.gather(self.task, return_exceptions=True)
 
 
+class IsolatedEnvironmentContext(launch.LaunchContext):
+    """LaunchContext whose environment actions edit a private copy of os.environ, never the process environment."""
+
+    _environment: dict[str, str]
+    _environment_stack: list[dict[str, str]]
+    _environment_reset: dict[str, str]
+
+    @classmethod
+    def adopt(cls, context: launch.LaunchContext) -> IsolatedEnvironmentContext:
+        context.__class__ = cls
+        isolated = typing.cast(IsolatedEnvironmentContext, context)
+        isolated._environment = dict(os.environ)
+        isolated._environment_stack = []
+        isolated._environment_reset = dict(isolated._environment)
+        return isolated
+
+    @property
+    def environment(self) -> dict[str, str]:
+        return self._environment
+
+    def _push_environment(self) -> None:
+        self._environment_stack.append(dict(self._environment))
+
+    def _pop_environment(self) -> None:
+        if not self._environment_stack:
+            raise RuntimeError('environment stack unexpectedly empty')
+        self._replace_environment(self._environment_stack.pop())
+
+    def _reset_environment(self) -> None:
+        self._replace_environment(self._environment_reset)
+
+    def _replace_environment(self, environment: dict[str, str]) -> None:
+        self._environment.clear()
+        self._environment.update(environment)
+
+
 class AsyncLaunchManager:
     def __init__(self):
         self.active_launches: set[LaunchHandle] = set()
 
     async def launch_description(self, description: launch.LaunchDescription) -> LaunchHandle:
         ls = launch.LaunchService(noninteractive=True)
+        IsolatedEnvironmentContext.adopt(ls.context)
         ls.include_launch_description(description)
         task = asyncio.create_task(ls.run_async())
         handle = LaunchHandle(ls, task)
