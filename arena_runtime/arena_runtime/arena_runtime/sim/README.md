@@ -153,7 +153,10 @@ dummy host is what
 
 `arena_node` exposes it as `sim_lifecycle/step` (valid only while holds are
 active and no unpause window is open), plus the lockstep control plane
-driving the [`LockstepScheduler`](../lockstep.py).
+driving the [`LockstepScheduler`](../lockstep.py). Every adapter advances at
+least one physics step for any positive delta, so a delta below half a step
+is exactly one step. The task generator steps that way to teleport robots
+during a reset hold (see the [manager README](../../../../task_generator/task_generator/manager/README.md)).
 
 Components self-register their data channels via
 `sim_lifecycle/lockstep/register` (LockstepRegister: `caller`, `env`,
@@ -241,7 +244,9 @@ extra channels under caller `cli`.
 
 The sim is paused for the entire body of `Task._reset_episode`. Only
 node-discovery and lifecycle signals are observable while the sim is paused;
-tf, costmap, and sim-clock topics are not advancing. `switch_controller` is the
+tf, costmap, and sim-clock topics are not advancing, except for the single
+physics steps a robot teleport takes through `sim_lifecycle/step` until TF
+shows the robot landed. `switch_controller` is the
 one controller_manager call that needs the sim to tick (on both gz_ros2_control
 and Isaac's `ros2_control_node`, whose update loops follow sim time), so
 controller activation lives inside the robot bring-up unpause window.

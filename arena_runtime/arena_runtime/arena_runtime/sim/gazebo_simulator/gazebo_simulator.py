@@ -431,9 +431,7 @@ class GazeboSimulator(BaseSim):
                 self._repin[robot.sim_path] = robot
             return await self._robot_move(robot)
 
-        async with self.node.unpause_window():
-            result = await asyncio.gather(*map(impl, robots))
-        return result
+        return await asyncio.gather(*map(impl, robots))
 
     async def _on_paused(self, msg: Bool) -> None:
         was_paused, self._paused = self._paused, msg.data

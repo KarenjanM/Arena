@@ -57,12 +57,20 @@ Key public surface:
 | `start_pos` / `goal_pos` | last set start and goal positions |
 | `goal` | pose of the first `GoToPhase` in the current `TaskRequest`, or `None` |
 | `submit_task(request, start=None)` | hand a typed `TaskRequest` to the adapter, routed across levels from `start` (the live pose when omitted), loop bodies routed and defaulted like top-level phases |
-| `move(pose)` | teleport the robot via `EnvironmentManager.move_robot` |
+| `move(pose)` | teleport the robot via `EnvironmentManager.move_robot`, blocking until TF shows it at the target |
 | `is_done` | whether the current task request is satisfied |
 | `accepts` | `frozenset[TaskKind]`: the set of task kinds this robot's adapter handles |
 | `set_up_robot(node_paths)` | async; spawn robot, bind adapter, start navigation stack |
 | `bring_up_controllers()` | async; drive the robot's ros2_control controllers to active, raises on an explicit controller_manager refusal |
 | `destroy()` | tear down adapter and remove robot from sim |
+
+A teleport under a hold (every reset) advances the held sim one physics step at
+a time through arena_node's `sim_lifecycle/step` until a TF sample newer than
+the step puts the robot within 0.3 m of the target, at most 5 steps per
+attempt and 3 attempts, re-sending the move on each. When arena_node refuses
+the step (no hold, as for a mid-episode teleport, or another caller's unpause
+window open) or does not answer it within 10 s, the teleport runs inside an
+unpause window instead and polls TF for up to 2 s per attempt.
 
 `_launch_robot` order: unpause window, one sim step, tracked launch, adapter
 readiness, `bring_up_controllers()`, window close, `adapter.on_controllers_active`.
