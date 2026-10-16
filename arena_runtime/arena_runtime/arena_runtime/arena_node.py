@@ -18,6 +18,7 @@ import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
 import rclpy
 import rclpy.lifecycle
+import rclpy.logging
 import rclpy.qos
 import rclpy.subscription
 import rclpy.timer
@@ -920,7 +921,7 @@ sys.exit(ls.run())
             ),
         }
 
-        log_dir = pathlib.Path.home() / ".ros" / "log"
+        log_dir = pathlib.Path(rclpy.logging.get_logging_directory())
         log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         log_path = log_dir / f"arena_env_{env_id}_{ts}.log"
