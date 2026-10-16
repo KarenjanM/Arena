@@ -1,13 +1,33 @@
+import os
+
 import launch
 import launch.event_handlers
 import launch_ros.actions
 from arena_bringup.actions import IsolatedGroupAction
+from arena_bringup.defaults import gz_discovery_env
 from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
-_RUNTIME_OWNED = frozenset({'log_level', 'sim', 'sim.flatsim.dynamics', 'sim.isaac.physics', *(f'sim.isaac.viewport.{k}' for k in ('preset', 'resolution', 'scale', 'dlss', 'lighting', 'overlays', 'ceilings')), 'use_sim_time', 'world', 'headless', 'lockstep', 'lockstep.channels', 'lockstep.rtf', 'lockstep.paused', 'env.bootstrap_timeout'})
+_RUNTIME_OWNED = frozenset(
+    {
+        'log_level',
+        'sim',
+        'sim.flatsim.dynamics',
+        'sim.isaac.physics',
+        *(f'sim.isaac.viewport.{k}' for k in ('preset', 'resolution', 'scale', 'dlss', 'lighting', 'overlays', 'ceilings')),
+        'use_sim_time',
+        'world',
+        'headless',
+        'lockstep',
+        'lockstep.channels',
+        'lockstep.rtf',
+        'lockstep.paused',
+        'env.bootstrap_timeout',
+        'env.heartbeat_timeout',
+    }
+)
 
 
 def generate_launch_description():
@@ -96,6 +116,12 @@ def generate_launch_description():
         description='Seconds an env may spend never-ACTIVE before eviction, measured from reservation, empty = node default (never).',
     )
 
+    LaunchArgument(
+        name='env.heartbeat_timeout',
+        default_value='',
+        description='Seconds of wall-clock heartbeat silence before a ready env is evicted, empty = node default (5).',
+    )
+
     launch_sim = launch.actions.IncludeLaunchDescription(
         PathJoinSubstitution(
             [
@@ -142,6 +168,8 @@ def generate_launch_description():
         params['lockstep.paused'] = context.launch_configurations.get('lockstep.paused', 'true').lower() in ('true', '1')
         if bootstrap_timeout := context.launch_configurations.get('env.bootstrap_timeout', ''):
             params['bootstrap_timeout_sec'] = float(bootstrap_timeout)
+        if heartbeat_timeout := context.launch_configurations.get('env.heartbeat_timeout', ''):
+            params['heartbeat_timeout_sec'] = float(heartbeat_timeout)
         arena_node = launch_ros.actions.LifecycleNode(
             package='arena_runtime',
             executable='arena_node',
@@ -163,6 +191,7 @@ def generate_launch_description():
     return launch.LaunchDescription(
         [
             launch.actions.OpaqueFunction(function=_aliases),
+            *(launch.actions.SetEnvironmentVariable(k, v) for k, v in gz_discovery_env(int(os.environ.get('ROS_DOMAIN_ID', '0'))).items()),
             *ld_items,
             SetGlobalLogLevelAction(log_level.substitution),
             IsolatedGroupAction([launch_sim]),

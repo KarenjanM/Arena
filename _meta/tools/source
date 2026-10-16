@@ -77,6 +77,7 @@ fi
 if [ -n "${ARENA_FORK_DOMAIN_ID:-}" ] ; then
     export ROS_DOMAIN_ID="$ARENA_FORK_DOMAIN_ID" GZ_PARTITION="arena-$ARENA_FORK_DOMAIN_ID"
 fi
+export GZ_DISCOVERY_MSG_PORT=$((5500 + 2 * ROS_DOMAIN_ID)) GZ_DISCOVERY_SRV_PORT=$((5501 + 2 * ROS_DOMAIN_ID))
 
 # ARENA_NET scopes ROS 2 discovery: local = loopback only, lan = every interface
 case "${ARENA_NET:-local}" in

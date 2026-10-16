@@ -292,8 +292,11 @@ class LockstepScheduler:
                     for ch in added:
                         subs[ch.topic] = self._subscribe(ledger, ch)
 
+                pace = config.target_rtf
+                if not config.ungated and not ledger.channels and pace <= 0.0:
+                    pace = 1.0
                 if config.ungated or not ledger.channels:
-                    ledger.advance(await self._node._lifecycle.step_seconds(step_slice(config.target_rtf, dt)))
+                    ledger.advance(await self._node._lifecycle.step_seconds(step_slice(pace, dt)))
                     self._node._lifecycle.record_success()
                 else:
                     ledger.advance(await self._node._lifecycle.step_seconds(ledger.next_delta()))
@@ -312,8 +315,8 @@ class LockstepScheduler:
                     window_advance = 0.0
                     self._publish_status(tick=Time.from_float(ledger.tick))
 
-                if config.target_rtf > 0.0:
-                    lag = (ledger.now - sim_before) / config.target_rtf - (loop.time() - iter_start)
+                if pace > 0.0:
+                    lag = (ledger.now - sim_before) / pace - (loop.time() - iter_start)
                     if lag > 0.0:
                         await asyncio.sleep(lag)
         except asyncio.CancelledError:

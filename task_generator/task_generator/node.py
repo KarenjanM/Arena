@@ -95,6 +95,8 @@ _EPISODE_QOS = rclpy.qos.QoSProfile(
 
 # Node tick cadence, matching the mechanism-shim sim-time tick.
 _SIM_TICK_RATE = 30.0
+_ONE_TICK = 1e-6
+_STEP_TIMEOUT = 10.0
 _ENV_PREFIX = re.compile(r"^env_\d+/")
 
 
@@ -165,6 +167,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     _realizer: Realizer
     _arena_hold_client: ClientWrapper
     _arena_unpause_window_client: ClientWrapper
+    _arena_step_client: ClientWrapper
 
     _episodes: EpisodeRuntime
     _goal_progress: GoalProgressTracker
@@ -427,6 +430,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             await self._set_up_services()
             await self._arena_hold_client.ensure()
             await self._arena_unpause_window_client.ensure()
+            await self._arena_step_client.ensure()
 
             await self.hold("setup")
             try:
@@ -529,6 +533,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             rel.action = arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request.RELEASE
             rel.caller_id = self.get_fully_qualified_name()
             await self._arena_unpause_window_client.call_timeout(rel)
+
+    async def step_tick(self) -> float | None:
+        """Advance the held sim by one physics step through arena_node, None when it refuses or does not answer."""
+        req = arena_runtime_msgs.srv.LifecycleStep.Request()
+        req.seconds = _ONE_TICK
+        res = await self._arena_step_client.call_timeout(req)
+        if res is None or not res.success:
+            return None
+        return res.advanced
 
     async def _set_up_acoustics(self):
         self._logger.info("Setting up acoustics simulator")
@@ -2037,6 +2050,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._arena_unpause_window_client = self.create_client_wrapper(
             arena_runtime_msgs.srv.LifecycleUnpauseWindow,
             "/arena/sim_lifecycle/unpause_window",
+        )
+
+        self._arena_step_client = self.create_client_wrapper(
+            arena_runtime_msgs.srv.LifecycleStep,
+            "/arena/sim_lifecycle/step",
+            timeout=_STEP_TIMEOUT,
         )
 
         self.create_service(

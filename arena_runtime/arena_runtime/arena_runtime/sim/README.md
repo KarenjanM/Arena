@@ -136,7 +136,9 @@ Overridable hooks (concrete default no-ops):
 sim-time delta, quantized to whole physics steps (`physics_dt` rosparam,
 default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
-(both fields in the same message, else gz free-runs). Isaac calls
+(both fields in the same message, else gz free-runs). A step of more than one
+tick first raises gz `real_time_factor` so the limiter does not pace it, and
+the next unpause restores it. A single-tick step leaves the factor alone. Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
 publishes `/clock` and drains its sensor and control pumps every 20 ms of sim
@@ -153,7 +155,10 @@ dummy host is what
 
 `arena_node` exposes it as `sim_lifecycle/step` (valid only while holds are
 active and no unpause window is open), plus the lockstep control plane
-driving the [`LockstepScheduler`](../lockstep.py).
+driving the [`LockstepScheduler`](../lockstep.py). Every adapter advances at
+least one physics step for any positive delta, so a delta below half a step
+is exactly one step. The task generator steps that way to teleport robots
+during a reset hold (see the [manager README](../../../../task_generator/task_generator/manager/README.md)).
 
 Components self-register their data channels via
 `sim_lifecycle/lockstep/register` (LockstepRegister: `caller`, `env`,
@@ -208,7 +213,8 @@ a period strictly above its interval. The arena_humansim engine ticks off
 still owes it the tick the gate is waiting for.
 
 `sim_lifecycle/lockstep/start` (LockstepStart: `target_rtf`, `ungated`)
-starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced,
+starts a run or reconfigures one in place: `target_rtf` of 0 is unpaced
+while gates hold the pace and wall rate while no channel is registered,
 `ungated` free-steps ignoring every gate. Hard channels freeze-and-wait: the
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by
@@ -240,7 +246,9 @@ extra channels under caller `cli`.
 
 The sim is paused for the entire body of `Task._reset_episode`. Only
 node-discovery and lifecycle signals are observable while the sim is paused;
-tf, costmap, and sim-clock topics are not advancing. `switch_controller` is the
+tf, costmap, and sim-clock topics are not advancing, except for the single
+physics steps a robot teleport takes through `sim_lifecycle/step` until TF
+shows the robot landed. `switch_controller` is the
 one controller_manager call that needs the sim to tick (on both gz_ros2_control
 and Isaac's `ros2_control_node`, whose update loops follow sim time), so
 controller activation lives inside the robot bring-up unpause window.
@@ -254,7 +262,7 @@ controller activation lives inside the robot bring-up unpause window.
 | --- | --- | --- | --- |
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
 | `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/flatsim_simulator.py`](flatsim_simulator/flatsim_simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
-| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport |
+| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
 | `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
 
