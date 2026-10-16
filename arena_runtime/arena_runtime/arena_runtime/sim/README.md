@@ -136,7 +136,9 @@ Overridable hooks (concrete default no-ops):
 sim-time delta, quantized to whole physics steps (`physics_dt` rosparam,
 default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
-(both fields in the same message, else gz free-runs). Isaac calls
+(both fields in the same message, else gz free-runs). A step of more than one
+tick first raises gz `real_time_factor` so the limiter does not pace it, and
+the next unpause restores it. A single-tick step leaves the factor alone. Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
 publishes `/clock` and drains its sensor and control pumps every 20 ms of sim

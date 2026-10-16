@@ -235,7 +235,7 @@ class GazeboHost(SimLifecycle):
             return 0.0
         # gz throttles stepped iterations to real_time_factor x wall clock, so
         # lift the limiter while stepping drives the sim, unpause() restores it
-        if not self._rtf_boosted:
+        if n > 1 and not self._rtf_boosted:
             self._rtf_boosted = await self._set_physics_rtf(_RTF_BOOST)
         # gz acks multi_step on acceptance and completion is observed via /clock, so
         # record the target before sending (half-tick slack for float vs ns rounding)
