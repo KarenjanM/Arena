@@ -3,7 +3,7 @@
 
 # Arena-Rosnav
 
-A modular ROS 2 (Jazzy) platform for researching and benchmarking autonomous robot navigation in 2D and 3D simulated environments. It supports classical planners (Nav2), deep-RL planners ([rosnav_rl](https://github.com/Arena-Rosnav/rosnav-rl)), and a variety of simulators (Gazebo, Isaac Sim).
+A modular ROS 2 (Jazzy) platform for researching and benchmarking autonomous robot navigation in 2D and 3D simulated environments. It supports classical planners (Nav2), deep-RL planners ([rosnav_rl](https://github.com/Arena-Rosnav/rosnav-rl)), and a variety of simulators (Gazebo, Isaac Sim, MuJoCo, flatsim).
 
 ---
 
@@ -27,6 +27,7 @@ cd ~/arena_ws # replace with your actual workspace path
 source arena
 arena feature isaac install # optional
 arena feature gazebo install # optional
+arena feature mujoco install # optional: MuJoCo simulator (sim:=mujoco)
 arena feature flatsim install # optional: 2D simulator without a renderer (sim:=flatsim)
 arena feature training install # optional
 arena feature auditory install # optional: sound simulation (acoustics:=arena)
@@ -64,6 +65,8 @@ The container will start automatically on source and continue running in the bac
 cd ~/arena_ws # replace with your actual workspace path
 source arena
 arena launch sim:=isaac                                         # Isaac Sim
+arena launch sim:=mujoco                                        # MuJoCo
+arena launch sim:=flatsim                                       # flatsim (2D, no renderer)
 arena launch robot.mobile:=rosnav_rl robot.mobile.agent:=<your_agent>       # rosnav_rl DRL planner
 arena launch robot.mobile:=drl robot.mobile.planner:=drlvo                  # arena_planners DRL bridge
 arena train sim:=gazebo robot.mobile:=rosnav_rl train_config:=<config.yaml>  # DRL training
