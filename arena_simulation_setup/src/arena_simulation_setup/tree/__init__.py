@@ -325,7 +325,7 @@ class LocalResolver(PathResolverBase[IdentifierT], typing.Generic[IdentifierT]):
         root = self.path
         return next((root / candidate for candidate in self._candidates(identifier.relpath()) if (root / candidate).exists()), None)
 
-    async def listall_async(self, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
         return list(self.listall(**kwargs))
 
     def destination(self, identifier: IdentifierT) -> Path | None:

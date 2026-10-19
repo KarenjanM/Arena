@@ -6,11 +6,14 @@ import re
 import subprocess
 from pathlib import Path
 from types import ModuleType
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from pydantic import Field
 
 from arena_mcp.core import Domain, ToolError, cli
+
+if TYPE_CHECKING:
+    from arena_cli.complete import Static
 
 domain = Domain(
     "workspace",
@@ -196,7 +199,7 @@ def workspace_settings_gpu(value: Annotated[str | None, Field(description="on or
     """Read or set NVIDIA GPU passthrough through `arena feature docker gpu`, persisted as ARENA_GPU in the workspace .env."""
     from arena_cli.features import docker
 
-    return _setting(("feature", "docker", "gpu"), value, list(docker.COMMANDS["gpu"].complete.table()))
+    return _setting(("feature", "docker", "gpu"), value, list(cast("Static", docker.COMMANDS["gpu"].complete).table()))
 
 
 def fork_rows(text: str) -> list[dict[str, str]]:

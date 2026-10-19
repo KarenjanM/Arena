@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import importlib
 import json
 import os
 import tempfile
@@ -100,7 +101,7 @@ def assets_push(
 
 def _importers() -> ModuleType:
     try:
-        import arena_assets.importers as importers
+        importers = importlib.import_module("arena_assets.importers")
     except ImportError as exc:
         raise ToolError("the importers registry arena_assets.importers is not installed in this checkout", hint="it ships with the dataset adapters of arena_assets, the other assets tools work without it") from exc
     return importers

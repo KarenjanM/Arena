@@ -12,7 +12,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Annotated
+from typing import Annotated, TypedDict, cast
 
 import pydantic
 
@@ -133,17 +133,27 @@ def _check_stage(stage: str) -> str:
     return stage
 
 
-def floorplan_score(graph: dict[str, object], record: dict[str, object]) -> dict[str, list[str]]:
+class FloorplanScore(TypedDict):
+    dropped_edges: list[str]
+    auto_doors: list[str]
+
+
+FloorplanTry = TypedDict("FloorplanTry", {"try": int, "dropped_edges": list[str], "auto_doors": list[str]})
+
+
+def floorplan_score(graph: dict[str, object], record: dict[str, object]) -> FloorplanScore:
     """Graph edges the floor plan realized no door for, and the doors it added on its own (door_auto_*)."""
-    levels = record["plan"]["world"]["levels"]
+    plan = cast("dict[str, dict[str, object]]", record["plan"])
+    levels = cast("dict[str, dict[str, list[dict[str, object]] | None]]", plan["world"]["levels"])
     doors = list(dict.fromkeys(str(door["name"]) for level in levels.values() for door in level.get("doors") or []))
     have = {door.removeprefix("door_") for door in doors}
-    return {"dropped_edges": [str(edge["id"]) for edge in graph["edges"] if str(edge["id"]) not in have], "auto_doors": [door for door in doors if door.startswith("door_auto_")]}
+    edges = cast("list[dict[str, object]]", graph["edges"])
+    return {"dropped_edges": [str(edge["id"]) for edge in edges if str(edge["id"]) not in have], "auto_doors": [door for door in doors if door.startswith("door_auto_")]}
 
 
-def pick_floorplan(graph: dict[str, object], tries: list[dict[str, object]]) -> tuple[int, list[dict[str, object]]]:
+def pick_floorplan(graph: dict[str, object], tries: list[dict[str, object]]) -> tuple[int, list[FloorplanTry]]:
     """Index of the try with the fewest dropped edges, then the fewest auto doors, then the earliest, and every try's score."""
-    scores = [{"try": index + 1, **floorplan_score(graph, record)} for index, record in enumerate(tries)]
+    scores: list[FloorplanTry] = [{"try": index + 1, **floorplan_score(graph, record)} for index, record in enumerate(tries)]
     best = min(range(len(scores)), key=lambda index: (len(scores[index]["dropped_edges"]), len(scores[index]["auto_doors"]), index))
     return best, scores
 
@@ -282,7 +292,7 @@ async def run_stage(handle: JobHandle, run: Run, stage: str, body: dict[str, obj
     started = time.monotonic()
     accepted = await acall("POST", f"{route}/rr", body)
     run.save(f"{tag}_accepted", accepted)
-    uuid = str(body.get("uuid") or (accepted or {}).get("uuid") or "")
+    uuid = str(body.get("uuid") or cast("dict[str, object]", accepted or {}).get("uuid") or "")
     if not uuid:
         raise ToolError(f"{stage}: the webapp returned no session uuid: {accepted!r}")
     return await poll(handle, run, stage, uuid, tag, started)
@@ -297,7 +307,7 @@ async def poll(handle: JobHandle, run: Run, stage: str, uuid: str, tag: str, sta
         if status != last:
             handle.log(f"{tag}: status {status} after {time.monotonic() - started:.0f}s")
             last = status
-        if status in ("completed", "error"):
+        if isinstance(record, dict) and status in ("completed", "error"):
             run.save(tag, record)
             if status == "error":
                 raise ToolError(f"{stage} failed in the stack: {record.get('error')}", hint=f"the stage records are in {run.dir}")
@@ -336,8 +346,8 @@ def latest_plan(session: dict[str, dict[str, object] | None]) -> tuple[dict[str,
     """The newest completed plan of a session, its scenario when the scenario stage finished, and the stage it came from."""
     for stage in ("scenario", "decoration", "floorplan"):
         record = session.get(stage)
-        if isinstance(record, dict) and record.get("status") == "completed" and isinstance(record.get("plan"), dict):
-            return record["plan"], record.get("scenario") if stage == "scenario" else None, stage
+        if isinstance(record, dict) and record.get("status") == "completed" and isinstance(plan := record.get("plan"), dict):
+            return plan, record.get("scenario") if stage == "scenario" else None, stage
     raise ToolError("the session has no completed floor plan to export", hint="run airchitect_stage for floorplan first")
 
 
@@ -362,13 +372,14 @@ def summarize(record: dict[str, object] | None) -> dict[str, object] | None:
     if record is None:
         return None
     model = record.get("model")
+    plan = cast("dict[str, object]", record.get("plan") or {})
     out: dict[str, object] = {key: record[key] for key in ("status", "domain", "timestamp", "error", "prompt", "source", "graph_source") if record.get(key) is not None}
     if isinstance(model, dict):
         out["model"] = model.get("name")
-    graph = record.get("graph") or (record.get("plan") or {}).get("graph")
+    graph = record.get("graph") or plan.get("graph")
     if isinstance(graph, dict):
         out["graph"] = {"nodes": len(graph.get("nodes") or []), "edges": len(graph.get("edges") or [])}
-    world = (record.get("plan") or {}).get("world")
+    world = plan.get("world")
     if isinstance(world, dict):
         levels = world.get("levels") or {}
         out["levels"] = {level_id: {key: len(level.get(key) or []) for key in ("zones", "doors", "elevators", "objects", "humans")} for level_id, level in levels.items()}
@@ -414,7 +425,7 @@ async def airchitect_models(stage: Annotated[str | None, pydantic.Field(descript
     """The stack's models per stage with description, paper and the default flag."""
     listing = await asyncio.to_thread(stack_models)
     if stage is None:
-        return listing
+        return {**listing}
     if stage not in listing:
         raise ToolError(f"no stage {stage!r}", hint=f"stages: {', '.join(listing)}")
     return {stage: listing[stage]}
@@ -452,17 +463,17 @@ async def airchitect_generate(
 
     async def body(handle: JobHandle) -> dict[str, object]:
         run = Run(resume or handle.job.id)
-        run.update(jobs=[*run.meta.get("jobs", []), handle.job.id], name=name, prompt=prompt, domain=domain, models=chosen, scenario_prompt=scenario_prompt)
+        run.update(jobs=[*cast("list[str]", run.meta.get("jobs", [])), handle.job.id], name=name, prompt=prompt, domain=domain, models=chosen, scenario_prompt=scenario_prompt)
         handle.progress(stage="domain", run_dir=str(run.dir))
         uuid = str(run.meta.get("uuid") or "")
         if not uuid:
-            uuid = str((await acall("POST", "domain", {"domain": domain}))["uuid"])
+            uuid = str(cast("dict[str, object]", await acall("POST", "domain", {"domain": domain}))["uuid"])
             run.update(uuid=uuid)
         handle.log(f"session {uuid}, run dir {run.dir}")
 
         handle.progress(stage="prompt", uuid=uuid)
         prompted = run.load("01_prompt") or await run_stage(handle, run, "prompt", {"prompt": prompt, "domain": domain, "model": chosen["prompt"], "uuid": uuid, "supporting_examples": []}, "01_prompt")
-        graph = prompted["graph"]
+        graph = cast("dict[str, object]", prompted["graph"])
 
         floorplan = run.load("02_floorplan")
         if floorplan is None:
@@ -480,16 +491,17 @@ async def airchitect_generate(
             run.save("02_floorplan_choice", {"chosen": scores[best]["try"], "tries": scores})
             handle.log(f"floor plan: kept try {scores[best]['try']} of {len(tries)}, dropped {scores[best]['dropped_edges']}, auto doors {len(scores[best]['auto_doors'])}")
             if best != len(tries) - 1:
-                await acall("POST", f"callback/floorplan/{urllib.parse.quote(uuid)}", {"world": floorplan["plan"]["world"], "graph": floorplan["plan"]["graph"], "kg": floorplan.get("kg")})
+                kept = cast("dict[str, object]", floorplan["plan"])
+                await acall("POST", f"callback/floorplan/{urllib.parse.quote(uuid)}", {"world": kept["world"], "graph": kept["graph"], "kg": floorplan.get("kg")})
             run.save("02_floorplan", floorplan)
 
         handle.progress(stage="decoration")
         decorated = run.load("03_decoration") or await run_stage(handle, run, "decoration", {"plan": floorplan["plan"], "domain": domain, "model": chosen["decoration"], "uuid": uuid}, "03_decoration")
-        plan, scenario = decorated["plan"], None
+        plan, scenario = cast("dict[str, object]", decorated["plan"]), None
         if scenario_prompt:
             handle.progress(stage="scenario")
             staged = run.load("04_scenario") or await run_stage(handle, run, "scenario", {"plan": plan, "domain": domain, "model": chosen["scenario"], "uuid": uuid, "prompt": scenario_prompt}, "04_scenario")
-            plan, scenario = staged["plan"], staged.get("scenario")
+            plan, scenario = cast("dict[str, object]", staged["plan"]), staged.get("scenario")
 
         result = await export_world(handle, run, uuid, plan, scenario, name, overwrite, nav_radius)
         choice = run.dir / "02_floorplan_choice.json"
@@ -561,7 +573,8 @@ async def airchitect_kg_edit(uuid: str, stage: Stage, instruction: Annotated[str
     """Edit a session's knowledge graph at a stage as a job. The stack drops later stages when the edit rewinds them."""
     _check_stage(stage)
     records = await session_records(uuid)
-    if not isinstance(records.get(stage), dict) or records[stage].get("kg") is None:
+    record = records.get(stage)
+    if not isinstance(record, dict) or record.get("kg") is None:
         raise ToolError(f"stage {stage} of session {uuid} holds no knowledge graph", hint="stages with a graph show has_kg in airchitect_session")
     before = stamps(records)
     await acall("POST", f"{ROUTES['prompt']}/edit/rr", {"uuid": uuid, "stage": stage, "instruction": instruction})

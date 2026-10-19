@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import functools
 import importlib
 import json
 import os
 import time
 from collections.abc import Callable, Iterable, Mapping
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, TypedDict, cast
 
 from pydantic import Field
 
@@ -16,9 +17,12 @@ from arena_mcp.core.ros import PARAM_TYPES, param_to_python, python_to_param
 
 if TYPE_CHECKING:
     from rcl_interfaces.msg import Parameter, ParameterDescriptor
+    from std_msgs.msg import Bool, String
+    from task_generator_msgs.msg import EpisodeRecord
 
     from arena_mcp.core import JobHandle
     from arena_mcp.core.ros import TopicCache
+    from task_generator.tasks.registry import TaskModeRegistry
 
 domain = Domain(
     "episode",
@@ -75,7 +79,7 @@ def _params(params: Iterable[Parameter]) -> dict[str, object]:
     return {param.name: msgs.jsonable(param_to_python(param.value)) for param in params}
 
 
-def record(msg: object) -> dict[str, object]:
+def record(msg: EpisodeRecord) -> dict[str, object]:
     """An EpisodeRecord with its outcome name, start time in seconds, params as name to value and phases and conditions parsed."""
     out = msgs.to_dict(msg)
     out["outcome"] = _states().get(msg.outcome_state, str(msg.outcome_state))
@@ -123,12 +127,16 @@ async def _resetting(node: str) -> TopicCache:
 
 
 def _flag(cache: TopicCache) -> bool:
-    last = cache.last
+    last = cast("Bool | None", cache.last)
     return last is not None and last.data
 
 
-def _by_id(cache: TopicCache) -> dict[int, object]:
-    latest: dict[int, object] = {}
+def _last(cache: TopicCache) -> EpisodeRecord | None:
+    return cast("EpisodeRecord | None", cache.last)
+
+
+def _by_id(cache: TopicCache) -> dict[int, EpisodeRecord]:
+    latest: dict[int, EpisodeRecord] = {}
     for msg in tuple(cache.history):
         latest[msg.episode_id] = msg
     return latest
@@ -145,7 +153,7 @@ async def _until[T](check: Callable[[], T | None], timeout: float, what: str, hi
         await asyncio.sleep(0.05)
 
 
-def _summary(msg: object | None) -> str:
+def _summary(msg: EpisodeRecord | None) -> str:
     if msg is None:
         return "no episode record yet"
     return f"episode {msg.episode_id} is {_states().get(msg.outcome_state, msg.outcome_state)}"
@@ -165,7 +173,7 @@ async def episode_reset(
     node = await tg(env_id)
     episodes = await _episodes(node)
     resetting = await _resetting(node)
-    before = await _first(episodes)
+    before = cast("EpisodeRecord | None", await _first(episodes))
     base = before.episode_id if before is not None else 0
     response = await ROS.call(ResetEpisode, f"{node}/lifecycle/reset_episode", ResetEpisode.Request(world=world, seed=seed))
     if not response.success:
@@ -174,8 +182,8 @@ async def episode_reset(
         return {"env": node, "requested": True, "previous_episode_id": base}
     running = _state("running")
 
-    def started() -> object | None:
-        last = episodes.last
+    def started() -> EpisodeRecord | None:
+        last = _last(episodes)
         if last is None or last.episode_id <= base or _flag(resetting):
             return None
         return last if last.outcome_state == running or last.outcome_state in _terminal() else None
@@ -237,12 +245,12 @@ async def episode_wait(
     node = await tg(env_id)
     episodes = await _episodes(node)
     resetting = await _resetting(node)
-    base = await _first(episodes)
+    base = cast("EpisodeRecord | None", await _first(episodes))
     terminal = _terminal()
     running = _state("running")
     target = 0 if base is None else base.episode_id + (1 if base.outcome_state in terminal else 0)
 
-    def check() -> tuple[object | None] | None:
+    def check() -> tuple[EpisodeRecord | None] | None:
         if until == "terminal":
             for episode_id, msg in sorted(_by_id(episodes).items()):
                 if episode_id >= target and msg.outcome_state in terminal:
@@ -250,12 +258,12 @@ async def episode_wait(
             return None
         if _flag(resetting):
             return None
-        last = episodes.last
+        last = _last(episodes)
         if until == "running":
             return (last,) if last is not None and last.outcome_state == running else None
         return (last,) if last is None or last.outcome_state in terminal else None
 
-    (msg,) = await _until(check, timeout_s, f"no {until} episode", _summary(episodes.last))
+    (msg,) = await _until(check, timeout_s, f"no {until} episode", _summary(_last(episodes)))
     return {"env": node, "until": until, "record": record(msg) if msg is not None else None}
 
 
@@ -270,7 +278,7 @@ async def episode_wait_for_world(
 
     node = await tg(env_id)
     await ROS.call(Empty, f"{node}/lifecycle/wait_for_world", timeout=timeout_s)
-    world = await _first(await _latched(String, f"{node}/state/world"))
+    world = cast("String | None", await _first(await _latched(String, f"{node}/state/world")))
     return {"env": node, "world": world.data if world is not None else None}
 
 
@@ -278,8 +286,8 @@ async def episode_wait_for_world(
 async def episode_current(env_id: EnvId = None) -> dict[str, object]:
     """The current episode record, the queued next one and whether a reset is in progress."""
     node = await tg(env_id)
-    current = await _first(await _episodes(node))
-    queued = (await _queue(node)).last
+    current = cast("EpisodeRecord | None", await _first(await _episodes(node)))
+    queued = _last(await _queue(node))
     resetting = await _resetting(node)
     return {
         "env": node,
@@ -317,7 +325,13 @@ async def _queue(node: str) -> TopicCache:
     return cache
 
 
-async def _active(node: str) -> dict[str, object]:
+class _ActiveModes(TypedDict):
+    tm_robots: str
+    tm_obstacles: str
+    tm_modules: list[str]
+
+
+async def _active(node: str) -> _ActiveModes:
     from task_generator_msgs.srv import GetTaskModes
 
     response = await ROS.call(GetTaskModes, f"{node}/config/get_task_modes")
@@ -376,8 +390,12 @@ async def episode_queue(
     if unknown_modules:
         raise ToolError(f"{unknown_modules} are not registered modules", hint=f"registered: {registered['modules']}")
     queue = await _queue(node)
-    queued = queue.last
-    active = await _active(node) if queued is None else {"tm_robots": queued.tm_robots, "tm_obstacles": queued.tm_obstacles}
+    queued = _last(queue)
+    if queued is None:
+        active = await _active(node)
+        robots_mode, obstacles_mode = active["tm_robots"], active["tm_obstacles"]
+    else:
+        robots_mode, obstacles_mode = queued.tm_robots, queued.tm_obstacles
     request = QueueEpisode.Request(
         action=QueueEpisode.Request.MERGE,
         tm_robots=tm_robots or "",
@@ -387,15 +405,15 @@ async def episode_queue(
         world=world or "",
     )
     if robots_params:
-        request.robots_params = await _typed(node, tm_robots or active["tm_robots"], robots_params, "robots")
+        request.robots_params = await _typed(node, tm_robots or robots_mode, robots_params, "robots")
     if obstacles_params:
-        request.obstacles_params = await _typed(node, tm_obstacles or active["tm_obstacles"], obstacles_params, "obstacles")
+        request.obstacles_params = await _typed(node, tm_obstacles or obstacles_mode, obstacles_params, "obstacles")
     if human_params:
         request.human_params = _untyped(human_params)
     response = await ROS.call(QueueEpisode, f"{node}/config/queue_episode", request)
     if not response.success:
         raise ToolError(f"queue rejected: {response.error_msg}")
-    staged = await _fresh(queue, queued)
+    staged = cast("EpisodeRecord | None", await _fresh(queue, queued))
     return {"env": node, "queued": record(staged) if staged is not None else None}
 
 
@@ -427,6 +445,10 @@ def _fleet_only() -> list[str]:
     return sorted(composite._COMPOSITE_EXTRA)
 
 
+def _namespaces[K: enum.Enum, V](registry: TaskModeRegistry[K, V]) -> dict[str, str]:
+    return {key.value: str(registry.meta(key).namespace) for key in sorted(registry.keys(), key=lambda key: key.value)}
+
+
 def _registry_modes() -> dict[str, object]:
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
     from rcl_interfaces.srv import ListParameters
@@ -439,8 +461,7 @@ def _registry_modes() -> dict[str, object]:
     try:
         walk_schemas(node)
         out: dict[str, object] = {"source": "registry"}
-        for axis, registry in (("robots", ROBOTS_MODES), ("obstacles", OBSTACLES_MODES), ("modules", MODULE_MODES)):
-            prefixes = {key.value: str(registry.meta(key).namespace) for key in sorted(registry.keys(), key=lambda key: key.value)}
+        for axis, prefixes in (("robots", _namespaces(ROBOTS_MODES)), ("obstacles", _namespaces(OBSTACLES_MODES)), ("modules", _namespaces(MODULE_MODES))):
             names = sorted(node.list_parameters(list(prefixes.values()), ListParameters.Request.DEPTH_RECURSIVE).names)
             entries = [_entry(name, descriptor, param.value) for name, descriptor, param in zip(names, node.describe_parameters(names), node.get_parameters(names), strict=True)]
             out[axis] = _bucket(prefixes, names, entries)

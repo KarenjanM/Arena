@@ -3,12 +3,20 @@ from __future__ import annotations
 import array
 import math
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
+
+import numpy as np
 
 from .errors import ToolError
 
 if TYPE_CHECKING:
-    from geometry_msgs.msg import Pose
+    from builtin_interfaces.msg import Time
+    from geometry_msgs.msg import Pose, Quaternion
+
+
+class RosMessage(Protocol):
+    @classmethod
+    def get_fields_and_field_types(cls) -> dict[str, str]: ...
 
 
 def jsonable(value: object) -> object:
@@ -21,13 +29,9 @@ def jsonable(value: object) -> object:
         return list(value)
     if isinstance(value, float):
         return value if math.isfinite(value) else None
-    if _is_numpy(value):
+    if isinstance(value, np.ndarray | np.generic):
         return jsonable(value.tolist())
     return value
-
-
-def _is_numpy(value: object) -> bool:
-    return type(value).__module__ == "numpy"
 
 
 def to_dict(msg: object) -> dict[str, Any]:
@@ -39,7 +43,7 @@ def to_dict(msg: object) -> dict[str, Any]:
     return out
 
 
-def fill[MsgT](msg_type: type[MsgT], data: Mapping[str, Any] | None) -> MsgT:
+def fill[MsgT: RosMessage](msg_type: type[MsgT], data: Mapping[str, Any] | None) -> MsgT:
     """A message of msg_type with the given fields set, rejecting unknown ones."""
     from rosidl_runtime_py.set_message import set_message_fields
 
@@ -64,7 +68,7 @@ def constants(msg_type: type, prefix: str = "") -> dict[Any, str]:
     return out
 
 
-def seconds(stamp: object) -> float:
+def seconds(stamp: Time) -> float:
     return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
 
@@ -78,10 +82,10 @@ def pose(x: float, y: float, yaw: float = 0.0, z: float = 0.0) -> Pose:
     return msg
 
 
-def yaw_of(orientation: object) -> float:
+def yaw_of(orientation: Quaternion) -> float:
     return math.atan2(2.0 * (orientation.w * orientation.z + orientation.x * orientation.y), 1.0 - 2.0 * (orientation.y**2 + orientation.z**2))
 
 
-def pose_dict(msg: object) -> dict[str, float]:
+def pose_dict(msg: Pose) -> dict[str, float]:
     """x, y, z and yaw of a geometry_msgs Pose."""
     return {"x": msg.position.x, "y": msg.position.y, "z": msg.position.z, "yaw": yaw_of(msg.orientation)}

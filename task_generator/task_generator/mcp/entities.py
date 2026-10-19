@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
 from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, env_ns, msgs, tg
 
 if TYPE_CHECKING:
+    from arena_humansim_msgs.msg import AgentMeta
+    from arena_people_msgs.msg import Pedestrian
     from geometry_msgs.msg import PoseStamped
+    from task_generator_msgs.msg import SemanticEntityState
 
 domain = Domain(
     "entities",
@@ -44,6 +47,20 @@ class PedestrianState(BaseModel):
     animation_state: str = "walking"
 
 
+class _Outcome(Protocol):
+    @property
+    def success(self) -> bool: ...
+    @property
+    def error_msg(self) -> str: ...
+
+
+class _Done(Protocol):
+    @property
+    def success(self) -> bool: ...
+    @property
+    def message(self) -> str: ...
+
+
 class Waypoint(BaseModel):
     """A humansim waypoint in the engine's world frame, radius 0 uses the engine default."""
 
@@ -69,7 +86,7 @@ def _placement(x: float | None, y: float | None, yaw: float) -> tuple[PoseStampe
     return _stamped(x, y, yaw), True
 
 
-def _check(response: object, what: str) -> None:
+def _check(response: _Outcome, what: str) -> None:
     if not response.success:
         raise ToolError(f"{what} failed: {response.error_msg}")
 
@@ -162,12 +179,12 @@ async def entities_require_map(env_id: EnvId = None) -> dict[str, object]:
     return {"env": node, "map_server": True}
 
 
-def _semantic(state: object) -> dict[str, object]:
+def _semantic(state: SemanticEntityState) -> dict[str, object]:
     return {
         "entity": state.entity,
         "kind": state.kind,
         "discrete": dict(zip(state.discrete_names, state.discrete_values, strict=True)),
-        "continuous": dict(zip(state.continuous_names, msgs.jsonable(state.continuous_values), strict=True)),
+        "continuous": {name: msgs.jsonable(value) for name, value in zip(state.continuous_names, state.continuous_values, strict=True)},
         "predicates": dict(zip(state.predicate_names, state.predicate_values, strict=True)),
         "members": list(state.members),
     }
@@ -257,7 +274,7 @@ def _animation_states() -> dict[int, str]:
     return msgs.constants(Pedestrian)
 
 
-def _pedestrian(ped: object) -> dict[str, object]:
+def _pedestrian(ped: Pedestrian) -> dict[str, object]:
     return {
         "name": ped.name,
         "id": ped.id,
@@ -318,10 +335,12 @@ async def entities_stream_pedestrians(states: list[PedestrianState], env_id: Env
     msg = Pedestrians()
     msg.header.frame_id = "map"
     msg.header.stamp = Time(sec=int(now), nanosec=int((now - int(now)) * 1e9))
+    peds: list[Pedestrian] = []
     for state in states:
         ped = Pedestrian(name=state.name, pose=msgs.pose(state.x, state.y, state.yaw), animation_state=codes[state.animation_state])
         ped.twist.linear.x, ped.twist.linear.y = state.vx, state.vy
-        msg.pedestrians.append(ped)
+        peds.append(ped)
+    msg.pedestrians = peds
     await ROS.publish(Pedestrians, f"{ns}/human/stream", msg)
     return {"env": ns, "stamp": now, "published": [state.name for state in states]}
 
@@ -336,12 +355,12 @@ async def _humansim(env_id: int | None) -> str:
     return node
 
 
-def _done(response: object, what: str) -> None:
+def _done(response: _Done, what: str) -> None:
     if not response.success:
         raise ToolError(f"{what} failed: {response.message}")
 
 
-async def _agents(node: str) -> object:
+async def _agents(node: str) -> AgentMeta:
     from arena_humansim_msgs.msg import AgentMeta
 
     return await ROS.latest(AgentMeta, f"{node}/agent_meta", qos=LATCHED, hint="humansim has not published its agents yet")

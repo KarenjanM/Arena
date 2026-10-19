@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Protocol, cast
 
 from pydantic import Field
 
@@ -11,8 +11,17 @@ from arena_mcp.core import JOBS, LATCHED, RELIABLE, ROS, SENSOR, Domain, JobHand
 from arena_mcp.core.ros import _qos
 
 if TYPE_CHECKING:
+    from nav_msgs.msg import OccupancyGrid
     from rclpy.node import Node
     from rclpy.publisher import Publisher
+    from sensor_msgs.msg import CompressedImage, Image
+
+    from arena_mcp.core.msgs import RosMessage
+    from arena_mcp.core.ros import ActionType, ServiceType
+
+    class FeedbackMessage(Protocol):
+        feedback: object
+
 
 domain = Domain(
     "ros",
@@ -140,7 +149,8 @@ async def ros_call(
     timeout_s: float = 10.0,
 ) -> dict[str, Any]:
     """Call any service and return every field of its response."""
-    full, srv = await _typed("services", "srv", service, type_name)
+    full, srv_cls = await _typed("services", "srv", service, type_name)
+    srv = cast("ServiceType[RosMessage, object]", srv_cls)
     response = await ROS.call(srv, service, msgs.fill(srv.Request, request), timeout=timeout_s, hint="ros_graph lists the services that are up")
     return {"service": service, "type": full, "response": msgs.to_dict(response)}
 
@@ -159,10 +169,10 @@ def clip(value: object, limit: int, path: str, clipped: list[str]) -> object:
 
 def _image(full: str, msg: object) -> object:
     if full == "sensor_msgs/msg/Image":
-        return media.image_msg(msg)
+        return media.image_msg(cast("Image", msg))
     if full == "sensor_msgs/msg/CompressedImage":
-        return media.compressed_msg(msg)
-    return media.occupancy_png(msg)
+        return media.compressed_msg(cast("CompressedImage", msg))
+    return media.occupancy_png(cast("OccupancyGrid", msg))
 
 
 async def collect(msg_type: type, topic: str, *, qos: str, count: int, timeout_s: float) -> list[object]:
@@ -170,7 +180,11 @@ async def collect(msg_type: type, topic: str, *, qos: str, count: int, timeout_s
     node = await ROS.node()
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[object] = asyncio.Queue()
-    subscription = node.create_subscription(msg_type, topic, lambda msg: loop.call_soon_threadsafe(queue.put_nowait, msg), _qos(qos, max(count, 1)))
+
+    def on_message(msg: object) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, msg)
+
+    subscription = node.create_subscription(msg_type, topic, on_message, _qos(qos, max(count, 1)))
     received: list[object] = []
     deadline = loop.time() + timeout_s
     try:
@@ -273,7 +287,8 @@ async def ros_action(
     """Send a goal to any action server as a job: feedback lands in the job's progress, jobs_cancel cancels the goal, the result is the job result."""
     from action_msgs.msg import GoalStatus
 
-    full, action_type = await _typed("actions", "action", action, type_name)
+    full, action_cls = await _typed("actions", "action", action, type_name)
+    action_type = cast("ActionType[RosMessage]", action_cls)
     goal_msg = msgs.fill(action_type.Goal, goal)
     loop = asyncio.get_running_loop()
     seen: dict[str, Any] = {"count": 0}
@@ -281,11 +296,14 @@ async def ros_action(
 
     def record(feedback: object) -> None:
         seen["count"] += 1
-        seen["last"] = msgs.to_dict(feedback.feedback)
+        seen["last"] = msgs.to_dict(cast("FeedbackMessage", feedback).feedback)
         for handle in handles:
             handle.progress(feedback=seen["last"], feedback_count=seen["count"])
 
-    wrapper, goal_handle = await ROS.send_goal(action_type, action, goal_msg, feedback=lambda feedback: loop.call_soon_threadsafe(record, feedback), hint="ros_graph lists the action servers that are up")
+    def on_feedback(feedback: object) -> None:
+        loop.call_soon_threadsafe(record, feedback)
+
+    wrapper, goal_handle = await ROS.send_goal(action_type, action, goal_msg, feedback=on_feedback, hint="ros_graph lists the action servers that are up")
     names = msgs.constants(GoalStatus, "STATUS_")
 
     async def body(handle: JobHandle) -> dict[str, Any]:

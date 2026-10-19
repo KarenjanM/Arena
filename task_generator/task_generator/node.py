@@ -1924,7 +1924,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.SubmitTask.Request,
         response: task_generator_msgs.srv.SubmitTask.Response,
     ) -> task_generator_msgs.srv.SubmitTask.Response:
-        if not self.rosparam[bool].get("initialized", False):
+        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response

@@ -6,7 +6,7 @@ import contextlib
 import os
 import threading
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .errors import ToolError
 
@@ -15,6 +15,17 @@ if TYPE_CHECKING:
     from rcl_interfaces.msg import ParameterValue
     from rclpy.action.client import ClientGoalHandle
     from rclpy.qos import QoSProfile
+
+
+class ServiceType[RequestT, ResponseT](Protocol):
+    Request: type[RequestT]
+    Response: type[ResponseT]
+
+
+class ActionType[GoalT](Protocol):
+    __name__: str
+    Goal: type[GoalT]
+
 
 LATCHED = "latched"
 RELIABLE = "reliable"
@@ -151,16 +162,16 @@ class Ros:
                 return False
             await asyncio.sleep(0.1)
 
-    async def ready[SrvT](self, srv_type: type[SrvT], name: str, timeout: float = 2.0) -> bool:
+    async def ready(self, srv_type: object, name: str, timeout: float = 2.0) -> bool:
         """Whether a server for name is up; never leaves a client behind, so the name does not look live."""
         return await self.served(name, timeout=timeout)
 
-    async def call[SrvT](self, srv_type: type[SrvT], name: str, request: SrvT.Request | None = None, *, timeout: float = 10.0, ready: float = 2.0, hint: str | None = None) -> SrvT.Response:
+    async def call[RequestT, ResponseT](self, srv_type: ServiceType[RequestT, ResponseT], name: str, request: RequestT | None = None, *, timeout: float = 10.0, ready: float = 2.0, hint: str | None = None) -> ResponseT:
         """Call a service, failing at once when no server answers within ready seconds."""
         if not await self.served(name, timeout=ready):
             raise ToolError(f"service {name} is not available", hint=hint or "is the runtime or env that serves it up? runtime_envs lists live envs")
         node = await self.node()
-        wrapper = node.create_client_wrapper(srv_type, name)
+        wrapper = node.create_client_wrapper(cast(type, srv_type), name)
         try:
             if not wrapper.client.service_is_ready() and not await wrapper.ensure(timeout_sec=max(ready, 2.0)):
                 raise ToolError(f"service {name} is not available", hint=hint or "is the runtime or env that serves it up? runtime_envs lists live envs")
@@ -169,9 +180,9 @@ class Ros:
             node.destroy_client(wrapper.client)
         if response is None:
             raise ToolError(f"service {name} did not answer within {timeout:.0f}s")
-        return response
+        return cast(ResponseT, response)
 
-    async def action[ActionT](self, action_type: type[ActionT], name: str, *, ready: float = 2.0, hint: str | None = None) -> ActionClientWrapper[ActionT]:
+    async def action[GoalT](self, action_type: ActionType[GoalT], name: str, *, ready: float = 2.0, hint: str | None = None) -> ActionClientWrapper:
         """An action client for name, created only once a server is in the graph and dropped when the server is gone."""
         node = await self.node()
         key = (name, action_type.__name__)
@@ -184,7 +195,7 @@ class Ros:
         if wrapper is None:
             if not await self.served(f"{name}/_action/send_goal", timeout=ready):
                 raise ToolError(f"action server {name} is not available", hint=hint)
-            wrapper = node.create_action_client_wrapper(action_type, name)
+            wrapper = node.create_action_client_wrapper(cast(type, action_type), name)
             if not wrapper.client.server_is_ready() and not await wrapper.ensure(timeout_sec=max(ready, 2.0)):
                 with contextlib.suppress(Exception):
                     wrapper.client.destroy()
@@ -192,7 +203,7 @@ class Ros:
             self._actions[key] = wrapper
         return wrapper
 
-    async def send_goal[ActionT](self, action_type: type[ActionT], name: str, goal: ActionT.Goal, *, feedback: Callable[[object], None] | None = None, timeout: float = 10.0, hint: str | None = None) -> tuple[ActionClientWrapper[ActionT], ClientGoalHandle]:
+    async def send_goal[GoalT](self, action_type: ActionType[GoalT], name: str, goal: GoalT, *, feedback: Callable[[object], None] | None = None, timeout: float = 10.0, hint: str | None = None) -> tuple[ActionClientWrapper, ClientGoalHandle]:
         """Send a goal and return (wrapper, goal handle) once accepted."""
         wrapper = await self.action(action_type, name, hint=hint)
         try:
@@ -221,9 +232,9 @@ class Ros:
         """The last message on topic, waiting up to timeout for the first one."""
         cache = await self.cache(msg_type, topic, qos=qos, depth=depth)
         if cache.last is not None:
-            return cache.last
+            return cast(MsgT, cache.last)
         try:
-            return await asyncio.wait_for(cache.next(), timeout)
+            return cast(MsgT, await asyncio.wait_for(cache.next(), timeout))
         except TimeoutError as exc:
             raise ToolError(f"nothing received on {topic} within {timeout:.0f}s", hint=hint or "is the node that publishes it up?") from exc
 
@@ -231,7 +242,7 @@ class Ros:
         """The next message published on topic after this call."""
         cache = await self.cache(msg_type, topic, qos=qos)
         try:
-            return await asyncio.wait_for(cache.next(), timeout)
+            return cast(MsgT, await asyncio.wait_for(cache.next(), timeout))
         except TimeoutError as exc:
             raise ToolError(f"no new message on {topic} within {timeout:.0f}s") from exc
 
@@ -315,33 +326,47 @@ def python_to_param(value: object, declared: int) -> ParameterValue:
     kind = declared or _infer(value)
     try:
         if kind == 1:
-            if isinstance(value, str):
-                lowered = value.strip().lower()
+            scalar = _scalar(value)
+            if isinstance(scalar, str):
+                lowered = scalar.strip().lower()
                 if lowered not in ("true", "false"):
                     raise ValueError(value)
-                value = lowered == "true"
-            return ParameterValue(type=1, bool_value=bool(value))
+                scalar = lowered == "true"
+            return ParameterValue(type=1, bool_value=bool(scalar))
         if kind == 2:
-            if isinstance(value, float) and not value.is_integer():
+            scalar = _scalar(value)
+            if isinstance(scalar, float) and not scalar.is_integer():
                 raise ValueError(value)
-            return ParameterValue(type=2, integer_value=int(value))
+            return ParameterValue(type=2, integer_value=int(scalar))
         if kind == 3:
-            return ParameterValue(type=3, double_value=float(value))
+            return ParameterValue(type=3, double_value=float(_scalar(value)))
         if kind == 4:
-            return ParameterValue(type=4, string_value=value if isinstance(value, str) else str(value))
-        if kind == 7:
-            return ParameterValue(type=7, integer_array_value=[int(item) for item in value])
-        if kind == 8:
-            return ParameterValue(type=8, double_array_value=[float(item) for item in value])
-        if kind == 9:
-            return ParameterValue(type=9, string_array_value=[str(item) for item in value])
-        if kind == 6:
-            return ParameterValue(type=6, bool_array_value=[bool(item) for item in value])
+            return ParameterValue(type=4, string_value=str(_scalar(value)))
         if kind == 5:
-            return ParameterValue(type=5, byte_array_value=[bytes([int(item)]) for item in value])
+            return ParameterValue(type=5, byte_array_value=[bytes([int(_scalar(item))]) for item in _items(value)])
+        if kind == 6:
+            return ParameterValue(type=6, bool_array_value=[bool(_scalar(item)) for item in _items(value)])
+        if kind == 7:
+            return ParameterValue(type=7, integer_array_value=[int(_scalar(item)) for item in _items(value)])
+        if kind == 8:
+            return ParameterValue(type=8, double_array_value=[float(_scalar(item)) for item in _items(value)])
+        if kind == 9:
+            return ParameterValue(type=9, string_array_value=[str(_scalar(item)) for item in _items(value)])
     except (TypeError, ValueError) as exc:
         raise ToolError(f"{value!r} is not a valid {PARAM_TYPES.get(kind, kind)} value") from exc
     raise ToolError(f"unsupported parameter type {kind}")
+
+
+def _scalar(value: object) -> bool | int | float | str:
+    if isinstance(value, bool | int | float | str):
+        return value
+    raise TypeError(f"{type(value).__name__} is not a scalar")
+
+
+def _items(value: object) -> list[object]:
+    if isinstance(value, list | tuple):
+        return list(value)
+    raise TypeError(f"{type(value).__name__} is not a list")
 
 
 def _infer(value: object) -> int:

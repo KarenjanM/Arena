@@ -5,7 +5,7 @@ import dataclasses
 import importlib
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from sensor_msgs.msg import Image
 
     from arena_cam.curves import Quat, Vec3
+    from arena_mcp.core.ros import ServiceType
 
 domain = Domain(
     "view",
@@ -39,12 +40,12 @@ Surface = Literal["sim", "rviz"]
 class View(BaseModel):
     """Where the camera looks: from eye at target, or straight down from top_down metres, optionally following a robot."""
 
-    eye: tuple[float, float, float] | None = Field(None, description="camera position, default 3 m behind and 2 m above a followed robot")
-    target: tuple[float, float, float] = Field((0.0, 0.0, 0.0), description="look-at point")
-    top_down: float | None = Field(None, description="height above target, looks straight down and ignores eye")
-    follow: str | None = Field(None, description="robot name, eye and target become relative to its base frame")
-    mode: Literal["full", "yaw", "position"] = Field("yaw", description="how much of the followed robot's rotation the camera inherits")
-    fov: float = Field(0.0, description="horizontal field of view in rad, 0 keeps the current one")
+    eye: tuple[float, float, float] | None = Field(default=None, description="camera position, default 3 m behind and 2 m above a followed robot")
+    target: tuple[float, float, float] = Field(default=(0.0, 0.0, 0.0), description="look-at point")
+    top_down: float | None = Field(default=None, description="height above target, looks straight down and ignores eye")
+    follow: str | None = Field(default=None, description="robot name, eye and target become relative to its base frame")
+    mode: Literal["full", "yaw", "position"] = Field(default="yaw", description="how much of the followed robot's rotation the camera inherits")
+    fov: float = Field(default=0.0, description="horizontal field of view in rad, 0 keeps the current one")
     projection: Literal["perspective", "orthographic"] | None = None
 
 
@@ -62,6 +63,14 @@ class _Endpoint:
     ns: str
     offset: tuple[float, float]
     reference: tuple[float, float]
+
+
+class _Reply(Protocol):
+    @property
+    def success(self) -> object: ...
+
+    @property
+    def message(self) -> object: ...
 
 
 _last: dict[str, _Shot] = {}
@@ -89,7 +98,7 @@ async def _endpoint(surface: Surface, env_id: int | None) -> _Endpoint:
     return _Endpoint(ns=ns, offset=offset, reference=refs[env] if env is not None else (0.0, 0.0))
 
 
-async def _call[SrvT](srv_type: type[SrvT], name: str, request: object, timeout: float = 10.0) -> SrvT.Response:
+async def _call[RequestT, ResponseT: _Reply](srv_type: ServiceType[RequestT, ResponseT], name: str, request: RequestT, timeout: float = 10.0) -> ResponseT:
     response = await ROS.call(srv_type, name, request, timeout=timeout, hint=NO_VIEWPORT)
     if not response.success:
         raise ToolError(f"{name} rejected: {response.message}")

@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mcp.server.mcpserver import Image
 
 from .errors import ToolError
+
+if TYPE_CHECKING:
+    from nav_msgs.msg import OccupancyGrid
+    from numpy.typing import ArrayLike
+    from sensor_msgs.msg import CompressedImage
+    from sensor_msgs.msg import Image as ImageMsg
 
 MAX_SIDE = 1568
 
@@ -19,7 +26,7 @@ def png(data: bytes | None = None, *, path: str | Path | None = None) -> Image:
     return Image(data=data, format="png")
 
 
-def array_png(pixels: object, *, max_side: int = MAX_SIDE) -> Image:
+def array_png(pixels: ArrayLike, *, max_side: int = MAX_SIDE) -> Image:
     """MCP image content from an HxW or HxWx3/4 uint8 array, downscaled to max_side."""
     import numpy as np
     from PIL import Image as PilImage
@@ -34,7 +41,7 @@ def array_png(pixels: object, *, max_side: int = MAX_SIDE) -> Image:
     return png(buffer.getvalue())
 
 
-def image_msg(msg: object, *, max_side: int = MAX_SIDE) -> Image:
+def image_msg(msg: ImageMsg, *, max_side: int = MAX_SIDE) -> Image:
     """MCP image content from a sensor_msgs Image (rgb, bgr, mono and 16/32 bit depth)."""
     import numpy as np
 
@@ -57,13 +64,13 @@ def image_msg(msg: object, *, max_side: int = MAX_SIDE) -> Image:
     raise ToolError(f"cannot render image encoding {msg.encoding!r}")
 
 
-def compressed_msg(msg: object) -> Image:
+def compressed_msg(msg: CompressedImage) -> Image:
     """MCP image content from a sensor_msgs CompressedImage."""
     fmt = "jpeg" if "jpeg" in msg.format.lower() or "jpg" in msg.format.lower() else "png"
     return Image(data=bytes(msg.data), format=fmt)
 
 
-def occupancy_png(grid: object, *, max_side: int = MAX_SIDE) -> Image:
+def occupancy_png(grid: OccupancyGrid, *, max_side: int = MAX_SIDE) -> Image:
     """MCP image content from a nav_msgs OccupancyGrid: free white, occupied black, unknown grey, row 0 at the bottom."""
     import numpy as np
 

@@ -351,8 +351,8 @@ def worlds_write(
     try:
         world, verdict = _load(view, None)
     except Exception as exc:
-        verdict = {"valid": False, "reason": str(exc)}
-    if not verdict["valid"]:
+        world, verdict = None, {"valid": False, "reason": str(exc)}
+    if world is None or not verdict["valid"]:
         if previous is not None:
             view.world_path.write_text(previous, encoding="utf-8")
         else:

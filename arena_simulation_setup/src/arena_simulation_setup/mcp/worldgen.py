@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 import pydantic
 import yaml
@@ -130,7 +130,8 @@ def worldgen_preview(generator: GeneratorName, config: Config = None, sketch: Sk
     """Run a generator in process: diagnostics, warnings by sketch row/col, normalized sketch, episode binding and the rendered map."""
     _, world, report = _compute(generator, config, sketch, seed)
     level = world.all_levels[0]
-    extent = report["diagnostics"]["extent"]
+    diagnostics = cast("dict[str, object]", report["diagnostics"])
+    extent = cast("list[float]", diagnostics["extent"])
     resolution = max(0.05, max(extent) / media.MAX_SIDE)
     png, origin = level.render(resolution=resolution)
     report["map"] = {"resolution": resolution, "origin": [float(origin[0]), float(origin[1])]}

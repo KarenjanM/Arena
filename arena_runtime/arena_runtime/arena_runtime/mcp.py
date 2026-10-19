@@ -15,7 +15,7 @@ from arena_mcp.core.jobs import FAILED, RUNNING, JobHandle
 
 if TYPE_CHECKING:
     from arena_runtime_msgs.msg import HoldRegistry, LockstepStatus
-    from arena_runtime_msgs.srv import LifecycleHold
+    from arena_runtime_msgs.srv import LifecycleHold, SpawnEnv
     from rclpy.publisher import Publisher
     from std_srvs.srv import Trigger
 
@@ -84,7 +84,7 @@ async def _holders_settled(caller: str) -> list[dict[str, Any]]:
     deadline = time.monotonic() + 1.0
     while True:
         last = cache.last
-        if last is not None:
+        if isinstance(last, HoldRegistry):
             mine = {entry.reason: entry.count for entry in last.holds if entry.caller_id == caller}
             if mine == dict(_OWN.holds) or time.monotonic() > deadline:
                 return _holders(last)
@@ -179,7 +179,7 @@ async def runtime_envs() -> list[dict[str, Any]]:
     return [_env_row(record) for record in await env_table()]
 
 
-async def _spawn(request: object, timeout_s: float) -> dict[str, Any]:
+async def _spawn(request: SpawnEnv.Request, timeout_s: float) -> dict[str, Any]:
     from arena_runtime_msgs.srv import SpawnEnv
 
     await _require(SpawnEnv, SPAWN_ENV)
