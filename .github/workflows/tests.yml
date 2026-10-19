@@ -22,6 +22,8 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
           vcs import --shallow --recursive --input _meta/repos/arena.repos .
+          ln -s ../arena_training/deps/rosnav_rl/rosnav_rl deps/rosnav_rl
+          ln -s ../arena_training/deps/rosnav_rl/rosnav_rl_msgs deps/rosnav_rl_msgs
       - name: fetch the default robot
         run: |
           for path in $(python3 -c 'import pathlib, re, sys; sys.path.insert(0, "_meta"); from arena_cli.features.robots import robot_submodules; robot = re.search(r"_ARENA_DEFAULT_ROBOT = \"(\w+)\"", pathlib.Path("task_generator/task_generator/manager/robot_manager/robots_manager.py").read_text()).group(1); print(*robot_submodules(pathlib.Path("."))[robot])'); do
@@ -31,7 +33,7 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           colcon list --base-paths . -t | while read -r name path _; do
-            case "$path" in deps/* | */deps/* | arena_tools* | arena_planners/planners/*) continue ;; esac
+            case "$path" in deps/rosnav_rl) ;; deps/* | */deps/* | arena_tools* | arena_planners/planners/*) continue ;; esac
             if [ -d "$path/test" ] || [ -d "$path/tests" ]; then echo "$name"; fi
           done | sort -u > tested.txt
           cat tested.txt
@@ -46,7 +48,7 @@ jobs:
           python3 _meta/tools/uv_workspace.py compose
           uv venv --system-site-packages /opt/venv
           export VIRTUAL_ENV=/opt/venv
-          members=$(python3 -c 'import sys, tomllib, pathlib; ws = pathlib.Path(".uv-workspace"); tested = set(pathlib.Path("tested.txt").read_text().split()); [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if n in tested]')
+          members=$(python3 -c 'import re, tomllib, pathlib; norm = lambda n: re.sub(r"[-_.]+", "-", n).lower(); ws = pathlib.Path(".uv-workspace"); tested = {norm(n) for n in pathlib.Path("tested.txt").read_text().split()}; [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if norm(n) in tested]')
           uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $members)
       - name: build the packages
         run: |
