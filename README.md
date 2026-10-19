@@ -43,7 +43,7 @@ We recommend installing at least one simulator.
 
 GPU passthrough takes effect on the next `source arena`, which recreates the container.
 
-ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted.
+ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted. The scope lives in the profiles `_meta/docker/fastdds.<net>.xml` and `cyclonedds.<net>.xml`, so `source arena` sets `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`. Do not export `LOCALHOST` after it: rmw_fastrtps then adds a shared-memory transport to every process, which fills a fork's 64 MB `/dev/shm` and leaves segments behind when processes are killed. The Fast DDS profiles probe 120 participant ids on unicast, so a domain with more than 32 processes still discovers under `LOCALHOST`.
 
 #### vllm
 
