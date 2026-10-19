@@ -25,9 +25,6 @@ from arena_humansim_msgs.msg import (
     AgentStates as AgentStatesMsg,
 )
 from arena_humansim_msgs.msg import (
-    AgentTemplate as AgentTemplateMsg,
-)
-from arena_humansim_msgs.msg import (
     Gesture as EngineGestureMsg,
 )
 from arena_humansim_msgs.msg import (
@@ -38,9 +35,6 @@ from arena_humansim_msgs.msg import (
 )
 from arena_humansim_msgs.msg import (
     Shape as ShapeMsg,
-)
-from arena_humansim_msgs.msg import (
-    SinkAffinity as SinkAffinityMsg,
 )
 from arena_humansim_msgs.msg import (
     SinkConfig as SinkConfigMsg,
@@ -113,7 +107,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorOptions
 
-from .agent import ArenaHumanDynamicObstacle, agent_type_def, path_agent_type_name, resolve_agent_type_path
+from .agent import ArenaHumanDynamicObstacle, agent_type_def, flow_agent_template, path_agent_type_name
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -888,17 +882,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         src_msg.max_concurrent = cfg.get("max_concurrent", -1)
         src_msg.max_total = cfg.get("max_total", -1)
 
-        raw_tmpl = cfg.get("agent", {})
-        tmpl = AgentTemplateMsg()
-        vel = raw_tmpl.get("desired_velocity", {})
-        tmpl.desired_velocity_min = vel.get("min", 1.0) if isinstance(vel, dict) else float(vel)
-        tmpl.desired_velocity_max = vel.get("max", 1.5) if isinstance(vel, dict) else float(vel)
-        tmpl.agent_radius = raw_tmpl.get("agent_radius", 0.35)
-        tmpl.behavior_tree = raw_tmpl.get("behavior_tree", "default")
-        tmpl.agent_type = resolve_agent_type_path(raw_tmpl.get("agent_type", "adult"), region.included_from)
+        tmpl = flow_agent_template(cfg.get("agent", {}), region.included_from)
         self._remember_agent_type_path(tmpl.agent_type)
-        for sa in raw_tmpl.get("sink_affinity", []):
-            tmpl.sink_affinity.append(SinkAffinityMsg(sink_name=sa.get("sink", ""), weight=sa.get("weight", 1.0)))  # pyright: ignore[reportAttributeAccessIssue]
         src_msg.agent = tmpl
 
         request.source = src_msg
