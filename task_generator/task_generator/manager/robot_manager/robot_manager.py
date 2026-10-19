@@ -74,6 +74,15 @@ _TELEPORT_TICK_CAP = 5
 _TELEPORT_TICK_WAIT = 0.5
 
 
+def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevelAction]:
+    """Rule set for a robot launch: ``spec`` with nav2 and moveit quieted wherever it names no node."""
+    return [
+        NodeLogLevelExtension.SetGlobalLogLevelAction(spec),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES, fallback=True),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES, fallback=True),
+    ]
+
+
 class RobotManager(NodeInterface):
     """Manages the goal and start position of a robot for all task modes."""
 
@@ -733,9 +742,8 @@ class RobotManager(NodeInterface):
         await asyncio.gather(*(a.ensure_services() for a in self._adapter_instances))
         launch_description = launch.LaunchDescription()
         current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level))
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES))
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES))
+        for action in log_level_actions(self.node.conf.General.LOG_LEVEL.value or current_log_level):
+            launch_description.add_action(action)
 
         launch_arguments = {
             'robot': self.model_name,

@@ -108,6 +108,8 @@ def Configuration(server: ROSParamServer) -> type:
                 parse=_positive_or_inf,
             )
 
+            LOG_LEVEL = server.ROSParam[str]('log_level', '')
+
         class Obstacles:
             OBSTACLE_MAX_RADIUS = server.ROSParam[float](
                 'task.episode.spawn.obstacle_max_radius',

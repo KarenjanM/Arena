@@ -13,7 +13,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_bringup.actions import IsolatedGroupAction
 from arena_bringup.defaults import default_human
-from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction, active_spec
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from arena_rclpy_mixins import launch_str_to_value
 from launch.actions import (
@@ -24,6 +24,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import PathJoinSubstitution
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from task_generator.constants.runtime import EPISODE_PARAMS
 from task_generator.simulators.hearing import nav2_overlay
@@ -468,6 +469,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "env_id": allocated_id,
                     "prefix": prefix_val,
                     "tf_namespace": tf_namespace,
+                    "log_level": ParameterValue(active_spec(context), value_type=str),
                 },
                 parameter_file.substitution,
                 {
