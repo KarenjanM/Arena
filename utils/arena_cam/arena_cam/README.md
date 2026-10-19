@@ -626,3 +626,27 @@ spinner thread of its own and grabs the viewport's LdrColor AOV after the pose h
 settled for a few renders, so a capture costs a handful of frames.
 `Cam` waits up to 10 seconds for the services and logs an error if they are
 absent.
+
+---
+
+## MCP domain
+
+`arena_cam.mcp` contributes the `view` domain to the Arena MCP server.
+`python3 -m arena_mcp ls view` lists its tools. They drive the sim viewport
+(`/arena/viewport`) by default and an env's rviz camera with `surface: rviz`,
+through the same addressing (`surfaces`) and look-at math (`curves`) as `cam`.
+
+A view is `eye` and `target`, or `top_down` metres above `target`, optionally
+following a robot by its base frame (`follow`, `mode` as in `track`). Poses are
+in the env frame and are shifted by the env's registry `reference` for the sim
+viewport, the way `cam` localizes shots. While following, they are relative to
+the robot. `view_available` reports which viewports are up, the node serving
+each and the simulator, and names the missing Gazebo GUI when that is why none
+is up.
+
+`view_frame_exact` takes a sim hold, steps `step_s` per frame, captures each frame
+with `min_sim_time` at the stepped time and releases the hold. It refuses while a
+lockstep run owns the stepping. `view_record` runs `arena cam <name> --record
+--lockstep` at 30 fps as a job (`jobs_status`, `jobs_wait`), which rides an
+active lockstep run or steps the sim itself. The job result lists the written
+files. `arena://view/shots` lists the verbs and shots it takes.
