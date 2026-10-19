@@ -99,14 +99,14 @@ obstacle and robot placement.
 | `forbid(zones)` | mark `PositionRadius` zones as forbidden for subsequent sampling |
 | `forbid_clear()` | clear all dynamically forbidden cells |
 
-`WorldManagerROS` ([`world_manager/world_manager_ros.py:109`](world_manager/world_manager_ros.py#L109))
+`WorldManagerROS` ([`world_manager/world_manager_ros.py:115`](world_manager/world_manager_ros.py#L115))
 extends `WorldManager` with ROS wiring: subscribes to the `map` topic,
 uses `ClientWrapper` to call `map_server/load_map`, and triggers registered
 callbacks when the world changes. The `start()` coroutine must be awaited
 before the first reset.
 
 `require_map_server()` launches `map_server` and its lifecycle manager under
-the task generator namespace. When the server does not report ACTIVE,
+the task generator namespace, logging by the env's `log_level` rule set. When the server does not report ACTIVE,
 `ensure_map_server()` shuts that bringup down and launches a fresh one in the
 same namespace.
 

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
 import geometry_msgs.msg
@@ -18,6 +19,7 @@ import nav2_msgs.srv
 import nav_msgs.msg
 import numpy as np
 import PIL.Image
+import rclpy.logging
 import rclpy.qos
 import shapely
 import visualization_msgs.msg
@@ -49,13 +51,14 @@ _DEFAULT_RESOLUTION = 0.05
 _DOOR_MASK_BUFFER_M = 0.2
 
 
-def map_server_launch_description(namespace: str) -> launch.LaunchDescription:
-    """The map_server bringup with its lifecycle manager under namespace."""
+def map_server_launch_description(namespace: str, log_spec: str) -> launch.LaunchDescription:
+    """The map_server bringup with its lifecycle manager under namespace, logging by the rule set log_spec."""
     return launch.LaunchDescription(
         [
             launch.actions.GroupAction(
                 [
                     launch_ros.actions.PushRosNamespace(namespace),
+                    NodeLogLevelExtension.SetGlobalLogLevelAction(log_spec),
                     launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py'))),
                 ]
             ),
@@ -72,11 +75,14 @@ class MapServerHandler(NodeInterface):
         super().__init__(*args, **kwargs)
         self._map_server_launch = None
 
-    async def launch_map_server(self) -> None:
+    async def launch_map_server(self, log_spec: str) -> None:
         """Replace any running map_server bringup with a fresh one in the node namespace."""
         if self._map_server_launch is not None:
             await self._map_server_launch.shutdown()
-        self._map_server_launch = await self.node.do_launch_tracked(map_server_launch_description(self.node.get_fully_qualified_name()))
+        self._map_server_launch = await self.node.do_launch_tracked(map_server_launch_description(self.node.get_fully_qualified_name(), log_spec))
+
+    def _env_log_spec(self) -> str:
+        return self.node.conf.General.LOG_LEVEL.value or rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
 
     async def ensure_map_server(self):
         """Restart the map server if it is not active."""
@@ -101,7 +107,7 @@ class MapServerHandler(NodeInterface):
 
             self._logger.warn('relaunching map server...')
 
-            await self.launch_map_server()
+            await self.launch_map_server(self._env_log_spec())
 
         self._logger.info('map server launched.')
 
@@ -399,7 +405,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         """Idempotent: lazy-launch map_server and push the current world. Safe to call concurrently."""
         async with self._map_server_lock:
             if not self._map_server_present:
-                await self.launch_map_server()
+                await self.launch_map_server(self._env_log_spec())
                 self._map_server_present = True
             if self._cli is None:
                 self._cli = self.node.create_client_wrapper(

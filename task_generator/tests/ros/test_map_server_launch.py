@@ -16,17 +16,19 @@ def _require_ament() -> None:
         pytest.skip("AMENT_PREFIX_PATH unset: source install/setup.bash")
 
 
-def _node_names(description) -> set[str]:
+def _node_levels(description) -> dict[str, str | None]:
     import launch
+    from arena_bringup.extensions.NodeLogLevelExtension import NodeLogLevelExtension
     from launch_ros.actions import Node
 
     ctx = launch.LaunchContext()
-    names: set[str] = set()
+    levels: dict[str, str | None] = {}
 
     def walk(entity) -> None:
         if isinstance(entity, Node):
             entity._perform_substitutions(ctx)
-            names.add(entity.node_name)
+            args, _ = NodeLogLevelExtension().prepare_for_execute(ctx, {}, entity)
+            levels[entity.node_name] = args[1][0].text if args else None
         elif isinstance(entity, launch.LaunchDescription):
             for child in entity.entities:
                 walk(child)
@@ -35,15 +37,25 @@ def _node_names(description) -> set[str]:
                 walk(child)
 
     walk(description)
-    return names
+    return levels
 
 
 def test_map_server_bringup_is_under_the_namespace() -> None:
     from task_generator.manager.world_manager.world_manager_ros import map_server_launch_description
 
-    assert _node_names(map_server_launch_description("/arena/env_3/task_generator_node")) == {
+    assert set(_node_levels(map_server_launch_description("/arena/env_3/task_generator_node", "warn"))) == {
         "/arena/env_3/task_generator_node/map_server",
         "/arena/env_3/task_generator_node/lifecycle_manager_map_server",
+    }
+
+
+def test_map_server_bringup_logs_by_the_env_rule_set() -> None:
+    from task_generator.manager.world_manager.world_manager_ros import map_server_launch_description
+
+    levels = _node_levels(map_server_launch_description("/arena/env_3/task_generator_node", "{**/map_server:info, warn}"))
+    assert levels == {
+        "/arena/env_3/task_generator_node/map_server": "info",
+        "/arena/env_3/task_generator_node/lifecycle_manager_map_server": "warn",
     }
 
 
@@ -69,11 +81,11 @@ def test_relaunch_replaces_the_bringup_in_the_namespace() -> None:
         map_server = f"{namespace}/probe/map_server"
         active = lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE
         try:
-            await handler.launch_map_server()
+            await handler.launch_map_server("warn")
             first = handler._map_server_launch
             assert first is not None
             first_active = await node.wait_for_lifecycle_state_async(map_server, active, timeout=90.0)
-            await handler.launch_map_server()
+            await handler.launch_map_server("warn")
             first_gone = first.task.done()
             relaunch_active = await node.wait_for_lifecycle_state_async(map_server, active, timeout=90.0)
             deadline = time.monotonic() + 10.0
