@@ -1,10 +1,12 @@
 [project]
-name = "task_generator_mcp"
+name = "arena_mcp"
 version = "0.0.1"
 dependencies = [
     "mcp>=2.0.0",
+    "numpy",
+    "pillow",
 ]
-dynamic = ["authors", "description", "license", "maintainers", "scripts"]
+dynamic = ["authors", "description", "license", "maintainers", "scripts", "entry-points"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

@@ -1,0 +1,367 @@
+from __future__ import annotations
+
+import asyncio
+import collections
+import contextlib
+import os
+import threading
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
+
+from .errors import ToolError
+
+if TYPE_CHECKING:
+    from arena_rclpy_mixins.Async import ActionClientWrapper, AsyncNode
+    from rcl_interfaces.msg import ParameterValue
+    from rclpy.action.client import ClientGoalHandle
+    from rclpy.qos import QoSProfile
+
+LATCHED = "latched"
+RELIABLE = "reliable"
+SENSOR = "sensor"
+
+
+def _qos(kind: str, depth: int) -> QoSProfile:
+    import rclpy.qos
+
+    if kind == LATCHED:
+        return rclpy.qos.QoSProfile(depth=depth, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
+    if kind == RELIABLE:
+        return rclpy.qos.QoSProfile(depth=depth, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE)
+    if kind == SENSOR:
+        return rclpy.qos.QoSProfile(depth=depth, reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT)
+    raise ValueError(f"unknown qos {kind!r}, use latched, reliable or sensor")
+
+
+class TopicCache:
+    """The latest messages on one topic, kept from the first time a tool asks for it."""
+
+    def __init__(self, loop: asyncio.AbstractEventLoop, depth: int) -> None:
+        self._loop = loop
+        self.history: collections.deque[Any] = collections.deque(maxlen=depth)
+        self._waiters: list[asyncio.Future[Any]] = []
+        self._lock = threading.Lock()
+
+    def on_message(self, msg: object) -> None:
+        with self._lock:
+            self.history.append(msg)
+            waiters, self._waiters = self._waiters, []
+        for waiter in waiters:
+            self._loop.call_soon_threadsafe(_resolve, waiter, msg)
+
+    def grow(self, depth: int) -> None:
+        with self._lock:
+            if self.history.maxlen is not None and depth > self.history.maxlen:
+                self.history = collections.deque(self.history, maxlen=depth)
+
+    @property
+    def last(self) -> object | None:
+        with self._lock:
+            return self.history[-1] if self.history else None
+
+    def next(self) -> asyncio.Future[Any]:
+        future = self._loop.create_future()
+        with self._lock:
+            self._waiters.append(future)
+        return future
+
+
+def _resolve(future: asyncio.Future[Any], value: object) -> None:
+    if not future.done():
+        future.set_result(value)
+
+
+class Ros:
+    """The server's one ROS node, created on first use and shared by every domain."""
+
+    def __init__(self) -> None:
+        self._node: Any = None
+        self._executor: Any = None
+        self._thread: threading.Thread | None = None
+        self._start = asyncio.Lock()
+        self._actions: dict[tuple[str, str], Any] = {}
+        self._topics: dict[str, tuple[Any, TopicCache, Any]] = {}
+        self._publishers: dict[str, Any] = {}
+        self._shutdown_hooks: list[Callable[[], Awaitable[None]]] = []
+
+    async def node(self) -> AsyncNode:
+        async with self._start:
+            if self._node is None:
+                try:
+                    import rclpy
+                    from arena_rclpy_mixins.Async import AsyncNode
+                    from arena_rclpy_mixins.spin import create_executor
+                    from rclpy.signals import SignalHandlerOptions
+                except ImportError as exc:
+                    raise ToolError(f"ROS is not available in this environment ({exc})", hint="serve from a sourced Arena container") from exc
+                if not rclpy.ok():
+                    rclpy.init(args=None, signal_handler_options=SignalHandlerOptions.NO)
+                self._node = AsyncNode(f"arena_mcp_{os.getpid()}")
+                self._executor = create_executor()
+                self._executor.add_node(self._node)
+                self._thread = threading.Thread(target=self._spin, name="arena_mcp_ros", daemon=True)
+                self._thread.start()
+            return self._node
+
+    def _spin(self) -> None:
+        with contextlib.suppress(Exception):
+            self._executor.spin()
+
+    @property
+    def started(self) -> bool:
+        return self._node is not None
+
+    def on_shutdown(self, hook: Callable[[], Awaitable[None]]) -> None:
+        self._shutdown_hooks.append(hook)
+
+    async def shutdown(self) -> None:
+        for hook in reversed(self._shutdown_hooks):
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(hook(), 5.0)
+        if self._node is None:
+            return
+        import rclpy
+
+        with contextlib.suppress(Exception):
+            self._executor.shutdown(timeout_sec=2.0)
+        with contextlib.suppress(Exception):
+            self._node.destroy_node()
+        with contextlib.suppress(Exception):
+            if rclpy.ok():
+                rclpy.shutdown()
+        self._node = None
+        self._actions.clear()
+        self._topics.clear()
+        self._publishers.clear()
+
+    async def served(self, name: str, *, timeout: float = 2.0) -> bool:
+        """Whether another node serves the service name, read from the graph without creating a client."""
+        node = await self.node()
+        own = node.get_fully_qualified_name()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            for node_name, namespace in node.get_node_names_and_namespaces():
+                if f"{namespace.rstrip('/')}/{node_name}" == own:
+                    continue
+                with contextlib.suppress(Exception):
+                    if any(service == name for service, _ in node.get_service_names_and_types_by_node(node_name, namespace)):
+                        return True
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.1)
+
+    async def ready[SrvT](self, srv_type: type[SrvT], name: str, timeout: float = 2.0) -> bool:
+        """Whether a server for name is up; never leaves a client behind, so the name does not look live."""
+        return await self.served(name, timeout=timeout)
+
+    async def call[SrvT](self, srv_type: type[SrvT], name: str, request: SrvT.Request | None = None, *, timeout: float = 10.0, ready: float = 2.0, hint: str | None = None) -> SrvT.Response:
+        """Call a service, failing at once when no server answers within ready seconds."""
+        if not await self.served(name, timeout=ready):
+            raise ToolError(f"service {name} is not available", hint=hint or "is the runtime or env that serves it up? runtime_envs lists live envs")
+        node = await self.node()
+        wrapper = node.create_client_wrapper(srv_type, name)
+        try:
+            if not wrapper.client.service_is_ready() and not await wrapper.ensure(timeout_sec=max(ready, 2.0)):
+                raise ToolError(f"service {name} is not available", hint=hint or "is the runtime or env that serves it up? runtime_envs lists live envs")
+            response = await wrapper.call_timeout(request if request is not None else srv_type.Request(), timeout_sec=timeout)
+        finally:
+            node.destroy_client(wrapper.client)
+        if response is None:
+            raise ToolError(f"service {name} did not answer within {timeout:.0f}s")
+        return response
+
+    async def action[ActionT](self, action_type: type[ActionT], name: str, *, ready: float = 2.0, hint: str | None = None) -> ActionClientWrapper[ActionT]:
+        """An action client for name, created only once a server is in the graph and dropped when the server is gone."""
+        node = await self.node()
+        key = (name, action_type.__name__)
+        wrapper = self._actions.get(key)
+        if wrapper is not None and not wrapper.client.server_is_ready():
+            self._actions.pop(key)
+            with contextlib.suppress(Exception):
+                wrapper.client.destroy()
+            wrapper = None
+        if wrapper is None:
+            if not await self.served(f"{name}/_action/send_goal", timeout=ready):
+                raise ToolError(f"action server {name} is not available", hint=hint)
+            wrapper = node.create_action_client_wrapper(action_type, name)
+            if not wrapper.client.server_is_ready() and not await wrapper.ensure(timeout_sec=max(ready, 2.0)):
+                with contextlib.suppress(Exception):
+                    wrapper.client.destroy()
+                raise ToolError(f"action server {name} is not available", hint=hint)
+            self._actions[key] = wrapper
+        return wrapper
+
+    async def send_goal[ActionT](self, action_type: type[ActionT], name: str, goal: ActionT.Goal, *, feedback: Callable[[object], None] | None = None, timeout: float = 10.0, hint: str | None = None) -> tuple[ActionClientWrapper[ActionT], ClientGoalHandle]:
+        """Send a goal and return (wrapper, goal handle) once accepted."""
+        wrapper = await self.action(action_type, name, hint=hint)
+        try:
+            handle = await asyncio.wait_for(wrapper.send_goal(goal, feedback_callback=feedback), timeout)
+        except TimeoutError as exc:
+            raise ToolError(f"action server {name} did not accept the goal within {timeout:.0f}s") from exc
+        except RuntimeError as exc:
+            raise ToolError(str(exc), hint=hint) from exc
+        return wrapper, handle
+
+    async def cache[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str = LATCHED, depth: int = 1) -> TopicCache:
+        node = await self.node()
+        entry = self._topics.get(topic)
+        if entry is None:
+            cache = TopicCache(asyncio.get_running_loop(), depth)
+            subscription = node.create_subscription(msg_type, topic, cache.on_message, _qos(qos, max(depth, 1)))
+            entry = (msg_type, cache, subscription)
+            self._topics[topic] = entry
+        elif entry[0] is not msg_type:
+            raise ToolError(f"topic {topic} is already watched as {entry[0].__name__}, not {msg_type.__name__}")
+        else:
+            entry[1].grow(depth)
+        return entry[1]
+
+    async def latest[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str = LATCHED, timeout: float = 2.0, depth: int = 1, hint: str | None = None) -> MsgT:
+        """The last message on topic, waiting up to timeout for the first one."""
+        cache = await self.cache(msg_type, topic, qos=qos, depth=depth)
+        if cache.last is not None:
+            return cache.last
+        try:
+            return await asyncio.wait_for(cache.next(), timeout)
+        except TimeoutError as exc:
+            raise ToolError(f"nothing received on {topic} within {timeout:.0f}s", hint=hint or "is the node that publishes it up?") from exc
+
+    async def next[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str = SENSOR, timeout: float = 5.0) -> MsgT:
+        """The next message published on topic after this call."""
+        cache = await self.cache(msg_type, topic, qos=qos)
+        try:
+            return await asyncio.wait_for(cache.next(), timeout)
+        except TimeoutError as exc:
+            raise ToolError(f"no new message on {topic} within {timeout:.0f}s") from exc
+
+    async def publish[MsgT](self, msg_type: type[MsgT], topic: str, msg: MsgT, *, qos: str = RELIABLE) -> None:
+        node = await self.node()
+        publisher = self._publishers.get(topic)
+        if publisher is None:
+            publisher = node.create_publisher(msg_type, topic, _qos(qos, 10))
+            self._publishers[topic] = publisher
+        publisher.publish(msg)
+
+    async def graph(self) -> dict[str, list[str]]:
+        """Live node, service, action and topic names."""
+        node = await self.node()
+        nodes = sorted(f"{ns.rstrip('/')}/{name}" for name, ns in node.get_node_names_and_namespaces())
+        services = sorted(name for name, _ in node.get_service_names_and_types())
+        topics = sorted(name for name, _ in node.get_topic_names_and_types())
+        actions = sorted({name[: -len("/_action/status")] for name in topics if name.endswith("/_action/status")})
+        return {"nodes": nodes, "services": services, "actions": actions, "topics": topics}
+
+    async def sim_time(self) -> float:
+        node = await self.node()
+        return node.sim_time.to_seconds()
+
+    async def get_params(self, node_name: str, names: list[str] | None = None) -> dict[str, Any]:
+        from rcl_interfaces.srv import GetParameters, ListParameters
+
+        if names is None:
+            listed = await self.call(ListParameters, f"{node_name}/list_parameters", hint=f"node {node_name} is not up")
+            names = sorted(listed.result.names)
+        response = await self.call(GetParameters, f"{node_name}/get_parameters", GetParameters.Request(names=names), hint=f"node {node_name} is not up")
+        if len(response.values) != len(names):
+            await self._undeclared(node_name, names)
+        return {name: param_to_python(value) for name, value in zip(names, response.values, strict=True)}
+
+    async def _undeclared(self, node_name: str, names: list[str]) -> None:
+        from rcl_interfaces.srv import ListParameters
+
+        listed = await self.call(ListParameters, f"{node_name}/list_parameters", hint=f"node {node_name} is not up")
+        missing = sorted(set(names) - set(listed.result.names))
+        raise ToolError(f"{node_name} does not declare {', '.join(missing) or 'some of ' + ', '.join(names)}", hint=f"ros_params {node_name} lists what it declares")
+
+    async def set_params(self, node_name: str, values: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Set parameters, coercing each value to the type the node declared."""
+        from rcl_interfaces.msg import Parameter
+        from rcl_interfaces.srv import DescribeParameters, SetParameters
+
+        names = list(values)
+        described = await self.call(DescribeParameters, f"{node_name}/describe_parameters", DescribeParameters.Request(names=names), hint=f"node {node_name} is not up")
+        if len(described.descriptors) != len(names):
+            await self._undeclared(node_name, names)
+        params = []
+        for name, descriptor in zip(names, described.descriptors, strict=True):
+            params.append(Parameter(name=name, value=python_to_param(values[name], descriptor.type)))
+        response = await self.call(SetParameters, f"{node_name}/set_parameters", SetParameters.Request(parameters=params), hint=f"node {node_name} is not up")
+        return {name: {"ok": result.successful, "reason": result.reason} for name, result in zip(names, response.results, strict=True)}
+
+
+PARAM_TYPES = {1: "bool", 2: "int", 3: "double", 4: "string", 5: "byte_array", 6: "bool_array", 7: "int_array", 8: "double_array", 9: "string_array"}
+
+
+def param_to_python(value: ParameterValue) -> object:
+    return {
+        0: lambda v: None,
+        1: lambda v: v.bool_value,
+        2: lambda v: v.integer_value,
+        3: lambda v: v.double_value,
+        4: lambda v: v.string_value,
+        5: lambda v: list(v.byte_array_value),
+        6: lambda v: list(v.bool_array_value),
+        7: lambda v: list(v.integer_array_value),
+        8: lambda v: list(v.double_array_value),
+        9: lambda v: list(v.string_array_value),
+    }[value.type](value)
+
+
+def python_to_param(value: object, declared: int) -> ParameterValue:
+    """A ParameterValue of the declared type, or of the value's own type when the parameter is undeclared."""
+    from rcl_interfaces.msg import ParameterValue
+
+    kind = declared or _infer(value)
+    try:
+        if kind == 1:
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered not in ("true", "false"):
+                    raise ValueError(value)
+                value = lowered == "true"
+            return ParameterValue(type=1, bool_value=bool(value))
+        if kind == 2:
+            if isinstance(value, float) and not value.is_integer():
+                raise ValueError(value)
+            return ParameterValue(type=2, integer_value=int(value))
+        if kind == 3:
+            return ParameterValue(type=3, double_value=float(value))
+        if kind == 4:
+            return ParameterValue(type=4, string_value=value if isinstance(value, str) else str(value))
+        if kind == 7:
+            return ParameterValue(type=7, integer_array_value=[int(item) for item in value])
+        if kind == 8:
+            return ParameterValue(type=8, double_array_value=[float(item) for item in value])
+        if kind == 9:
+            return ParameterValue(type=9, string_array_value=[str(item) for item in value])
+        if kind == 6:
+            return ParameterValue(type=6, bool_array_value=[bool(item) for item in value])
+        if kind == 5:
+            return ParameterValue(type=5, byte_array_value=[bytes([int(item)]) for item in value])
+    except (TypeError, ValueError) as exc:
+        raise ToolError(f"{value!r} is not a valid {PARAM_TYPES.get(kind, kind)} value") from exc
+    raise ToolError(f"unsupported parameter type {kind}")
+
+
+def _infer(value: object) -> int:
+    if isinstance(value, bool):
+        return 1
+    if isinstance(value, int):
+        return 2
+    if isinstance(value, float):
+        return 3
+    if isinstance(value, str):
+        return 4
+    if isinstance(value, list | tuple):
+        if all(isinstance(item, bool) for item in value):
+            return 6
+        if all(isinstance(item, int) for item in value):
+            return 7
+        if all(isinstance(item, int | float) for item in value):
+            return 8
+        return 9
+    raise ToolError(f"cannot send {type(value).__name__} as a ROS parameter")
+
+
+ROS = Ros()

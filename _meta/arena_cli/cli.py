@@ -10,6 +10,7 @@ from arena_cli import complete as _complete
 from arena_cli import features as _features
 from arena_cli import fork as _fork_mod
 from arena_cli import human as _human_mod
+from arena_cli import mcp as _mcp_mod
 from arena_cli import robot as _robot_mod
 from arena_cli import semantics as _semantics_mod
 from arena_cli import settings as _settings_mod
@@ -37,7 +38,7 @@ the underlying launch file or tool."""
 
 SECTIONS = {
     "Simulation": ["runtime", "env", "viz", "cleanup", "launch", "train", "demo", "lockstep"],
-    "Attach": ["human", "robot", "cam"],
+    "Attach": ["human", "robot", "cam", "mcp"],
     "Workspace": ["build", "rebuild", "test", "deps", "update", "preload", "uninstall", "settings", "fork"],
     "Data": ["asset"],
     "Features": ["feature", "registry"],
@@ -252,6 +253,15 @@ _register(
         passthrough=True,
         help_text=f"{_fork_mod.DESCRIPTION}\n\nCommands:\n{_listing([(v.name, v.short) for v in _fork_mod.COMMANDS.values()])}",
         complete=Sub(_fork_mod.COMMANDS),
+    )
+)
+_register(
+    make_verb(
+        "mcp",
+        lambda args: _group_cmd("arena mcp", _mcp_mod.DESCRIPTION, _mcp_mod.COMMANDS, args) if args else _mcp_mod.status(),
+        passthrough=True,
+        help_text=f"{_mcp_mod.DESCRIPTION}\n\nCommands:\n{_listing([(v.name, v.short) for v in _mcp_mod.COMMANDS.values()])}",
+        complete=Sub(_mcp_mod.COMMANDS),
     )
 )
 _register(_viz_mod.VERB)

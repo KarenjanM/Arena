@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage(){
+    cat >&2 <<'EOF'
+usage: arena-mcp [--fork NAME] [--host SSH_HOST] [--container NAME] [--print-command] [serve] [DOMAIN ...]
+       arena-mcp [--fork NAME] [--host SSH_HOST] [--container NAME] [--print-command] ls [DOMAIN ...] [--json]
+
+Runs the Arena MCP server inside the running arena container, for an MCP client on the host.
+  serve [DOMAIN ...]   serve the named domains (every served one by default) over stdio, the default verb
+  ls [DOMAIN ...]      list the installed domains, served or unavailable with the reason
+  --fork NAME          attach to the fork NAME instead of the dev container
+  --host SSH_HOST      run everything on SSH_HOST through ssh -T -o BatchMode=yes
+  --container NAME     attach to this container instead of looking it up
+  --print-command      print the commands instead of running them
+
+The container is the compose service 'arena' of project arena-<basename of ARENA_WS_DIR>
+(arena-<basename>-<fork> with --fork). It is never started here: without one, run
+'source arena' (or 'arena fork new NAME' inside it for a fork) first.
+EOF
+}
+
+say(){
+    printf 'arena-mcp: %s\n' "$*" >&2
+}
+
+fork="" host="" container="" print=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --fork|--host|--container)
+            if [ "$#" -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+                say "$1 needs a value"
+                usage
+                exit 2
+            fi
+            case "$1" in
+                --fork) fork=$2 ;;
+                --host) host=$2 ;;
+                --container) container=$2 ;;
+            esac
+            shift 2
+            ;;
+        --print-command) print=1 ; shift ;;
+        -h|--help) usage ; exit 0 ;;
+        --) shift ; break ;;
+        -*)
+            say "unknown option '$1', options: --fork, --host, --container, --print-command, --help"
+            usage
+            exit 2
+            ;;
+        *) break ;;
+    esac
+done
+
+verb=serve
+if [ "$#" -gt 0 ] && { [ "$1" = serve ] || [ "$1" = ls ]; }; then
+    verb=$1
+    shift
+fi
+
+if [ -n "$fork" ] && ! [[ "$fork" =~ ^[a-z0-9][a-z0-9_-]{0,62}$ ]]; then
+    say "fork name '$fork' must be 1-63 lowercase letters, digits, '-' or '_', starting with a letter or digit"
+    exit 2
+fi
+
+workspace(){
+    if [ -n "${ARENA_WS_DIR:-}" ]; then
+        printf '%s\n' "$ARENA_WS_DIR"
+        return
+    fi
+    local arena
+    arena=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)
+    if [ "$(basename "$(dirname "$arena")")" = src ]; then
+        dirname "$(dirname "$arena")"
+    else
+        printf '%s\n' "$HOME/arena_ws"
+    fi
+}
+
+project="arena-$(basename "$(workspace)")${fork:+-$fork}"
+
+quote(){
+    printf '%q ' "$@"
+}
+
+remote(){
+    if [ -n "$host" ]; then
+        ssh -T -o BatchMode=yes "$host" "$(quote "$@")"
+    else
+        "$@"
+    fi
+}
+
+shown(){
+    if [ -n "$host" ]; then
+        printf '%s\n' "$(quote ssh -T -o BatchMode=yes "$host" "$(quote "$@")")"
+    else
+        printf '%s\n' "$(quote "$@")"
+    fi
+}
+
+lookup=(docker ps -q --filter status=running --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=arena)
+script='source /opt/arena_ws/source >/dev/null 2>&1; exec python3 -m arena_mcp "$@"'
+
+if [ "$print" = 1 ]; then
+    if [ -z "$container" ]; then
+        printf 'lookup: %s\n' "$(shown "${lookup[@]}")"
+        container='{container}'
+    fi
+    printf 'probe: %s\n' "$(shown docker exec "$container" test -f /.built)"
+    printf 'exec: %s\n' "$(shown docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
+    exit 0
+fi
+
+where=${host:+ on $host}
+if [ -z "$host" ] && ! command -v docker >/dev/null 2>&1; then
+    say "docker is not on PATH"
+    exit 1
+fi
+if [ -z "$container" ]; then
+    if ! ids=$(remote "${lookup[@]}" 2>/dev/null </dev/null); then
+        say "could not list containers$where with: $(shown "${lookup[@]}")"
+        exit 1
+    fi
+    container=$(printf '%s\n' "$ids" | head -n1)
+    if [ -z "$container" ]; then
+        if [ -n "$fork" ]; then
+            say "fork '$fork' is not running$where (project $project), start it from the dev container with: arena fork new $fork"
+        else
+            say "no running arena container$where (project $project), start it with: source arena"
+        fi
+        exit 1
+    fi
+fi
+if ! remote docker exec "$container" test -f /.built </dev/null >/dev/null 2>&1; then
+    say "container $container$where is not running, or its first-boot setup has not finished (docker logs -f $container)"
+    exit 1
+fi
+if [ -n "$host" ]; then
+    exec ssh -T -o BatchMode=yes "$host" "$(quote docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
+fi
+exec docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@"
