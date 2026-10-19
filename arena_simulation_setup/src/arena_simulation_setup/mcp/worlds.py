@@ -222,7 +222,7 @@ def worlds_find(name: WorldName) -> dict[str, object]:
     from arena_simulation_setup.tree import Verdict
     from arena_simulation_setup.tree.World import WorldIdentifier
 
-    base, levels = WorldIdentifier.parse(name)
+    base, levels = WorldIdentifier.split_filter(name)
     try:
         verdicts = WorldIdentifier(base).probe_sync()
     except (FileNotFoundError, ValueError) as exc:
