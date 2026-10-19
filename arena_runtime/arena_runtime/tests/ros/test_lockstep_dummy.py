@@ -159,6 +159,57 @@ async def _channel_dropped_after_its_last_beat(rig: Rig) -> None:
     await probe.stop_run()
 
 
+async def _window_under_a_run(rig: Rig) -> None:
+    """An unpause window opened under a gated run gets gated steps, never a free-running clock."""
+    from arena_runtime_msgs.msg import LockstepChannel
+    from arena_runtime_msgs.srv import LifecycleHold
+
+    probe = rig.probe
+    host = rig.arena._lifecycle._inner
+    holder = "/arena/env_0/task_generator_node"
+    beat = LockstepChannel(name="beat", topic=probe.beat_topic, type=HEARTBEAT, period_s=PERIOD, hard=True)
+    own = LockstepChannel(name="own", topic="/probe/own", type=HEARTBEAT, period_s=PERIOD, hard=True)
+    assert (await probe.register_channels([beat])).success
+    assert (await probe.register_channels([own], caller="own", env=holder)).success
+    await probe.start_run()
+    await rig.until(lambda: probe.status is not None and probe.status.active and sorted(probe.status.waiting_on) == ["beat", "own"], 5.0, "stall on both channels")
+
+    tick = probe.status_tick()
+    await probe.set_window(holder, True)
+    assert host.paused
+    assert (await rig.frozen(0.5)) == pytest.approx(tick, abs=1e-3)
+    probe.pulse(tick)
+    await rig.until(lambda: probe.stalled_on("beat") and probe.status_tick() > tick + PERIOD / 2, 5.0, "gated tick inside the window")
+    assert host.paused
+
+    caller = probe.get_fully_qualified_name()
+    response = await probe.hold.call_timeout(LifecycleHold.Request(action=LifecycleHold.Request.ACQUIRE, caller_id=caller, reason="reset"))
+    assert response is not None and response.paused
+    rig.arena._lockstep.pause()
+    tick = probe.status_tick()
+    probe.pulse(tick)
+    await rig.until(lambda: probe.stalled_on("beat") and probe.status_tick() > tick + PERIOD / 2, 5.0, "gated tick inside the window under a foreign hold and a paused run")
+
+    await probe.set_window(holder, False)
+    assert host.paused
+    tick = probe.status_tick()
+    probe.pulse(tick)
+    clock = await rig.frozen(0.5)
+    assert clock == pytest.approx(tick, abs=1e-3)
+    response = await probe.hold.call_timeout(LifecycleHold.Request(action=LifecycleHold.Request.RELEASE, caller_id=caller, reason="reset"))
+    assert response is not None and response.paused
+    rig.arena._lockstep.resume()
+    await rig.until(lambda: probe.status_tick() > tick + PERIOD / 2 and sorted(probe.status.waiting_on) == ["beat", "own"], 5.0, "holder's channel back in the gate")
+
+    await probe.set_window(holder, True)
+    await probe.stop_run()
+    await rig.until(lambda: not host.paused, 3.0, "window unpauses once the run stops")
+    t0 = probe.clock()
+    await asyncio.sleep(0.3)
+    assert probe.clock() > t0
+    await probe.set_window(holder, False)
+
+
 def test_held_step(arena_rig) -> None:
     arena_rig(_held_step)
 
@@ -177,3 +228,7 @@ def test_ungated_run(arena_rig) -> None:
 
 def test_channel_dropped_after_its_last_beat(arena_rig) -> None:
     arena_rig(_channel_dropped_after_its_last_beat)
+
+
+def test_window_under_a_run(arena_rig) -> None:
+    arena_rig(_window_under_a_run)

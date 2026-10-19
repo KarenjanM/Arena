@@ -44,7 +44,8 @@ Ref-counted pause gate. Each caller acquires holds keyed by `(caller_id, reason)
 is paused; when it transitions 1→0 the sim is unpaused (unless an unpause window
 is active). Callers can also hold a one-at-a-time **unpause window** via
 `LifecycleUnpauseWindow`: acquiring it force-unpauses the sim for the window
-holder regardless of other holds, restoring pause state on release.
+holder regardless of other holds, restoring pause state on release. While a
+lockstep run is active the sim stays paused and the run steps it for the window.
 
 Invariant: evicting an env calls `release_all(fqn)` so stale holds never block
 the sim permanently.

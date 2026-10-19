@@ -1,5 +1,6 @@
 # Acquire or release an exclusive sim-unpause window.
-# While a window is held, the simulator is force-unpaused regardless of holds.
+# While a window is held, the simulator is force-unpaused regardless of holds,
+# or stepped by the lockstep run while one is active.
 # On release, pause state is restored from the hold count.
 uint8 ACQUIRE = 0
 uint8 RELEASE = 1

@@ -155,16 +155,16 @@ class LockstepScheduler:
             _validate_spec(spec)
         self._registry.register(caller, env, channels)
         self._publish_status()
-        self._wake()
+        self.wake()
 
     def drop_env(self, env: str) -> None:
         """Drop all registrations owned by a despawned env."""
         if self._registry.drop_env(env):
             self._publish_status()
-            self._wake()
+            self.wake()
 
-    def _wake(self) -> None:
-        """Let a gate wait re-read the ledger: a message arrived or the registry changed."""
+    def wake(self) -> None:
+        """Let a gate wait re-read the ledger: a message arrived, the registry or the open unpause windows changed."""
         self._node.event_loop.call_soon_threadsafe(self._arrived.set)
 
     async def start(self, config: LockstepConfig) -> None:
@@ -174,6 +174,8 @@ class LockstepScheduler:
         else:
             fqn = self._node.get_fully_qualified_name()
             await self._node._acquire_hold(fqn, _LOCKSTEP_REASON)
+            if not self._node._windows.is_empty():
+                await self._node._lifecycle.pause()
             self._node._publish_state()
         self._config = config
         self._resume.set()
@@ -221,7 +223,7 @@ class LockstepScheduler:
                 continue
             quiet += 0.1
             if quiet >= 0.5:
-                if self._node._holds.is_empty() and self._node._windows.is_empty():
+                if self._node._holds.is_empty() or not self._node._windows.is_empty():
                     await self._node._lifecycle.unpause()
                 return
 
@@ -250,20 +252,16 @@ class LockstepScheduler:
             else:
                 quiet += 0.05
 
+    def _window_holders(self) -> frozenset[str]:
+        return frozenset(entry.caller_id for entry in self._node._windows.snapshot())
+
+    def _gate_key(self) -> tuple[int, frozenset[str]]:
+        return self._registry.version, self._window_holders()
+
     async def _idle_while_owned(self) -> None:
-        """An open unpause window (robot bringup, teleport) or a foreign hold (env reset)
-        owns the sim, and a step now would advance it under the holder."""
-        reassert = 0.0
-        while not self._node._windows.is_empty() or self._foreign_hold_active():
-            # a chunk in flight when a window opened re-pauses gz at its
-            # end, clobbering the window's unpause, so re-assert while idling
-            if not self._node._windows.is_empty():
-                if reassert <= 0.0:
-                    await self._node._lifecycle.unpause()
-                    reassert = 0.5
-                reassert -= 0.05
-            else:
-                reassert = 0.0
+        """Idle while paused or while a foreign hold (env reset) owns the sim, an open
+        unpause window (robot bringup, teleport) gets its sim time from gated steps."""
+        while self._node._windows.is_empty() and (not self._resume.is_set() or self._foreign_hold_active()):
             await asyncio.sleep(0.05)
 
     async def _run(self, config: LockstepConfig) -> None:
@@ -277,7 +275,6 @@ class LockstepScheduler:
         window_advance = 0.0
         try:
             while True:
-                await self._resume.wait()
                 iter_start = loop.time()
                 sim_before = ledger.now
                 await self._idle_while_owned()
@@ -292,7 +289,7 @@ class LockstepScheduler:
                 if drift != 0.0:
                     sim_before = ledger.now
 
-                version = self._registry.version
+                version = self._gate_key()
                 if not config.ungated:
                     removed, added = ledger.refresh(self._desired())
                     for ch in removed:
@@ -335,6 +332,7 @@ class LockstepScheduler:
             fqn = self._node.get_fully_qualified_name()
             await self._node._release_hold(fqn, _LOCKSTEP_REASON)
             self._node._publish_state()
+            self._resume_task = asyncio.create_task(self._ensure_resumed())
             self._config = None
             self._measured_rtf = 0.0
             self._publish_status()
@@ -345,7 +343,8 @@ class LockstepScheduler:
                 self._node.destroy_subscription(sub)
 
     def _desired(self) -> dict[str, tuple[ChannelSpec, str]]:
-        return self._registry.desired(env_id for env_id, record in self._node._env_registry.items() if not record.draining)
+        windowed = self._window_holders()
+        return self._registry.desired((env_id for env_id, record in self._node._env_registry.items() if not record.draining and record.fqn not in windowed), skip=windowed)
 
     def _subscribe(self, ledger: GateLedger, channel: Channel) -> rclpy.subscription.Subscription:
         loop = self._node.event_loop
@@ -356,7 +355,7 @@ class LockstepScheduler:
 
         return self._node.create_subscription(get_message(channel.spec.type_name), channel.topic, _cb, 10)
 
-    async def _await_hard(self, ledger: GateLedger, hard_due: list[Channel], version: int) -> None:
+    async def _await_hard(self, ledger: GateLedger, hard_due: list[Channel], version: tuple[int, frozenset[str]]) -> None:
         start = self._node.wall_time
         next_warn = 10.0
         stalled = False
@@ -364,9 +363,9 @@ class LockstepScheduler:
         due_time = Time.from_float(ledger.tick)
         while True:
             self._arrived.clear()
-            if self._registry.version != version:
+            if self._gate_key() != version:
                 # a deregistered channel (env despawn) must not stall the tick forever
-                version = self._registry.version
+                version = self._gate_key()
                 desired = self._desired()
                 hard_due = [ch for ch in hard_due if ch.topic in desired]
             waiting = ledger.waiting(hard_due)
