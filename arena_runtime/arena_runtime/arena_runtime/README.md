@@ -120,6 +120,16 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
    process for managed envs), and only then cleans up the namespace via
    `SimLifecycle` and calls `complete_eviction` (frees the ID for reuse).
 
+## MCP domain `runtime`
+
+[mcp.py](mcp.py) contributes the `runtime` domain to the Arena MCP server: the env table and env spawn, despawn and cleanup, sim health, pause holds, stepping, unpause windows, the lockstep scheduler and the shutdown broadcast, all through the services and latched topics above. `python3 -m arena_mcp ls runtime` lists its tools, `arena://runtime/state` and `arena://runtime/envs` serve the state and the env table as resources.
+
+- `runtime_state` answers whether a runtime is up at all (`running: false` when `/arena` publishes no `state/sim`) and whether its sim is alive. Sim death is terminal: spawns are refused until the runtime restarts.
+- One runtime drives one simulator, so a hold, a step, an unpause window or a lockstep run pauses or advances every env at once.
+- Holds taken through the domain belong to the server's node (`/arena_mcp_<pid>` as `caller_id`), are counted per reason, and are released on request or when the server exits. Releasing never touches another caller's holds.
+- `runtime_spawn_env` waits for the env to reach ACTIVE, or with `wait_ready: false` returns a job (see the `jobs` domain) that finishes once it does. The env's output lands in the returned `log_path`.
+- Lockstep follows `arena lockstep`: `runtime_lockstep_start` with `seconds` is `run for:=` (a job that pauses the run when it ends or is cancelled), without it is `on`. `runtime_lockstep_register` accepts the CLI's presets and raw `name|topic|type|period_s|role` specs and replaces the `cli` registration by default, the same slot `arena lockstep gate` writes.
+
 ## See also
 
 - [task_generator](../../../task_generator/README.md): episode loop, task-mode registry, manager overview.
