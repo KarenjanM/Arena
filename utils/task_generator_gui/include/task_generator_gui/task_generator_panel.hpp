@@ -16,11 +16,13 @@
 #include "task_generator_msgs/srv/query_scenarios.hpp"
 #include "task_generator_msgs/srv/query_task_modes.hpp"
 #include "task_generator_msgs/srv/query_worlds.hpp"
-#include "task_generator_msgs/srv/pause.hpp"
 #include "task_generator_msgs/srv/reset_episode.hpp"
 #include "task_generator_msgs/srv/queue_episode.hpp"
 
 #include "task_generator_msgs/msg/episode_record.hpp"
+
+#include "arena_runtime_msgs/msg/hold_registry.hpp"
+#include "arena_runtime_msgs/srv/lifecycle_hold.hpp"
 
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -167,7 +169,8 @@ namespace task_generator_gui
 
         // --- Lifecycle service clients ---
         rclcpp::Client<task_generator_msgs::srv::ResetEpisode>::SharedPtr reset_episode_client;
-        rclcpp::Client<task_generator_msgs::srv::Pause>::SharedPtr pause_client;
+        rclcpp::Client<arena_runtime_msgs::srv::LifecycleHold>::SharedPtr hold_client;
+        std::string hold_caller_id;
 
         // --- Config service clients ---
         rclcpp::Client<task_generator_msgs::srv::QueueEpisode>::SharedPtr queue_episode_client;
@@ -189,8 +192,8 @@ namespace task_generator_gui
         // --- parameter_events subscription ---
         rclcpp::Subscription<rcl_interfaces::msg::ParameterEvent>::SharedPtr param_events_sub;
 
-        // --- state/paused subscription (latched) ---
-        rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr paused_state_sub;
+        // --- /arena/state/holders subscription (latched) ---
+        rclcpp::Subscription<arena_runtime_msgs::msg::HoldRegistry>::SharedPtr holders_sub;
 
         std::string staged_world;
 
@@ -247,8 +250,10 @@ namespace task_generator_gui
         // Re-enable the next button and clear pending state.
         void clearNextPending();
 
-        QPushButton *pause_button;
-        bool paused_state{false};
+        QPushButton *pause_button{nullptr};
+        bool holding{false};
+
+        void setHolding(bool held);
 
         QTableWidget *playlist_table;
 
