@@ -83,3 +83,13 @@ A character with no entry is painted from a font instead, stretched to the same 
 - `<node>/alphabet` (`Alphabet`, latched) so editors never hardcode the glyph table.
 
 `params()` is the episode binding applied when the panel queues a generated world: `tm_robots` / `tm_obstacles` plus per-mode leaf dicts. `barn` pins robots to its scenario. `sketch` and `letter` bind `tm_obstacles: random` with `dynamic.n` set to the pedestrian count, and `-1` returns an empty binding and leaves the episode alone.
+
+## MCP domain
+
+The `worldgen` domain of the Arena MCP server ([`mcp/worldgen.py`](../../mcp/worldgen.py)) runs the registry in process, so previews and saves need no world_generator node. `python3 -m arena_mcp ls worldgen` lists its tools.
+
+- `worldgen_generators` reads every registered generator from `WorldGenerator.available()`, with its `config_model` as JSON schema and the episode binding of its defaults.
+- `worldgen_preview` takes a generator, a configuration, an optional sketch and a seed (default 0, negative for a nondeterministic run), and answers what `<node>/generate` answers: diagnostics, warnings by sketch row and column, the normalized sketch, the episode binding and the rendered map.
+- `worldgen_save` writes through `WorldIdentifier(name).resolve_write_sync()`, so a generated world lands in the writable world root, and refuses an existing world unless `overwrite` is set.
+- `worldgen_alphabet` and `worldgen_normalize` serve the table the `alphabet` topic publishes and the canonical form of a sketch.
+- `worldgen_queue` stages a saved world on an env through `config/queue_episode` with the binding `worldgen_save` returned, as the panel does, and the next episode reset loads it.

@@ -32,6 +32,28 @@ pedestrian agents, and environment templates through the types defined here.
 
 Scripts live under [scripts/](scripts). To fetch a single asset by identifier, use `arena asset pull <kind> <name>`.
 
+## MCP domains
+
+The package contributes two domains to the `arena_mcp` server, listed with
+`python3 -m arena_mcp ls worlds` and `python3 -m arena_mcp ls assets`.
+
+- `worlds` works offline on the files through the same resolvers and loaders
+  the runtime uses: list and find worlds, inspect one with a preview image per
+  level, validate (strict format 2, the legacy loader for format 1), migrate,
+  write, NAV@r with its component maps, the KG with its check and the
+  vocabulary packages, scenarios (list, show, validate against the world's
+  zones, write), and the task and condition grammar parsed and rendered back
+  to text. A world name takes a level filter, `name[0,1]`, or a composition,
+  `a,b[1]`. `worlds_write` and `worlds_scenario_write` only write into the
+  writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds`, a scenario only into a
+  world that lives there. `arena://worlds/{name}` serves the inspect summary.
+- `assets` runs the `arena asset` verbs: kinds, find, ls, pull, and push with
+  the preflight that refuses references nobody else could resolve (marked
+  destructive and open-world, it needs `GCS_ACCESS_TOKEN`). The import tools
+  list and convert upstream datasets when `arena_assets.importers` is
+  installed and fail with a hint otherwise. `assets_import` returns a job,
+  followed with the `jobs` tools.
+
 ## Human assets and skeletal articulation
 
 ### arenian actor
