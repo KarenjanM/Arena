@@ -23,7 +23,7 @@ import shapely
 import visualization_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from arena_rclpy_mixins.Async import ClientWrapper
+from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
 from arena_simulation_setup.shared import Position, Wall
@@ -49,8 +49,34 @@ _DEFAULT_RESOLUTION = 0.05
 _DOOR_MASK_BUFFER_M = 0.2
 
 
+def map_server_launch_description(namespace: str) -> launch.LaunchDescription:
+    """The map_server bringup with its lifecycle manager under namespace."""
+    return launch.LaunchDescription(
+        [
+            launch.actions.GroupAction(
+                [
+                    launch_ros.actions.PushRosNamespace(namespace),
+                    launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py'))),
+                ]
+            ),
+        ]
+    )
+
+
 class MapServerHandler(NodeInterface):
     """Handler functions for the map server lifecycle."""
+
+    _map_server_launch: LaunchHandle | None
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._map_server_launch = None
+
+    async def launch_map_server(self) -> None:
+        """Replace any running map_server bringup with a fresh one in the node namespace."""
+        if self._map_server_launch is not None:
+            await self._map_server_launch.shutdown()
+        self._map_server_launch = await self.node.do_launch_tracked(map_server_launch_description(self.node.get_fully_qualified_name()))
 
     async def ensure_map_server(self):
         """Restart the map server if it is not active."""
@@ -75,7 +101,7 @@ class MapServerHandler(NodeInterface):
 
             self._logger.warn('relaunching map server...')
 
-            await self.node.do_launch(launch.LaunchDescription([launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py')))]))
+            await self.launch_map_server()
 
         self._logger.info('map server launched.')
 
@@ -373,18 +399,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         """Idempotent: lazy-launch map_server and push the current world. Safe to call concurrently."""
         async with self._map_server_lock:
             if not self._map_server_present:
-                await self.node.do_launch(
-                    launch.LaunchDescription(
-                        [
-                            launch.actions.GroupAction(
-                                [
-                                    launch_ros.actions.PushRosNamespace(self.node.get_fully_qualified_name()),
-                                    launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py'))),
-                                ]
-                            ),
-                        ]
-                    )
-                )
+                await self.launch_map_server()
                 self._map_server_present = True
             if self._cli is None:
                 self._cli = self.node.create_client_wrapper(
