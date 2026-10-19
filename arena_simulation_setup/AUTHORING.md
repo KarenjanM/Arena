@@ -632,7 +632,8 @@ humans:
 A scenario can also carry `regions:` (named pedestrian source/sink spawners
 for arena_humansim) and `conditions:` (episode success/failure clauses). Its
 `sounds:`, `lights:` and `timeline:` keys are the ones covered above. Scenario
-lights count as declared, like the world's, and go at the next reset. See
+lights count as declared, like the world's, and go at the next reset, and so
+do its regions. See
 [worlds/README.md](worlds/README.md) for the full key list of every
 top-level key.
 

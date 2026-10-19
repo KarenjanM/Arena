@@ -594,6 +594,7 @@ class EnvironmentManager(NodeInterface):
 
     async def before_reset_episode(self) -> bool:
         await self._human_simulator.pause()
+        await self._human_simulator.remove_all_regions()
         result = await self._simulator.before_reset_episode()
         self._simulator.reset_semantics()
         self.node.reset_timeline()
