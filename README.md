@@ -130,13 +130,15 @@ then commit the changed `uv.lock` files, submodules first.
 
 ### CI
 
-[`.github/workflows/lint.yml`](.github/workflows/lint.yml) runs the same pre-commit hooks on every push to `jazzy` and every pull request targeting it. The GH check uses the exact config and hook pins from `.pre-commit-config.yaml`, so local and CI never drift. Make the check required in branch protection to block merges on lint failures.
+The lint, tests and coverage workflows run on every push to `jazzy` and every pull request targeting it. Each checks out the change merged into `jazzy` with [`voshch/ci/trial-merge`](https://github.com/voshch/ci): conflicting submodule pins are merged at every depth, and only a conflict outside them fails the run. GitHub starts no `pull_request` run while a pull request has conflicts, so run a conflicting one by hand with `gh workflow run <lint|tests|coverage>.yml --ref jazzy -f pr=<N>`.
+
+[`.github/workflows/lint.yml`](.github/workflows/lint.yml) runs the same pre-commit hooks on that merge, and on each new commit as a separate `lint / per commit` status. The GH check uses the exact config and hook pins from `.pre-commit-config.yaml`, so local and CI never drift. Make the check required in branch protection to block merges on lint failures.
 
 Bump the Ruff version with `pre-commit autoupdate`.
 
-[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs every test suite of the Arena-owned packages on every push to `jazzy` and every pull request targeting it, in a clean `ros:jazzy` container. It installs what they need the way `arena update` does (`rosdep` from each `package.xml`, `colcon --packages-up-to`, `uv_workspace.py compose` with `uv sync`, the default robot's submodules), so a missing `package.xml` or `pyproject.toml` dependency fails it, and runs them with `colcon test`, the runner behind `arena test`.
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs every test suite of the Arena-owned packages in a clean `ros:jazzy` container. It installs what they need the way `arena update` does (`rosdep` from each `package.xml`, `colcon --packages-up-to`, `uv_workspace.py compose` with `uv sync`, the default robot's submodules), so a missing `package.xml` or `pyproject.toml` dependency fails it, and runs them with `colcon test`, the runner behind `arena test`.
 
-[`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the lines a push to `jazzy` or a pull request changes under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. Changes outside `GATED` end the job after the diff.
+[`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the changed lines under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. Changes outside `GATED` end the job after the diff.
 
 ## Troubleshooting
 

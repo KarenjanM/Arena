@@ -5,6 +5,11 @@ on:
     branches: [jazzy]
   pull_request:
     branches: [jazzy]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request to test merged into jazzy
+        required: true
 
 jobs:
   core:
@@ -22,17 +27,20 @@ jobs:
         task_generator/task_generator/tasks/registry.py
     steps:
       - run: apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git python3-vcstool
-      - uses: actions/checkout@v6
+      - uses: voshch/ci/trial-merge@v1
+        id: checkout
         with:
-          fetch-depth: 2
+          base: jazzy
+          head: ${{ inputs.pr && format('refs/pull/{0}/head', inputs.pr) || github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
       - name: diff the gated code
         id: diff
         env:
           BEFORE: ${{ github.event.before }}
+          BASE: ${{ steps.checkout.outputs.base }}
         run: |
           git config --global --add safe.directory '*'
-          if [ "$GITHUB_EVENT_NAME" = push ]; then base=$BEFORE; else base=$(git rev-parse HEAD^1); fi
+          base=${BASE:-$BEFORE}
           git cat-file -e "$base^{commit}" 2>/dev/null || git fetch -q --no-tags --depth=1 origin "$base"
           subs=$(git config -f .gitmodules --get-regexp '\.path$' | awk '{print $2}')
           : > gated.diff
