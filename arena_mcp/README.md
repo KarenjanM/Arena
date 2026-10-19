@@ -29,6 +29,19 @@ async def demo_state(env_id: int | None = None) -> dict[str, object]:
 - `msgs` converts messages to and from plain dicts without dropping fields, `media` turns PNGs, image messages and occupancy grids into image content, `ToolError(message, hint)` is the error type.
 - Tests go in a `mcp/` subdirectory of the package's tests with `pytest.importorskip("arena_mcp")`, and run the real tools against real files and real ROS nodes created in the test.
 
+## airchitect
+
+The `airchitect` domain drives the external airchitect generation stack through its webapp HTTP API, the stack's only published endpoint. The base URL is `AIRCHITECT_URL` (default `http://localhost:3000`), reached from the container over host networking. The domain is always served. While the stack is down every tool fails within seconds with the deploy command (`cd ~/airchitect && ./airchitect deploy up --cpu --arena text_kg`), so a stack started after the server is picked up without a restart.
+
+- `airchitect_status` checks readiness: the models per stage with their defaults, and backend availability from `models/score`.
+- A session is a uuid in the stack's Redis, kept for one hour after its last write, with the stages `prompt`, `floorplan`, `decoration` and `scenario`. Stage requests are deferred, so every stage run is a job that polls the stage record until the stack stores `completed` or `error`.
+- `airchitect_generate` runs the whole pipeline as one job: prompt, several floor plan tries keeping the one with the fewest graph edges left without a door and then the fewest `door_auto_*` doors, decoration, the scenario stage when a scenario prompt is given, and the zip export. The zip is unpacked into the writable world root (`$ARENA_ASSETS_DIR_LOCAL/worlds/<name>`), an existing world is replaced only with `overwrite`, and the world is checked by strict parsing and validation, NAV@r per level (radius from the jackal definition unless given) and a preview per level.
+- Every job keeps its stage requests and responses as JSON, the exported `world.zip`, the previews and the NAV@r images under `$ARENA_DATA_DIR/mcp/airchitect/<run id>/`, where the run id is the id of the job that started it. `resume` takes that id and reuses the completed stages in the same session.
+- `airchitect_session`, `airchitect_stage`, `airchitect_kg_edit` and `airchitect_export` inspect, rerun, edit and export an existing session. `airchitect_ingest` seeds a session from an Arena world, its linked levels written out.
+- Job progress names the current stage, and `jobs_status`, `jobs_log`, `jobs_wait` and `jobs_cancel` follow a run. Cost is reported as unavailable: the stack exposes it only in its SSE events, and only when it runs with `COST_DEBUG=1`.
+
+`python3 -m arena_mcp ls airchitect` lists the tools.
+
 ## Launcher and clients
 
 The server speaks MCP over stdio and runs inside the arena container, where ROS, the workspace and the CLI live. An MCP client on the host reaches it through `_meta/tools/arena-mcp`:
