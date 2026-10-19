@@ -252,7 +252,7 @@ class EpisodeCondition(Parseable, Serializable):
             raise ValueError(f"clause op {op!r} does not take a 'q' atom")
 
         text = str(value.pop('text', ''))
-        on_failure = str(value.pop('on_failure', 'continue'))
+        on_failure = typing.cast('OnFailure', str(value.pop('on_failure', 'continue')))
 
         if value:
             raise ValueError(f'unknown clause keys: {sorted(value)}')

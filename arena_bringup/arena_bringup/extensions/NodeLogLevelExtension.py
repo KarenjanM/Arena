@@ -125,6 +125,13 @@ def _glob_to_regex(pattern: str) -> re.Pattern[str]:
     return re.compile(f'^{regex}$')
 
 
+def active_spec(context: launch.LaunchContext) -> str:
+    """Inline spec of the rule set active in ``context``, empty when none is set."""
+    raw = context.launch_configurations.get(_RULES_KEY)
+    rules = json.loads(raw) if raw else []
+    return '{' + ', '.join(f'{pattern}:{level}' for pattern, level in rules) + '}' if rules else ''
+
+
 def _match_level(rules: list[tuple[str, str]], fqn: str) -> str | None:
     target = fqn.lstrip('/')
     for pattern, level in rules:
@@ -168,13 +175,15 @@ class NodeLogLevelExtension(NodeActionExtension):
 
 class SetGlobalLogLevelAction(launch.Action):
     LOGLEVEL = LogLevel
-    _spec: object
+    _spec: str | launch.Substitution
     _base: str
+    _fallback: bool
 
-    def __init__(self, spec: object, *, base: str = 'warn', **kwargs: object) -> None:
+    def __init__(self, spec: str | launch.Substitution, *, base: str = 'warn', fallback: bool = False, **kwargs: launch.Condition | None) -> None:
         super().__init__(**kwargs)
         self._spec = spec
         self._base = _validate_level(base)
+        self._fallback = fallback
 
     @classmethod
     def str_to_level(cls, log_level: str) -> int:
@@ -194,7 +203,10 @@ class SetGlobalLogLevelAction(launch.Action):
         existing: list[tuple[str, str]] = [(p, lvl) for p, lvl in json.loads(existing_raw)] if existing_raw else []
         if op != 'replace' and not existing:
             existing = [(_DEFAULT_PATTERN, self._base)]
-        if op == 'prepend':
+        if op != 'replace' and self._fallback:
+            at = next((i for i, (pattern, _) in enumerate(existing) if pattern == _DEFAULT_PATTERN), len(existing))
+            merged = existing[:at] + rules + existing[at:]
+        elif op == 'prepend':
             merged = rules + existing
         elif op == 'append':
             merged = existing + rules

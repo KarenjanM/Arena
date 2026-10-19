@@ -19,6 +19,19 @@ from typing_extensions import Self
 
 T = typing.TypeVar('T')
 
+
+class _Header(typing.Protocol):
+    @property
+    def stamp(self) -> builtin_interfaces.msg.Time: ...
+
+
+class _Stamped(typing.Protocol):
+    @property
+    def header(self) -> _Header: ...
+
+
+_StampedT = typing.TypeVar('_StampedT', bound=_Stamped)
+
 _CLOCK_QOS = rclpy.qos.QoSProfile(
     depth=1,
     reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
@@ -164,8 +177,8 @@ def _resolve(future: asyncio.Future[None]) -> None:
 class TimeNode(rclpy.node.Node):
     """Mixin class to provide clock utilities for rclpy nodes."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, node_name: str, *args: object, **kwargs: object) -> None:
+        super().__init__(node_name, *args, **kwargs)
         self.__clock_subscriber = self.create_subscription(
             rosgraph_msgs.msg.Clock,
             '/clock',
@@ -263,17 +276,17 @@ class TimeNode(rclpy.node.Node):
     async def arrives(
         self,
         topic: str,
-        msg_type: type[T],
+        msg_type: type[_StampedT],
         *,
         min_stamp: Time | None = None,
         qos: int | rclpy.qos.QoSProfile = 10,
         warn_period: float = 10.0,
-    ) -> T:
+    ) -> _StampedT:
         """Temp-subscribe to topic, resolve on first message with header.stamp >= min_stamp
         (any message when min_stamp is None). Unbounded, narrates at warn_period."""
-        result: list[T] = []
+        result: list[_StampedT] = []
 
-        def _callback(msg: T) -> None:
+        def _callback(msg: _StampedT) -> None:
             if result:
                 return
             if min_stamp is None or Time.from_msg(msg.header.stamp) >= min_stamp:

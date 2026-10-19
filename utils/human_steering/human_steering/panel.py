@@ -10,8 +10,8 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
-from python_qt_binding.QtCore import QEvent, Qt
-from python_qt_binding.QtGui import QColor, QPainter, QPen
+from python_qt_binding.QtCore import QEvent, QObject, Qt
+from python_qt_binding.QtGui import QColor, QKeyEvent, QPainter, QPen
 from python_qt_binding.QtWidgets import (
     QAction,
     QApplication,
@@ -41,10 +41,12 @@ from human_steering.driver import RUN_THRESHOLD_MPS, Driver
 try:
     from task_generator.simulators.human.gait import LIMITS, GaitGenerator
 except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
-    GaitGenerator = None  # type: ignore[assignment,misc]
-    LIMITS = ()  # type: ignore[assignment]
+    GaitGenerator = None
+    LIMITS = ()
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import rclpy.node
 
     from human_steering.driver import Namespaces, RosterStatus
@@ -93,7 +95,7 @@ _FK_BASELINE_RGB = (90, 94, 98)
 class _JointRow(QWidget):
     """One pose joint: slider + editable value box, moving either engages it."""
 
-    def __init__(self, joint: str, lo: float, hi: float, on_change: object, parent: object = None) -> None:
+    def __init__(self, joint: str, lo: float, hi: float, on_change: Callable[[str, bool, float], None], parent: object = None) -> None:
         super().__init__(parent)
         self.joint = joint
         self.engaged = False
@@ -645,15 +647,15 @@ class Panel(QWidget):
 
     # -- Teleop tool: app-wide key capture, arrow keys never reach focused widgets --
 
-    def eventFilter(self, obj: object, event: object) -> bool:  # noqa: N802
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         """Swallow every arrow KeyPress/KeyRelease, including auto-repeats, so none reach the canvas."""
-        if event.type() == QEvent.KeyPress and event.key() in _ARROW_TWIST:
+        if event.type() == QEvent.KeyPress and isinstance(event, QKeyEvent) and event.key() in _ARROW_TWIST:
             if not event.isAutoRepeat():
                 if event.key() in self._teleop_held:
                     self._teleop_held.remove(event.key())
                 self._teleop_held.append(event.key())
             return True
-        if event.type() == QEvent.KeyRelease and event.key() in _ARROW_TWIST:
+        if event.type() == QEvent.KeyRelease and isinstance(event, QKeyEvent) and event.key() in _ARROW_TWIST:
             if not event.isAutoRepeat() and event.key() in self._teleop_held:
                 self._teleop_held.remove(event.key())
             return True

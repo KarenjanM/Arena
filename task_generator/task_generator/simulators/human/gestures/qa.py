@@ -139,7 +139,7 @@ def run(case: Case, *, agent_id: int = 1) -> Result:
         if all(abs(angles[d]) < REST_EPS_RAD for d in ARM_DOFS):
             rest_times.append(t)
         parked = arm_st is not None and arm_st.phase == "hold" and arm_st.clip is not None and arm_st.t >= arm_st.clip.hold_end / arm_st.clip.fps and not arm_st.release_pending
-        if parked and cue is not None:
+        if parked and cue is not None and arm_st is not None and arm_st.clip is not None:
             side = arm_st.clip.side
             ch = next((c for c in cue.channels if c.slot in ("arm", "arm_l", "arm_r")), None)
             if ch is not None:

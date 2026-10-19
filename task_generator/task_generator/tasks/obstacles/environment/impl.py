@@ -1,4 +1,5 @@
 import math
+import typing
 
 import arena_simulation_setup.tree.configs.environment
 import attrs
@@ -10,6 +11,7 @@ from shapely.geometry import LineString, Point
 
 from task_generator.manager.world_manager.utils import GridFrame, WorldOccupancy
 from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 
 
@@ -239,7 +241,7 @@ class TM_Environment(TM_Obstacles):
     async def reset(self, *, seed: int) -> Obstacles:
         return self._config.value.static, self._config.value.dynamic
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
         self._config = self.node.ROSParam[_ParsedConfig](

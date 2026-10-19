@@ -182,8 +182,7 @@ def check_setup_py(member: str, project: dict, setup_path: pathlib.Path) -> list
 
 def check_member(member: str, root: pathlib.Path) -> list[str]:
     data = load_toml(root / member / "pyproject.toml")
-    project = data.get("project") if data else None
-    if not isinstance(project, dict):
+    if data is None or not isinstance(project := data.get("project"), dict):
         return [f"{member}: pyproject.toml has no [project] table"]
     problems = []
     for key in ("name", "version"):

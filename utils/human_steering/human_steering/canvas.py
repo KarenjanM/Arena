@@ -10,7 +10,7 @@ import math
 from typing import TYPE_CHECKING
 
 from python_qt_binding.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from python_qt_binding.QtGui import QBrush, QColor, QImage, QPen, QPixmap, QPolygonF
+from python_qt_binding.QtGui import QBrush, QColor, QImage, QKeyEvent, QMouseEvent, QPen, QPixmap, QPolygonF, QWheelEvent
 from python_qt_binding.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -24,8 +24,14 @@ from python_qt_binding.QtWidgets import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Set as AbstractSet
+
     import rclpy.node
     from nav_msgs.msg import OccupancyGrid
+    from rclpy.client import Client
+    from rclpy.qos import QoSProfile
+    from rclpy.subscription import Subscription
+    from rclpy.task import Future
     from visualization_msgs.msg import MarkerArray
 
     from human_steering.driver import Namespaces
@@ -34,7 +40,7 @@ else:
         from nav_msgs.msg import OccupancyGrid
         from visualization_msgs.msg import MarkerArray
     except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
-        OccupancyGrid = MarkerArray = None  # type: ignore[assignment,misc]
+        OccupancyGrid = MarkerArray = None
 
 PED_RADIUS_M = 0.25
 STATIC_MARKERS_PREFIX = "pedestrian_markers/static"
@@ -70,7 +76,7 @@ class Tool(enum.Enum):
 _ARROW_KEYS = frozenset({Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right})
 
 
-def _latched_qos() -> object:
+def _latched_qos() -> QoSProfile:
     import rclpy.qos
 
     return rclpy.qos.QoSProfile(
@@ -129,9 +135,9 @@ class Canvas(QGraphicsView):
         self._namespaces: Namespaces | None = None
         self._pending_static: dict[str, MarkerArray] = {}
         self._pending_map: OccupancyGrid | None = None
-        self._static_subs: list[object] = []
-        self._map_sub: object | None = None
-        self._map_client: object | None = None
+        self._static_subs: list[Subscription] = []
+        self._map_sub: Subscription | None = None
+        self._map_client: Client | None = None
         self._ticks_since_map_request = 0
 
         self._build_background()
@@ -216,7 +222,7 @@ class Canvas(QGraphicsView):
                 sub = node.create_subscription(
                     MarkerArray,
                     topic,
-                    lambda msg, t=topic: self._pending_static.__setitem__(t, msg),
+                    lambda msg, t=topic: self._pending_static.__setitem__(t, msg),  # pyright: ignore[reportArgumentType]
                     _latched_qos(),
                 )
                 self._static_subs.append(sub)
@@ -230,13 +236,15 @@ class Canvas(QGraphicsView):
         """Fire one require_map Trigger, retried by _maybe_retry_require_map() until subscribed."""
         from std_srvs.srv import Trigger
 
+        assert self._map_client is not None
         self._ticks_since_map_request = 0
         future = self._map_client.call_async(Trigger.Request())
         future.add_done_callback(self._on_map_ready)
 
-    def _on_map_ready(self, future: object) -> None:
+    def _on_map_ready(self, future: Future) -> None:
         if self._map_sub is not None:
             return
+        assert self._node is not None and self._namespaces is not None
         result = future.result()
         if result is None or not result.success:
             return
@@ -277,10 +285,11 @@ class Canvas(QGraphicsView):
             content_changed = True
             if self._map_item is not None:
                 self._scene.removeItem(self._map_item)
-            self._map_item = self._scene.addPixmap(_occupancy_to_pixmap(grid))
-            self._map_item.setZValue(-10.0)
-            self._map_item.setScale(grid.info.resolution)
-            self._map_item.setPos(grid.info.origin.position.x, grid.info.origin.position.y)
+            map_item = self._scene.addPixmap(_occupancy_to_pixmap(grid))
+            map_item.setZValue(-10.0)
+            map_item.setScale(grid.info.resolution)
+            map_item.setPos(grid.info.origin.position.x, grid.info.origin.position.y)
+            self._map_item = map_item
 
         if self._pending_static:
             pending, self._pending_static = self._pending_static, {}
@@ -309,7 +318,7 @@ class Canvas(QGraphicsView):
 
     # -- ped rendering --
 
-    def update_peds(self, poses: dict[str, tuple[float, float, float]], held: frozenset[str] = frozenset()) -> None:
+    def update_peds(self, poses: dict[str, tuple[float, float, float]], held: AbstractSet[str] = frozenset()) -> None:
         """poses: name -> (x, y, yaw), world frame. held: driver's claim set, previews and gaze markers are swept for peds outside it."""
         stale = set(self._ped_items) - set(poses)
         for name in stale:
@@ -424,7 +433,7 @@ class Canvas(QGraphicsView):
                 best, best_dist = name, dist
         return best
 
-    def mousePressEvent(self, event: object) -> None:
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = self.mapToScene(event.pos())
         wx, wy = pos.x(), pos.y()
         if event.button() == Qt.RightButton:
@@ -447,22 +456,22 @@ class Canvas(QGraphicsView):
             self.gaze_requested.emit(self._selected, wx, wy)
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event: object) -> None:
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self.tool == Tool.TELEPORT and self._dragging_teleport and self._selected is not None:
             pos = self.mapToScene(event.pos())
             self.teleport_requested.emit(self._selected, pos.x(), pos.y())
         super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event: object) -> None:
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self._dragging_teleport = False
         super().mouseReleaseEvent(event)
 
-    def wheelEvent(self, event: object) -> None:  # noqa: N802
+    def wheelEvent(self, event: QWheelEvent) -> None:  # noqa: N802
         """Zoom anchored under the cursor."""
         factor = ZOOM_STEP if event.angleDelta().y() > 0 else 1.0 / ZOOM_STEP
         self.scale(factor, factor)
 
-    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         """Arrow keys never scroll the view, Teleop owns them via the app-wide filter."""
         if event.key() in _ARROW_KEYS:
             event.ignore()

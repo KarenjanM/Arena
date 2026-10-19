@@ -24,8 +24,10 @@ from task_generator.shared import (
     Door,
     DynamicObstacle,
     Elevator,
+    Entity,
     Obstacle,
     Pose,
+    Position,
     Region,
     Robot,
     SemanticCfg,
@@ -34,6 +36,8 @@ from task_generator.shared import (
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
+
+EntityT = typing.TypeVar('EntityT', bound=Entity)
 
 
 def _kind_vocab(kind_cls: type) -> frozenset[str]:
@@ -65,7 +69,8 @@ def _realized_plate(realizer: Realizer, cfg: SemanticCfg, level_id: str) -> Sema
     """A plate cfg with its authored position in the map frame agents are tracked in and its driven door under its realized name."""
     params = dict(cfg.params)
     if 'position' in params:
-        params['position'] = list(realizer.realize_xy(*params['position'][:2], level_id))
+        x, y = params['position'][:2]
+        params['position'] = list(realizer.realize_xy(x, y, level_id))
     if params.get('drives'):
         params['drives'] = realizer.prefix(params['drives'], level_id)
     return attrs.evolve(cfg, params=params)
@@ -198,7 +203,19 @@ class EnvironmentManager(NodeInterface):
         """optim.obstacles=none: silently skip all static obstacle spawns."""
         return obstacles_optim_level(self.node) >= ObstaclesOptim.NONE
 
-    def realize(self, target: object) -> object:
+    @typing.overload
+    def realize(self, target: str) -> str: ...
+
+    @typing.overload
+    def realize(self, target: Position) -> Position: ...
+
+    @typing.overload
+    def realize(self, target: Pose) -> Pose: ...
+
+    @typing.overload
+    def realize(self, target: EntityT) -> EntityT: ...
+
+    def realize(self, target: str | Position | Pose | Entity) -> str | Position | Pose | Entity:
         return self._realizer.realize(target)
 
     def ezilear(self, target: Pose) -> Pose:
@@ -577,6 +594,7 @@ class EnvironmentManager(NodeInterface):
 
     async def before_reset_episode(self) -> bool:
         await self._human_simulator.pause()
+        await self._human_simulator.remove_all_regions()
         result = await self._simulator.before_reset_episode()
         self._simulator.reset_semantics()
         self.node.reset_timeline()

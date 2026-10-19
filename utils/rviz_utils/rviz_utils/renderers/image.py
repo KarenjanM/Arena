@@ -6,6 +6,7 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 
 @register(DisplayKind.IMAGE)
@@ -28,5 +29,5 @@ def render_image(d: AdapterDisplay, robot: RobotDescriptor | None) -> dict[str, 
         "Normalize Range": True,
         "Value": True,
     }
-    result.update(style.extra.get("rviz", {}))
+    result.update(_rviz_extra(style))
     return result

@@ -18,11 +18,12 @@ import rclpy
 import rclpy.logging
 import rclpy.node
 import rclpy.publisher
+import rclpy.time
 import rclpy.timer
 import shapely
 import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
-from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.Robot import RobotView
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim._interface import SimUnavailable
@@ -73,6 +74,15 @@ _TELEPORT_TICK_CAP = 5
 _TELEPORT_TICK_WAIT = 0.5
 
 
+def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevelAction]:
+    """Rule set for a robot launch: ``spec`` with nav2 and moveit quieted wherever it names no node."""
+    return [
+        NodeLogLevelExtension.SetGlobalLogLevelAction(spec),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES, fallback=True),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES, fallback=True),
+    ]
+
+
 class RobotManager(NodeInterface):
     """Manages the goal and start position of a robot for all task modes."""
 
@@ -116,7 +126,9 @@ class RobotManager(NodeInterface):
 
     @property
     def controls_orientation(self) -> bool:
-        return self._adapter.controls_orientation if self._adapter is not None else True
+        from task_generator.tasks.robots.adapters.mobile import MobileAdapter
+
+        return self._adapter.controls_orientation if isinstance(self._adapter, MobileAdapter) else True
 
     @property
     def pose_stamped(self) -> tuple[Pose, rclpy.time.Time] | None:
@@ -184,7 +196,7 @@ class RobotManager(NodeInterface):
 
         self._publish_goal_task: asyncio.Task | None = None
         self._watchers: list[Callable[[RobotManager], None]] = []
-        self._launch_handle: LaunchHandle | None = None
+        self._launch_handle = None
 
         # Deferred to break the import cycle between this module and
         # task_generator.tasks (which eagerly loads context.py -> RobotManager).
@@ -205,15 +217,15 @@ class RobotManager(NodeInterface):
                 continue
             caps_to_kind[cap] = default_kind
 
-        self._adapters: dict[TaskKind, Adapter] = {}
-        self._adapter_instances: list[Adapter] = []
-        self._cap_adapters: dict[str, str] = {}
+        self._adapters = {}
+        self._adapter_instances = []
+        self._cap_adapters = {}
 
         for cap, kind in caps_to_kind.items():
             if cap not in ADAPTERS:
                 raise AssertionError(f"robot {self._robot.name!r}: no adapter registry for cap {cap!r} (registered caps: {sorted(ADAPTERS)})")
             adapter_cls = ADAPTERS[cap].get(kind)
-            declared_cap = adapter_cls._adapter_meta.cap
+            declared_cap = adapter_cls._meta().cap
             if declared_cap != cap:
                 raise AssertionError(f"adapter {kind!r} declares cap {declared_cap!r} but was selected for cap {cap!r} on robot {self._robot.name!r}")
 
@@ -241,8 +253,8 @@ class RobotManager(NodeInterface):
 
         self._runner = TaskRunner(self._robot.name)
         self._placed = False
-        self._unsupported_kinds_logged: set[TaskKind] = set()
-        self._abort_episode: Callable[[str], None] | None = None
+        self._unsupported_kinds_logged = set()
+        self._abort_episode = None
 
     def bind_abort(self, fn: Callable[[str], None]) -> None:
         self._abort_episode = fn
@@ -304,7 +316,7 @@ class RobotManager(NodeInterface):
         return self._robot.name
 
     @property
-    def frame(self) -> Namespace:
+    def frame(self) -> FrameNamespace:
         return self._robot.frame
 
     @property
@@ -730,9 +742,8 @@ class RobotManager(NodeInterface):
         await asyncio.gather(*(a.ensure_services() for a in self._adapter_instances))
         launch_description = launch.LaunchDescription()
         current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level))
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES))
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES))
+        for action in log_level_actions(self.node.conf.General.LOG_LEVEL.value or current_log_level):
+            launch_description.add_action(action)
 
         launch_arguments = {
             'robot': self.model_name,
@@ -764,7 +775,7 @@ class RobotManager(NodeInterface):
             tf_buffer=None,
             node_handle=self.node,
         )
-        adapter_actions: list[object] = [
+        adapter_actions: list[launch.Action] = [
             launch_ros.actions.PushRosNamespace(str(self.namespace)),
             *(a.launch_description(adapter_ctx) for a in self._adapter_instances),
         ]

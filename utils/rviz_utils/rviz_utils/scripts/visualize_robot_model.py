@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+import functools
 import os
 import traceback
+from typing import TypedDict
 
 import rclpy
+import rclpy.qos
 import yaml
 from task_generator_msgs.msg import RobotFleet
 from geometry_msgs.msg import Point, Vector3
@@ -15,12 +18,24 @@ from std_srvs.srv import Empty
 from visualization_msgs.msg import Marker, MarkerArray
 
 
+class _Footprint(TypedDict, total=False):
+    type: str
+    radius: float
+    points: list[tuple[float, float]]
+
+
+class _Body(TypedDict, total=False):
+    color: list[float]
+    footprints: list[_Footprint]
+
+
 class VisualizeRobotModel(Node):
     def __init__(self):
         super().__init__('visualize_robot_model')
 
         self.declare_parameter('task_generator_node', '/task_generator_node')
         tg_node = self.get_parameter('task_generator_node').value
+        assert isinstance(tg_node, str)
 
         self.srv_start_setup = self.create_service(Empty, "start_model_visualization", self.start_model_visualization_callback)
 
@@ -65,7 +80,7 @@ class VisualizeRobotModel(Node):
             self.publisher_map[robot.name] = LazyPublisher(self.create_publisher(MarkerArray, os.path.join(robot.ns, "visualize", "model"), 10))
 
             # Create subscriber for each robot's odometry
-            self.subscribers.append(self.create_subscription(Odometry, os.path.join(robot.ns, robot_odom_topic), lambda msg, args=(robot.model, robot.name): self.publish_model(msg, args), 10))
+            self.subscribers.append(self.create_subscription(Odometry, os.path.join(robot.ns, robot_odom_topic), functools.partial(self.publish_model, args=(robot.model, robot.name)), 10))
 
         return Empty.Response()
 
@@ -91,7 +106,7 @@ class VisualizeRobotModel(Node):
             self.get_logger().error(traceback.format_exc())
             self.get_logger().error(f"Error - publishing markers {name}")
 
-    def read_robot_model_file(self, robot_model: str) -> list[object]:
+    def read_robot_model_file(self, robot_model: str) -> list[_Body]:
         try:
             # In ROS2, use ament_index_python instead of rospkg
             from ament_index_python.packages import get_package_share_directory
@@ -104,11 +119,11 @@ class VisualizeRobotModel(Node):
             self.get_logger().error(f"Error reading robot model file: {e}")
             return self.get_default_model()
 
-    def get_default_model(self) -> list[object]:
+    def get_default_model(self) -> list[_Body]:
         # Simple default model if the real one can't be found
         return [{'color': [0, 0, 1, 1], 'footprints': [{'type': 'circle', 'radius': 0.25}]}]
 
-    def create_marker_array_for_robot(self, bodies: list[object]) -> list[Marker]:
+    def create_marker_array_for_robot(self, bodies: list[_Body]) -> list[Marker]:
         markers = []
 
         for i, body in enumerate(bodies):
@@ -120,7 +135,7 @@ class VisualizeRobotModel(Node):
 
         return markers
 
-    def create_marker_from_footprint(self, footprint: dict[str, object], color: list[float], id: int) -> Marker:
+    def create_marker_from_footprint(self, footprint: _Footprint, color: list[float], id: int) -> Marker:
         r, g, b, a = color
 
         marker = Marker()
@@ -135,12 +150,12 @@ class VisualizeRobotModel(Node):
             marker.type = Marker.LINE_STRIP
             marker.scale = Vector3(x=0.03, y=0, z=0)
 
-            for x, y in footprint.get("points", []):
-                marker.points.append(Point(x=float(x), y=float(y), z=0.0))
+            points = [Point(x=float(x), y=float(y), z=0.0) for x, y in footprint.get("points", [])]
 
             # Close the loop by adding the first point again
-            if marker.points and len(marker.points) > 0:
-                marker.points.append(marker.points[0])
+            if points and len(points) > 0:
+                points.append(points[0])
+            marker.points = points
 
         return marker
 

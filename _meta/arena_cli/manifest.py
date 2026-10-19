@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 import json
 import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from arena_cli import complete
@@ -63,7 +65,7 @@ def _show_args(package: str, file: str) -> dict[str, dict[str, str]]:
     return args
 
 
-def _enum_names(keys: object) -> list[str]:
+def _enum_names(keys: Iterable[enum.Enum]) -> list[str]:
     return sorted(k.value for k in list(keys))
 
 

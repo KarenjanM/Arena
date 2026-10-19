@@ -4,6 +4,7 @@ import abc
 import traceback
 import typing
 
+from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_simulation_setup.tree import IdentifierProtocol
@@ -16,16 +17,23 @@ from ._interface import MechanismITF, ObstacleITF, PedestrianITF, RobotITF, SimL
 from ._interface import SimUnavailable as SimUnavailable
 
 
-class BaseSim(NodeInterface, ObstacleITF, PedestrianITF, RobotITF, WorldITF, MechanismITF, ViewportITF, abc.ABC):
+class SimKwargs(typing.TypedDict):
+    node: ArenaMixinNode
+    namespace: Namespace
+    realizer: Realizer
+    env_id: typing.NotRequired[int]
+
+
+class BaseSim(NodeInterface[ArenaMixinNode], ObstacleITF, PedestrianITF, RobotITF, WorldITF, MechanismITF, ViewportITF, abc.ABC):
     _namespace: Namespace
     _realizer: Realizer
     _env_id: int
 
-    def __init__(self, *args: object, namespace: Namespace, realizer: Realizer, env_id: int = 0, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
-        self._namespace = namespace
-        self._realizer = realizer
-        self._env_id = env_id
+    def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
+        super().__init__(node=kwargs['node'])
+        self._namespace = kwargs['namespace']
+        self._realizer = kwargs['realizer']
+        self._env_id = kwargs.get('env_id', 0)
 
     async def before_reset_episode(self) -> bool:
         """Episode-boundary hook before the task resets, for sim work that must not ride
@@ -59,7 +67,7 @@ LifecycleRegistry = Registry[SimSimulator, SimLifecycle]()
 
 
 @SimulatorRegistry.register(SimSimulator.DUMMY)
-async def lazy_dummy(**kwargs: object) -> BaseSim:
+async def lazy_dummy(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .dummy_simulator import DummySimulator
 
     return DummySimulator(**kwargs)
@@ -81,7 +89,7 @@ def _flatsim_missing(e: ModuleNotFoundError) -> typing.NoReturn:
 
 
 @SimulatorRegistry.register(SimSimulator.FLATSIM)
-async def lazy_flatsim(**kwargs: object) -> BaseSim:
+async def lazy_flatsim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     try:
         from .flatsim_simulator import FlatsimSimulator
     except ModuleNotFoundError as e:
@@ -111,7 +119,7 @@ async def lazy_flatsim_lifecycle(node: object, physics_dt: float = 0.0333, **kwa
 
 
 @SimulatorRegistry.register(SimSimulator.GAZEBO)
-async def lazy_gazebo(**kwargs: object) -> BaseSim:
+async def lazy_gazebo(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .gazebo_simulator import GazeboSimulator
 
     return await GazeboSimulator.create(**kwargs)
@@ -146,7 +154,7 @@ async def lazy_gazebo_lifecycle(node: object, physics_dt: float = 0.0333, **kwar
 
 
 @SimulatorRegistry.register(SimSimulator.ISAAC)
-async def lazy_isaac(**kwargs: object) -> BaseSim:
+async def lazy_isaac(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .isaac_simulator import IsaacSimulator
 
     return await IsaacSimulator.create(**kwargs)
@@ -164,7 +172,7 @@ async def lazy_isaac_lifecycle(node: object, **kwargs: object) -> SimLifecycle:
 
 
 @SimulatorRegistry.register(SimSimulator.MUJOCO)
-async def lazy_mujoco(**kwargs: object) -> BaseSim:
+async def lazy_mujoco(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .mujoco_simulator import MujocoSimulator
 
     return await MujocoSimulator.create(**kwargs)

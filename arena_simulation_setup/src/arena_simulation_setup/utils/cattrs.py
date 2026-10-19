@@ -13,6 +13,9 @@ import cattrs
 from arena_simulation_setup.utils.resolution import activate_resolver
 
 if typing.TYPE_CHECKING:
+    from cattrs.converters import StructureHookT, UnstructureHookT
+    from cattrs.dispatch import StructureHook, UnstructureHook
+
     from arena_simulation_setup.utils.geometry import PointResolver
 
 _active_converter: contextvars.ContextVar[ArenaConverter] = contextvars.ContextVar('_active_converter')
@@ -21,7 +24,7 @@ _active_converter: contextvars.ContextVar[ArenaConverter] = contextvars.ContextV
 class ArenaConverter(cattrs.Converter):
     """Custom converter for Arena types that exposes an API for retrieving registered structure and unstructure hooks."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
         super().__init__(*args, **kwargs)
         self._encoders: dict[type, typing.Callable] = {}
         self._decoders: list[tuple[typing.Callable[[type], bool], typing.Callable]] = []
@@ -39,31 +42,43 @@ class ArenaConverter(cattrs.Converter):
     def type_decoders(self) -> list[tuple[typing.Callable[[type], bool], typing.Callable]]:
         return self._decoders
 
-    def register_unstructure_hook(self, cl: type, *args: object, **kwargs: object) -> None:
+    @typing.overload
+    def register_unstructure_hook(self, cls: UnstructureHookT) -> UnstructureHookT: ...
+
+    @typing.overload
+    def register_unstructure_hook(self, cls: object, func: UnstructureHook) -> None: ...
+
+    def register_unstructure_hook(self, cls: typing.Any = None, func: UnstructureHook | None = None) -> UnstructureHook | None:
         """
         Register an unstructure hook for a given type.
         """
-        if args:
-            func = args[0]
-            self._encoders[cl] = func
-        return super().register_unstructure_hook(cl, *args, **kwargs)
+        if func is None:
+            return super().register_unstructure_hook(cls)
+        self._encoders[cls] = func
+        return super().register_unstructure_hook(cls, func)
 
-    def register_structure_hook(self, cl: type, *args: object, **kwargs: object) -> None:
+    @typing.overload
+    def register_structure_hook(self, cl: StructureHookT) -> StructureHookT: ...
+
+    @typing.overload
+    def register_structure_hook(self, cl: object, func: StructureHook) -> None: ...
+
+    def register_structure_hook(self, cl: typing.Any, func: StructureHook | None = None) -> StructureHook | None:
         """
         Register a structure hook for a given type.
         """
-        if args:
+        if func is None:
+            return super().register_structure_hook(cl)
 
-            def predicate(t: type, c: type = cl) -> bool:
-                try:
-                    return isinstance(t, type) and issubclass(t, c)
-                except TypeError:
-                    return False
+        def predicate(t: type, c: type = cl) -> bool:
+            try:
+                return isinstance(t, type) and issubclass(t, c)
+            except TypeError:
+                return False
 
-            func = args[0]
-            self._decoders.insert(0, (predicate, func))
-            # return super().register_structure_hook_func(predicate, func)
-        return super().register_structure_hook(cl, *args, **kwargs)
+        self._decoders.insert(0, (predicate, func))
+        # return super().register_structure_hook_func(predicate, func)
+        return super().register_structure_hook(cl, func)
 
     def structure(self, obj: object, cl: type[T]) -> T:
         token = _active_converter.set(self)
@@ -73,7 +88,7 @@ class ArenaConverter(cattrs.Converter):
         finally:
             _active_converter.reset(token)
 
-    def structure_attrs_fromdict(self, obj: Mapping[str, object], cl: type) -> object:
+    def structure_attrs_fromdict(self, obj: Mapping[str, object], cl: type[T]) -> T:
         token = _active_converter.set(self)
         try:
             with activate_resolver(self._resolver):
@@ -103,7 +118,7 @@ class Idempotent:
         Check if the object is compatible with the class.
         """
         if isinstance(obj, cls) or issubclass(type(obj), cls) or typing.get_origin(type(obj)) is cls:
-            return obj
+            return typing.cast('typing.Self', obj)
         return None
 
     @classmethod
@@ -145,7 +160,7 @@ def idempotent(cls: type[T]) -> type[T]:
     Make class idempotent.
     """
     if not issubclass(cls, Idempotent):
-        return type(cls.__name__, (Idempotent, cls), {})
+        return typing.cast('type[T]', type(cls.__name__, (Idempotent, cls), {}))
     return cls
 
 
@@ -214,11 +229,12 @@ class Parseable:
             converter.register_structure_hook(cls, try_parse)
 
     @classmethod
-    def parse(cls, value: object) -> typing.Self:
-        if isinstance(value, Mapping):
-            unknown = set(value) - {f.name for f in attrs.fields(cls)}
-            if unknown:
-                raise ValueError(f'unknown keys {sorted(unknown)} for {cls}')
+    def parse(cls, value: typing.Any, /) -> typing.Self:  # noqa: ANN401
+        if not isinstance(value, Mapping):
+            raise TypeError(f'Expected a mapping for {cls}, got {value!r}')
+        unknown = set(value) - {f.name for f in attrs.fields(cls)}
+        if unknown:
+            raise ValueError(f'unknown keys {sorted(unknown)} for {cls}')
         return converter.structure_attrs_fromdict(deepcopy(value), cls)
 
 

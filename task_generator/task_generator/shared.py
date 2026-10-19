@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import attrs
+import rclpy.logging
 from arena_rclpy_mixins.shared import FrameNamespace
+from arena_robots.assembly import ResolvedAssembly
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.SetupFile import Config as RobotSetupConfig
 from arena_simulation_setup.shared import (  # noqa
@@ -29,9 +31,10 @@ from arena_simulation_setup.utils.geometry import (  # noqa
     PositionRadius,
 )
 from arena_simulation_setup.utils.models import Model, ModelType, ModelWrapper  # noqa
+from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from . import TaskGenerator
+    from .node import TaskGenerator
 
 
 @attrs.define
@@ -42,7 +45,7 @@ class Robot(Entity):
     frames: dict[str, str] = attrs.field(factory=dict, eq=False)
     # resolved morphology (assembler output), None for robots without an assembly.
     # Excluded from compatible()/__eq__: it is derived from parts+model, not identity.
-    resolved_assembly: object | None = attrs.field(default=None, eq=False)
+    resolved_assembly: ResolvedAssembly | None = attrs.field(default=None, eq=False)
 
     def compatible(self, value: Robot) -> bool:
         return self.model.name == value.model.name and self.adapters == value.adapters and self.parts == value.parts
@@ -90,7 +93,7 @@ class Robot(Entity):
         return cls.parse(dict_value, node=node)
 
     @classmethod
-    def parse(cls, value: dict, *, node: TaskGenerator) -> Robot:
+    def parse(cls, value: dict, *, node: TaskGenerator | None = None) -> Self:
         name = str(value['name'])
         model = str(value['model'])
         pose = Pose.parse(value.get("pos", (0, 0, 0)))
@@ -135,7 +138,7 @@ class Robot(Entity):
 
             if directives:
                 for w in arena_assembly.warn_if_blind(resolved_assembly, {'lidar'}):
-                    node.get_logger().warn(f"robot {name!r}: {w}")
+                    (node.get_logger() if node is not None else rclpy.logging.get_logger(cls.__name__)).warn(f"robot {name!r}: {w}")
 
             unknown_frames = set(frames) - set(view.assembly.mounts)
             if unknown_frames:

@@ -10,7 +10,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ SCHEMA = 1
 LOCK_MAX_AGE_S = 120.0
 
 
-def _table(values: object) -> dict[str, str]:
+def _table(values: Iterable[object]) -> dict[str, str]:
     if isinstance(values, Mapping):
         return {str(k): str(v) for k, v in values.items()}
     return {str(v): "" for v in values}
@@ -40,9 +40,9 @@ class Files:
 class Static:
     """Fixed values, optionally with descriptions. A callable is resolved on demand."""
 
-    values: dict[str, str] | Callable[[], object]
+    values: dict[str, str] | Callable[[], Iterable[object]]
 
-    def __init__(self, values: object) -> None:
+    def __init__(self, values: Iterable[object] | Callable[[], Iterable[object]]) -> None:
         self.values = values if callable(values) else _table(values)
 
     def table(self) -> dict[str, str]:
@@ -63,7 +63,7 @@ class Flags:
     flags: dict[str, str]
     valued: tuple[str, ...] = ()
 
-    def __init__(self, flags: object, valued: tuple[str, ...] = ()) -> None:
+    def __init__(self, flags: Iterable[object], valued: tuple[str, ...] = ()) -> None:
         self.flags = _table(flags)
         self.valued = valued
 

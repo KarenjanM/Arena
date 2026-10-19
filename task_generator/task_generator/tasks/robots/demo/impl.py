@@ -1,10 +1,12 @@
 import enum
 import math
+import typing
 
 from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_int
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 
 from task_generator.shared import Orientation, Pose, Position, PositionRadius
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
 
@@ -68,7 +70,7 @@ class TM_Demo(TM_Robots):
     _gesture_p: ROSParamT[str]
     _orientation_p: ROSParamT[_Orientation]
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
         declare_int(self.node, str(self.namespace("vertices")), 4, label="Vertices", lo=3, hi=20)
         declare_double(self.node, str(self.namespace("radius")), 1.5, label="Radius (m)", lo=0.5, hi=10.0)

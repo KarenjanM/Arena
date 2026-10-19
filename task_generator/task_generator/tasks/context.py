@@ -4,7 +4,7 @@ import attrs
 
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.robot_manager import RobotManager, RobotsManager
-from task_generator.manager.world_manager.world_manager_ros import WorldManager
+from task_generator.manager.world_manager.world_manager_ros import WorldManagerROS as WorldManager
 
 
 @attrs.define

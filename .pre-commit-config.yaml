@@ -12,6 +12,14 @@ repos:
         always_run: true
   - repo: local
     hooks:
+      - id: basedpyright
+        name: type check
+        entry: basedpyright --pythonpath /opt/venv/bin/python3
+        language: python
+        additional_dependencies: [basedpyright==1.40.2]
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
       - id: doc-links
         name: check doc links
         entry: python _meta/tools/check_doc_links.py

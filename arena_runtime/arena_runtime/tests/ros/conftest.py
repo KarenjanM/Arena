@@ -52,7 +52,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
     from arena_rclpy_mixins.spin import create_executor
     from arena_rclpy_mixins.Time import Time
     from arena_runtime_msgs.msg import LockstepHeartbeat, LockstepRegistration, LockstepStatus
-    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LockstepRegister, LockstepStart
+    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LifecycleUnpauseWindow, LockstepRegister, LockstepStart
     from std_msgs.msg import Bool
     from std_srvs.srv import Trigger
 
@@ -73,6 +73,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             self.beat = self.create_publisher(LockstepHeartbeat, self.beat_topic, 10)
             self.hold = self.create_client_wrapper(LifecycleHold, "/arena/sim_lifecycle/hold", timeout=5.0)
             self.step = self.create_client_wrapper(LifecycleStep, "/arena/sim_lifecycle/step", timeout=5.0)
+            self.window = self.create_client_wrapper(LifecycleUnpauseWindow, "/arena/sim_lifecycle/unpause_window", timeout=5.0)
             self.start = self.create_client_wrapper(LockstepStart, "/arena/sim_lifecycle/lockstep/start", timeout=5.0)
             self.register = self.create_client_wrapper(LockstepRegister, "/arena/sim_lifecycle/lockstep/register", timeout=5.0)
             self.stop = self.create_client_wrapper(Trigger, "/arena/sim_lifecycle/lockstep/stop", timeout=5.0)
@@ -101,12 +102,17 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             msg.header.stamp = Time.from_float(stamp).to_msg()
             self.beat.publish(msg)
 
-        async def register_channels(self, channels: list, caller: str = "probe") -> LockstepRegister.Response:
+        async def register_channels(self, channels: list, caller: str = "probe", env: str = "") -> LockstepRegister.Response:
             request = LockstepRegister.Request()
-            request.registration = LockstepRegistration(caller=caller, env="", channels=channels)
+            request.registration = LockstepRegistration(caller=caller, env=env, channels=channels)
             response = await self.register.call_timeout(request)
             assert response is not None
             return response
+
+        async def set_window(self, caller: str, acquire: bool) -> None:
+            action = LifecycleUnpauseWindow.Request.ACQUIRE if acquire else LifecycleUnpauseWindow.Request.RELEASE
+            response = await self.window.call_timeout(LifecycleUnpauseWindow.Request(action=action, caller_id=caller))
+            assert response is not None and response.success, response.error_msg if response is not None else "timeout"
 
         async def start_run(self, target_rtf: float = 0.0, ungated: bool = False) -> None:
             response = await self.start.call_timeout(LockstepStart.Request(target_rtf=target_rtf, ungated=ungated))

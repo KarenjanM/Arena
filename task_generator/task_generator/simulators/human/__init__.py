@@ -10,6 +10,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 import attrs
+import rclpy.node
 import rclpy.publisher
 import rclpy.qos
 import rclpy.time
@@ -95,6 +96,15 @@ class TrackedRobot:
             )
         self.pose = Pose(position, Orientation.from_msg(t.transform.rotation))
         self.stamp = stamp
+
+
+class HumanSimulatorOptions(typing.TypedDict):
+    node: rclpy.node.Node
+    namespace: Namespace
+    simulator: BaseSim
+    realizer: Realizer
+    acoustics: BaseAcousticsSimulator
+    robots_visible: typing.NotRequired[bool]
 
 
 class BaseHumanSimulator(NodeInterface, abc.ABC):
@@ -253,7 +263,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
-            animation.peds.append(self._animation_state(ped))
+            animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
         for ped in out.pedestrians:
             drivers = self._drivers_for(ped.model_uri)
@@ -275,7 +285,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             kind, channel, phase, clip = phases.get(slot, ("", "", "", ""))
             if not phase and overlay.releasing:
                 phase = "release"
-            state.slots.append(
+            state.slots.append(  # pyright: ignore[reportAttributeAccessIssue]
                 AnimationSlot(
                     slot=slot,
                     kind=kind,
@@ -362,7 +372,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ped.pose.position.z = 0.0
             if (orientation := self._ped_orientations.get(name)) is not None:
                 ped.pose.orientation = orientation
-            peds_msg.pedestrians.append(ped)
+            peds_msg.pedestrians.append(ped)  # pyright: ignore[reportAttributeAccessIssue]
             if cur is not None:
                 self._ped_positions_xy[name] = (x, y)
         results = await self.relay_pedestrian_update(peds_msg)
@@ -1086,14 +1096,14 @@ HumanSimulatorRegistry = Registry[Constants.HumanSimulator, BaseHumanSimulator](
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.DUMMY)
-async def dummy(**kwargs: object) -> BaseHumanSimulator:
+async def dummy(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     from .dummy import DummyHumanSimulator
 
     return DummyHumanSimulator(**kwargs)
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.NONE)
-async def none(**kwargs: object) -> BaseHumanSimulator:
+async def none(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     # 'none' launches no human-sim node (empty GroupAction in human.launch.py);
     # the node still needs a no-op backend for the registry lookup.
     from .dummy import DummyHumanSimulator
@@ -1101,15 +1111,8 @@ async def none(**kwargs: object) -> BaseHumanSimulator:
     return DummyHumanSimulator(**kwargs)
 
 
-@HumanSimulatorRegistry.register(Constants.HumanSimulator.ISAAC)
-async def isaacsim(**kwargs: object) -> BaseHumanSimulator:
-    from .isaac import IsaacHumanSimulator
-
-    return IsaacHumanSimulator(**kwargs)
-
-
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.HUNAV)
-async def lazy_hunavsim(**kwargs: object) -> BaseHumanSimulator:
+async def lazy_hunavsim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     # Imported lazily: hunav_msgs / hunav_sim are optional deps, so registering the
     # backend must not require them to be installed. Only selecting human:=hunav does.
     from .hunav.hunav import HunavHumanSimulator
@@ -1118,7 +1121,7 @@ async def lazy_hunavsim(**kwargs: object) -> BaseHumanSimulator:
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.ARENA)
-async def arenasim(**kwargs: object) -> BaseHumanSimulator:
+async def arenasim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     from .arena_humansim.arena_humansim import ArenaHumanSimulator
 
     return await ArenaHumanSimulator.create(**kwargs)

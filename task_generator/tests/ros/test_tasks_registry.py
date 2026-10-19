@@ -41,7 +41,8 @@ def test_registry_has_module_entries():
 
     assert Constants.TaskMode.TM_Module.CLEAR_FORBIDDEN_ZONES in MODULE_MODES
     assert Constants.TaskMode.TM_Module.RVIZ_UI in MODULE_MODES
-    assert Constants.TaskMode.TM_Module.STAGED in MODULE_MODES
+    assert Constants.TaskMode.TM_Module.SOUNDS in MODULE_MODES
+    assert Constants.TaskMode.TM_Module.ZONE_EDIT in MODULE_MODES
 
 
 def test_register_obstacles_duplicate_raises():
@@ -72,7 +73,7 @@ def test_register_module_duplicate_raises():
 
     with pytest.raises((AssertionError, KeyError, ValueError)):
 
-        @MODULE_MODES.register(Constants.TaskMode.TM_Module.STAGED, namespace=_REGISTRY_NAMESPACE("dup"))
+        @MODULE_MODES.register(Constants.TaskMode.TM_Module.CLEAR_FORBIDDEN_ZONES, namespace=_REGISTRY_NAMESPACE("dup"))
         def _loader():
             pass
 
@@ -118,17 +119,20 @@ def test_robots_namespace_contains_value():
 
 
 def test_meta_accessible_without_invoking_loader():
-    """Regression guard: .meta() reads registry-side, never invokes the loader.
+    """Regression guard: .meta() reads registry-side, never invokes the loader."""
+    from task_generator.tasks.registry import _REGISTRY_NAMESPACE, TaskModeRegistry
 
-    Canary: STAGED's impl.py imports `map_generator.constants` (ROS1-era, not on the
-    runtime path). If .meta() invokes the loader, this raises ModuleNotFoundError.
-    """
-    from task_generator.constants import Constants
-    from task_generator.tasks.registry import MODULE_MODES
+    registry: TaskModeRegistry[str, type] = TaskModeRegistry()
 
-    meta = MODULE_MODES.meta(Constants.TaskMode.TM_Module.STAGED)
-    assert meta is not None
+    @registry.register("canary", namespace=_REGISTRY_NAMESPACE("canary"))
+    def _loader() -> type:
+        raise ModuleNotFoundError("canary loader invoked")
+
+    meta = registry.meta("canary")
+    assert meta.namespace == _REGISTRY_NAMESPACE("canary")
     assert meta.schema is None
+    with pytest.raises(ModuleNotFoundError, match="canary loader invoked"):
+        registry.get("canary")
 
 
 def test_registry_refuses_the_episode_namespace():

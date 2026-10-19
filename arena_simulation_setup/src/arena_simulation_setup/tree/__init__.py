@@ -35,7 +35,7 @@ WORLD_PROVIDERS: Sequence[str] = providers('WORLD_BUCKETS', 'arena-worlds-prod-p
 BENCHMARK_PROVIDERS: Sequence[str] = providers('BENCHMARK_BUCKETS', 'arena-benchmarks-prod-public')
 
 
-async def _subprocess_output(args: Sequence[str], **kwargs: object) -> bytes:
+async def _subprocess_output(args: Sequence[str], **kwargs: typing.Any) -> bytes:
     process = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
@@ -99,7 +99,7 @@ IdentifierT = typing.TypeVar('IdentifierT', bound='IdentifierProtocol')
 class References(typing.Protocol):
     """A loaded asset that names further assets, so closures can walk through it."""
 
-    def identifiers(self) -> Iterable[IdentifierProtocol]: ...
+    def identifiers(self) -> Iterable[Identifier]: ...
 
 
 class Verdict(enum.Enum):
@@ -155,13 +155,13 @@ class ResolverBase(abc.ABC, typing.Generic[IdentifierT]):
     def invalidate(self):
         self._cache.clear()
 
-    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, **kwargs: bool) -> Iterator[IdentifierT]:
         """
         List all local assets available. Builds the cache in the process.
         """
         return iter(())
 
-    async def listall_async(self, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
         """Non-blocking variant for callers on an event loop. Default: sync listall."""
         return list(self.listall(**kwargs))
 
@@ -221,7 +221,7 @@ for path, _, files in os.walk(root):
                 pass
         return None, found
 
-    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, **kwargs: bool) -> Iterator[IdentifierT]:
         source = self.path
         if not source.is_dir():
             yield from ()
@@ -235,7 +235,7 @@ for path, _, files in os.walk(root):
                 continue
             yield from found
 
-    async def listall_async(self, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
         source = self.path
         if self._listall_cache is not None and self._listall_cache[0] == source:
             return list(self._listall_cache[1])
@@ -352,7 +352,7 @@ class DynamicPathListResolver(ResolverBase[IdentifierT], typing.Generic[Identifi
                 return found
         return None
 
-    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, **kwargs: bool) -> Iterator[IdentifierT]:
         for resolver in self._resolvers():
             yield from resolver.listall(**kwargs)
 
@@ -418,7 +418,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         return candidate
 
     @classmethod
-    async def check_output_async(cls, args: Iterable[str], **kwargs: object) -> bytes:
+    async def check_output_async(cls, args: Iterable[str], **kwargs: typing.Any) -> bytes:
         return await _subprocess_output(list(args), **kwargs)
 
     async def _batch_request(self, relpath: str) -> Path | None:
@@ -624,7 +624,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
             except Exception:
                 pass
 
-    def listall(self, *, network: bool = False, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, *, network: bool = False, **kwargs: bool) -> Iterator[IdentifierT]:
         """
         List all assets available. When *network* is True, also queries the
         remote provider (bucket listing cached on disk for ARENA_MODELS_TTL seconds).
@@ -633,7 +633,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         if network:
             yield from self._parse_listing(self._listing())
 
-    async def listall_async(self, *, network: bool = False, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, *, network: bool = False, **kwargs: bool) -> list[IdentifierT]:
         result = await super(SimplePathResolver, self).listall_async(**kwargs)
         if network:
             result.extend(self._parse_listing(await self._listing_async()))
@@ -643,9 +643,19 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         return f"{super().__repr__()}(net={self._provider})"
 
     @classmethod
-    def all(cls, _T: type[IdentifierT], /, providers: Iterable[str] = NETWORK_PROVIDERS, **kwargs: object) -> Iterable[Self]:
+    def all(
+        cls,
+        _T: type[IdentifierT],
+        /,
+        providers: Iterable[str] = NETWORK_PROVIDERS,
+        *,
+        formats: Iterable[str] | None = None,
+        ttl: int | None = None,
+        annotated: bool = True,
+        list_prefix: str = '',
+    ) -> Iterable[Self]:
         for provider in providers:
-            yield cls(_T, provider=provider, **kwargs)
+            yield cls(_T, provider=provider, formats=formats, ttl=ttl, annotated=annotated, list_prefix=list_prefix)
 
 
 class FallbackResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
@@ -693,12 +703,12 @@ class IdentifierProtocol(typing.Protocol[T_co]):
         ...
 
     @classmethod
-    def listall(cls, **kwargs: object) -> Iterator[Self]:
+    def listall(cls, **kwargs: bool) -> Iterator[Self]:
         """List all local assets available."""
         ...
 
     @classmethod
-    async def listall_async(cls, **kwargs: object) -> list[Self]:
+    async def listall_async(cls, **kwargs: bool) -> list[Self]:
         """Non-blocking listall for callers on an event loop."""
         ...
 
@@ -815,7 +825,7 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
     def load(self, path: Path, /, **kwargs: object) -> T:
         """Load the asset referenced by this identifier."""
 
-    def serialize(self) -> str:
+    def serialize(self) -> str | tuple[str, dict]:
         return self.shortname
 
     # Class Methods
@@ -844,7 +854,7 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
         return super().instance_or(cls.parse)(*args, **kwargs)
 
     @classmethod
-    def listall(cls, **kwargs: object) -> Iterator[Self]:
+    def listall(cls, **kwargs: bool) -> Iterator[Self]:
         seen: set[str] = set()
         for resolver in cls._resolvers:
             for identifier in resolver.listall(**kwargs):
@@ -853,7 +863,7 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
                     yield identifier
 
     @classmethod
-    async def listall_async(cls, **kwargs: object) -> list[Self]:
+    async def listall_async(cls, **kwargs: bool) -> list[Self]:
         seen: set[str] = set()
         result: list[Self] = []
         for resolver in cls._resolvers:
@@ -1039,6 +1049,7 @@ class ModifiersDomainAssetIdentifier(DomainAssetIdentifier[T], typing.Generic[T]
 
     def serialize(self) -> str | tuple[str, dict]:
         base = super().serialize()
+        assert isinstance(base, str)
         if self.modifiers is None:
             return base
         return (base, self.modifiers)

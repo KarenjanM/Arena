@@ -4,6 +4,7 @@ import os
 import pickle
 import tempfile
 import time
+import typing
 import xml.etree.ElementTree as ET
 from enum import Enum
 
@@ -11,9 +12,10 @@ import attrs
 import numpy as np
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from arena_hunav_sim_bridge.agent.llm_parser import Parser
+from arena_hunav_sim_bridge.agent.llm_parser import Parser  # pyright: ignore[reportMissingImports]
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension
 
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.utils.gpt import genai
 
 # Avoids errors related to cv2 + pyglet + X11 with arena_text_crowd
@@ -24,16 +26,16 @@ from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.entities import WAYPOINT_MODES
 from arena_simulation_setup.tree.World import Level, WorldIdentifier, describe, zones_of
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, Scenario, parse_scenario
-from arena_text_crowd.converters.arena_world_to_text_crowd_scenario import (
+from arena_text_crowd.converters.arena_world_to_text_crowd_scenario import (  # pyright: ignore[reportMissingImports]
     arena_world_to_text_crowd_scenario,
 )
-from arena_text_crowd.crowd_generation_pipeline.arena_text_crowd_generation_pipeline import (
+from arena_text_crowd.crowd_generation_pipeline.arena_text_crowd_generation_pipeline import (  # pyright: ignore[reportMissingImports]
     ArenaTextCrowdGenerationPipelineConfig as ATCPConfig,
 )
-from arena_text_crowd.crowd_generation_pipeline.arena_text_crowd_generation_pipeline import (
+from arena_text_crowd.crowd_generation_pipeline.arena_text_crowd_generation_pipeline import (  # pyright: ignore[reportMissingImports]
     CrowdGenerationPipeline,
 )
-from arena_text_crowd.crowd_generation_pipeline.velocity_field_generation.velocity_field_generation_pipeline import (
+from arena_text_crowd.crowd_generation_pipeline.velocity_field_generation.velocity_field_generation_pipeline import (  # pyright: ignore[reportMissingImports]
     VelocityFieldGenerationPipelineConfig as VFGPConfig,
 )
 from hunav_msgs.srv import SetArenaWorldBounds, SetVelocityField
@@ -287,6 +289,8 @@ class TM_Prompt(TM_Obstacles):
 
         messages = []
         crowd_pedestrians = None
+        velocity_field: np.ndarray | None = None
+        text_crowd_scenario: object = None
         pipeline_start = time.time()
 
         if generation_mode == GenerationMode.BEHAVIOR_TREE.value:
@@ -352,7 +356,7 @@ class TM_Prompt(TM_Obstacles):
                     top_p=top_p,
                     temperature=0.2,
                     top_k=40,
-                    thinking_config=genai.types.ThinkingConfig(include_thoughts=False, thinking_level="low"),
+                    thinking_config=genai.types.ThinkingConfig(include_thoughts=False, thinking_level=genai.types.ThinkingLevel.LOW),
                 ),
             )
             split_prompt_answer = split_prompt_res.text
@@ -407,17 +411,18 @@ class TM_Prompt(TM_Obstacles):
             scenario, arena_entity_to_semantic_entity_map = arena_world_to_text_crowd_scenario(self._ctx.world_manager.world_compacted(), scenario_size=(1024, 1024))
 
             self._logger.info("Generating velocity field...")
-            velocity_field, crowd_pedestrians, text_crowd_scenario = cgp.generate(
+            field, crowd_pedestrians, text_crowd_scenario = cgp.generate(
                 prompt=ambient_agent_prompt,
                 scenario=scenario,
                 arena_world_description=self._ctx.world_manager.world_compacted(),
                 arena_entity_to_semantic_entity_map=arena_entity_to_semantic_entity_map,
             )  # (n_groups, 64, 64, 2) (g, y, x, 2)
 
-            vel_res = self.send_velocity_msg(velocity_field)
+            velocity_field = field
+            vel_res = self.send_velocity_msg(field)
             self._logger.debug(f"Set velocity field response: {vel_res.success}, {vel_res.message}")
 
-            self.velocity_field_visualizer.publish_markers(velocity_field)
+            self.velocity_field_visualizer.publish_markers(field)
 
         if local:  # Currently not supported
             return {}
@@ -463,7 +468,7 @@ class TM_Prompt(TM_Obstacles):
                     top_p=top_p,
                     temperature=0.2,  # Most of the example prompts use this set of parameters (except for top_p), see https://docs.cloud.google.com/vertex-ai/generative-ai/docs/prompt-gallery/samples/extract_tech_specs
                     top_k=40,
-                    thinking_config=genai.types.ThinkingConfig(thinking_level="low"),
+                    thinking_config=genai.types.ThinkingConfig(thinking_level=genai.types.ThinkingLevel.LOW),
                 ),
             )
 
@@ -510,6 +515,7 @@ class TM_Prompt(TM_Obstacles):
                     dir=self.tmp_dir.name,
                     mode="wb",
                 ) as file:
+                    assert velocity_field is not None
                     np.save(file, velocity_field)
                     self._logger.info(f"Saved velocity field to {file.name}")
                 with tempfile.NamedTemporaryFile(
@@ -544,7 +550,7 @@ class TM_Prompt(TM_Obstacles):
 
         return scenario.objects, scenario.humans
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
         # self.inference_client = InferenceClient(
         #     provider="together",
@@ -596,7 +602,8 @@ class TM_Prompt(TM_Obstacles):
             caches = self.inference_client.caches.list()
             if caches:
                 for cache in caches:
-                    self.inference_client.caches.delete(name=cache.name)
+                    if cache.name is not None:
+                        self.inference_client.caches.delete(name=cache.name)
         except Exception as e:
             print(e)
 
@@ -628,7 +635,7 @@ class TM_Prompt(TM_Obstacles):
             # Delete caches
             for cache_name in self.cached_context_name.values():
                 self.inference_client.caches.delete(name=cache_name)
-            self.cached_context_name: dict[str, str] = {}
+            self.cached_context_name = {}
         except Exception as e:
             self._logger.error(e)
             self._logger.error("Can not delete cache! Maybe it was deleted earlier.")

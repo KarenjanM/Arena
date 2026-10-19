@@ -86,6 +86,7 @@ case "${ARENA_NET:-local}" in
 esac
 export FASTRTPS_DEFAULT_PROFILES_FILE="$ARENA_DIR/_meta/docker/fastdds.${ARENA_NET}.xml"
 export CYCLONEDDS_URI="file://$ARENA_DIR/_meta/docker/cyclonedds.${ARENA_NET}.xml"
+export ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
 
 _arena_venv_provision(){
     [ -f "$ARENA_VENV_DIR/.installed" ] && return 0

@@ -259,16 +259,16 @@ Skeleton for a new streamed verb:
 
 ```python
 from .registry import primitive
-from .camera import _Segment, _Cursor
+from .camera import _Cursor, _ParamSource, _pick, _Segment
 
 @primitive("my_verb")
 class _MyVerb(_Segment):
-    def __init__(self, duration: float, ease: str) -> None:
+    def __init__(self, duration: float = 2.0, ease: str = "inout") -> None:
         super().__init__(duration, ease, False)
 
     @classmethod
-    def from_params(cls, params: dict) -> "_MyVerb":
-        return cls(params.get("duration", 2.0), params.get("ease", "inout"))
+    def from_params(cls, params: _ParamSource) -> "_MyVerb":
+        return cls(**_pick(params, ("duration", "ease")))
 
     def plan(self, cursor: _Cursor):
         # return (sampler, end_cursor)

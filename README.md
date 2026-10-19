@@ -43,7 +43,7 @@ We recommend installing at least one simulator.
 
 GPU passthrough takes effect on the next `source arena`, which recreates the container.
 
-ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted.
+ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted. The scope lives in the profiles `_meta/docker/fastdds.<net>.xml` and `cyclonedds.<net>.xml`, so `source arena` sets `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`. Do not export `LOCALHOST` after it: rmw_fastrtps then adds a shared-memory transport to every process, which fills a fork's 64 MB `/dev/shm` and leaves segments behind when processes are killed. The Fast DDS profiles probe 120 participant ids on unicast, so a domain with more than 32 processes still discovers under `LOCALHOST`.
 
 #### vllm
 
@@ -116,6 +116,17 @@ ruff format .             # apply the formatting the hook enforces
 ```
 
 If the hook auto-fixes something, the commit is aborted and the fixes are left unstaged, `git add` and re-commit.
+
+### Type checking
+
+[basedpyright](https://docs.basedpyright.com/) checks types with the `[tool.pyright]` config in the root [`pyproject.toml`](pyproject.toml). It runs inside the Arena container as a manual pre-commit hook:
+```bash
+pre-commit run basedpyright --hook-stage manual
+```
+
+[`_meta/typings`](_meta/typings) holds stubs for compiled modules that ship no type information (USD, MuJoCo, Box2D, gz-transport, tf2, the Qt bindings).
+
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs the same check, at the hook's basedpyright version, over `_meta` and every package it tests, after the test suites.
 
 ### Python dependencies
 

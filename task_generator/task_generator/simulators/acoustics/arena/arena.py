@@ -13,7 +13,7 @@ from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, AdapterPlugin, RecordedTopic
 
-from task_generator.simulators.acoustics import BaseAcousticsSimulator, PedestrianHearing, SoundEmission
+from task_generator.simulators.acoustics import AcousticsSimulatorOptions, BaseAcousticsSimulator, PedestrianHearing, SoundEmission
 
 if typing.TYPE_CHECKING:
     from arena_auditory_msgs.msg import ContinuousAudioSourceState, ContinuousHeardSoundState
@@ -33,12 +33,12 @@ def _numeric_id(source_id: str) -> int:
 class ArenaAcousticsSimulator(BaseAcousticsSimulator):
     """The propagation node builds its acoustic scene from the map topic, so the map server must be up before episodes start."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[AcousticsSimulatorOptions]) -> None:
         from arena_auditory_msgs.msg import ContinuousAudioSourceState
 
         from arena_auditory.api import CONTINUOUS_AUDIO_SOURCES
 
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
         self._source_publisher = self.node.create_publisher(
             ContinuousAudioSourceState,
             self.node.service_namespace(CONTINUOUS_AUDIO_SOURCES),

@@ -13,6 +13,9 @@ import urllib.parse
 import rcl_interfaces.msg
 import rcl_interfaces.srv
 import rclpy
+import rclpy.client
+import rclpy.qos
+import rclpy.utilities
 import rerun as rr
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_viz import DisplayKind
@@ -55,10 +58,15 @@ class RerunBridge(ArenaMixinNode):
     async def _await_latched(self, msg_type, topic: str):
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
+
+        def on_msg(msg: object) -> None:
+            if not future.done():
+                loop.call_soon_threadsafe(future.set_result, msg)
+
         sub = self.create_subscription(
             msg_type,
             topic,
-            lambda msg: loop.call_soon_threadsafe(future.set_result, msg) if not future.done() else None,
+            on_msg,
             qos_profile=rclpy.qos.QoSProfile(
                 depth=1,
                 durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
@@ -87,8 +95,9 @@ class RerunBridge(ArenaMixinNode):
         self.viz_manifest = await self._await_latched(
             AdapterVizManifest, os.path.join(self._TASKGEN_NODE, 'state', 'viz_manifest'))
 
-        web_port = int(self.get_parameter('web_port').value)
-        grpc_port = int(self.get_parameter('grpc_port').value)
+        web_port = self.get_parameter('web_port').value
+        grpc_port = self.get_parameter('grpc_port').value
+        assert isinstance(web_port, int) and isinstance(grpc_port, int)
         rec_id = f"arena_env_{self._env_id}"
         rr.init(rec_id, spawn=False)
         grpc_uri = rr.serve_grpc(

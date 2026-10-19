@@ -1,4 +1,5 @@
 import math
+import typing
 
 import numpy as np
 import shapely
@@ -8,7 +9,8 @@ from arena_simulation_setup.tree.configs.parametrized import (
     ParametrizedIdentifier,
 )
 
-from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose
+from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose, Position
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import TM_Obstacles
 
 
@@ -32,7 +34,7 @@ class TM_Parametrized(TM_Obstacles):
             Orientation.from_yaw(rng.random() * 2 * math.pi),
         )
 
-    def _get_points(self, n: int, polygon: shapely.Polygon | None = None) -> list[object]:
+    def _get_points(self, n: int, polygon: shapely.Polygon | None = None) -> list[Position]:
         return self._ctx.world_manager.get_positions_on_map(
             n=n,
             safe_dist=1.0,
@@ -83,7 +85,7 @@ class TM_Parametrized(TM_Obstacles):
 
         return obstacles, dynamic_obstacles
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
         self._config = self.node.ROSParam[ParametrizedConfig](self.namespace('file'), '', parse=self._parse)

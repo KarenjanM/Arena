@@ -15,6 +15,8 @@ directly under the pelvis, so ``z`` is height above ground.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 
 DOWN = np.array([0.0, 0.0, -1.0])
@@ -58,7 +60,7 @@ def rot_axis(axis: np.ndarray | list[float] | tuple[float, ...], angle: float) -
     return np.eye(3) + np.sin(angle) * k + (1 - np.cos(angle)) * (k @ k)
 
 
-def unit(v: np.ndarray | list[float] | tuple[float, ...]) -> np.ndarray:
+def unit(v: np.ndarray | Sequence[float]) -> np.ndarray:
     v = np.asarray(v, dtype=float)
     n = np.linalg.norm(v)
     return v / n if n > 1e-12 else np.zeros(3)
@@ -332,5 +334,5 @@ def collision_clearances(pos: dict, body: Body, side: str) -> dict[str, float]:
 
 def worst_clearance(pos: dict, body: Body, side: str) -> tuple[str, float]:
     cl = collision_clearances(pos, body, side)
-    k = min(cl, key=cl.get)
+    k = min(cl, key=cl.__getitem__)
     return k, cl[k]

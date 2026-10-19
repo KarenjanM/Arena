@@ -12,6 +12,7 @@ import yaml
 from typing_extensions import Self
 
 from arena_simulation_setup import ARENA_ASSETS_DIR, ASS_DIR
+from arena_simulation_setup.shared import Schedule, Signal
 from arena_simulation_setup.tree import (
     WORLD_PROVIDERS,
     FallbackResolver,
@@ -40,13 +41,26 @@ KG_FILE = 'kg.yaml'
 LEGACY_GRAPH_FILE = 'graph.yaml'
 _NOT_LEVELS = frozenset({'scenarios', 'assets', 'map'})
 
+_LinkedT = typing.TypeVar('_LinkedT', Schedule, Signal)
+
+
+def _adopt_linked(kind: str, where: Path, own: list[_LinkedT], theirs: Iterable[_LinkedT], scope: list[Schedule | Signal]) -> None:
+    names = {item.name: item for item in own}
+    for item in theirs:
+        if item.name not in names:
+            own.append(item)
+            names[item.name] = item
+            scope.append(item)
+        elif names[item.name] != item:
+            raise ValueError(f'{kind} {item.name!r} of {where} differs from the one this world already has')
+
 
 class WorldView(PathView):
     @property
     def scenario(self) -> type[Identifier[ScenarioView]]:
         class ScenarioIdentifier(Identifier[ScenarioView]):
             @classmethod
-            def listall(cls, **kwargs: object) -> Iterator[Self]:
+            def listall(cls, **kwargs: bool) -> Iterator[Self]:
                 scenarios_dir = self.path / 'scenarios'
                 if not scenarios_dir.is_dir():
                     yield from ()
@@ -54,7 +68,7 @@ class WorldView(PathView):
                 yield from (cls(entry.name) for entry in os.scandir(scenarios_dir) if entry.is_dir())
 
             @classmethod
-            async def listall_async(cls, **kwargs: object) -> list[Self]:
+            async def listall_async(cls, **kwargs: bool) -> list[Identifier[ScenarioView]]:
                 return list(cls.listall(**kwargs))
 
             def load(self, path: Path, /, **kwargs: object) -> ScenarioView:
@@ -163,15 +177,8 @@ class WorldView(PathView):
                 for kind, names in linked.levels[source_id].refs().items():
                     renames.update({f'{kind}:{name}': f'{kind}:{level.prefix}{name}' for name in names})
         for (where, _), (linked, _) in groups.items():
-            for kind, own, theirs in (('schedule', world.schedules, linked.schedules), ('signal', world.signals, linked.signals)):
-                names = {item.name: item for item in own}
-                for item in theirs:
-                    if item.name not in names:
-                        own.append(item)
-                        names[item.name] = item
-                        world.linked_scope.append(item)
-                    elif names[item.name] != item:
-                        raise ValueError(f'{kind} {item.name!r} of {where} differs from the one this world already has')
+            _adopt_linked('schedule', where, world.schedules, linked.schedules, world.linked_scope)
+            _adopt_linked('signal', where, world.signals, linked.signals, world.linked_scope)
         for linked, renames in groups.values():
             if linked.kg is not None:
                 world.kg = merge_linked(world.kg, linked.kg, world, renames)
@@ -401,7 +408,7 @@ class WorldIdentifier(Identifier[WorldView]):
         return WorldView(path)
 
     @classmethod
-    def parse(cls, raw: str) -> 'tuple[str, set[str] | None]':
+    def split_filter(cls, raw: str) -> 'tuple[str, set[str] | None]':
         """Parse a world identifier with optional level filter.
 
         ``'myworld'`` returns ``('myworld', None)``.
@@ -434,7 +441,7 @@ async def composite_world(raw: str) -> tuple[dict, list[WorldView]]:
     views: list[WorldView] = []
     seen: dict[str, int] = {}
     for part in composite_parts(raw):
-        name, wanted = WorldIdentifier.parse(part)
+        name, wanted = WorldIdentifier.split_filter(part)
         if not name:
             raise ValueError(f'world {raw!r} has an empty entry, write it as <world>[,<world>...]')
         view = await WorldIdentifier(name).resolve()

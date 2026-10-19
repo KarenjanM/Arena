@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import typing
 
 from python_qt_binding.QtCore import QTimer
 from rqt_gui_py.plugin import Plugin
@@ -10,6 +11,9 @@ from rqt_gui_py.plugin import Plugin
 from arena_cam.drive import TICK_HZ, Take
 from arena_cam.panel import Panel
 from arena_cam.surfaces import TargetSelection
+
+if typing.TYPE_CHECKING:
+    from qt_gui.plugin_context import PluginContext
 
 TICK_MS = int(1000.0 / TICK_HZ)
 
@@ -37,7 +41,7 @@ def selection_from_args(args: argparse.Namespace) -> TargetSelection:
 class CamSteering(Plugin):
     """rqt_gui_py plugin entry point, registered in plugin.xml."""
 
-    def __init__(self, context: object) -> None:
+    def __init__(self, context: PluginContext) -> None:
         super().__init__(context)
         self.setObjectName("CamSteering")
 

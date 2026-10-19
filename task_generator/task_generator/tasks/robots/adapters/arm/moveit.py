@@ -49,6 +49,7 @@ _log = logging.getLogger(__name__)
 )
 class MoveItArmAdapter(Adapter):
     kind: ClassVar[str] = "moveit"
+    bringup: MoveItArmBringup
 
     async def dispatch_phase(self, phase: TaskPhase, robot: RobotManager) -> None:
         if isinstance(phase, ReachPhase):

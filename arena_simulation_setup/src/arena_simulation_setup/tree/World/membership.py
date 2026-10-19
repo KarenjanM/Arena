@@ -174,6 +174,12 @@ def merge_linked(scene: Scene | None, linked: Scene, world: World, renames: Mapp
     names = world.names()
     present = {kind: set(names[key]) for kind, key in _WORLD_KINDS.items()} | {'floor': set(world.level_ids)}
 
+    @typing.overload
+    def rename(value: str) -> str | None: ...
+
+    @typing.overload
+    def rename(value: Value | None) -> Value | None: ...
+
     def rename(value: Value | None) -> Value | None:
         if not isinstance(value, str) or not linked.vocab.is_entity_ref(value):
             return value
@@ -199,22 +205,25 @@ def merge_linked(scene: Scene | None, linked: Scene, world: World, renames: Mapp
 
     for entity in linked.entities.values():
         ref = rename(entity.id)
-        if not kept(ref):
+        if ref is None or not kept(ref):
             continue
         existing = merged.get_entity(ref)
         merged.add_entity(ref, {key: value for key, value in entity.props.items() if existing is None or key not in existing.props})
     for fact in linked.stated():
         subject, obj = rename(fact.subject), rename(fact.object)
         params = {key: rename(value) for key, value in fact.params.items()}
-        if kept(subject) and kept(obj) and all(kept(value) for value in params.values()) and merged.get_fact(subject, fact.verb, obj, params) is None:
-            declare(subject, obj, *params.values())
-            merged.add_fact(subject, fact.verb, obj, params)
+        if subject is None or obj is None or not (kept(subject) and kept(obj) and all(kept(value) for value in params.values())):
+            continue
+        kept_params = {key: value for key, value in params.items() if value is not None}
+        if merged.get_fact(subject, fact.verb, obj, kept_params) is None:
+            declare(subject, obj, *kept_params.values())
+            merged.add_fact(subject, fact.verb, obj, kept_params)
     for constraint in linked.constraints.values():
         scope = [rename(ref) for ref in constraint.scope]
         params = {key: rename(value) for key, value in constraint.params.items()}
         if constraint.id not in merged.constraints and all(kept(value) for value in [*scope, *params.values()]):
             declare(*scope, *params.values())
-            merged.add_constraint(constraint.id, constraint.kind, scope, params, constraint.hard)
+            merged.add_constraint(constraint.id, constraint.kind, [ref for ref in scope if ref is not None], {key: value for key, value in params.items() if value is not None}, constraint.hard)
     return merged
 
 

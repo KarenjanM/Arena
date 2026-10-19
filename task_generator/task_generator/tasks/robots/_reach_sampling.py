@@ -24,6 +24,8 @@ def sample_reach_target(arm: ArmSpec, robot_frame: FrameNamespace, rng: numpy.ra
         raise ValueError(f"arm '{arm.name}' workspace.type {ws.get('type')!r} unsupported (only 'box')")
     lo = ws["min"]
     hi = ws["max"]
+    if not isinstance(lo, list) or not isinstance(hi, list):
+        raise ValueError(f"arm '{arm.name}' workspace min/max must be lists, got {lo!r} and {hi!r}")
     frame = ws.get("frame", "base_link")
 
     msg = geometry_msgs.msg.PoseStamped()

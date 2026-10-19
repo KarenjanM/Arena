@@ -63,7 +63,7 @@ def short(value: object) -> object:
         return _number(value)
     if isinstance(value, Waypoint):
         if value.level:
-            result = dict(zip(('x', 'y', 'z'), short_position(value), strict=False))
+            result: dict[str, object] = dict(zip(('x', 'y', 'z'), short_position(value), strict=False))
             result['level'] = value.level
             return result
         return short_position(value)
@@ -112,7 +112,11 @@ def _fields(obj: object, baseline: Mapping[str, object] | None = None, keep: fro
                 if reference is attrs.NOTHING:
                     result[field.name] = written
                     continue
-            reference = authored_semantics(reference) if field.name == 'semantics' else short(reference)
+            if field.name == 'semantics':
+                assert isinstance(reference, list)
+                reference = authored_semantics(reference)
+            else:
+                reference = short(reference)
             if written == reference:
                 continue
         result[field.name] = written

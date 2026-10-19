@@ -134,6 +134,18 @@ def test_registry_drop_env_by_fqn_containment() -> None:
     assert reg.version == version + 1
 
 
+def test_registry_skips_the_registrations_of_skipped_envs() -> None:
+    reg = ChannelRegistry()
+    reg.register("/arena/env_0/task_generator_node", "/arena/env_0", [_spec("engine", 0.05)])
+    reg.register("/arena/env_0/jackal/lockstep/nav", "/arena/env_0/task_generator_node", [_spec("nav", 0.05)])
+    reg.register("/arena/env_1/task_generator_node", "/arena/env_1", [_spec("other", 0.05)])
+    reg.register("launch", "", [_spec("global", 0.05), _spec("agents", 0.05, topic="/arena/{env}/agent_states")])
+    version = reg.version
+    assert set(reg.desired([1], skip=["/arena/env_0/task_generator_node"])) == {"/other", "/global", "/arena/env_1/agent_states"}
+    assert set(reg.desired([0, 1])) == {"/engine", "/nav", "/other", "/global", "/arena/env_0/agent_states", "/arena/env_1/agent_states"}
+    assert reg.version == version
+
+
 # ledger
 
 

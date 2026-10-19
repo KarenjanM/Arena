@@ -64,7 +64,9 @@ def net(argv: list[str]) -> None:
     `arena settings net [local|lan]`. `local` keeps DDS discovery and data
     on loopback (default), `lan` uses every interface. Gazebo's own
     transport always stays on loopback. New shells pick the value up on
-    `source arena`, running nodes keep theirs until restarted.
+    `source arena`, running nodes keep theirs until restarted. `source
+    arena` sets ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET so the DDS profile
+    alone sets the scope.
     """
     if len(argv) > 1:
         raise CLIError(f"expected at most one argument, got {len(argv)}")

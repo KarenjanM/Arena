@@ -7,6 +7,7 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 
 @register(DisplayKind.ROBOT_MODEL)
@@ -33,5 +34,5 @@ def render_robot_model(d: AdapterDisplay, robot: RobotDescriptor | None) -> dict
         "Visual Enabled": True,
         "Collision Enabled": False,
     }
-    result.update(style.extra.get("rviz", {}))
+    result.update(_rviz_extra(style))
     return result

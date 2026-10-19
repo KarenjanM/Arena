@@ -239,12 +239,12 @@ humans:
 | Key | Meaning |
 | --- | --- |
 | `agent_type` | Built-in arena_humansim type name (`adult`, `elder`, `robot`, shipped under `arena_humansim/config/agent_types/`) or a scenario-local YAML path resolved relative to the scenario (`./doctor.yaml`). Default `adult`. See [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md) for the file schema. |
-| `desired_velocity` | Either a scalar (m/s), or `{min, max}`: a uniform range this instance's velocity is drawn from. Overrides (does not compose with) the sampled `AgentType.desired_velocity`. Default `{min: 1.0, max: 1.5}`. |
-| `radius` | Agent collision radius (m), overrides the sampled `AgentType.agent_radius`. Default `0.35`. |
+| `desired_velocity` | Either a scalar (m/s), or `{min, max}`: a uniform range this instance's velocity is drawn from. Overrides (does not compose with) the sampled `AgentType.desired_velocity`, and a value above the sampled `max_velocity` raises it to match. Unset, the sampled value stays. |
+| `radius` | Agent collision radius (m), overrides the sampled `AgentType.agent_radius`. Unset, the sampled value stays. |
 
 `waypoint_mode` is a sibling key of `agent:` (not nested inside it), one of `repeat` (default), `reverse`, `once`, `random`: it controls how the entry's `waypoints:` list is replayed once exhausted.
 
-A `regions:` source entry's `config.agent:` block uses a different, wider schema for continuously spawning pedestrians: `agent_type`, `desired_velocity: {min, max}`, `agent_radius` (note: `agent_radius`, not `radius`, here), `behavior_tree`, and `sink_affinity: [{sink, weight}]`. See `_add_source_region` in [`arena_humansim/arena_humansim.py`](arena_humansim/arena_humansim.py).
+A `regions:` source entry's `config.agent:` block uses a different, wider schema for continuously spawning pedestrians: `agent_type`, `desired_velocity: {min, max}`, `agent_radius` (note: `agent_radius`, not `radius`, here), `behavior_tree`, and `sink_affinity: [{sink, weight}]`. An unset `desired_velocity` or `agent_radius` keeps the agent type's sample. See `flow_agent_template` in [`arena_humansim/agent.py`](arena_humansim/agent.py).
 
 A scripted entry renders with its `model:`. A source-spawned agent has none, so it takes a model from its agent type: when the type lists `assets:` tags, one of the human bundles on disk (world-local, shared-local or already cached) whose `annotation.yaml` carries every tag is drawn per agent from the episode seed. A type without `assets:`, or tags no bundle carries (warned once per type), keeps the default model.
 
@@ -413,7 +413,7 @@ pedestrian not otherwise configured. The path is resolved via
 
 ```python
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.MY_SIM)
-async def _my_sim(**kwargs):
+async def _my_sim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     from .my_sim import MyHumanSimulator
     return await MyHumanSimulator.create(**kwargs)
 ```

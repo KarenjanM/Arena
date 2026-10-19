@@ -4,6 +4,7 @@ import array
 import asyncio
 import math
 import traceback
+import typing
 from collections.abc import Mapping, Sequence
 
 import numpy as np
@@ -24,9 +25,6 @@ from arena_humansim_msgs.msg import (
     AgentStates as AgentStatesMsg,
 )
 from arena_humansim_msgs.msg import (
-    AgentTemplate as AgentTemplateMsg,
-)
-from arena_humansim_msgs.msg import (
     Gesture as EngineGestureMsg,
 )
 from arena_humansim_msgs.msg import (
@@ -37,9 +35,6 @@ from arena_humansim_msgs.msg import (
 )
 from arena_humansim_msgs.msg import (
     Shape as ShapeMsg,
-)
-from arena_humansim_msgs.msg import (
-    SinkAffinity as SinkAffinityMsg,
 )
 from arena_humansim_msgs.msg import (
     SinkConfig as SinkConfigMsg,
@@ -81,8 +76,6 @@ from arena_people_msgs.msg import Gesture as GestureMsg
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.lazy import LazySubscription
-from arena_rclpy_mixins.shared import Namespace
-from arena_runtime.sim import BaseSim
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from geometry_msgs.msg import (
@@ -112,9 +105,9 @@ from task_generator.constants import Constants
 from task_generator.constants.rng import stable_int
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
-from task_generator.simulators.human import BaseHumanSimulator
+from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorOptions
 
-from .agent import ArenaHumanDynamicObstacle, agent_type_def, path_agent_type_name, resolve_agent_type_path
+from .agent import ArenaHumanDynamicObstacle, agent_type_def, flow_agent_template, path_agent_type_name
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -151,8 +144,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     SERVICE_FEEDBACK = "feedback"
     SERVICE_NOTIFY_STIMULUS = "notify_stimulus"
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> None:
+        super().__init__(**kwargs)
 
         self._spawn_client: ClientWrapper = self.node.create_client_wrapper(
             SpawnAgents,
@@ -577,8 +570,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         await self.unpause()
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, simulator: BaseSim, **kwargs: object) -> "ArenaHumanSimulator":
-        self = cls(*args, namespace=namespace, simulator=simulator, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> "ArenaHumanSimulator":
+        self = cls(**kwargs)
         await self.setup()
         return self
 
@@ -782,7 +775,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.pose = self._engine_pose(tracked.pose)
             a.velocity.x, a.velocity.y = tracked.velocity
             a.radius = 0.3
-            msg.agents.append(a)
+            msg.agents.append(a)  # pyright: ignore[reportAttributeAccessIssue]
         name_to_aid = {agent_name: aid for aid, agent_name in self._agent_names.items()}
         for name, ped in possessed.items():
             a = AgentStateMsg()
@@ -792,7 +785,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.pose = self._engine_pose(Pose.from_msg(ped.pose))
             a.velocity = ped.twist.linear
             a.radius = 0.35
-            msg.agents.append(a)
+            msg.agents.append(a)  # pyright: ignore[reportAttributeAccessIssue]
         self._world_state_pub.publish(msg)
 
     def _agent_states_to_pedestrians(self, msg: AgentFrameMsg) -> Pedestrians:
@@ -835,7 +828,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.interaction_id = int(interaction_id)
             ped.interaction_type = int(interaction_type)
 
-            peds.pedestrians.append(ped)
+            peds.pedestrians.append(ped)  # pyright: ignore[reportAttributeAccessIssue]
         return peds
 
     def _polygon_to_shape_msg(self, polygon: Sequence[Position], centroid: tuple[float, float] | None = None) -> ShapeMsg:
@@ -885,26 +878,20 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         cfg = region.config
         for kf in cfg.get("rate_profile", []):
-            src_msg.rate_profile.append(RateKeyframeMsg(t=kf.get("t", 0.0), rate=kf.get("rate", 0.0)))
+            src_msg.rate_profile.append(RateKeyframeMsg(t=kf.get("t", 0.0), rate=kf.get("rate", 0.0)))  # pyright: ignore[reportAttributeAccessIssue]
         src_msg.max_concurrent = cfg.get("max_concurrent", -1)
         src_msg.max_total = cfg.get("max_total", -1)
 
-        raw_tmpl = cfg.get("agent", {})
-        tmpl = AgentTemplateMsg()
-        vel = raw_tmpl.get("desired_velocity", {})
-        tmpl.desired_velocity_min = vel.get("min", 1.0) if isinstance(vel, dict) else float(vel)
-        tmpl.desired_velocity_max = vel.get("max", 1.5) if isinstance(vel, dict) else float(vel)
-        tmpl.agent_radius = raw_tmpl.get("agent_radius", 0.35)
-        tmpl.behavior_tree = raw_tmpl.get("behavior_tree", "default")
-        tmpl.agent_type = resolve_agent_type_path(raw_tmpl.get("agent_type", "adult"), region.included_from)
+        tmpl = flow_agent_template(cfg.get("agent", {}), region.included_from)
         self._remember_agent_type_path(tmpl.agent_type)
-        for sa in raw_tmpl.get("sink_affinity", []):
-            tmpl.sink_affinity.append(SinkAffinityMsg(sink_name=sa.get("sink", ""), weight=sa.get("weight", 1.0)))
         src_msg.agent = tmpl
 
         request.source = src_msg
         try:
             response = await self._add_source_client.call_timeout(request)
+            if response is None:
+                self._logger.error("AddSource timed out")
+                return False
             if response.success:
                 return True
             self._logger.error(f"AddSource failed: {response.message}")
@@ -929,6 +916,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         request.sink = sink_msg
         try:
             response = await self._add_sink_client.call_timeout(request)
+            if response is None:
+                self._logger.error("AddSink timed out")
+                return False
             if response.success:
                 return True
             self._logger.error(f"AddSink failed: {response.message}")
@@ -951,6 +941,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         request.name = name
         try:
             response = await self._remove_source_client.call_timeout(request)
+            if response is None:
+                self._logger.error("RemoveSource timed out")
+                return False
             if response.success:
                 return True
             self._logger.error(f"RemoveSource failed: {response.message}")
@@ -964,6 +957,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         request.name = name
         try:
             response = await self._remove_sink_client.call_timeout(request)
+            if response is None:
+                self._logger.error("RemoveSink timed out")
+                return False
             if response.success:
                 return True
             self._logger.error(f"RemoveSink failed: {response.message}")
@@ -1015,7 +1011,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     msg.bb_z_max = float(z_max)
                     msg.interaction_types = [str(h) for h in annotation.get("hoi", [])]
                     msg.obstacle_type = obstacle_type
-                    obstacles_request.obstacles.append(msg)
+                    obstacles_request.obstacles.append(msg)  # pyright: ignore[reportAttributeAccessIssue]
                 except Exception as e:
                     self._logger.warning(f"Failed to build obstacle bbox for '{obstacle.sim_path}': {e}")
 
@@ -1038,14 +1034,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     info.formation_type = str(formation_type)
                     info.formation_param_keys = list(formation_params.keys())
                     info.formation_param_values = [float(v) for v in formation_params.values()]
-                world_objects_request.objects.append(info)
+                world_objects_request.objects.append(info)  # pyright: ignore[reportAttributeAccessIssue]
             except Exception as e:
                 self._logger.warning(f"Failed to build world object for '{obstacle.sim_path}': {e}")
 
         if obstacles_request.obstacles:
             try:
                 response = await self._add_obstacles_client.call_timeout(obstacles_request)
-                if response.success:
+                if response is None:
+                    self._logger.error("AddObstacles timed out")
+                elif response.success:
                     self._logger.info(response.message)
                 else:
                     self._logger.error(f"AddObstacles failed: {response.message}")
@@ -1055,7 +1053,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if world_objects_request.objects:
             try:
                 response = await self._add_world_objects_client.call_timeout(world_objects_request)
-                if not response.success:
+                if response is None:
+                    self._logger.error("AddWorldObjects timed out")
+                elif not response.success:
                     self._logger.error(f"AddWorldObjects failed: {response.message}")
             except Exception as e:
                 self._logger.error(f"AddWorldObjects call failed: {e}")
@@ -1078,7 +1078,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
             params = parsed.sample_params(self.node.conf.General.RNG.stream("humansim", obstacle.sim_path)) if parsed is not None else None
 
-            if params is not None:
+            if parsed is not None and params is not None:
                 agent_msg.desired_velocity = params.desired_velocity
                 agent_msg.radius = params.agent_radius
                 agent_msg.vision_range = params.perception.vision_range
@@ -1105,13 +1105,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             wp_msg.mode = parsed.waypoint_mode if parsed is not None else WaypointsMsg.MODE_REPEAT
             for wp in obstacle.waypoints:
                 wx, wy = self._to_engine(wp.x, wp.y)
-                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wx, y=wy, theta=0.0)))
+                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wx, y=wy, theta=0.0)))  # pyright: ignore[reportAttributeAccessIssue]
             agent_msg.waypoints = wp_msg
-            request.agents.append(agent_msg)
+            request.agents.append(agent_msg)  # pyright: ignore[reportAttributeAccessIssue]
 
         self._spawns_in_flight += 1
         try:
             response = await self._spawn_client.call_timeout(request)
+            if response is None:
+                self._logger.error("SpawnAgents timed out")
+                return [None] * len(obstacles)
             if response.success:
                 for agent_id, obstacle in zip(response.spawned_ids, obstacles, strict=True):
                     self._bridge_agent_ids.add(agent_id)
@@ -1150,7 +1153,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             request = RemoveObstacles.Request()
             request.names = names_list
             response = await self._remove_obstacles_client.call_timeout(request)
-            if not response.success:
+            if response is None:
+                self._logger.error("RemoveObstacles timed out")
+                ok = False
+            elif not response.success:
                 self._logger.error(f"RemoveObstacles failed: {response.message}")
                 ok = False
         except Exception as e:
@@ -1161,7 +1167,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             wo_request = RemoveWorldObjects.Request()
             wo_request.object_ids = names_list
             wo_response = await self._remove_world_objects_client.call_timeout(wo_request)
-            if not wo_response.success:
+            if wo_response is None:
+                self._logger.error("RemoveWorldObjects timed out")
+                ok = False
+            elif not wo_response.success:
                 self._logger.error(f"RemoveWorldObjects failed: {wo_response.message}")
                 ok = False
         except Exception as e:
@@ -1190,6 +1199,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
             await self._publish_interpolated()
+            if response is None:
+                self._logger.error("RemoveAgents timed out")
+                return False
             if response.success:
                 self._logger.info(response.message)
                 return True
@@ -1220,14 +1232,17 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         request = AddWalls.Request()
         for name, wall in walls.items():
-            request.names.append(name)
+            request.names.append(name)  # pyright: ignore[reportAttributeAccessIssue]
             sx, sy = self._to_engine(wall.start.x, wall.start.y)
             ex, ey = self._to_engine(wall.end.x, wall.end.y)
-            request.starts.append(Point32(x=sx, y=sy, z=0.0))
-            request.ends.append(Point32(x=ex, y=ey, z=0.0))
+            request.starts.append(Point32(x=sx, y=sy, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
+            request.ends.append(Point32(x=ex, y=ey, z=0.0))  # pyright: ignore[reportAttributeAccessIssue]
 
         try:
             response = await self._add_walls_client.call_timeout(request)
+            if response is None:
+                self._logger.error("AddWalls timed out")
+                return False
             if response.success:
                 return True
             self._logger.error(f"AddWalls failed: {response.message}")
@@ -1246,6 +1261,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         try:
             response = await self._remove_walls_client.call_timeout(request)
+            if response is None:
+                self._logger.error("RemoveWalls timed out")
+                return False
             if response.success:
                 return True
             self._logger.error(f"RemoveWalls failed: {response.message}")

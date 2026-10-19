@@ -177,7 +177,8 @@ environment-dependent and not strongly typed).
 Resolved from `AB_DIR / 'configs' / 'parametrized'` (the `arena_bringup`
 package). Files are XML with a `<random>` root element. `.load()` returns a
 `ParametrizedConfig` with three lists: `STATIC`, `INTERACTIVE`, `DYNAMIC`,
-each a list of `ObstacleConfig(min, max, type, model)`.
+each a list of `ObstacleConfig(min, max, type, model, zone)`. `zone` is the
+optional zone name that limits placement, empty to place anywhere.
 
 ## Adding a new Identifier
 

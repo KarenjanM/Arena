@@ -219,8 +219,11 @@ while gates hold the pace and wall rate while no channel is registered,
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by
 design. `soft` channels are observed and reported only. The scheduler also
-idles while a foreign hold or an unpause window is open (episode resets)
-and rebases its window grid to whatever sim time passed meanwhile.
+idles while a foreign hold is open (episode resets) and rebases its window
+grid to whatever sim time passed meanwhile. An unpause window never unpauses
+the sim during a run: the scheduler keeps stepping for it, also under a
+foreign hold or `pause`, gated on every hard channel except those registered
+in the window holder's env.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
 pause state and gz `real_time_factor`, responding as soon as the hold is
 released (the guard against a draining gz chunk re-pausing the world runs
@@ -353,7 +356,7 @@ are what Arena sends it.
 
 ```python
 @SimulatorRegistry.register(Constants.SimSimulator.MY_SIM)
-async def lazy_mysim(**kwargs):
+async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .my_sim import MySimulator
     return await MySimulator.create(**kwargs)
 ```

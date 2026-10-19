@@ -1,4 +1,4 @@
-"""Per-level directory shape, selective loading, WorldIdentifier.parse."""
+"""Per-level directory shape, selective loading, WorldIdentifier.split_filter."""
 
 from __future__ import annotations
 
@@ -35,36 +35,36 @@ def _write_world_yaml(world_dir: Path, level_ids: list[str]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# WorldIdentifier.parse
+# WorldIdentifier.split_filter
 # ---------------------------------------------------------------------------
 
 
 def test_parse_no_filter():
-    name, filt = WorldIdentifier.parse("myworld")
+    name, filt = WorldIdentifier.split_filter("myworld")
     assert name == "myworld"
     assert filt is None
 
 
 def test_parse_single_level():
-    name, filt = WorldIdentifier.parse("myworld[1]")
+    name, filt = WorldIdentifier.split_filter("myworld[1]")
     assert name == "myworld"
     assert filt == {"1"}
 
 
 def test_parse_multi_level():
-    name, filt = WorldIdentifier.parse("myworld[1,3]")
+    name, filt = WorldIdentifier.split_filter("myworld[1,3]")
     assert name == "myworld"
     assert filt == {"1", "3"}
 
 
 def test_parse_with_spaces():
-    name, filt = WorldIdentifier.parse("myworld[ 1 , 3 ]")
+    name, filt = WorldIdentifier.split_filter("myworld[ 1 , 3 ]")
     assert name == "myworld"
     assert filt == {"1", "3"}
 
 
 def test_parse_empty_brackets_returns_none_filter():
-    name, filt = WorldIdentifier.parse("myworld[]")
+    name, filt = WorldIdentifier.split_filter("myworld[]")
     assert name == "myworld"
     assert filt is None
 
