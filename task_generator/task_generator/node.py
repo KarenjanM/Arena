@@ -145,6 +145,11 @@ class EpisodeRuntime:
     action_in_flight: bool = False
 
 
+def _is_map_frame(frame_id: str) -> bool:
+    """Empty, map, or an env's namespaced map frame (env_0/map), all carrying realized map coordinates."""
+    return frame_id in ("", "map") or frame_id.endswith("/map")
+
+
 def _derive_seed(run_seed: str, world: str, episode_id: int) -> int:
     digest = hashlib.blake2b(
         f"{run_seed}|{world}|{episode_id}".encode(),
@@ -1761,8 +1766,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return response
 
     def _pose_from_request(self, stamped: geometry_msgs.msg.PoseStamped) -> Pose:
+        """A map-frame request pose, shifted back into the world frame the task modes place entities in."""
+        if not _is_map_frame(stamped.header.frame_id):
+            raise ValueError(f"pose must be in the map frame, got {stamped.header.frame_id!r}")
         p = stamped.pose.position
-        return Pose(Position(p.x, p.y), orientation=Orientation.from_msg(stamped.pose.orientation))
+        return self._realizer.ezilear(Pose(Position(p.x, p.y), orientation=Orientation.from_msg(stamped.pose.orientation)))
 
     async def _cb_spawn_static(
         self,
@@ -1831,7 +1839,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
-        if request.pose.header.frame_id not in ("map", ""):
+        if not _is_map_frame(request.pose.header.frame_id):
             response.success = False
             response.error_msg = f"pose must be in the map frame, got {request.pose.header.frame_id!r}"
             return response
