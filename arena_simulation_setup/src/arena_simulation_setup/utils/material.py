@@ -6,11 +6,11 @@ import colourings
 from PIL import Image
 
 
-def Color(color: object) -> colourings.Color:
+def Color(color: str) -> colourings.Color:
     """Convert a color representation to a Colourings Color object.
 
     Args:
-        color (typing.Any): Color representation (e.g., hex string, RGB tuple).
+        color (str): Color representation (e.g., hex string, RGB tuple).
 
     Returns:
         colourings.Color: Corresponding Colourings Color object.
@@ -29,12 +29,12 @@ def Color(color: object) -> colourings.Color:
 
 class ImgUtil:
     @classmethod
-    def tint(cls, img: Path | Image.Image, tint: object) -> Image.Image:
+    def tint(cls, img: Path | Image.Image, tint: str) -> Image.Image:
         """Apply a tint to an image.
 
         Args:
             img (Path | Image.Image): Image or path to image.
-            tint (typing.Any): Tint color.
+            tint (str): Tint color.
 
         Returns:
             Image.Image: Tinted image, RGB unless the source carries a non-uniform alpha channel.

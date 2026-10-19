@@ -128,6 +128,7 @@ known-first-party = [
 "arena_simulation_setup/**/*.py" = ["UP"]
 "utils/arena_rclpy_mixins/**/*.py" = ["UP046", "UP047"]
 "_meta/arena_cli/__main__.py" = ["UP036"]
+"_meta/typings/**/*.pyi" = ["ANN401"]
 
 [tool.ruff.lint.flake8-annotations]
 suppress-none-returning = true
@@ -139,3 +140,78 @@ quote-style = "preserve"
 indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "lf"
+
+[tool.pyright]
+pythonVersion = "3.12"
+pythonPlatform = "Linux"
+typeCheckingMode = "standard"
+stubPath = "_meta/typings"
+extraPaths = [
+    "_meta",
+    "arena_assets/src",
+    "arena_auditory/arena_auditory",
+    "arena_bringup",
+    "arena_evaluation/arena_evaluation",
+    "arena_evaluation/arena_evaluation_mcp",
+    "arena_hearing/arena_hearing",
+    "arena_isaac/arena_isaac",
+    "arena_mujoco/arena_mujoco",
+    "arena_planners/arena_planners",
+    "arena_robots/arena_robots",
+    "arena_runtime/arena_runtime",
+    "arena_simulation_setup/src",
+    "arena_training",
+    "flatsim/flatsim",
+    "humansim/arena_humansim",
+    "task_generator",
+    "utils/arena_cam",
+    "utils/arena_rclpy_mixins",
+    "utils/arena_viz",
+    "utils/human_steering",
+    "utils/rerun_utils",
+    "utils/rviz_utils",
+    "utils/task_generator_mcp",
+]
+exclude = [
+    "**/.*",
+    "**/__pycache__",
+    "**/node_modules",
+    "**/build",
+    "**/install",
+    "**/log",
+    "**/deps",
+    "**/tests",
+    "**/test",
+    "arena_tools",
+    "arena_planners/planners",
+]
+reportMissingModuleSource = "none"
+reportPrivateImportUsage = "none"
+executionEnvironments = [
+    { root = "arena_isaac/arena_isaac", reportMissingImports = "none" },
+    { root = "arena_assets/src/arena_assets/utils/ModelConverter", reportMissingImports = "none" },
+    { root = "_meta" },
+    { root = "arena_assets/src" },
+    { root = "arena_auditory/arena_auditory" },
+    { root = "arena_bringup" },
+    { root = "arena_evaluation/arena_evaluation" },
+    { root = "arena_evaluation/arena_evaluation_mcp" },
+    { root = "arena_hearing/arena_hearing" },
+    { root = "arena_mujoco/arena_mujoco" },
+    { root = "arena_planners/arena_planners" },
+    { root = "arena_robots/arena_robots" },
+    { root = "arena_runtime/arena_runtime" },
+    { root = "arena_simulation_setup/src" },
+    { root = "arena_training" },
+    { root = "flatsim/flatsim" },
+    { root = "humansim/arena_humansim" },
+    { root = "task_generator" },
+    { root = "utils/arena_cam" },
+    { root = "utils/arena_rclpy_mixins" },
+    { root = "utils/arena_viz" },
+    { root = "utils/human_steering" },
+    { root = "utils/rerun_utils" },
+    { root = "utils/rviz_utils" },
+    { root = "utils/task_generator_mcp" },
+    { root = "." },
+]

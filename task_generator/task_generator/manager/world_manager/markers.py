@@ -64,8 +64,8 @@ def _zone_color(index: int) -> ColorRGBA:
 
 def _quad(marker: Marker, corners: Sequence[tuple[float, float]], z: float, color: ColorRGBA) -> None:
     a, b, c, d = (Point(x=x, y=y, z=z) for x, y in corners)
-    marker.points.extend((a, b, c, a, c, d))
-    marker.colors.extend([color] * 6)
+    marker.points.extend((a, b, c, a, c, d))  # pyright: ignore[reportAttributeAccessIssue]
+    marker.colors.extend([color] * 6)  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def deleteall_markers() -> list[Marker]:
@@ -97,8 +97,8 @@ def static_markers(world: World, realizer: Realizer, stamp: Time) -> list[Marker
         for outline in outlines:
             coords = list(outline.exterior.coords)
             for (x0, y0), (x1, y1) in zip(coords, coords[1:], strict=False):
-                zones.points.extend((Point(x=x0, y=y0, z=_Z_ZONES), Point(x=x1, y=y1, z=_Z_ZONES)))
-                zones.colors.extend((color, color))
+                zones.points.extend((Point(x=x0, y=y0, z=_Z_ZONES), Point(x=x1, y=y1, z=_Z_ZONES)))  # pyright: ignore[reportAttributeAccessIssue]
+                zones.colors.extend((color, color))  # pyright: ignore[reportAttributeAccessIssue]
         anchor = polygon.representative_point()
         label = _marker("zone_labels", index, Marker.TEXT_VIEW_FACING, stamp)
         label.text = name
@@ -112,7 +112,7 @@ def static_markers(world: World, realizer: Realizer, stamp: Time) -> list[Marker
     for level_id, level in world.levels.items():
         for wall in level.all_walls:
             realized = realizer.realize(wall, level_id)
-            walls.points.extend(
+            walls.points.extend(  # pyright: ignore[reportAttributeAccessIssue]
                 (
                     Point(x=realized.start.x, y=realized.start.y, z=_Z_WALLS),
                     Point(x=realized.end.x, y=realized.end.y, z=_Z_WALLS),

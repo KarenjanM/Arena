@@ -12,7 +12,7 @@ class FlowList(list):
     pass
 
 
-def flow_list_representer(dumper: object, data: object) -> object:
+def flow_list_representer(dumper: yaml.Dumper, data: FlowList) -> yaml.Node:
     return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
 
 
@@ -200,7 +200,7 @@ def generate_map_yaml(filepath: str, map_name: str) -> None:
     save_yaml(map_yaml, filepath)
 
 
-def draw_map_image(rooms: list[dict], all_walls: list[object], filepath: str) -> None:
+def draw_map_image(rooms: list[dict], all_walls: list[FlowList], filepath: str) -> None:
     img = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), "white")
     draw = ImageDraw.Draw(img)
 
@@ -242,6 +242,8 @@ def main(args: list[str] | None = None) -> None:
     default_map_name = "map_" + str(random.randint(0, 1000))
     node.declare_parameter('map_name', default_map_name)
     map_name = node.get_parameter('map_name').value
+    if not isinstance(map_name, str):
+        raise TypeError(f"map_name must be a string, got {map_name!r}")
 
     # Create the output directory based on the provided map_name.
     OUTPUT_DIR = os.path.join(arena_ws_dir, "src", "arena", "simulation-setup", "worlds", map_name)

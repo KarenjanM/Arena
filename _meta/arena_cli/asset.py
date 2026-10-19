@@ -193,7 +193,7 @@ def _bucket_of(opts: dict[str, str | bool], kind: str) -> str:
     return candidates[0]
 
 
-def _net_resolver(kind: str, bucket: str) -> NetResolver | None:
+def _net_resolver(kind: str, bucket: str) -> NetResolver:
     """The kind's resolver for one bucket, which owns that bucket's cache and freshness stamps."""
     from arena_simulation_setup.tree import NetResolver
 
@@ -250,6 +250,7 @@ def _world_dangling(view: WorldView, source: Path) -> list[str]:
         except FileNotFoundError:
             dangling.append(f"{identifier.shortname} (unresolvable)")
             continue
+        assert hit.path is not None
         if isinstance(hit.resolver, NetResolver):
             continue
         if isinstance(hit.resolver, DynamicPathResolver) and hit.path.is_relative_to(source):
@@ -290,6 +291,7 @@ def _config_source(identifier: AssetIdentifier) -> Path:
     """Where a bundled kind lives. It resolves to its yaml, so a directory bundle is
     reported as the directory holding it and a flat config as the file itself."""
     resolved = identifier.resolve_source_sync().path
+    assert resolved is not None
     if resolved.is_file() and resolved.parent.name == identifier.name:
         return resolved.parent
     return resolved
@@ -331,9 +333,10 @@ def push(argv: list[str]) -> int:
             return 1
 
     source = _config_source(identifier) if spec.bundle else identifier.resolve_source_sync().path
+    assert source is not None
 
     verdict = "publishing anyway" if force else f"refusing to publish {name}"
-    check = _PREFLIGHTS.get(spec.closure)
+    check = _PREFLIGHTS.get(spec.closure) if spec.closure is not None else None
     dangling: list[str] = []
     if check is not None:
         try:

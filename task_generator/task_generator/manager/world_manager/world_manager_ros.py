@@ -26,7 +26,7 @@ from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
-from arena_simulation_setup.shared import Position
+from arena_simulation_setup.shared import Position, Wall
 from arena_simulation_setup.tree import DynamicPaths
 from arena_simulation_setup.tree.World import Level, World, WorldIdentifier, WorldView
 from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
@@ -83,7 +83,9 @@ class MapServerHandler(NodeInterface):
 class WorldManagerROS(MapServerHandler, WorldManager):
     """Initialize the WorldManager."""
 
-    node: "TaskGenerator"
+    @property
+    def node(self) -> "TaskGenerator":
+        return super().node
 
     _environment_manager: EnvironmentManager
 
@@ -183,7 +185,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
     async def apply_world(self, world_name: str) -> bool:
         """Synchronously swap to `world_name`. Must be called inside `_run_reset_cycle`'s hold."""
-        bare_name, level_filter = WorldIdentifier.parse(world_name)
+        bare_name, level_filter = WorldIdentifier.split_filter(world_name)
         world_view = await WorldIdentifier(bare_name).resolve()
         mtime = world_view.mtime(self._world_sources if world_name == self._world_name else ())
 
@@ -207,14 +209,15 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         source = map_source(self.node)
         disk_mode = source is MapSource.DISK
         disk_level = ""
+        disk_map: WorldMap | None = None
         if disk_mode:
             disk_levels = list(multi_level_map.level_ids) if multi_level_map is not None else []
-            if len(world.level_ids) != 1 or len(disk_levels) != 1:
+            if multi_level_map is None or len(world.level_ids) != 1 or len(disk_levels) != 1:
                 raise RuntimeError(f"debug.map_source:=disk requires a single-level world with one on-disk map; world {world_name!r} has {len(world.level_ids)} level(s), {len(disk_levels)} disk map(s)")
             disk_level = disk_levels[0]
-            disk_map = multi_level_map.get_map(disk_level)
+            disk_map = multi_level_map.select_map(disk_level)
 
-        if disk_mode:
+        if disk_map is not None:
             world_map = disk_map
         else:
             world_map = WorldMap.from_world_description(compacted_description, resolution=_DEFAULT_RESOLUTION, time=self.node.sim_time, _level_origins=level_origins)
@@ -264,8 +267,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 await self._push_world_to_map_server(compacted_description, level_origins=level_origins)
 
         await self._environment_manager.reset(purge=ObstacleLayer.WORLD)
-        detected_walls = {}
-        if disk_mode:
+        detected_walls: dict[str, Sequence[Wall]] = {}
+        if disk_map is not None:
             if any(level.pedestrian_walls for level in world.all_levels):
                 detected_walls = {disk_level: tuple(disk_map.detect_walls())}
         await self._environment_manager.spawn_world_obstacles(self._world, detected_walls=detected_walls, world_map=world_map)
@@ -356,9 +359,9 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         msg = visualization_msgs.msg.MarkerArray()
         if self._static_markers is None:
             self._static_markers = markers.static_markers(self._world, realizer, stamp)
-            msg.markers.extend(markers.deleteall_markers())
-        msg.markers.extend(self._static_markers)
-        msg.markers.extend(markers.mechanism_markers(self._world, realizer, snapshots, stamp))
+            msg.markers.extend(markers.deleteall_markers())  # pyright: ignore[reportAttributeAccessIssue]
+        msg.markers.extend(self._static_markers)  # pyright: ignore[reportAttributeAccessIssue]
+        msg.markers.extend(markers.mechanism_markers(self._world, realizer, snapshots, stamp))  # pyright: ignore[reportAttributeAccessIssue]
         self._world_markers_pub.publish(msg)
 
     def refresh_world_markers(self, snapshots: "Sequence[SemanticEntitySnapshot]") -> None:
@@ -391,7 +394,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             await self._cli.ensure()
             await self.ensure_map_server()
             if self._world_name:
-                bare_wn, wn_filter = WorldIdentifier.parse(self._world_name)
+                bare_wn, wn_filter = WorldIdentifier.split_filter(self._world_name)
                 world_view = await WorldIdentifier(bare_wn).resolve()
                 loaded = world_view.load(level_filter=wn_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
                 origins = world_view.level_origins()

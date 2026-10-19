@@ -1,4 +1,5 @@
 import math
+import typing
 from collections.abc import Awaitable, Callable
 
 import geometry_msgs.msg as geometry_msgs
@@ -11,7 +12,7 @@ from visualization_msgs.msg import Marker
 from task_generator.interactive.hub import planar_marker, visual
 from task_generator.manager.robot_manager.robot_manager import RobotManager
 from task_generator.shared import Orientation, Pose, Position
-from task_generator.tasks.modules import TM_Module
+from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
 from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
 _FLEET_QOS = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
@@ -30,8 +31,8 @@ class Mod_OverrideRobot(TM_Module):
     _timeouts: dict[int, Time]
     _watched: dict[str, RobotManager]
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        TM_Module.__init__(self, *args, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[TM_ModuleKwargs]) -> None:
+        TM_Module.__init__(self, **kwargs)
 
         self._timeouts = {}
         self._watched = {}
@@ -137,4 +138,4 @@ class Mod_OverrideRobot(TM_Module):
         await self._task.set_robot_goal(self._to_abstract(pos.header.frame_id, Pose.from_msg(pos.pose)))
 
     def _cb_new_scenario(self, *args: object, **kwargs: object) -> None:
-        self._task.force_reset()  # type: ignore
+        self._task.force_reset()

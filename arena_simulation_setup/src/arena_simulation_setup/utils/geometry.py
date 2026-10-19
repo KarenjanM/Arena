@@ -68,10 +68,10 @@ class Vector3:
         yield self.y
         yield self.z
 
-    def __add__(self, other: Position) -> Position:
+    def __add__(self, other: Vector3) -> Position:
         return Position(x=self.x + other.x, y=self.y + other.y, z=self.z + other.z)
 
-    def __sub__(self, other: Position) -> Position:
+    def __sub__(self, other: Vector3) -> Position:
         return Position(x=self.x - other.x, y=self.y - other.y, z=self.z - other.z)
 
     def __mul__(self, other: float) -> Position:
@@ -291,7 +291,7 @@ class Pose(Parseable, Idempotent):
     orientation: Orientation = attrs.field(converter=Orientation.converter, factory=lambda: Orientation(1, 0, 0, 0))
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, object]) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, float]) -> Self:
         """
         parse value into Pose
         formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,roll][,pitch][,yaw]}, zone ref name
@@ -371,13 +371,16 @@ class PositionRadius(Position, Idempotent):
     radius: float = attrs.field(converter=float, default=1.0)
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Point | Sequence[float]) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Point | Sequence[float] | Mapping[str, float]) -> Self:
         """
         parse value into PositionRadius
         formats: [x,y], [x,y,radius], [x,y,z,radius]
         """
         if isinstance(value, geometry_msgs.msg.Point):
             return cls(value.x, value.y, value.z, 1.0)
+
+        if isinstance(value, Mapping):
+            raise TypeError(f"PositionRadius must be [x,y], [x,y,radius] or [x,y,z,radius], got {value}")
 
         if len(value) == 2:
             return cls(value[0], value[1])

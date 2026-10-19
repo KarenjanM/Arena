@@ -122,7 +122,7 @@ def load_template(name: str = "point_to_right", height: float = 1.65) -> Templat
     for side in ("l", "r"):
         m = np.array([[f["angles"][d] for d in C.arm_dofs(side)] for f in frames])
         travel[side] = float(np.abs(np.diff(m, axis=0)).sum())
-    side = max(travel, key=travel.get)
+    side = max(travel, key=travel.__getitem__)
 
     dofs = C.arm_dofs(side)
     A = np.array([[f["angles"][d] for d in dofs] for f in frames])
@@ -354,6 +354,35 @@ def _swivel_axes(f: np.ndarray, side: str) -> tuple[np.ndarray, np.ndarray]:
     return n0, np.cross(f, n0)
 
 
+@typing.overload
+def solve_arm_ik(
+    pos: dict,
+    frames: dict,
+    side: str,
+    aim_dir: np.ndarray,
+    body: S.Body,
+    bend: float,
+    swivel_pref: float,
+    opts: PointAtOptions,
+    warm: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    fixed_phi: float | None = None,
+    all_candidates: typing.Literal[False] = False,
+) -> dict: ...
+@typing.overload
+def solve_arm_ik(
+    pos: dict,
+    frames: dict,
+    side: str,
+    aim_dir: np.ndarray,
+    body: S.Body,
+    bend: float,
+    swivel_pref: float,
+    opts: PointAtOptions,
+    warm: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    fixed_phi: float | None = None,
+    *,
+    all_candidates: typing.Literal[True],
+) -> list[dict]: ...
 def solve_arm_ik(
     pos: dict,
     frames: dict,
@@ -442,6 +471,7 @@ def solve_arm_ik(
     if all_candidates:
         cands.sort(key=lambda c: c["cost"])
         return cands
+    assert best is not None
     return best
 
 
@@ -1123,6 +1153,6 @@ class PointAtGenerator:
         }
 
 
-def point_at(target: Sequence[float] | np.ndarray | None = None, azimuth: float | None = None, elevation: float | None = None, template: str = "point_to_right", height: float = 1.65, **kw: object) -> PointAtClip:
+def point_at(target: Sequence[float] | np.ndarray | None = None, azimuth: float | None = None, elevation: float | None = None, template: str = "point_to_right", height: float = 1.65, *, deg: bool = True, options: PointAtOptions | None = None, **kw: object) -> PointAtClip:
     """One-shot convenience wrapper around :class:`PointAtGenerator`."""
-    return PointAtGenerator(template=template, height=height).point_at(target=target, azimuth=azimuth, elevation=elevation, **kw)
+    return PointAtGenerator(template=template, height=height).point_at(target=target, azimuth=azimuth, elevation=elevation, deg=deg, options=options, **kw)

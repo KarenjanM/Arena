@@ -10,7 +10,7 @@ def get_arena_type() -> Constants.ArenaType:
     return Constants.ArenaType(os.getenv("ARENA_TYPE", Constants.ArenaType.DEPLOYMENT.value).lower())
 
 
-def generate_map_inner_border(free_space_indices: object, map_: nav_msgs.OccupancyGrid) -> np.ndarray:
+def generate_map_inner_border(free_space_indices: tuple[np.ndarray, ...], map_: nav_msgs.OccupancyGrid) -> np.ndarray:
     """generate map border (four vertices of the map)
 
     Returns:

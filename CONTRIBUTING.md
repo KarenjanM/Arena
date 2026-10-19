@@ -28,10 +28,11 @@ Keep logs, notes and plans out of the repo.
 
 ## Before you push
 
-Run both in the metarepo and make sure they pass:
+Run these in the metarepo and make sure they pass:
 
 ```bash
 pre-commit run --all-files
+pre-commit run basedpyright --hook-stage manual
 arena test
 ```
 

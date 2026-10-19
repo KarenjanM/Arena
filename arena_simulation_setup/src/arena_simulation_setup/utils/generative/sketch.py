@@ -237,7 +237,11 @@ class WorldGeneratorSketch(WithPedestrians):
                     ]
                 )
             )
-        return shapely.union_all(parts)
+        if not parts:
+            return shapely.Polygon()
+        footprint = shapely.union_all(parts)
+        assert isinstance(footprint, shapely.Polygon)
+        return footprint
 
     def _runs(
         self,
@@ -269,7 +273,9 @@ class WorldGeneratorSketch(WithPedestrians):
                 current = nxt
             boxes = [footprints[member] for member in span]
             boxes.extend(self._quad(centres[member], forward, width) for member in span if (member, forward) in links)
-            regions.append(Region(name=f'corridor_{start + len(regions)}', polygon=shapely.union_all(boxes).envelope))
+            envelope = shapely.union_all(boxes).envelope
+            assert isinstance(envelope, shapely.Polygon)
+            regions.append(Region(name=f'corridor_{start + len(regions)}', polygon=envelope))
         return regions
 
     def compute(self) -> World:
@@ -284,7 +290,7 @@ class WorldGeneratorSketch(WithPedestrians):
             self.config.double = directives.double
 
         self.warnings = []
-        cells = self._cells(directives, rows)
+        cells: dict[Key, Cell] = self._cells(directives, rows)
         if not cells:
             # A blank grid is a state every edit path can reach, so it still has to make a
             # world: one full cell at the origin, where the caret starts.
@@ -325,7 +331,9 @@ class WorldGeneratorSketch(WithPedestrians):
                 named.setdefault(cell.symbol.zone, []).append(footprints[key])
                 materials[cell.symbol.zone] = cell.symbol.material
         for name, polygons in named.items():
-            regions.insert(0, Region(name=name, polygon=shapely.union_all(polygons), material=materials[name]))
+            union = shapely.union_all(polygons)
+            assert isinstance(union, shapely.Polygon | shapely.MultiPolygon)
+            regions.insert(0, Region(name=name, polygon=union, material=materials[name]))
 
         world, diagnostics = compile_layout(Layout(areas=areas, regions=regions))
         self.diagnostics = diagnostics

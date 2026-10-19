@@ -50,7 +50,7 @@ class ArenaHumanDynamicObstacle:
     desired_velocity_max: float = 1.5
     agent_radius: float = 0.35
     waypoint_mode: int = WaypointsMsg.MODE_REPEAT
-    _waypoints: list = attrs.Factory(list)
+    _waypoints: list = attrs.field(factory=list, alias="waypoints")
 
     @classmethod
     def from_dynamic_obstacle(cls, obs: DynamicObstacle) -> "ArenaHumanDynamicObstacle | None":

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from typing import Protocol
 
 from . import curves
 from .client import FOV_DEFAULT, CamNode, FaceWatch, Steered, TargetSelection
@@ -38,7 +39,28 @@ def _known_fov(cursor: _Cursor) -> float:
     return cursor.fov if cursor.fov > 0.0 else FOV_DEFAULT
 
 
-def _pick(params: dict, keys: Sequence[str]) -> dict:
+class _ParamSource(Protocol):
+    def __contains__(self, key: str, /) -> bool: ...
+
+    def __getitem__(self, key: str, /) -> object: ...
+
+
+def _typed[T](params: _ParamSource, key: str, kinds: tuple[type[T], ...]) -> T:
+    value = params[key]
+    if not isinstance(value, kinds):
+        raise ValueError(f"cam param {key!r}: unexpected {type(value).__name__} {value!r}")
+    return value
+
+
+def _vec3(v: Sequence[float]) -> Vec3:
+    return (v[0], v[1], v[2])
+
+
+def _quat(q: Sequence[float]) -> Quat:
+    return (q[0], q[1], q[2], q[3])
+
+
+def _pick(params: _ParamSource, keys: Sequence[str]) -> dict:
     return {k: params[k] for k in keys if k in params}
 
 
@@ -55,7 +77,7 @@ class _Action:
     verb: str = ""
 
     @classmethod
-    def from_params(cls, params: object) -> _Action:
+    def from_params(cls, params: _ParamSource) -> _Action:
         raise NotImplementedError
 
     async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
@@ -72,10 +94,10 @@ class _Action:
 @primitive("cut")
 class _Look(_Action):
     def __init__(self, eye: Vec3 = (6.0, 6.0, 3.0), target: Vec3 = (0.0, 0.0, 0.5), fov: float = 0.0) -> None:
-        self.eye, self.target, self.fov = tuple(eye), tuple(target), fov
+        self.eye, self.target, self.fov = _vec3(eye), _vec3(target), fov
 
     @classmethod
-    def from_params(cls, params: dict) -> _Look:
+    def from_params(cls, params: _ParamSource) -> _Look:
         return cls(**_pick(params, ("eye", "target", "fov")))
 
     async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
@@ -100,8 +122,8 @@ class _Track(_Ref):
         super().__init__(entity=entity, mode=mode)
 
     @classmethod
-    def from_params(cls, params: dict) -> _Track:
-        return cls(entity=params["entity"], **_pick(params, ("mode",)))
+    def from_params(cls, params: _ParamSource) -> _Track:
+        return cls(entity=_typed(params, "entity", (str,)), **_pick(params, ("mode",)))
 
 
 @primitive("world")
@@ -110,7 +132,7 @@ class _World(_Ref):
         super().__init__(entity="", pose=((0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)), mode="full")
 
     @classmethod
-    def from_params(cls, params: dict) -> _World:
+    def from_params(cls, params: _ParamSource) -> _World:
         return cls()
 
 
@@ -120,7 +142,7 @@ class _Latch(_Ref):
         super().__init__(entity="", pose=None, mode="full")
 
     @classmethod
-    def from_params(cls, params: dict) -> _Latch:
+    def from_params(cls, params: _ParamSource) -> _Latch:
         return cls()
 
 
@@ -128,10 +150,10 @@ class _Latch(_Ref):
 class _Reference(_Ref):
     def __init__(self, pose: tuple[Vec3, Quat] = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)), mode: str = "full") -> None:
         pos, quat = pose
-        super().__init__(entity="", pose=(tuple(pos), tuple(quat)), mode=mode)
+        super().__init__(entity="", pose=(_vec3(pos), _quat(quat)), mode=mode)
 
     @classmethod
-    def from_params(cls, params: dict) -> _Reference:
+    def from_params(cls, params: _ParamSource) -> _Reference:
         return cls(**_pick(params, ("pose", "mode")))
 
 
@@ -141,7 +163,7 @@ class _Projection(_Action):
         self.projection = projection
 
     @classmethod
-    def from_params(cls, params: object) -> _Projection:
+    def from_params(cls, params: _ParamSource | str) -> _Projection:
         return cls(params) if isinstance(params, str) else cls(**_pick(params, ("projection",)))
 
     async def run(self, node: CamNode, cursor: _Cursor) -> _Cursor:
@@ -180,7 +202,7 @@ class _Hold(_Segment):
         super().__init__(duration, "linear", False)
 
     @classmethod
-    def from_params(cls, params: dict) -> _Hold:
+    def from_params(cls, params: _ParamSource) -> _Hold:
         return cls(**_pick(params, ("duration",)))
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -200,10 +222,10 @@ class _MoveTo(_Segment):
         world_orientation: bool = False,
     ) -> None:
         super().__init__(duration, ease, world_orientation)
-        self.eye, self.target, self.fov = tuple(eye), tuple(target), fov
+        self.eye, self.target, self.fov = _vec3(eye), _vec3(target), fov
 
     @classmethod
-    def from_params(cls, params: dict) -> _MoveTo:
+    def from_params(cls, params: _ParamSource) -> _MoveTo:
         return cls(**_pick(params, ("eye", "target", "fov", "duration", "ease", "world_orientation")))
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -239,19 +261,19 @@ class _Orbit(_Segment):
         world_orientation: bool = False,
     ) -> None:
         super().__init__(duration, ease, world_orientation)
-        self.radius, self.elevation, self.center = radius, elevation, tuple(center)
+        self.radius, self.elevation, self.center = radius, elevation, _vec3(center)
         self.sweep, self.start_angle = sweep, start_angle
         self.look_height, self.fov = look_height, fov
 
     @classmethod
-    def from_params(cls, params: dict) -> _Orbit:
+    def from_params(cls, params: _ParamSource) -> _Orbit:
         kwargs = _pick(params, ("radius", "elevation", "center", "sweep", "start_angle", "duration", "ease", "look_height", "fov", "world_orientation"))
         if "sweep_deg" in params:
-            kwargs["sweep"] = math.radians(params["sweep_deg"])
+            kwargs["sweep"] = math.radians(_typed(params, "sweep_deg", (int, float)))
         if "start_deg" in params:
-            kwargs["start_angle"] = math.radians(params["start_deg"])
+            kwargs["start_angle"] = math.radians(_typed(params, "start_deg", (int, float)))
         if "elevation_deg" in params:
-            kwargs["elevation"] = math.radians(params["elevation_deg"])
+            kwargs["elevation"] = math.radians(_typed(params, "elevation_deg", (int, float)))
         return cls(**kwargs)
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -286,7 +308,7 @@ class _Dolly(_Segment):
         self.distance = distance
 
     @classmethod
-    def from_params(cls, params: dict) -> _Dolly:
+    def from_params(cls, params: _ParamSource) -> _Dolly:
         return cls(**_pick(params, ("distance", "duration", "ease")))
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -312,10 +334,10 @@ class _DollyZoom(_Segment):
         ease: str = "inout",
     ) -> None:
         super().__init__(duration, ease, False)
-        self.target, self.from_fov, self.to_fov = tuple(target), from_fov, to_fov
+        self.target, self.from_fov, self.to_fov = _vec3(target), from_fov, to_fov
 
     @classmethod
-    def from_params(cls, params: dict) -> _DollyZoom:
+    def from_params(cls, params: _ParamSource) -> _DollyZoom:
         return cls(**_pick(params, ("target", "from_fov", "to_fov", "duration", "ease")))
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -346,11 +368,11 @@ class _Flyby(_Segment):
         world_orientation: bool = False,
     ) -> None:
         super().__init__(duration, ease, world_orientation)
-        self.eyes = [tuple(e) for e in eyes]
-        self.target, self.fov = tuple(target), fov
+        self.eyes = [_vec3(e) for e in eyes]
+        self.target, self.fov = _vec3(target), fov
 
     @classmethod
-    def from_params(cls, params: dict) -> _Flyby:
+    def from_params(cls, params: _ParamSource) -> _Flyby:
         return cls(**_pick(params, ("eyes", "target", "fov", "duration", "ease", "world_orientation")))
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -375,10 +397,10 @@ class _Pan(_Segment):
         self.sweep = sweep
 
     @classmethod
-    def from_params(cls, params: dict) -> _Pan:
+    def from_params(cls, params: _ParamSource) -> _Pan:
         kwargs = _pick(params, ("sweep", "duration", "ease"))
         if "sweep_deg" in params:
-            kwargs["sweep"] = math.radians(params["sweep_deg"])
+            kwargs["sweep"] = math.radians(_typed(params, "sweep_deg", (int, float)))
         return cls(**kwargs)
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -405,10 +427,10 @@ class _Tilt(_Segment):
         self.sweep = sweep
 
     @classmethod
-    def from_params(cls, params: dict) -> _Tilt:
+    def from_params(cls, params: _ParamSource) -> _Tilt:
         kwargs = _pick(params, ("sweep", "duration", "ease"))
         if "sweep_deg" in params:
-            kwargs["sweep"] = math.radians(params["sweep_deg"])
+            kwargs["sweep"] = math.radians(_typed(params, "sweep_deg", (int, float)))
         return cls(**kwargs)
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -435,7 +457,7 @@ class _Zoom(_Segment):
         self.from_fov, self.to_fov = from_fov, to_fov
 
     @classmethod
-    def from_params(cls, params: dict) -> _Zoom:
+    def from_params(cls, params: _ParamSource) -> _Zoom:
         return cls(**_pick(params, ("from_fov", "to_fov", "duration", "ease")))
 
     def plan(self, cursor: _Cursor) -> tuple[_Sampler, _Cursor]:
@@ -452,7 +474,7 @@ class _Zoom(_Segment):
 class _Pov(_Action):
     """Look through a pedestrian's face frame for `duration` s, then latch where the face last was."""
 
-    def __init__(self, face: str | int, duration: float = 10.0, fov: float | None = None) -> None:
+    def __init__(self, face: str | float, duration: float = 10.0, fov: float | None = None) -> None:
         self.face = str(int(face)) if isinstance(face, float) and face.is_integer() else str(face)
         self.duration = max(0.0, float(duration))
         self.fov = fov
@@ -460,8 +482,8 @@ class _Pov(_Action):
         self._watch: FaceWatch | None = None
 
     @classmethod
-    def from_params(cls, params: dict) -> _Pov:
-        return cls(face=params["face"], **_pick(params, ("duration", "fov")))
+    def from_params(cls, params: _ParamSource) -> _Pov:
+        return cls(face=_typed(params, "face", (str, int, float)), **_pick(params, ("duration", "fov")))
 
     async def prepare(self, node: CamNode) -> None:
         self._watch = await node.watch_face(self.face)

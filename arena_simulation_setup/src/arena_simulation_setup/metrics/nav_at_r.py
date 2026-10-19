@@ -118,7 +118,7 @@ def _robots_dir() -> Path:
 
 def resolve_world(raw: str) -> tuple[WorldView, set[str] | None]:
     """World directory, or name with an optional `[level,...]` filter resolved like the runtime (ARENA_WORLD_PATH, installed worlds, world buckets)."""
-    name, levels = WorldIdentifier.parse(raw)
+    name, levels = WorldIdentifier.split_filter(raw)
     path = Path(name).expanduser()
     if path.is_dir():
         return WorldView(path.resolve()), levels
@@ -179,18 +179,24 @@ def _level_nav_at_r(
 ) -> NavAtR:
     entities = list(level.objects)
     walls_grid, origin = level.render_grid(resolution=resolution)
-    clearance = ndimage.distance_transform_edt(walls_grid == _FREE) * resolution
+    distance = ndimage.distance_transform_edt(walls_grid == _FREE)
+    assert isinstance(distance, np.ndarray)
+    clearance = distance * resolution
     walls_traversable = clearance >= radius
     unresolved = 0
     grid = walls_grid
     if not walls_only:
         footprints, unresolved = _footprints(entities)
         grid, _ = level.render_grid(resolution=resolution, asset_color='black', asset_name_color=None, static_objects=footprints)
-        clearance = ndimage.distance_transform_edt(grid == _FREE) * resolution
+        distance = ndimage.distance_transform_edt(grid == _FREE)
+        assert isinstance(distance, np.ndarray)
+        clearance = distance * resolution
     traversable = clearance >= radius
     spawnable = traversable & (clearance >= spawn_clearance)
 
-    labels, count = ndimage.label(traversable, structure=_CONNECTIVITY)
+    labelled = ndimage.label(traversable, structure=_CONNECTIVITY)
+    assert isinstance(labelled, tuple)
+    labels, count = labelled
     cells = np.bincount(labels.ravel(), minlength=count + 1)[1:]
     spawns = np.bincount(labels[spawnable], minlength=count + 1)[1:]
     order = np.argsort(-cells, kind='stable')
@@ -199,7 +205,7 @@ def _level_nav_at_r(
     value = float(np.dot(masses, shares)) if spawns.sum() else math.nan
     rank = np.zeros(count + 1, dtype=np.int64)
     rank[order + 1] = np.arange(1, count + 1)
-    ranked = rank[labels]
+    ranked = rank[labels]  # pyright: ignore[reportCallIssue, reportArgumentType]
 
     if image is not None:
         _paint(walls_grid, grid, ranked).save(image)
@@ -246,6 +252,9 @@ def _footprints(entities: Iterable[Obstacle]) -> tuple[list[tuple[str, shapely.P
     footprints: list[tuple[str, shapely.Polygon]] = []
     unresolved = 0
     for entity, bbox in zip(pending, Identifier._run_sync(_gather()), strict=True):
+        if not isinstance(bbox, Sequence):
+            unresolved += 1
+            continue
         try:
             (x_min, x_max), (y_min, y_max), *z_pair = bbox
         except (TypeError, ValueError):

@@ -13,10 +13,12 @@ from mcp.types import (
 from .tools import _param_value_to_python
 
 if TYPE_CHECKING:
+    from task_generator_msgs.msg import EpisodeRecord
+
     from .ros_bridge import RosBridge
 
 
-def _record_to_dict(record: object) -> dict:
+def _record_to_dict(record: EpisodeRecord) -> dict:
     return {
         "episode_id": record.episode_id,
         "world": record.world,
@@ -41,13 +43,13 @@ def build_resources_list() -> list[Resource]:
             uri="task_generator://state/world",
             name="Current world id",
             description="The world id currently active in the task_generator node. Updated whenever the world changes at a reset boundary.",
-            mimeType="text/plain",
+            mime_type="text/plain",
         ),
         Resource(
             uri="task_generator://state/episode",
             name="Episode state",
             description="Episode state as JSON: current episode record and queued (next) episode record.",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
     ]
 

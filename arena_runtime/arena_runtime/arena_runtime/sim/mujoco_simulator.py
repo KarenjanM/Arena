@@ -15,6 +15,7 @@ import arena_simulation_setup.tree.assets.Material
 import attrs
 import geometry_msgs.msg
 import launch
+import launch.event_handlers
 import launch_ros
 import std_srvs.srv
 from arena_mujoco_msgs.msg import (
@@ -56,6 +57,7 @@ from arena_simulation_setup.shared import Obstacle as ObstacleDefinition
 from arena_simulation_setup.shared import cct_to_rgb
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
+from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
 from task_generator.shared import Ceiling as CeilingDefinition
 from task_generator.shared import (
     DynamicObstacle,
@@ -71,7 +73,7 @@ from task_generator.shared import Wall as WallDefinition
 from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 
 from arena_runtime._node import NodeInterface
-from arena_runtime.sim import BaseSim, SimLifecycle
+from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle
 from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
@@ -175,9 +177,9 @@ def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Materi
 class MujocoSimulator(BaseSim, NodeInterface):
     SIM_NAME = 'mujoco'
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
         """Initialize MujocoSimulator"""
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         env_prefix = f"env_{self._env_id}"
         self._NS_PRIM = Namespace(env_prefix)('Obstacles')
@@ -217,6 +219,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
         }
         args.pop('resolved_assembly', None)
         if robot.resolved_assembly is not None:
+            assert robot_config.assembly is not None
             catalog = arena_robots.catalog.Catalog()
             args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
             args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
@@ -350,7 +353,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                 else None
             )
 
-            cm_params: list[object] = [{'use_sim_time': True}]
+            cm_params: list[SomeParameterFile | SomeParametersDict] = [{'use_sim_time': True}]
             if rendered_yaml is not None:
                 cm_params.append(rendered_yaml)
 
@@ -418,7 +421,7 @@ class MujocoSimulator(BaseSim, NodeInterface):
                 size, center = box
                 pose = offset_pose(pose, tuple(c * f for c, f in zip(center, scale, strict=True)))
                 scale = tuple(d * f for d, f in zip(size, scale, strict=True))
-            req.prims.append(
+            req.prims.append(  # pyright: ignore[reportAttributeAccessIssue]
                 Prim(
                     name=self._NS_PRIM(obstacle.name),
                     pose=pose.to_msg(),
@@ -756,8 +759,8 @@ class MujocoSimulator(BaseSim, NodeInterface):
         self._logger.info("All service clients initialized and available.")
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, **kwargs: object) -> "MujocoSimulator":
-        self = cls(*args, namespace=namespace, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[SimKwargs]) -> "MujocoSimulator":
+        self = cls(**kwargs)
         self._logger.info("Creating MujocoSimulator instance...")
         await self.setup()
         return self

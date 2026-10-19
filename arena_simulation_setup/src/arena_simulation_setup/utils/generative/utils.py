@@ -2,7 +2,7 @@ from collections.abc import Iterator, Mapping
 
 from shapely import LineString, MultiLineString
 from shapely.geometry import Point, Polygon
-from shapely.geometry.base import BaseGeometry
+from shapely.geometry.base import BaseGeometry, BaseMultipartGeometry
 
 from arena_simulation_setup.shared import Position
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
@@ -57,7 +57,7 @@ def _lines(geom: BaseGeometry) -> Iterator[LineString]:
         yield from geom.interiors
     elif isinstance(geom, LineString):
         yield geom
-    elif not isinstance(geom, Point):
+    elif isinstance(geom, BaseMultipartGeometry):
         for part in geom.geoms:
             yield from _lines(part)
 

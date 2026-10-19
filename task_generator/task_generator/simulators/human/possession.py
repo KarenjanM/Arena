@@ -13,19 +13,32 @@ POSSESSION_TIMEOUT_S = 1.0
 
 
 class _JointStateLike(typing.Protocol):
-    name: typing.Sequence[str]
-    position: typing.Sequence[float]
+    @property
+    def name(self) -> typing.Collection[str]: ...
+    @property
+    def position(self) -> typing.Collection[float]: ...
 
 
 class _PedestrianLike(typing.Protocol):
-    name: str
-    joint_state: _JointStateLike
-    model_uri: str
+    @property
+    def name(self) -> str: ...
+    @property
+    def joint_state(self) -> _JointStateLike: ...
+    @property
+    def model_uri(self) -> str: ...
+    @model_uri.setter
+    def model_uri(self, value: str) -> None: ...
 
 
 class _PossessableLike(_PedestrianLike, typing.Protocol):
-    id: int
-    gait_phase: float
+    @property
+    def id(self) -> int: ...
+    @id.setter
+    def id(self, value: int) -> None: ...
+    @property
+    def gait_phase(self) -> float: ...
+    @gait_phase.setter
+    def gait_phase(self, value: float) -> None: ...
 
 
 def bare_joint_names_valid(names: typing.Iterable[str]) -> bool:
@@ -34,7 +47,7 @@ def bare_joint_names_valid(names: typing.Iterable[str]) -> bool:
 
 
 def validate_stream[PedestrianT: _PedestrianLike](
-    pedestrians: typing.Sequence[PedestrianT],
+    pedestrians: typing.Collection[PedestrianT],
     *,
     gate_open: bool,
     known_names: typing.Container[str],
@@ -75,7 +88,7 @@ class PossessionTable[PedestrianT: _PossessableLike]:
 
     def merge(
         self,
-        batch: typing.Sequence[PedestrianT],
+        batch: typing.Collection[PedestrianT],
         *,
         known_names: typing.Container[str],
         gate_open: bool,
@@ -99,7 +112,7 @@ class PossessionTable[PedestrianT: _PossessableLike]:
         stale = [name for name in self._entries if not self._live(name, now)]
         return [(name, self._release(name)) for name in stale]
 
-    def substitute(self, pedestrians: typing.Sequence[PedestrianT], now: float) -> list[PedestrianT]:
+    def substitute(self, pedestrians: typing.Collection[PedestrianT], now: float) -> list[PedestrianT]:
         """Copy-on-write overlay: possessed names swap to stored copies, everything else passes through untouched."""
         out: list[PedestrianT] = []
         for ped in pedestrians:

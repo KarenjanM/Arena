@@ -48,7 +48,6 @@ setup(
             'task_generator_node = task_generator.task_generator_node:main',
             'generate_map = task_generator.utils.map_generator:main',
             # 'server = task_generator.server:main',
-            # 'filewatcher = task_generator.filewatcher:main'
         ]
     }
 )

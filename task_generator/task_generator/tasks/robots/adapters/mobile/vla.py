@@ -85,6 +85,7 @@ class VlaAdapter(DrlAdapter):
         from arena_planners import goal  # noqa: PLC0415
 
         self._instruction = self._instruct(phase) if "instruction" in self._revealed else None
+        assert phase.pose is not None
         x, y, theta = phase.pose.to_2d()
         return goal.initial_state({"x": x, "y": y, "theta": theta}, self._instruction["text"] if self._instruction else "", self._revealed)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typing
 from abc import ABC
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 import attrs
 
@@ -14,7 +14,11 @@ from arena_simulation_setup.utils.geometry import Pose
 
 
 def _optional_float(value: object) -> float | None:
-    return None if value is None else float(value)
+    if value is None:
+        return None
+    if not isinstance(value, (typing.SupportsFloat, str)):
+        raise TypeError(f"expected a number, got {value!r}")
+    return float(value)
 
 
 def _pose_dict(pose: Pose) -> list[float]:
@@ -42,16 +46,22 @@ class TaskPhase(ABC):
         """Pick the phase type by key presence: `loop`, `goto`, `gesture`, `reach`, or a hold phase with none."""
         data = dict(value)
         if "loop" in data:
-            loop = LoopPhase(phases=[TaskPhase.parse(p) for p in data.pop("loop")], until=None if data.get("until") is None else str(data.pop("until")), text=str(data.pop("text", "")))
+            loop_phases = data.pop("loop")
+            if not isinstance(loop_phases, Iterable):
+                raise TypeError(f"loop must be a list of phases, got {loop_phases!r}")
+            loop = LoopPhase(phases=[TaskPhase.parse(p) for p in loop_phases], until=None if data.get("until") is None else str(data.pop("until")), text=str(data.pop("text", "")))
             if data:
                 raise ValueError(f"unknown phase keys {sorted(data)} for LoopPhase")
             return loop
         until = data.pop("until", None)
         instruction = str(data.pop("instruction", ""))
+        conditions = data.pop("conditions", [])
+        if not isinstance(conditions, Iterable):
+            raise TypeError(f"conditions must be a list, got {conditions!r}")
         common = {
             "on_failure": str(data.pop("on_failure", "continue")),
             "until": None if until is None else str(until),
-            "conditions": [EpisodeCondition.parse(c) for c in data.pop("conditions", [])],
+            "conditions": [EpisodeCondition.parse(c) for c in conditions],
             "text": str(data.pop("text", "")) or instruction,
         }
         if "gesture" in data:
@@ -256,11 +266,15 @@ class TaskRequest:
         return first
 
     @classmethod
-    def parse(cls, value: Mapping[str, object] | Sequence[object]) -> TaskRequest:
+    def parse(cls, value: Mapping[str, object] | Sequence[Mapping[str, object]]) -> TaskRequest:
         if isinstance(value, Mapping):
             data = dict(value)
-            phases = [TaskPhase.parse(p) for p in data.pop("phases", [])]
-            conditions = [EpisodeCondition.parse(c) for c in data.pop("conditions", [])]
+            raw_phases = data.pop("phases", [])
+            raw_conditions = data.pop("conditions", [])
+            if not isinstance(raw_phases, Iterable) or not isinstance(raw_conditions, Iterable):
+                raise TypeError(f"request phases and conditions must be lists, got {raw_phases!r} and {raw_conditions!r}")
+            phases = [TaskPhase.parse(p) for p in raw_phases]
+            conditions = [EpisodeCondition.parse(c) for c in raw_conditions]
             if data:
                 raise ValueError(f"unknown request keys {sorted(data)}")
             return cls(phases=phases, conditions=conditions)

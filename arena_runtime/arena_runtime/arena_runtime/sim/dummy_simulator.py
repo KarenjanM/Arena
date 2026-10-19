@@ -45,6 +45,7 @@ class DummyHost(SimLifecycle):
     async def unpause(self) -> bool:
         if self.paused:
             self.paused = False
+            assert self._pause_start is not None
             self._paused_total += time.monotonic() - self._pause_start
             self._pause_start = None
         return True

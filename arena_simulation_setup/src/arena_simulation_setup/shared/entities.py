@@ -18,7 +18,7 @@ from arena_simulation_setup.utils.cattrs import (
     Serializable,
     converter,
 )
-from arena_simulation_setup.utils.geometry import Pose, Position, Scale
+from arena_simulation_setup.utils.geometry import Pose, Position, Scale, Vector3
 from arena_simulation_setup.utils.resolution import resolve_zone_point
 
 from .light_state import ObjectLightSettings
@@ -62,7 +62,7 @@ class Waypoint(Position):
     def from_position(cls, pos: Position, level: str = '') -> 'Waypoint':
         return cls(x=pos.x, y=pos.y, z=pos.z, level=level)
 
-    def __add__(self, other: Position) -> Waypoint | NotImplementedType:
+    def __add__(self, other: Vector3) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
             return type(self).from_position(pos=super().__add__(other), level=self.level)
         return NotImplemented
@@ -119,7 +119,7 @@ class Entity(Named, Parseable, Serializable):
 HUMANSIM_OBJECT_KEYS = frozenset({'type', 'capacity', 'satisfies', 'interaction_radius', 'formation', 'seats'})
 
 
-def _humansim_object(value: object) -> dict:
+def _humansim_object(value: Mapping[str, object] | None) -> dict:
     value = dict(value or {})
     unknown = set(value) - HUMANSIM_OBJECT_KEYS
     if unknown:

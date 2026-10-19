@@ -14,6 +14,7 @@ from ._mechanism_shim import _DoorState, _near_door_segment, _reset_door
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.semantics import SemanticCfg
+    from task_generator.shared import Door
 
     from ._interface import MechanismITF
     from ._mechanism_shim import _DoorRuntime, _ElevatorRuntime
@@ -42,10 +43,10 @@ class SemanticChange:
 _SEMANTIC_KINDS: dict[str, type[SemanticKind]] = {}
 
 
-def semantic_kind(name: str) -> Callable[[type[SemanticKind]], type[SemanticKind]]:
+def semantic_kind[K: type[SemanticKind]](name: str) -> Callable[[K], K]:
     """Register a SemanticKind subclass under name and set cls.KIND."""
 
-    def register(cls: type[SemanticKind]) -> type[SemanticKind]:
+    def register(cls: K) -> K:
         cls.KIND = name
         _SEMANTIC_KINDS[name] = cls
         return cls
@@ -519,7 +520,7 @@ class GateSemantics(SemanticKind):
         self,
         mech: MechanismITF,
         entity: str,
-        door: object,
+        door: Door,
         authorized: frozenset[str],
         initial_locked: bool,
         unlock_on: str | None,

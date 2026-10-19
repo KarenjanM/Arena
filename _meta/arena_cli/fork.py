@@ -118,14 +118,14 @@ def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple
             target = os.readlink(s)
             if dst is not None:
                 os.symlink(target, d)
-            part.changed += counted and not (ps is not None and stat.S_ISLNK(ps.st_mode) and os.readlink(p) == target)
+            part.changed += counted and not (p is not None and ps is not None and stat.S_ISLNK(ps.st_mode) and os.readlink(p) == target)
         elif not stat.S_ISREG(ss.st_mode):
             part.files -= counted
         elif link_source(rel):
             if dst is not None:
                 os.link(s, d)
             part.changed += counted and not (ps is not None and os.path.samestat(ps, ss))
-        elif ps is not None and stat.S_ISREG(ps.st_mode) and ps.st_size == ss.st_size and (ps.st_mtime_ns == ss.st_mtime_ns or filecmp.cmp(p, s, shallow=False)):
+        elif p is not None and ps is not None and stat.S_ISREG(ps.st_mode) and ps.st_size == ss.st_size and (ps.st_mtime_ns == ss.st_mtime_ns or filecmp.cmp(p, s, shallow=False)):
             if dst is not None:
                 os.link(p, d)
         else:
@@ -203,7 +203,7 @@ def _release() -> str:
         }
         t1 = time.monotonic()
         repos = _repos(src)
-        if prev is not None and _meta(latest).get("format") == _FORMAT and repos == _meta(latest).get("repos"):
+        if latest is not None and prev is not None and _meta(latest).get("format") == _FORMAT and repos == _meta(latest).get("repos"):
             prev_parts = _meta(latest).get("parts", {})
             for name, (dest, path, entries, link_source) in sources.items():
                 p = _freeze(path, None, os.path.join(prev, dest), entries(), link_source)

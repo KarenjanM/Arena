@@ -58,6 +58,7 @@ jobs:
           members=$(python3 -c 'import re, tomllib, pathlib; norm = lambda n: re.sub(r"[-_.]+", "-", n).lower(); ws = pathlib.Path(".uv-workspace"); tested = {norm(n) for n in pathlib.Path("tested.txt").read_text().split()}; [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if norm(n) in tested]')
           uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $members)
       - name: build the packages
+        id: build
         run: |
           source /opt/ros/jazzy/setup.bash
           export PATH=/opt/venv/bin:$PATH
@@ -70,3 +71,9 @@ jobs:
       - name: list the test results
         if: always()
         run: /opt/venv/bin/colcon test-result --verbose
+      - name: check the types
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          source install/setup.bash
+          uv pip install --python /opt/venv/bin/python3 "basedpyright==$(grep -oP 'basedpyright==\K[0-9.]+' .pre-commit-config.yaml)"
+          /opt/venv/bin/basedpyright --pythonpath /opt/venv/bin/python3 _meta $(colcon list --packages-select $(cat tested.txt) -p)

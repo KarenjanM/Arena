@@ -70,7 +70,7 @@ def parse_wire_json(doc: Mapping[str, object]) -> dict[str, Clip]:
         root_z = tuple(float(v) for v in raw_root_z) if isinstance(raw_root_z, Sequence) else None
         clips[str(name)] = Clip(
             name=str(name),
-            duration=float(raw.get("duration", 0.0)),  # type: ignore[arg-type]
+            duration=float(raw.get("duration", 0.0)),
             cyclic=bool(raw.get("cyclic", False)),
             rate_hz=rate_hz,
             tracks=tracks,

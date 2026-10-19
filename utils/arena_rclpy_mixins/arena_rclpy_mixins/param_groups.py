@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import typing
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 import attrs
 import yaml
@@ -24,7 +24,7 @@ class PerRole[T]:
     def __init__(self, **by_role: T) -> None:
         if not by_role:
             raise ValueError("PerRole needs a default for at least one role")
-        self.__attrs_init__(by_role=tuple(by_role.items()))
+        self.__attrs_init__(by_role=tuple(by_role.items()))  # pyright: ignore[reportAttributeAccessIssue]
 
     def pick(self, role: str) -> T:
         """Raises KeyError for a role without a default."""
@@ -91,7 +91,7 @@ def names(value: object) -> tuple[str, ...]:
     return tuple(str(v).strip().lower() for v in typing.cast(Iterable[str], value) if str(v).strip())
 
 
-def _coerce_value(default: object, raw: str) -> object:
+def _coerce_value(default: float | Sequence[str | float], raw: str) -> object:
     if isinstance(default, int):
         return int(raw)
     if isinstance(default, float):
@@ -105,9 +105,15 @@ def _coerce_value(default: object, raw: str) -> object:
 class Param[T]:
     """Parameter declaration. On a group class it is the declaration, on a group instance the live ROSParam."""
 
-    def __init__(self, name: str, default: T | PerRole[T], *, parse: Callable[[object], T] | None = None, description: str = "") -> None:
+    @typing.overload
+    def __init__(self, name: str, default: T | PerRole[T], *, parse: Callable[[object], T] | None = None, description: str = "") -> None: ...
+
+    @typing.overload
+    def __init__(self, name: str, default: object, *, parse: Callable[[object], T], description: str = "") -> None: ...
+
+    def __init__(self, name: str, default: object, *, parse: Callable[[object], T] | None = None, description: str = "") -> None:
         self.name = name
-        self.default = default
+        self.default = typing.cast("T | PerRole[T]", default)
         self.parse = parse
         self.description = description
         self.attr = ""
@@ -149,7 +155,7 @@ class Param[T]:
     def __get__(self, instance: ParamGroup | None, owner: type) -> Param[T] | ROSParamT[T]:
         if instance is None:
             return self
-        return instance._live[self.attr]
+        return typing.cast("ROSParamT[T]", instance._live[self.attr])
 
 
 class ParamGroup:

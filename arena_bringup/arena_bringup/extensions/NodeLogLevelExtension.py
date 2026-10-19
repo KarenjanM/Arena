@@ -168,10 +168,10 @@ class NodeLogLevelExtension(NodeActionExtension):
 
 class SetGlobalLogLevelAction(launch.Action):
     LOGLEVEL = LogLevel
-    _spec: object
+    _spec: str | launch.Substitution
     _base: str
 
-    def __init__(self, spec: object, *, base: str = 'warn', **kwargs: object) -> None:
+    def __init__(self, spec: str | launch.Substitution, *, base: str = 'warn', **kwargs: launch.Condition | None) -> None:
         super().__init__(**kwargs)
         self._spec = spec
         self._base = _validate_level(base)

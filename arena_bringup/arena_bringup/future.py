@@ -3,6 +3,7 @@ from __future__ import annotations
 import collections.abc
 import importlib
 from collections.abc import Sequence
+from pathlib import Path
 
 from launch import LaunchContext, SomeSubstitutionsType, Substitution
 from launch.utilities import ensure_argument_type, normalize_to_list_of_substitutions, perform_substitutions
@@ -45,6 +46,7 @@ class PythonExpression(Substitution):
             # Ensure that we got a list!
             assert not isinstance(data[1], str)
             assert not isinstance(data[1], Substitution)
+            assert not isinstance(data[1], Path)
             # Modules
             modules = list(data[1])
             if len(modules) > 0:

@@ -30,6 +30,7 @@ class ParametrizedConfig:
         max: int
         type: str
         model: str
+        zone: str = ''
 
     STATIC: list[ObstacleConfig]
     INTERACTIVE: list[ObstacleConfig]
@@ -65,12 +66,12 @@ class ParametrizedIdentifier(Identifier[ParametrizedConfig]):
             raise ValueError(f"{path} is not a random.xml desc (expected root tag 'random')")
 
         def xml_to_config(config: ET.Element) -> ParametrizedConfig.ObstacleConfig:
-            return ParametrizedConfig.ObstacleConfig(min=int(_get_attrib(config, "min")), max=int(_get_attrib(config, "max")), type=_get_attrib(config, "type", ""), model=_get_attrib(config, "model"))
+            return ParametrizedConfig.ObstacleConfig(min=int(_get_attrib(config, "min")), max=int(_get_attrib(config, "max")), type=_get_attrib(config, "type", ""), model=_get_attrib(config, "model"), zone=_get_attrib(config, "zone", ""))
 
         return ParametrizedConfig(
             STATIC=list(map(xml_to_config, root.findall("./static/obstacle") or [])),
-            INTERACTIVE=list(map(xml_to_config, root.findall("./static/interactive") or [])),
-            DYNAMIC=list(map(xml_to_config, root.findall("./static/dynamic") or [])),
+            INTERACTIVE=list(map(xml_to_config, root.findall("./interactive/obstacle") or [])),
+            DYNAMIC=list(map(xml_to_config, root.findall("./dynamic/obstacle") or [])),
         )
 
 

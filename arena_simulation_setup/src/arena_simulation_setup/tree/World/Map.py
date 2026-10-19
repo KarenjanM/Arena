@@ -2,7 +2,7 @@ import io
 import logging
 import math
 import typing
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -62,7 +62,7 @@ class Map(PathView):
             scaling_factor * (min_y + height),
         ]
 
-        def to_pixel_parts(shape: shapely.Geometry) -> object:
+        def to_pixel_parts(shape: shapely.Geometry) -> np.ndarray:
             return shapely.get_parts(shapely.affinity.affine_transform(shape, to_pixels))
 
         def tf(shape: shapely.Geometry) -> shapely.Geometry:
@@ -73,26 +73,30 @@ class Map(PathView):
             shape = shapely.remove_repeated_points(shape)
             return shape
 
-        def as_int(coords: object) -> list[tuple[int, int]]:
+        def as_int(coords: Iterable[Sequence[float]]) -> list[tuple[int, int]]:
             return [(int(math.trunc(x) + padding), int(math.trunc(y) + padding)) for (x, y, *_) in coords]
 
         draw = PIL.ImageDraw.Draw(img)
         for cutout in to_pixel_parts(rooms):
             poly = tf(cutout)
+            assert isinstance(poly, shapely.Polygon)
             draw.polygon(as_int(poly.exterior.coords), fill='white')
 
         for wall in to_pixel_parts(walls):
             line = tf(wall)
+            assert isinstance(line, shapely.LineString)
             draw.line(as_int(line.coords), fill='black', width=1)
 
         for cutout in to_pixel_parts(doors):
             poly = tf(cutout)
+            assert isinstance(poly, shapely.Polygon)
             draw.polygon(as_int(poly.exterior.coords), fill='white')
 
         if asset_color is not None:
             for name, obj in static_objects:
                 logging.debug(f"Drawing asset '{name}' with geometry: {obj} in color {asset_color}")
                 poly = tf(shapely.affinity.affine_transform(obj, to_pixels))
+                assert isinstance(poly, shapely.Polygon)
                 if len(poly.exterior.coords) < 3:
                     logging.warning(f"Skipping asset '{name}' because it has insufficient geometry to draw ({len(poly.exterior.coords)} coordinates).")
                     continue

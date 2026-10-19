@@ -117,6 +117,17 @@ ruff format .             # apply the formatting the hook enforces
 
 If the hook auto-fixes something, the commit is aborted and the fixes are left unstaged, `git add` and re-commit.
 
+### Type checking
+
+[basedpyright](https://docs.basedpyright.com/) checks types with the `[tool.pyright]` config in the root [`pyproject.toml`](pyproject.toml). It runs inside the Arena container as a manual pre-commit hook:
+```bash
+pre-commit run basedpyright --hook-stage manual
+```
+
+[`_meta/typings`](_meta/typings) holds stubs for compiled modules that ship no type information (USD, MuJoCo, Box2D, gz-transport, tf2, the Qt bindings).
+
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs the same check, at the hook's basedpyright version, over `_meta` and every package it tests, after the test suites.
+
 ### Python dependencies
 
 Each Arena package declares the pip packages it imports in the `[project]` table of its own `pyproject.toml`. Versions and dependencies live only there, `setup.py` keeps the ament glue. `arena update` composes the packages present in your checkout into one uv workspace (`.uv-workspace/`, generated) and syncs it into the venv. Every repo tracks a `uv.lock` derived from the full-tree lock, so a submodule such as `arena_planners` reproduces the same versions standalone with `uv sync`.

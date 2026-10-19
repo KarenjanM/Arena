@@ -1,10 +1,12 @@
 import asyncio
+import typing
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
 
 from task_generator.shared import Pose, Position, PositionRadius
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
@@ -90,7 +92,7 @@ class TM_Scenario(TM_Robots):
             return False
         return all(await asyncio.gather(*(manager.is_done for manager in active_robots)))
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Robots.__init__(self, **kwargs)
 
         self._config = self.node.ROSParam[str](

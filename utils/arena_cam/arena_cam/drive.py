@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
 import math
 import threading
 import typing
@@ -46,6 +47,7 @@ if typing.TYPE_CHECKING:
 
     import rclpy.node
     import rclpy.subscription
+    import rclpy.task
 
     from .curves import Quat, Vec3
     from .surfaces import TargetSelection
@@ -108,10 +110,10 @@ class EntityRoster:
         topics = [name for name, _types in self._node.get_topic_names_and_types()]
         for name in topics:
             if name.endswith(ROBOTS_SUFFIX) and name not in self._subs:
-                self._subs[name] = self._node.create_subscription(RobotFleet, name, lambda msg, topic=name: self._on_fleet(topic, msg), surfaces.ENVS_QOS)
+                self._subs[name] = self._node.create_subscription(RobotFleet, name, functools.partial(self._on_fleet, name), surfaces.ENVS_QOS)
         for name in faces.tracked_topics(topics):
             if name not in self._subs:
-                self._subs[name] = self._node.create_subscription(IdsList, name, lambda msg, topic=name: self._on_faces(topic, msg), 10)
+                self._subs[name] = self._node.create_subscription(IdsList, name, functools.partial(self._on_faces, name), 10)
 
     def _on_fleet(self, topic: str, msg: RobotFleet) -> None:
         self._names[topic] = [robot.descriptor.base_frame for robot in msg.robots if robot.descriptor.base_frame]
@@ -463,7 +465,7 @@ class Driver:
             self.status = f"saved to {self._recording.path.parent}" if self._recording.recorded else "nothing recorded, see the log"
             self._recording = None
 
-    def _on_still(self, future: object) -> None:
+    def _on_still(self, future: rclpy.task.Future) -> None:
         result = future.result()
         if result is None or not result.success:
             self.status = f"capture failed: {result.message if result is not None else 'no response'}"

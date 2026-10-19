@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import abc
 import os
+import typing
 
+import rclpy.node
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
@@ -31,6 +33,11 @@ def nav2_overlay(hearing: str) -> str:
     return os.path.join(arena_hearing_share(hearing), "config", "nav2_overlay.yaml")
 
 
+class HearingOptions(typing.TypedDict):
+    node: rclpy.node.Node
+    namespace: Namespace
+
+
 class BaseHearing(NodeInterface, abc.ABC):
     """Node-side counterpart of the robot hearing layer."""
 
@@ -52,13 +59,13 @@ HearingRegistry = Registry[str, BaseHearing]()
 
 
 @HearingRegistry.register(NONE)
-async def none(**kwargs: object) -> BaseHearing:
+async def none(**kwargs: typing.Unpack[HearingOptions]) -> BaseHearing:
     from .noop import NoopHearing
 
     return NoopHearing(**kwargs)
 
 
-async def _arena(**kwargs: object) -> BaseHearing:
+async def _arena(**kwargs: typing.Unpack[HearingOptions]) -> BaseHearing:
     from .arena import ArenaHearing
 
     return ArenaHearing(**kwargs)

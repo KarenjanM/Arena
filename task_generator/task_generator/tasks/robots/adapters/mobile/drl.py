@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     import asyncio
 
     import geometry_msgs.msg
+    from arena_planners.bridge.edge_node import PlannerEdgeNode
     from rclpy.impl.rcutils_logger import RcutilsLogger
 
     from task_generator.manager.robot_manager.robot_manager import RobotManager
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 )
 class DrlAdapter(MobileAdapter):
     kind: ClassVar[str] = "drl"
+    bringup: DrlBringup
 
     @property
     def controls_orientation(self) -> bool:
@@ -111,7 +113,7 @@ class DrlAdapter(MobileAdapter):
             family, _kind = parsed
             _launch_path, self._handler_metadata = resolve_global_planner(family)
 
-        self._edge_node: object = None
+        self._edge_node: PlannerEdgeNode | None = None
         self._run_loop_task: asyncio.Task | None = None
         self._current_phase: TaskPhase | None = None
 
@@ -130,6 +132,7 @@ class DrlAdapter(MobileAdapter):
 
     def _initial_state(self, phase: GoToPhase) -> dict:
         """Reset payload announcing `phase` to the planner."""
+        assert phase.pose is not None
         x, y, theta = phase.pose.to_2d()
         return {"goal_pose": {"x": x, "y": y, "theta": theta}}
 
@@ -179,14 +182,14 @@ class DrlAdapter(MobileAdapter):
 
     def launch_description(self, ctx: AdapterCtx) -> GroupAction:
         kwargs = dict(self._bringup_kwargs)
-        if not self._depends_global_plan:
-            kwargs["global_planner"] = "none"
+        kwargs.pop("global_planner", None)
         return GroupAction(
             [
                 *self.bringup._launch_actions(
                     use_sim_time=ctx.use_sim_time,
                     frame=ctx.frame,
                     task_generator_node=ctx.task_generator_node,
+                    global_planner=self._global_planner if self._depends_global_plan else "none",
                     **kwargs,
                 ),
             ]
@@ -318,6 +321,7 @@ class DrlAdapter(MobileAdapter):
         robot: RobotManager,
     ) -> None:
         assert isinstance(phase, GoToPhase), f"DrlAdapter only accepts GOTO_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
+        assert phase.pose is not None
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
         self._current_phase = phase
 
@@ -348,6 +352,7 @@ class DrlAdapter(MobileAdapter):
         msg = geometry_msgs.msg.PoseStamped()
         msg.header.frame_id = "map"
         msg.header.stamp = robot.node.sim_time.to_msg()
+        assert phase.pose is not None
         msg.pose = phase.pose.to_msg()
         return msg
 
