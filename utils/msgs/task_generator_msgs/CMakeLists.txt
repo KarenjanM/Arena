@@ -45,6 +45,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/SpawnRobot.srv
   srv/SpawnSound.srv
   srv/SpawnStatic.srv
+  srv/SubmitTask.srv
   action/RunEpisode.action
   DEPENDENCIES geometry_msgs diagnostic_msgs builtin_interfaces rcl_interfaces
 )

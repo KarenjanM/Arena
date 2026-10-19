@@ -1,0 +1,7 @@
+# Submit a task to one robot, appended to the episode's phases.
+string robot              # robot name as in state/robots
+string task_yaml          # phases list or {phases, conditions}, scenario format
+---
+bool success
+string error_msg          # empty on success
+uint32[] phase_indices    # episode-wide indices of the appended phases

@@ -27,6 +27,7 @@ import task_generator_msgs.action
 import task_generator_msgs.msg
 import task_generator_msgs.srv
 import tf2_ros
+import yaml
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
@@ -35,6 +36,7 @@ from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.shared.judge import Sample, WallGrid, atom_holds, zone_polygons
+from arena_simulation_setup.shared.task import TaskRequest
 from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
@@ -1872,6 +1874,32 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = str(e)
         return response
 
+    async def _cb_submit_task(
+        self,
+        request: task_generator_msgs.srv.SubmitTask.Request,
+        response: task_generator_msgs.srv.SubmitTask.Response,
+    ) -> task_generator_msgs.srv.SubmitTask.Response:
+        if not self.rosparam[bool].get("initialized", False):
+            response.success = False
+            response.error_msg = "task generator not initialized"
+            return response
+        manager = self._robots_manager.managers.get(request.robot)
+        if manager is None:
+            response.success = False
+            response.error_msg = f"unknown robot {request.robot!r}, robots: {sorted(self._robots_manager.managers)}"
+            return response
+        try:
+            task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
+            async with self._reset_lock:
+                first = len(manager.runner.phases)
+                await manager.submit_task(task)
+                response.phase_indices = list(range(first, len(manager.runner.phases)))
+            response.success = True
+        except Exception as e:
+            response.success = False
+            response.error_msg = str(e)
+        return response
+
     async def _cb_require_map(
         self,
         request: object,
@@ -2170,6 +2198,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             task_generator_msgs.srv.DespawnRobot,
             self.service_namespace("runtime", "despawn_robot"),
             self._cb_despawn_robot,
+        )
+
+        self.create_service(
+            task_generator_msgs.srv.SubmitTask,
+            self.service_namespace("runtime", "submit_task"),
+            self._cb_submit_task,
         )
 
         self.create_service(
