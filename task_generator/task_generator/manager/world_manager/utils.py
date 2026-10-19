@@ -468,7 +468,7 @@ def RLE_2D(grid: np.ndarray) -> WorldWalls:
             walls_x.add(distance, y)
 
     for x, rles in enumerate(RLE_1D(grid.T)):
-        distance: int = 0
+        distance = 0
         for run in rles:
             distance += run
             walls_y.add(distance, x)

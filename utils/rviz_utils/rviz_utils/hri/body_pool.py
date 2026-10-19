@@ -22,6 +22,7 @@ import math
 import os
 import subprocess
 import tempfile
+import xml.dom.minidom
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -112,6 +113,7 @@ class BodyPool:
     def _generate_urdf(self, body_id: str, height: float) -> str:
         xacro_path = f"{self._hd_share}/urdf/human-tpl.xacro"
         doc = xacro.process_file(xacro_path, mappings={"id": body_id, "height": str(height)})
+        assert isinstance(doc, xml.dom.minidom.Document)
         return doc.toprettyxml(indent="  ")
 
     @staticmethod

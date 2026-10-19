@@ -100,7 +100,7 @@ def source_plausibility(positions: np.ndarray) -> dict[str, float]:
 # -- loop seams --------------------------------------------------------------------------------
 
 
-def loop_seam(frames: Sequence[dict], body: S.Body, joints: Sequence[str] | None, loop_from: int = 0, reverse: bool = False) -> dict[str, float]:
+def loop_seam(frames: Sequence[dict], body: S.Body, joints: Sequence[str] | None, loop_from: int = 0, reverse: bool = False) -> dict[str, float | str | bool]:
     """Link jump from the last played frame to the loop-in frame, next to the clip's own per-frame link motion."""
     pos = rig_positions(frames, body, joints)
     tracks = np.stack([pos[k] for k in LINKS], axis=1)  # (T, L, 3)
@@ -149,7 +149,7 @@ def aim_errors(slot: str, target_local: Sequence[float], *, moving: bool, hold_s
         ag = layer._agents.get(1)
         st = None if ag is None else ag.slots.get("arm")
         parked = st is not None and st.phase == "hold" and st.clip is not None and st.t >= st.clip.hold_end / st.clip.fps and not st.release_pending
-        if not parked:
+        if not parked or st is None or st.clip is None:
             continue
         pos, _ = S.fk(angles, body)
         side = st.clip.side

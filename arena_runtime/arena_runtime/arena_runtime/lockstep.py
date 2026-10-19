@@ -16,9 +16,16 @@ from rosidl_runtime_py.utilities import get_message
 from arena_runtime.lockstep_gates import Channel, ChannelRegistry, ChannelSpec, GateLedger, parse_channel_entry, step_slice
 
 if typing.TYPE_CHECKING:
+    import std_msgs.msg
     from arena_rclpy_mixins.Async import AsyncNode
 
     from arena_runtime.arena_node import ArenaNode
+
+
+class _Stamped(typing.Protocol):
+    @property
+    def header(self) -> std_msgs.msg.Header: ...
+
 
 _LOCKSTEP_REASON = "lockstep"
 _STATUS_PERIOD = 1.0
@@ -221,6 +228,7 @@ class LockstepScheduler:
     async def _cancel_task(self) -> None:
         task = self._task
         self._task = None
+        assert task is not None
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
@@ -342,7 +350,7 @@ class LockstepScheduler:
     def _subscribe(self, ledger: GateLedger, channel: Channel) -> rclpy.subscription.Subscription:
         loop = self._node.event_loop
 
-        def _cb(msg: object) -> None:
+        def _cb(msg: _Stamped) -> None:
             ledger.observe(channel, Time.from_msg(msg.header.stamp).to_seconds())
             loop.call_soon_threadsafe(self._arrived.set)
 

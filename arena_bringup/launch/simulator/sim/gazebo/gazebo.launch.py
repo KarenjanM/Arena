@@ -10,7 +10,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from ament_index_python.packages import get_package_share_directory
-from launch import LaunchDescription
+from launch import LaunchDescription, SomeSubstitutionsType
 from launch.actions import ExecuteProcess, LogInfo, OpaqueFunction, SetEnvironmentVariable
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
@@ -301,17 +301,22 @@ def generate_launch_description():
             gz_args += f" --gui-config {_render_gui_config(engine)}"
         gz_launch_path = os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
         gz_launch_spec = importlib.util.spec_from_file_location('ros_gz_sim_gz_sim_launch', gz_launch_path)
+        if gz_launch_spec is None or gz_launch_spec.loader is None:
+            raise RuntimeError(f"cannot load {gz_launch_path}")
         gz_launch = importlib.util.module_from_spec(gz_launch_spec)
         gz_launch_spec.loader.exec_module(gz_launch)
         model_paths, plugin_paths = gz_launch.GazeboRosPaths.get_paths()
-        gz_env = {
+        gz_env: dict[SomeSubstitutionsType, SomeSubstitutionsType] = {
             'GZ_SIM_SYSTEM_PLUGIN_PATH': os.pathsep.join(
                 [os.environ.get('GZ_SIM_SYSTEM_PLUGIN_PATH', ''), os.environ.get('LD_LIBRARY_PATH', ''), plugin_paths]
             ),
             'GZ_SIM_RESOURCE_PATH': os.pathsep.join([os.environ.get('GZ_SIM_RESOURCE_PATH', ''), model_paths]),
         }
+        gz_bin = shutil.which('gz')
+        if gz_bin is None:
+            raise RuntimeError("gz not found on PATH")
         gz_server = ExecuteProcess(
-            cmd=['ruby', shutil.which('gz'), 'sim', *shlex.split(gz_args), '--force-version', '8'],
+            cmd=['ruby', gz_bin, 'sim', *shlex.split(gz_args), '--force-version', '8'],
             name='gazebo',
             output='screen',
             additional_env=gz_env,

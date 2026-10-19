@@ -23,7 +23,6 @@ from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
 from arena_rclpy_mixins.qos import reliable
-from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.Wall import WallSegment
@@ -33,7 +32,7 @@ from flatsim_msgs.srv import AddFloors, AddOutlines, ControlWorld, DeleteEntitie
 from task_generator.shared import DynamicObstacle, Floor, ModelType, Obstacle, Pose, Robot, Wall
 from task_generator.simulators.human import PED_RADIUS
 
-from arena_runtime.sim import BaseSim, SimLifecycle, SimUnavailable
+from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._interface import resolve_obstacle_box, robot_footprint_radius
 
 from .planar import drive_model
@@ -159,8 +158,8 @@ class FlatsimSimulator(BaseSim):
 
     SIM_NAME = 'flatsim'
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
+        super().__init__(**kwargs)
         self._prefix = env_prefix(self._env_id)
         self._clients: list[ClientWrapper] = []
         self._add_floors = self._client(AddFloors, 'add_floors')
@@ -192,8 +191,8 @@ class FlatsimSimulator(BaseSim):
         return client
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, **kwargs: object) -> FlatsimSimulator:
-        self = cls(*args, namespace=namespace, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[SimKwargs]) -> FlatsimSimulator:
+        self = cls(**kwargs)
         self._logger.info(f'Creating FlatsimSimulator instance (prefix {self._prefix})...')
         if not all(await asyncio.gather(*(client.ensure(_SERVER_TIMEOUT) for client in self._clients))):
             raise SimUnavailable(f'flatsim: no server at {SERVER} after {_SERVER_TIMEOUT}s')
@@ -219,6 +218,7 @@ class FlatsimSimulator(BaseSim):
         }
         args.pop('resolved_assembly', None)
         if robot.resolved_assembly is not None:
+            assert robot_config.assembly is not None
             catalog = arena_robots.catalog.Catalog()
             args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
             args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)

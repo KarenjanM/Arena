@@ -7,6 +7,7 @@ import time
 import launch
 import launch.event_handlers
 import launch.substitutions
+import launch.utilities
 import launch_ros.actions
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -71,6 +72,8 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
                     logger.warning(f"waiting for /arena/register_env response ({int(now - start)}s elapsed)")
                     next_log = now + _REGISTER_LOG_INTERVAL_SEC
             resp = future.result()
+            if resp is None:
+                raise RuntimeError("/arena/register_env returned no response")
             if resp.success:
                 return (resp.env_id, resp.ns, resp.sim)
             if "not ACTIVE" in resp.error_msg:
@@ -320,7 +323,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         )
 
         environment_namespace = "/" + os.path.dirname(allocated_ns).strip("/")
-        acoustics_actions: list[launch.LaunchDescriptionEntity] = []
+        acoustics_actions: list[launch.Action] = []
         if acoustics_val != "none":
             acoustics_actions.append(
                 launch.actions.GroupAction(
@@ -344,7 +347,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 )
             )
 
-        hearing_actions: list[launch.LaunchDescriptionEntity] = []
+        hearing_actions: list[launch.Action] = []
         if hearing_val != "none":
             hearing_actions.append(
                 launch.actions.GroupAction(

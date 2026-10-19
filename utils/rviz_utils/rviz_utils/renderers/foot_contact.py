@@ -8,6 +8,7 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 
 @register(DisplayKind.FOOT_CONTACT)
@@ -31,5 +32,5 @@ def render_foot_contact(d: AdapterDisplay, robot: RobotDescriptor | None) -> dic
         },
         "Color": color,
     }
-    result.update(style.extra.get("rviz", {}))
+    result.update(_rviz_extra(style))
     return result

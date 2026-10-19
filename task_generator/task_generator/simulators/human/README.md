@@ -413,7 +413,7 @@ pedestrian not otherwise configured. The path is resolved via
 
 ```python
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.MY_SIM)
-async def _my_sim(**kwargs):
+async def _my_sim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     from .my_sim import MyHumanSimulator
     return await MyHumanSimulator.create(**kwargs)
 ```

@@ -23,7 +23,7 @@ class Segment:
 class Area:
     """A filled polygon, unioned with the buffered segments."""
 
-    polygon: shapely.Polygon
+    polygon: shapely.Polygon | shapely.MultiPolygon
 
 
 @attrs.define
@@ -31,7 +31,7 @@ class Region:
     """A named area used to name and materialise zones, geometry comes from the union."""
 
     name: str
-    polygon: shapely.Polygon
+    polygon: shapely.Polygon | shapely.MultiPolygon
     description: str = ''
     material: str | None = None
 
@@ -69,7 +69,7 @@ class Layout:
     areas: list[Area] = attrs.field(factory=list)
     regions: list[Region] = attrs.field(factory=list)
 
-    def geometry(self) -> shapely.Polygon | shapely.MultiPolygon:
+    def geometry(self) -> shapely.geometry.base.BaseGeometry:
         """Free space: buffered centrelines unioned with the filled areas."""
         pieces: list[shapely.Polygon | shapely.MultiPolygon] = [area.polygon for area in self.areas]
         for segment in self.segments:
@@ -89,7 +89,7 @@ def _polygons(geometry: shapely.geometry.base.BaseGeometry) -> list[shapely.Poly
     return []
 
 
-def _simple(geometry: shapely.Polygon | shapely.MultiPolygon) -> list[shapely.Polygon]:
+def _simple(geometry: shapely.geometry.base.BaseGeometry) -> list[shapely.Polygon]:
     """Zone corners are one ring, so a part with holes is sliced into vertical bands at every hole
     edge. No band can contain a hole, and the cuts land on coordinates the geometry already has."""
     simple: list[shapely.Polygon] = []
@@ -143,6 +143,7 @@ def compile_layout(layout: Layout, ceiling: bool = False) -> tuple[World, Diagno
     descriptions: dict[str, str] = {}
     for order, region in enumerate(layout.regions):
         piece = region.polygon.intersection(geometry)
+        assert neighbours is not None
         earlier = [taken for taken in neighbours.query(region.polygon) if taken < order]
         if earlier:
             piece = piece.difference(shapely.union_all([claims[taken] for taken in earlier]))

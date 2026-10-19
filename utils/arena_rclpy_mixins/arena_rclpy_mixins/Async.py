@@ -17,8 +17,12 @@ import rclpy.client
 import rclpy.node
 import rclpy.qos
 import rclpy.task
+import typing_extensions
 
 from arena_rclpy_mixins.Time import TimeNode
+
+if typing.TYPE_CHECKING:
+    from rclpy.subscription_content_filter_options import ContentFilterOptions
 
 T = typing.TypeVar('T')
 
@@ -115,8 +119,8 @@ class AsyncLaunchManager:
 class AsyncNode(TimeNode, rclpy.node.Node):
     """Async utils for rclpy nodes."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, node_name: str, *args: object, **kwargs: object) -> None:
+        super().__init__(node_name, *args, **kwargs)
         self.__loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         self._launch_manager = AsyncLaunchManager()
 
@@ -209,7 +213,7 @@ class AsyncNode(TimeNode, rclpy.node.Node):
 
             @functools.wraps(fn)
             async def ros_fn(*args: object, **kwargs: object) -> T:
-                return await self.loop_future(fn(*args, **kwargs))
+                return typing.cast(T, await self.loop_future(fn(*args, **kwargs)))
 
             return ros_fn
 
@@ -222,11 +226,11 @@ class AsyncNode(TimeNode, rclpy.node.Node):
 
         return sync_fn
 
-    async def await_ros(self, ros_future: asyncio.Future[T]) -> T:
+    async def await_ros(self, ros_future: rclpy.task.Future) -> typing.Any:  # noqa: ANN401
         """Wraps a ROS Future into an Asyncio Future so it can be awaited."""
         aio_future = self.__loop.create_future()
 
-        def on_ros_done(fut: asyncio.Future[T]) -> None:
+        def on_ros_done(fut: rclpy.task.Future) -> None:
             if aio_future.cancelled():
                 return
 
@@ -251,9 +255,20 @@ class AsyncNode(TimeNode, rclpy.node.Node):
         event_callbacks: rclpy.node.SubscriptionEventCallbacks | None = None,
         qos_overriding_options: rclpy.node.QoSOverridingOptions | None = None,
         raw: bool = False,
+        content_filter_options: ContentFilterOptions | None = None,
     ) -> rclpy.node.Subscription:
-        callback = self.ros_callback(callback)
-        return super().create_subscription(msg_type, topic, callback, qos_profile, callback_group=callback_group, event_callbacks=event_callbacks, qos_overriding_options=qos_overriding_options, raw=raw)
+        wrapped = self.ros_callback(callback)
+        return super().create_subscription(
+            msg_type,
+            topic,
+            wrapped,  # pyright: ignore[reportArgumentType]
+            qos_profile,
+            callback_group=callback_group,
+            event_callbacks=event_callbacks,
+            qos_overriding_options=qos_overriding_options,
+            raw=raw,
+            content_filter_options=content_filter_options,
+        )
 
     def create_service(
         self,
@@ -264,8 +279,8 @@ class AsyncNode(TimeNode, rclpy.node.Node):
         qos_profile: rclpy.client.QoSProfile = rclpy.qos.qos_profile_services_default,
         callback_group: rclpy.client.CallbackGroup | None = None,
     ) -> rclpy.node.Service:
-        callback = self.ros_callback(callback)
-        return super().create_service(srv_type, srv_name, callback, qos_profile=qos_profile, callback_group=callback_group)
+        wrapped = self.ros_callback(callback)
+        return super().create_service(srv_type, srv_name, wrapped, qos_profile=qos_profile, callback_group=callback_group)
 
     def create_client_wrapper(self, srv_type: type, srv_name: str, timeout: float = 60.0, *, qos_profile: rclpy.client.QoSProfile = rclpy.qos.qos_profile_services_default, callback_group: rclpy.client.CallbackGroup | None = None) -> ClientWrapper:
         return ClientWrapper(
@@ -308,9 +323,9 @@ class ClientWrapper(typing.Generic[ServiceT]):
 
     async def call_timeout(
         self,
-        request: ServiceT.Request,
+        request: object,
         timeout_sec: float | None = None,
-    ) -> ServiceT.Response | None:
+    ) -> typing.Any | None:  # noqa: ANN401
         if timeout_sec is None:
             timeout_sec = self._timeout
         ros_future = self._client.call_async(request)
@@ -322,9 +337,9 @@ class ClientWrapper(typing.Generic[ServiceT]):
 
     def call_timeout_sync(
         self,
-        request: ServiceT.Request,
+        request: object,
         timeout_sec: float | None = None,
-    ) -> ServiceT.Response | None:
+    ) -> typing.Any | None:  # noqa: ANN401
         if timeout_sec is None:
             timeout_sec = self._timeout
 
@@ -337,9 +352,9 @@ class ClientWrapper(typing.Generic[ServiceT]):
 
     async def call_forever(
         self,
-        request: ServiceT.Request,
+        request: object,
         what: str | None = None,
-    ) -> ServiceT.Response:
+    ) -> typing.Any:  # noqa: ANN401
         """Ensure + await the response with no timeout, narrating the wait.
         The caller owns cancellation (e.g. via shutdown)."""
         await self.ensure()
@@ -356,9 +371,10 @@ class ClientWrapper(typing.Generic[ServiceT]):
 
 
 ActionT = typing.TypeVar('ActionT')
+ResultT = typing_extensions.TypeVar('ResultT', default=typing.Any)
 
 
-class ActionClientWrapper(typing.Generic[ActionT]):
+class ActionClientWrapper(typing.Generic[ActionT, ResultT]):
     """Async wrapper around rclpy.action.ActionClient."""
 
     def __init__(self, node: AsyncNode, action_client: rclpy.action.ActionClient, timeout: float = 60.0):
@@ -372,7 +388,7 @@ class ActionClientWrapper(typing.Generic[ActionT]):
 
     async def send_goal(
         self,
-        goal: ActionT.Goal,
+        goal: object,
         *,
         feedback_callback: typing.Callable[[typing.Any], None] | None = None,
     ) -> rclpy.action.client.ClientGoalHandle:
@@ -384,7 +400,7 @@ class ActionClientWrapper(typing.Generic[ActionT]):
 
     async def send_goal_timeout(
         self,
-        goal: ActionT.Goal,
+        goal: object,
         timeout_sec: float | None = None,
         *,
         feedback_callback: typing.Callable[[typing.Any], None] | None = None,
@@ -402,14 +418,14 @@ class ActionClientWrapper(typing.Generic[ActionT]):
     async def await_result(
         self,
         goal_handle: rclpy.action.client.ClientGoalHandle,
-    ) -> object:
+    ) -> ResultT:
         return await self._node.await_ros(goal_handle.get_result_async())
 
     async def await_result_timeout(
         self,
         goal_handle: rclpy.action.client.ClientGoalHandle,
         timeout_sec: float | None = None,
-    ) -> object | None:
+    ) -> ResultT | None:
         if timeout_sec is None:
             timeout_sec = self._timeout
         res = await AsyncUtil.timeout(
@@ -422,11 +438,11 @@ class ActionClientWrapper(typing.Generic[ActionT]):
 
     async def send_and_await(
         self,
-        goal: ActionT.Goal,
+        goal: object,
         timeout_sec: float | None = None,
         *,
         feedback_callback: typing.Callable[[typing.Any], None] | None = None,
-    ) -> object | None:
+    ) -> ResultT | None:
         if timeout_sec is None:
             timeout_sec = self._timeout
         goal_handle = await self.send_goal_timeout(goal, timeout_sec=timeout_sec, feedback_callback=feedback_callback)

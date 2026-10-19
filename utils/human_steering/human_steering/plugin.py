@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+from typing import TYPE_CHECKING
 
 from python_qt_binding.QtCore import QTimer
 from rclpy.parameter import Parameter
@@ -13,6 +14,9 @@ from rqt_gui_py.plugin import Plugin
 
 from human_steering.driver import resolve_namespace
 from human_steering.panel import Panel
+
+if TYPE_CHECKING:
+    from rqt_gui.ros2_plugin_context import Ros2PluginContext
 
 TICK_MS = 50
 
@@ -27,7 +31,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 class HumanSteering(Plugin):
     """rqt_gui_py plugin entry point, registered in plugin.xml."""
 
-    def __init__(self, context: object) -> None:
+    def __init__(self, context: Ros2PluginContext) -> None:
         super().__init__(context)
         self.setObjectName("HumanSteering")
 

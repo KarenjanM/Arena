@@ -8,6 +8,7 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 _LEGACY_TYPE = "sensor_msgs/msg/PointCloud"
 
@@ -56,5 +57,5 @@ def render_points3d(d: AdapterDisplay, robot: RobotDescriptor | None) -> dict[st
             "Alpha": style.alpha,
             "Decay Time": style.decay,
         }
-    result.update(style.extra.get("rviz", {}))
+    result.update(_rviz_extra(style))
     return result

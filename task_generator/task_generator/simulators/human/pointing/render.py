@@ -105,6 +105,6 @@ def video(frames: Sequence[dict], body: S.Body, out_path: str | Path, *, fps: fl
 
     anim = animation.FuncAnimation(fig, frame, frames=len(frames), interval=1000.0 / fps, blit=False)
     out = Path(out_path)
-    anim.save(out, writer=animation.FFMpegWriter(fps=fps))
+    anim.save(out, writer=animation.FFMpegWriter(fps=fps))  # pyright: ignore[reportArgumentType]
     plt.close(fig)
     return out

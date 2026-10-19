@@ -3,6 +3,13 @@ import typing
 
 from .context import ARENA_FORMAT, BEHAVIOR_FORMAT, SYSTEM_INSTRUCTION
 
+if typing.TYPE_CHECKING:
+    BT_REF_DOC_PATH: str
+    CHROMA_DB_PATH: str
+
+    from .context_bt import BEHAVIOR_TREE_FORMAT, SPLIT_PROMPT_INSTRUCTION
+    from .vector_db import create_chroma_db, get_chroma_collection, get_relevant_bt_nodes, process_json_doc
+
 # Preview model names get retired (gemini-3-pro-preview died 2026-07); keep the
 # default on a stable name and allow overriding without a rebuild.
 REMOTE_LM = os.environ.get("ARENA_PROMPT_LLM", "gemini-3.5-flash")

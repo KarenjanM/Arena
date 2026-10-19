@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 import attrs
 import rclpy
+import rclpy.time
 import tf2_ros
 import yaml
 from arena_simulation_setup.shared import Obstacle, Position, SemanticCfg, Sound
@@ -23,7 +24,7 @@ from visualization_msgs.msg import Marker
 from task_generator.interactive import Apply, Menu, planar_marker, visual
 from task_generator.shared import Orientation
 from task_generator.simulators.acoustics import SoundEmission
-from task_generator.tasks.modules import TM_Module
+from task_generator.tasks.modules import TM_Module, TM_ModuleKwargs
 from task_generator.tasks.modules.sounds import REMOVE_SOUND, SPAWN_SOUND
 
 if typing.TYPE_CHECKING:
@@ -154,7 +155,7 @@ class Mod_Sounds(TM_Module):
 
     All state lives on the node's event loop: service and timer callbacks run there via ros_callback."""
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TM_ModuleKwargs]) -> None:
         super().__init__(**kwargs)
         self._sounds: dict[str, _ResolvedSound] = {}
         self._sound_state: dict[str, _SoundState] = {}

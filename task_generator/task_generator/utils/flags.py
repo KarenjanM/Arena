@@ -12,6 +12,8 @@ import enum
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from rclpy.parameter import Parameter
+
 if TYPE_CHECKING:
     import launch
     import rclpy.node
@@ -28,7 +30,7 @@ def truthy(value: object) -> bool:
 def flag_enabled(node: rclpy.node.Node, namespace: str, flag: str) -> bool:
     """True if `<namespace>.<flag>` is declared and set to a truthy value."""
     param = node.get_parameters_by_prefix(namespace).get(flag)
-    return param is not None and truthy(param.value)
+    return isinstance(param, Parameter) and truthy(param.value)
 
 
 class ObstaclesOptim(enum.IntEnum):
@@ -67,10 +69,10 @@ def obstacles_optim_level(node: rclpy.node.Node) -> ObstaclesOptim:
     """Resolve `optim.obstacles`, honouring the deprecated `optim.no_obstacles` flag as NONE."""
     params = node.get_parameters_by_prefix("optim")
     obstacles = params.get("obstacles")
-    if obstacles is not None:
+    if isinstance(obstacles, Parameter):
         return ObstaclesOptim.coerce(obstacles.value)
     deprecated = params.get("no_obstacles")
-    if deprecated is not None and truthy(deprecated.value):
+    if isinstance(deprecated, Parameter) and truthy(deprecated.value):
         return ObstaclesOptim.NONE
     return ObstaclesOptim.FULL
 
@@ -94,7 +96,7 @@ class MapSource(enum.Enum):
 def map_source(node: rclpy.node.Node) -> MapSource:
     """Resolve `debug.map_source` (default COMPUTE)."""
     param = node.get_parameters_by_prefix("debug").get("map_source")
-    if param is not None:
+    if isinstance(param, Parameter):
         return MapSource.coerce(param.value)
     return MapSource.COMPUTE
 

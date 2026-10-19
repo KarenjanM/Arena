@@ -85,7 +85,7 @@ def get_relevant_bt_nodes(query: str, collection: chromadb.Collection, n_results
 
 
 if __name__ == "__main__":
-    from arena_hunav_sim_bridge import CHROMA_DB_PATH
+    from arena_hunav_sim_bridge import CHROMA_DB_PATH  # pyright: ignore[reportMissingImports]
 
     inference_client = genai.Client()
     chroma_collection = get_chroma_collection(CHROMA_DB_PATH, inference_client)

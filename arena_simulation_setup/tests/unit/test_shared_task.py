@@ -50,6 +50,17 @@ def test_parse_rejects_unknown_keys():
         TaskPhase.parse({"goto": [0.0, 0.0], "speed": 1.0})
 
 
+@pytest.mark.parametrize("value", [{"goto": [0.0, 0.0], "hold_time": [1.0]}, {"goto": [0.0, 0.0], "conditions": 3}, {"loop": 3}])
+def test_parse_rejects_wrong_field_types(value):
+    with pytest.raises(TypeError):
+        TaskPhase.parse(value)
+
+
+def test_request_parse_rejects_non_list_phases():
+    with pytest.raises(TypeError):
+        TaskRequest.parse({"phases": 3})
+
+
 def test_parse_gesture_random_normalizes_to_none():
     assert TaskPhase.parse({"gesture": "random"}).gesture is None
     assert TaskPhase.parse({"gesture": ""}).gesture is None

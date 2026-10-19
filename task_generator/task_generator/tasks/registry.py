@@ -21,11 +21,11 @@ _REGISTRY_NAMESPACE: Namespace = Namespaced._namespace("task")
 _RESERVED_NAMESPACE: Namespace = _REGISTRY_NAMESPACE("episode")
 
 
-def identifier_to_available(identifier: type[Identifier], **kwargs: object) -> Iterable[str]:
+def identifier_to_available(identifier: type[Identifier], **kwargs: bool) -> Iterable[str]:
     yield from (identifier.shortname for identifier in identifier.listall(**kwargs))
 
 
-async def identifier_to_available_async(identifier: type[Identifier], **kwargs: object) -> list[str]:
+async def identifier_to_available_async(identifier: type[Identifier], **kwargs: bool) -> list[str]:
     return [identifier.shortname for identifier in await identifier.listall_async(**kwargs)]
 
 
@@ -83,9 +83,14 @@ OBSTACLES_MODES: TaskModeRegistry[Constants.TaskMode.TM_Obstacles, type["TM_Obst
 MODULE_MODES: TaskModeRegistry[Constants.TaskMode.TM_Module, type["TM_Module"]] = TaskModeRegistry()
 
 
+def _walk_registry_schemas[K, V](node: "ROSParamServer", reg: TaskModeRegistry[K, V]) -> None:
+    for key in reg.keys():
+        meta = reg.meta(key)
+        if meta.schema is not None:
+            meta.schema(node, meta.namespace)
+
+
 def walk_schemas(node: "ROSParamServer") -> None:
-    for reg in (MODULE_MODES, OBSTACLES_MODES, ROBOTS_MODES):
-        for key in reg.keys():
-            meta = reg.meta(key)
-            if meta.schema is not None:
-                meta.schema(node, meta.namespace)
+    _walk_registry_schemas(node, MODULE_MODES)
+    _walk_registry_schemas(node, OBSTACLES_MODES)
+    _walk_registry_schemas(node, ROBOTS_MODES)

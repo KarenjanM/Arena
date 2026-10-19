@@ -34,6 +34,7 @@ from arena_cam.fly import Mode
 
 if TYPE_CHECKING:
     import rclpy.node
+    from python_qt_binding.QtGui import QKeyEvent
 
     from arena_cam.surfaces import TargetSelection
 
@@ -179,7 +180,7 @@ class Panel(QWidget):
 
     # input ----------------------------------------------------------------
 
-    def eventFilter(self, obj: object, event: object) -> bool:  # noqa: N802
+    def eventFilter(self, obj: object, event: QEvent) -> bool:  # noqa: N802
         kind = event.type()
         if kind in _ACTIVATE_EVENTS or kind in _DEACTIVATE_EVENTS:
             self._set_active(kind in _ACTIVATE_EVENTS)
@@ -190,7 +191,7 @@ class Panel(QWidget):
             return self._on_key(event, pressed=False)
         return False
 
-    def _on_key(self, event: object, pressed: bool) -> bool:
+    def _on_key(self, event: QKeyEvent, pressed: bool) -> bool:
         if self._driver is None or not self._active or self._typing():
             return False
         if event.isAutoRepeat():

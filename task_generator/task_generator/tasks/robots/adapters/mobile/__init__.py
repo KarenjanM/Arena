@@ -24,8 +24,8 @@ _TRAIL_QOS = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy
 
 
 class MobileAdapter(Adapter):
-    def __init__(self, *args: object, **kwargs: object):
-        super().__init__(*args, **kwargs)
+    def __init__(self, robot_manager: RobotManager, **kwargs: object):
+        super().__init__(robot_manager, **kwargs)
         self._trail = nav_msgs.msg.Path()
         self._trail.header.frame_id = "map"
         self._trail_start = self.rm.start_pos
@@ -90,6 +90,7 @@ class MobileAdapter(Adapter):
         if pose is None:
             return
         poses = self._trail.poses
+        assert isinstance(poses, list)
         if poses and math.hypot(pose.position.x - poses[-1].pose.position.x, pose.position.y - poses[-1].pose.position.y) < _TRAIL_STEP:
             return
         point = geometry_msgs.msg.PoseStamped()

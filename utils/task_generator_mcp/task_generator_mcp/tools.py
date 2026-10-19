@@ -31,6 +31,8 @@ from task_generator_msgs.srv import (
 from .params import EPISODE_PARAMS, STATIC_CONFIG_PARAMS
 
 if TYPE_CHECKING:
+    from task_generator_msgs.msg import EpisodeRecord
+
     from .ros_bridge import RosBridge
 
 # Enum value lists compiled once from the Python source of truth.
@@ -68,7 +70,7 @@ _POSE_SCHEMA: dict[str, Any] = {
 }
 
 
-def _record_to_dict(record: object) -> dict[str, object]:
+def _record_to_dict(record: EpisodeRecord) -> dict[str, object]:
     return {
         "episode_id": record.episode_id,
         "world": record.world,
@@ -120,13 +122,20 @@ def _python_to_param_value(name: str, value: object) -> Parameter:
     return p
 
 
+def _pose_arg(args: dict[str, object]) -> dict[str, object] | None:
+    pose = args.get("pose")
+    if pose is not None and not isinstance(pose, dict):
+        raise TypeError(f"pose: expected an object, got {type(pose).__name__}")
+    return pose
+
+
 def build_tools_list() -> list[Tool]:
     """Build the full tool list served on tools/list."""
     return [
         Tool(
             name="lifecycle_reset_episode",
             description="Advance to a new episode. Specify a world id to switch worlds; leave empty to inherit the current world. Pass seed >= 0 for bit-perfect replay of a historical episode.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "world": {"type": "string", "default": "", "description": "World id for the new episode. Empty inherits current."},
@@ -137,27 +146,27 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="lifecycle_pause",
             description="Pause the simulation clock.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="lifecycle_unpause",
             description="Unpause / resume the simulation clock.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="lifecycle_toggle_pause",
             description="Toggle the simulation pause state. Returns the resulting paused flag.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="lifecycle_wait_for_world",
             description="Block until the active world is fully loaded.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="lifecycle_run_episode",
             description="Queue and run a single episode to completion via the action server. Returns outcome state, reason, and episode_id.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "world": {"type": "string", "default": "", "description": "World to load before the episode; empty keeps current."},
@@ -167,12 +176,12 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="query_worlds",
             description="List all available world ids.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="query_scenarios",
             description="List scenario shortnames. Pass world to restrict to that world; empty uses current world.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "world": {"type": "string", "default": "", "description": "World to restrict results; empty = current world."},
@@ -182,37 +191,37 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="query_robots",
             description="List available robot model shortnames.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="query_static_obstacles",
             description="List available static obstacle model shortnames.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="query_dynamic_obstacles",
             description="List available dynamic obstacle (pedestrian/dynamic entity) model shortnames.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="query_environments",
             description="List available environment configuration shortnames.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="query_parametrizeds",
             description="List available parametrized obstacle configuration shortnames.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="query_episode",
             description="Get the current episode and the queued (next) episode.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="config_queue_episode",
             description="Queue episode configuration. Empty string for any field preserves the prior queued value. tm_modules replaces the current set unless keep_modules=true.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "tm_robots": {"type": "string", "enum": TM_ROBOTS_VALUES, "default": "", "description": "Robot goal-dispatch mode .value string."},
@@ -230,12 +239,12 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="config_get_task_modes",
             description="Get the currently active task modes (tm_robots, tm_obstacles, tm_modules) as .value strings.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="config_set_episode_params",
             description="Set one or more episode-shaping parameters. Only supplied (non-null) fields are written.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task.episode.timeout": {"type": "number", "description": "Episode timeout in seconds."},
@@ -249,17 +258,17 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="config_get_episode_params",
             description="Read current values of all episode-shaping parameters.",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="config_get_static_config",
             description="Read the startup configuration parameters (sim, human, mobile/arm adapters).",
-            inputSchema={"type": "object", "properties": {}},
+            input_schema={"type": "object", "properties": {}},
         ),
         Tool(
             name="runtime_spawn_static",
             description="Spawn a static obstacle by model shortname. Omit pose for random placement via the active task mode.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "model": {"type": "string", "description": "Static obstacle model shortname (see query_static_obstacles)."},
@@ -271,7 +280,7 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="runtime_spawn_dynamic",
             description="Spawn a dynamic obstacle / pedestrian by model shortname. Omit pose for random placement.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "model": {"type": "string", "description": "Dynamic obstacle model shortname (see query_dynamic_obstacles)."},
@@ -283,7 +292,7 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="runtime_spawn_robot",
             description="Spawn a robot by model shortname. Experimental. Omit name for auto-generated name. Omit pose for placement by the active task mode.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "model": {"type": "string", "description": "Robot model shortname (see query_robots)."},
@@ -297,7 +306,7 @@ def build_tools_list() -> list[Tool]:
         Tool(
             name="runtime_despawn_robot",
             description="Despawn a robot by name.",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "name": {"type": "string", "description": "Robot name to despawn."},
@@ -313,7 +322,7 @@ async def dispatch_tool_call(params: CallToolRequestParams, bridge: RosBridge) -
     result = await _dispatch(params.name, params.arguments or {}, bridge)
     return CallToolResult(
         content=[TextContent(type="text", text=json.dumps(result, default=str))],
-        isError=isinstance(result, dict) and "error" in result,
+        is_error=isinstance(result, dict) and "error" in result,
     )
 
 
@@ -321,7 +330,10 @@ async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> ob
     if name == "lifecycle_reset_episode":
         req = ResetEpisode.Request()
         req.world = args.get("world", "")
-        req.seed = int(args.get("seed", -1))
+        seed = args.get("seed", -1)
+        if not isinstance(seed, int | float | str):
+            raise TypeError(f"seed: expected a number, got {type(seed).__name__}")
+        req.seed = int(seed)
         resp = await bridge.client_reset_episode.call_timeout(req)
         if resp is None:
             return {"error": "timeout"}
@@ -350,7 +362,7 @@ async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> ob
         goal = RunEpisode.Goal()
         goal.world = args.get("world", "")
         wrapped = await bridge.action_run_episode.send_and_await(goal)
-        if wrapped is None:
+        if not isinstance(wrapped, RunEpisode.Impl.GetResultService.Response):
             return {"error": "timeout or rejected"}
         result = wrapped.result
         return {
@@ -417,6 +429,8 @@ async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> ob
         req.tm_robots = args.get("tm_robots", "")
         req.tm_obstacles = args.get("tm_obstacles", "")
         modules = args.get("tm_modules")
+        if modules is not None and not isinstance(modules, list):
+            raise TypeError(f"tm_modules: expected a list, got {type(modules).__name__}")
         req.tm_modules = list(modules) if modules is not None else []
         req.keep_modules = bool(args.get("keep_modules", False))
         req.world = args.get("world", "")
@@ -470,7 +484,7 @@ async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> ob
     if name == "runtime_spawn_static":
         req = SpawnStatic.Request()
         req.model = args["model"]
-        req.pose, req.use_pose = bridge.pose_dict_to_msg(args.get("pose"))
+        req.pose, req.use_pose = bridge.pose_dict_to_msg(_pose_arg(args))
         resp = await bridge.client_spawn_static.call_timeout(req)
         if resp is None:
             return {"error": "timeout"}
@@ -479,7 +493,7 @@ async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> ob
     if name == "runtime_spawn_dynamic":
         req = SpawnDynamic.Request()
         req.model = args["model"]
-        req.pose, req.use_pose = bridge.pose_dict_to_msg(args.get("pose"))
+        req.pose, req.use_pose = bridge.pose_dict_to_msg(_pose_arg(args))
         resp = await bridge.client_spawn_dynamic.call_timeout(req)
         if resp is None:
             return {"error": "timeout"}
@@ -490,7 +504,7 @@ async def _dispatch(name: str, args: dict[str, object], bridge: RosBridge) -> ob
         req.model = args["model"]
         req.name = args.get("name", "")
         req.immediate = bool(args.get("immediate", False))
-        req.pose, req.use_pose = bridge.pose_dict_to_msg(args.get("pose"))
+        req.pose, req.use_pose = bridge.pose_dict_to_msg(_pose_arg(args))
         resp = await bridge.client_spawn_robot.call_timeout(req)
         if resp is None:
             return {"error": "timeout"}

@@ -1,4 +1,5 @@
 import asyncio
+import typing
 
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
@@ -8,6 +9,7 @@ from arena_simulation_setup.utils.geometry import Position
 
 from task_generator.manager.world_manager.utils import WorldOccupancy
 from task_generator.shared import PositionRadius, Region
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.registry import default_scenario
 
@@ -22,12 +24,13 @@ class TM_Scenario(TM_Obstacles):
         world_description = self._ctx.world_manager.world_compacted()
 
         safe_dist = self.node.conf.Obstacles.SAFE_DIST.value
+        is_valid: typing.Callable[[Position], bool] | None = None
         if safe_dist > 0:
             world_map = self._ctx.world_manager.map
             occupancy_grid = world_map.occupancy.grid
             rows, cols = occupancy_grid.shape
 
-            def is_valid(pt: Position) -> bool:
+            def _is_valid(pt: Position) -> bool:
                 (lo_r, lo_c), (hi_r, hi_c) = world_map.tf_posr2rect(
                     PositionRadius(x=pt.x, y=pt.y, radius=safe_dist),
                 )
@@ -38,8 +41,8 @@ class TM_Scenario(TM_Obstacles):
                 if r0 >= r1 or c0 >= c1:
                     return False
                 return bool(WorldOccupancy.empty(occupancy_grid[r0:r1, c0:c1]).all())
-        else:
-            is_valid = None
+
+            is_valid = _is_valid
 
         zone_conv = world_description.zone_converter(
             self.node.conf.General.RNG.stream("obstacles", "scenario"),
@@ -81,7 +84,7 @@ class TM_Scenario(TM_Obstacles):
         if missing:
             self._logger.warning(f"scenario {scenario_view.path.name}: animation clips not found, agents will skip them: {missing} (arena asset find animation <name>)")
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
         self.scenario: Scenario | None = None
 

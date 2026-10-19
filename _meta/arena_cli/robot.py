@@ -12,8 +12,10 @@ from arena_cli.complete import Flags, Kv, Manifest, Static, Sub, Union
 if TYPE_CHECKING:
     import argparse
     import contextlib
+    from collections.abc import Iterator
 
     import rclpy.node
+    from task_generator_msgs.msg import RobotFleet, RobotState
 
 ROBOTS_SUFFIX = "/state/robots"
 
@@ -64,7 +66,7 @@ def ros_node() -> contextlib.AbstractContextManager[rclpy.node.Node]:
     import contextlib
 
     @contextlib.contextmanager
-    def _cm() -> object:
+    def _cm() -> Iterator[rclpy.node.Node]:
         import rclpy
 
         own = not rclpy.ok()
@@ -122,16 +124,16 @@ def wait_until_ready(node: rclpy.node.Node, node_ns: str) -> None:
         node.destroy_client(client)
 
 
-def read_fleet(node: rclpy.node.Node, node_ns: str, timeout: float = 5.0) -> list[object]:
+def read_fleet(node: rclpy.node.Node, node_ns: str, timeout: float = 5.0) -> list[RobotState]:
     import time
 
     import rclpy
     import rclpy.qos
     from task_generator_msgs.msg import RobotFleet
 
-    latest: list = []
+    latest: list[RobotFleet] = []
     qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
-    sub = node.create_subscription(RobotFleet, node_ns + ROBOTS_SUFFIX, lambda m: latest.append(m), qos)
+    sub = node.create_subscription(RobotFleet, node_ns + ROBOTS_SUFFIX, latest.append, qos)
     deadline = time.monotonic() + timeout
     while rclpy.ok() and not latest and time.monotonic() < deadline:
         rclpy.spin_once(node, timeout_sec=0.1)
@@ -146,12 +148,11 @@ def wait_for_presence(node: rclpy.node.Node, node_ns: str, names: set[str], pres
 
     state: dict[str, set[str] | None] = {"names": None}
     qos = rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
-    sub = node.create_subscription(
-        RobotFleet,
-        node_ns + ROBOTS_SUFFIX,
-        lambda m: state.update(names={r.descriptor.name for r in m.robots}),
-        qos,
-    )
+
+    def on_fleet(m: RobotFleet) -> None:
+        state.update(names={r.descriptor.name for r in m.robots})
+
+    sub = node.create_subscription(RobotFleet, node_ns + ROBOTS_SUFFIX, on_fleet, qos)
     waited = 0.0
     next_beat = 10.0
     try:
@@ -190,6 +191,7 @@ def cmd_spawn(model: str, kv: dict[str, str], opts: argparse.Namespace) -> int:
             req.immediate = immediate
             req.args = [KeyValue(key=k, value=v) for k, v in kv.items()]
             resp = call_service(node, SpawnRobot, node_ns + "/runtime/spawn_robot", req)
+            assert resp is None or isinstance(resp, SpawnRobot.Response)
             if resp is None or not resp.success:
                 msg = resp.error_msg if resp else "no response"
                 print(f"arena robot: spawn failed: {msg}", file=sys.stderr)
@@ -211,6 +213,7 @@ def cmd_rm(name: str, opts: argparse.Namespace) -> int:
         req = DespawnRobot.Request()
         req.name = name
         resp = call_service(node, DespawnRobot, node_ns + "/runtime/despawn_robot", req)
+        assert resp is None or isinstance(resp, DespawnRobot.Response)
         if resp is None or not resp.success:
             msg = resp.error_msg if resp else "no response"
             print(f"arena robot: despawn failed: {msg}", file=sys.stderr)

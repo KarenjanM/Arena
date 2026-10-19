@@ -6,8 +6,8 @@ import asyncio
 import enum
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import TYPE_CHECKING, ClassVar
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, ClassVar, NotRequired, TypedDict, Unpack
 
 import attrs
 from arena_rclpy_mixins.registry import ClassRegistry
@@ -76,6 +76,15 @@ class AdapterDisplayHint:
     robot_colored: bool = False
 
 
+class _AdapterMetaKwargs(TypedDict):
+    accepts: Iterable[TaskKind]
+    bringup: type[Bringup]
+    cap: str
+    displays: NotRequired[Iterable[AdapterDisplayHint]]
+    client: NotRequired[type[Client] | None]
+    clients: NotRequired[dict[TaskKind, type[Client]] | None]
+
+
 @attrs.frozen
 class AdapterMeta:
     """Canonical metadata block for an adapter class.
@@ -102,7 +111,7 @@ class AdapterMeta:
             object.__setattr__(self, "client", None)
 
     @classmethod
-    def attach(cls, **kwargs: object) -> Callable[[type], type]:
+    def attach(cls, **kwargs: Unpack[_AdapterMetaKwargs]) -> Callable[[type], type]:
         meta = cls(**kwargs)
 
         def wrap(target: type) -> type:
@@ -122,6 +131,7 @@ class Adapter(ABC):
     """Abstract base class for robot navstack adapters. Metadata is registry-driven."""
 
     kind: ClassVar[str]
+    _adapter_meta: ClassVar[AdapterMeta]
     cap_displays: ClassVar[tuple[AdapterDisplayHint, ...]] = (
         AdapterDisplayHint(
             name="Robot Model",
@@ -229,8 +239,9 @@ class Adapter(ABC):
         if not math.isfinite(timeout):
             await self.wait_until_ready(robot, node_paths)
             return
+        scope = asyncio.timeout(timeout)
         try:
-            async with asyncio.timeout(timeout) as scope:
+            async with scope:
                 await self.wait_until_ready(robot, node_paths)
         except TimeoutError:
             if not scope.expired():

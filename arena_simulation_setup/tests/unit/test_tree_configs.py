@@ -38,6 +38,30 @@ def test_parametrized_load_valid_xml(tmp_path):
     assert cfg.STATIC[0].max == 3
 
 
+def test_parametrized_load_interactive_and_dynamic_zones(tmp_path):
+    xml = """<random>
+  <static/>
+  <interactive>
+    <obstacle min="2" max="4" model="chair" type="interactive"/>
+  </interactive>
+  <dynamic>
+    <obstacle min="1" max="5" model="adult" type="dynamic" zone="lobby"/>
+  </dynamic>
+</random>"""
+    path = _write_xml(tmp_path, xml)
+    ident = ParametrizedIdentifier("test_config")
+    cfg = ident.load(path)
+    assert cfg.STATIC == []
+    assert len(cfg.INTERACTIVE) == 1
+    assert cfg.INTERACTIVE[0].min == 2
+    assert cfg.INTERACTIVE[0].max == 4
+    assert cfg.INTERACTIVE[0].model == "chair"
+    assert cfg.INTERACTIVE[0].zone == ""
+    assert len(cfg.DYNAMIC) == 1
+    assert cfg.DYNAMIC[0].model == "adult"
+    assert cfg.DYNAMIC[0].zone == "lobby"
+
+
 def test_parametrized_load_wrong_root_tag(tmp_path):
     xml = "<world><static/></world>"
     path = _write_xml(tmp_path, xml)

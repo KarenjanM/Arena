@@ -219,6 +219,7 @@ class ModelProvider_URDF(ModelProvider.provides(ModelType.URDF)):
         if wrapper:
             async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=".urdf.xacro", mode="w") as wf:
                 await wf.write(wrapper)
+                assert isinstance(wf.name, str)
                 wrapper_path = Path(wf.name)
 
         cmd = [
@@ -288,6 +289,7 @@ class ModelProvider_URDF(ModelProvider.provides(ModelType.URDF)):
                 await tmp.write(ser)
                 print(f"Converted URDF saved to temporary file: {tmp.name}")
 
+            assert isinstance(tmp.name, str)
             return Model(type=ModelType.URDF, name=model, description=ser.decode("utf-8"), path=Path(tmp.name))
 
         except subprocess.CalledProcessError as e:

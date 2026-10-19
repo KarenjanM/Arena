@@ -72,6 +72,7 @@ def _render(font_index: int, character: str) -> shapely.Polygon | shapely.MultiP
     # One box per run of set pixels. The union carries holes, which the layout slits open later.
     runs: list[shapely.Polygon] = []
     pixels = image.load()
+    assert pixels is not None
     for y in range(image.height):
         start = None
         for x in range(image.width + 1):
@@ -91,7 +92,9 @@ def _render(font_index: int, character: str) -> shapely.Polygon | shapely.MultiP
     # Stretched to the cell like a segment glyph, so painted and lit characters share a pitch.
     ink = shapely.affinity.translate(ink, -minx, -miny)
     ink = shapely.affinity.scale(ink, 1 / (maxx - minx), -1 / (maxy - miny), origin=(0.0, 0.0))
-    return shapely.affinity.translate(ink, 0.0, 1.0).simplify(1.5 / PAINT_HEIGHT)
+    glyph = shapely.affinity.translate(ink, 0.0, 1.0).simplify(1.5 / PAINT_HEIGHT)
+    assert isinstance(glyph, shapely.Polygon | shapely.MultiPolygon)
+    return glyph
 
 
 def paint(character: str) -> shapely.Polygon | shapely.MultiPolygon | None:

@@ -27,7 +27,7 @@ from arena_cli.common import (
     _run,
     make_verb,
 )
-from arena_cli.complete import Files, Flags, Kv, LaunchArgs, Manifest, Nothing, Packages, Static, Sub, Union
+from arena_cli.complete import Files, Flags, Kv, LaunchArgs, Manifest, Nothing, Packages, Source, Static, Sub, Union
 
 MAIN_HELP = """Arena workspace CLI.
 
@@ -150,7 +150,7 @@ def _supervisor(*argv: str) -> None:
     _exec("python3", "-m", "arena_bringup.supervisor", *argv)
 
 
-_LAUNCH_FILES = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
+_LAUNCH_FILES: dict[str, Source] = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
 RUNTIME_ARGS = LaunchArgs("arena_bringup", "arena_runtime.launch.py", _LAUNCH_FILES)
 ENV_ARGS = Union(
     LaunchArgs("task_generator", "task_generator.launch.py", _LAUNCH_FILES),
@@ -618,8 +618,15 @@ def _feature_cmd(args: list[str]) -> int:
     return _group_cmd(f"arena feature {name}", _feature_desc(mod), mod.COMMANDS, sub)
 
 
+def _feature_commands(name: str) -> dict[str, Verb]:
+    mod = _features.load(name)
+    if mod is None:
+        raise CLIError(f"No such feature '{name}'.")
+    return mod.COMMANDS
+
+
 def _feature_subs() -> dict[str, Sub]:
-    return {name: Sub(_features.load(name).COMMANDS) for name in _feature_names()}
+    return {name: Sub(_feature_commands(name)) for name in _feature_names()}
 
 
 FEATURE_SPEC = Sub(_feature_subs)
@@ -653,13 +660,13 @@ def train(args: list[str]) -> None:
     sys.exit(_feature_cmd(["training", "launch", *args]))
 
 
-@verb("evaluation", hidden=True, passthrough=True, complete=Sub(lambda: _features.load("evaluation").COMMANDS))
+@verb("evaluation", hidden=True, passthrough=True, complete=Sub(lambda: _feature_commands("evaluation")))
 def evaluation(args: list[str]) -> None:
     """Alias for feature evaluation."""
     sys.exit(_feature_cmd(["evaluation", *args]))
 
 
-@verb("planners", hidden=True, passthrough=True, complete=Sub(lambda: _features.load("planners").COMMANDS))
+@verb("planners", hidden=True, passthrough=True, complete=Sub(lambda: _feature_commands("planners")))
 def planners(args: list[str]) -> None:
     """Alias for feature planners."""
     sys.exit(_feature_cmd(["planners", *args]))

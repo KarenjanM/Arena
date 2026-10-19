@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 import attrs
@@ -49,7 +49,7 @@ def load_drivers(model_uri: str) -> tuple[Roller, ...]:
     return parse_drivers(yaml.safe_load(rig_path.read_text()), str(rig_path))
 
 
-def with_driven(names: Sequence[str], positions: Sequence[float], angles: Mapping[str, float]) -> tuple[list[str], list[float]]:
+def with_driven(names: Iterable[str], positions: Sequence[float], angles: Mapping[str, float]) -> tuple[list[str], list[float]]:
     """Joint names and positions with the driven angles set, same-named entries replaced."""
     merged = dict(zip(names, positions, strict=True))
     merged.update(angles)

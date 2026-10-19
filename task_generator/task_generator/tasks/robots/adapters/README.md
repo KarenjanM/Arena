@@ -154,8 +154,8 @@ An adapter that does not subclass `MobileAdapter` mounts the node in
 
 ```python
 class MyMobileAdapter(Adapter):
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
+        super().__init__(robot_manager, **bringup_kwargs)
         mobile = self.rm.robot.model.resolve_sync().caps.mobile
         self._collision = CollisionTrackerNode(self.rm, mobile.polygons_dict, footprint=mobile.footprint)
         self.rm.node.executor.add_node(self._collision)

@@ -8,14 +8,19 @@ import fnmatch
 import os
 import random
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING
 
 from arena_cli.common import CLIError
 from arena_cli.complete import Flags
 
 if TYPE_CHECKING:
+    import contextlib
+    from collections.abc import Iterator
+
     import rclpy.node
+    import rclpy.subscription
+    from task_generator_msgs.msg import SemanticSnapshot
 
 SNAPSHOT_SUFFIX = "/state/semantics"
 SET_SUFFIX = "/semantics/set"
@@ -351,11 +356,11 @@ def _targets(query: Query) -> list[str]:
     return chosen
 
 
-def _ros_node() -> object:
+def _ros_node() -> contextlib.AbstractContextManager[rclpy.node.Node]:
     import contextlib
 
     @contextlib.contextmanager
-    def _cm() -> object:
+    def _cm() -> Iterator[rclpy.node.Node]:
         import rclpy
 
         rclpy.init(args=[])
@@ -369,7 +374,7 @@ def _ros_node() -> object:
     return _cm()
 
 
-def _entities(msg: object, env: str) -> dict[tuple[str, str], Entity]:
+def _entities(msg: SemanticSnapshot, env: str) -> dict[tuple[str, str], Entity]:
     return index(
         entity(
             env,
@@ -383,7 +388,7 @@ def _entities(msg: object, env: str) -> dict[tuple[str, str], Entity]:
     )
 
 
-def _subscribe(node: rclpy.node.Node, node_ns: str, callback: object) -> object:
+def _subscribe(node: rclpy.node.Node, node_ns: str, callback: Callable[[SemanticSnapshot], None]) -> rclpy.subscription.Subscription:
     import rclpy.qos
     from task_generator_msgs.msg import SemanticSnapshot
 
@@ -394,7 +399,7 @@ def _subscribe(node: rclpy.node.Node, node_ns: str, callback: object) -> object:
 def _read(node: rclpy.node.Node, node_ns: str) -> dict[tuple[str, str], Entity]:
     import rclpy
 
-    latest: list = []
+    latest: list[SemanticSnapshot] = []
     sub = _subscribe(node, node_ns, latest.append)
     deadline = time.monotonic() + READ_S
     while rclpy.ok() and not latest and time.monotonic() < deadline:
@@ -427,7 +432,7 @@ def _watch(node: rclpy.node.Node, nodes: list[str], kind: str | None) -> int:
 
     last: dict[str, dict[tuple[str, str], Entity]] = {}
 
-    def on_snapshot(node_ns: str, msg: object) -> None:
+    def on_snapshot(node_ns: str, msg: SemanticSnapshot) -> None:
         current = {k: e for k, e in _entities(msg, _env_name(node_ns)).items() if kind is None or e.kind == kind}
         if node_ns in last:
             for line in changes(last[node_ns], current):

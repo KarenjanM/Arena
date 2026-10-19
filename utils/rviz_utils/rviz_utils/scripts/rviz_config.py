@@ -6,7 +6,8 @@ import os
 import signal
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import TypedDict
 
 import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import launch
@@ -14,7 +15,11 @@ import launch_ros.actions
 import rcl_interfaces.msg
 import rcl_interfaces.srv
 import rclpy
+import rclpy.logging
 import rclpy.parameter
+import rclpy.publisher
+import rclpy.qos
+import rclpy.utilities
 import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from arena_rclpy_mixins import ArenaMixinNode, ClientWrapper
@@ -26,6 +31,21 @@ from rviz_display_control_msgs.msg import DisplaySet, DisplaySpec
 from task_generator_msgs.msg import AdapterVizManifest, RobotDescriptor, RobotFleet
 
 from rviz_utils.renderers import REGISTRY
+
+
+class _VisualizationManager(TypedDict):
+    Views: dict[str, object]
+    Tools: list[object]
+
+
+_RvizConfig = TypedDict(
+    "_RvizConfig",
+    {
+        "Panels": list[object],
+        "Visualization Manager": _VisualizationManager,
+        "Window Geometry": dict[str, object],
+    },
+)
 
 
 class ConfigFileGenerator(ArenaMixinNode):
@@ -256,8 +276,9 @@ class ConfigFileGenerator(ArenaMixinNode):
         self.get_logger().info(f'created config file at {file_path}')
         return file_path
 
-    def _add_plugins(self, skeleton: dict[str, object]) -> None:
+    def _add_plugins(self, skeleton: _RvizConfig) -> None:
         """Append the panels and tools the viz manifest declares."""
+        assert self._viz_manifest is not None
         for plugin in self._viz_manifest.plugins:
             package = plugin.class_name.partition("::")[0]
             try:
@@ -279,6 +300,7 @@ class ConfigFileGenerator(ArenaMixinNode):
             self.get_logger().warning('view requested a robot target frame, but fleet is empty, falling back to map view')
             return None
         idx = self.get_parameter('robot').value
+        assert isinstance(idx, int)
         try:
             robot = self._robots[idx]
         except IndexError:
@@ -313,7 +335,7 @@ class ConfigFileGenerator(ArenaMixinNode):
             return {**base, 'Distance': 8.0, 'Focal Point': {'X': 0.0, 'Y': 0.0, 'Z': 0.0}, 'Pitch': 0.5, 'Yaw': 3.14}
         return {**base, 'Distance': 50.0, 'Focal Point': {'X': 15.0, 'Y': 10.0, 'Z': 0.0}, 'Pitch': 0.9, 'Yaw': 3.8}
 
-    def _read_default_file(self) -> dict[str, object]:
+    def _read_default_file(self) -> _RvizConfig:
         package_path = get_package_share_directory("rviz_utils")
         file_path = os.path.join(package_path, "config", "rviz_default.rviz")
 
@@ -329,7 +351,7 @@ class ConfigFileGenerator(ArenaMixinNode):
             return yaml.safe_load(content)
 
     @classmethod
-    def _tmp_config_file(cls, config_file: dict[str, object], prefix: str = "") -> str:
+    def _tmp_config_file(cls, config_file: Mapping[str, object], prefix: str = "") -> str:
         f = tempfile.NamedTemporaryFile('w', delete=False, prefix=prefix)
         yaml.dump(config_file, f)
         f.close()

@@ -353,7 +353,7 @@ are what Arena sends it.
 
 ```python
 @SimulatorRegistry.register(Constants.SimSimulator.MY_SIM)
-async def lazy_mysim(**kwargs):
+async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .my_sim import MySimulator
     return await MySimulator.create(**kwargs)
 ```

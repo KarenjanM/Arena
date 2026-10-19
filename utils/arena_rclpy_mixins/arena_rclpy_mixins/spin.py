@@ -43,7 +43,7 @@ class _EntitylessNode:
 def create_executor() -> rclpy.executors.Executor:
     """EventsExecutor with an entityless node slot."""
     executor = EventsExecutor()
-    executor.add_node(_EntitylessNode())
+    executor.add_node(_EntitylessNode())  # pyright: ignore[reportArgumentType]
     return executor
 
 
@@ -107,9 +107,8 @@ def _shutdown_executor_on_signal(executor: rclpy.executors.Executor) -> Iterator
         signal.signal(signal.SIGINT, signal.SIG_IGN if signalled.is_set() else previous[signal.SIGINT])
 
 
-def spin_node(node: rclpy.node.Node, **kwargs: object) -> None:
+def spin_node(node: rclpy.node.Node, *, executor: rclpy.executors.Executor | None = None) -> None:
     """Spin a single node until shutdown, on the given executor or the global one."""
-    executor = kwargs.get("executor")
     if executor is None:
         executor = rclpy.get_global_executor()
     with _shutdown_executor_on_signal(executor) as shutdown, spin_context():
@@ -319,7 +318,7 @@ async def async_main(
 
 
 def run_main(
-    node_cls: type[ArenaMixinNode],
+    node_cls: Callable[..., ArenaMixinNode],
     /,
     *args: object,
     aiomonitor: bool = False,

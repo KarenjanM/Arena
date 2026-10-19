@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import traceback
+import typing
 from collections.abc import Mapping, Sequence
 
 import rclpy.qos
@@ -13,6 +14,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 from task_generator.constants.rng import stable_int
 from task_generator.shared import DynamicObstacle, Obstacle, Wall
+from task_generator.simulators.human import HumanSimulatorOptions
 from task_generator.simulators.human.noop import NoopHumanSimulator
 from task_generator.simulators.human.possession import snapshot_roster
 
@@ -37,8 +39,8 @@ def _deleteall_marker(ns: str) -> Marker:
 class DummyHumanSimulator(NoopHumanSimulator):
     """Puppet stage: peds idle at their roster pose until the possession stream drives them."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> None:
+        super().__init__(**kwargs)
 
         self._cache: dict[str, Pedestrian] = {}
         self._walls: dict[str, Wall] = {}
@@ -147,7 +149,7 @@ class DummyHumanSimulator(NoopHumanSimulator):
 
     def _publish_static_walls(self) -> None:
         markers = MarkerArray()
-        markers.markers.append(_deleteall_marker("dummy_walls"))
+        markers.markers.append(_deleteall_marker("dummy_walls"))  # pyright: ignore[reportAttributeAccessIssue]
         stamp = self.node.sim_time.to_msg()
         for idx, wall in enumerate(self._walls.values()):
             marker = Marker()
@@ -161,12 +163,12 @@ class DummyHumanSimulator(NoopHumanSimulator):
             marker.color.r = 1.0
             marker.color.a = 1.0
             marker.points = [wall.start.to_msg(), wall.end.to_msg()]
-            markers.markers.append(marker)
+            markers.markers.append(marker)  # pyright: ignore[reportAttributeAccessIssue]
         self._static_walls_pub.publish(markers)
 
     def _publish_static_objects(self) -> None:
         markers = MarkerArray()
-        markers.markers.append(_deleteall_marker("dummy_objects"))
+        markers.markers.append(_deleteall_marker("dummy_objects"))  # pyright: ignore[reportAttributeAccessIssue]
         stamp = self.node.sim_time.to_msg()
         for idx, obstacle in enumerate(self._static_obstacles.values()):
             marker = Marker()
@@ -183,5 +185,5 @@ class DummyHumanSimulator(NoopHumanSimulator):
             marker.scale.z = scale.z if scale is not None else 0.5
             marker.color.b = 1.0
             marker.color.a = 0.6
-            markers.markers.append(marker)
+            markers.markers.append(marker)  # pyright: ignore[reportAttributeAccessIssue]
         self._static_objects_pub.publish(markers)

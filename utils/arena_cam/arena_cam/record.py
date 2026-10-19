@@ -105,7 +105,9 @@ class Recorder:
             sink = ["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p", str(self.path)]
             self._ffmpeg = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-nostats", *source, *sink], stdin=subprocess.PIPE)
         elif (width, height) != self._size:
+            assert self._size is not None
             raise ValueError(f"frame size changed mid-take ({self._size[0]}x{self._size[1]} to {width}x{height}), keep the viewport size fixed")
+        assert self._ffmpeg.stdin is not None
         self._ffmpeg.stdin.write(data)
         self.n += 1
 
@@ -113,6 +115,7 @@ class Recorder:
         """Finish the file, False if ffmpeg failed or no frame ever arrived."""
         if self._ffmpeg is None:
             return False
+        assert self._ffmpeg.stdin is not None
         with contextlib.suppress(BrokenPipeError):
             self._ffmpeg.stdin.close()
         return self._ffmpeg.wait() == 0
