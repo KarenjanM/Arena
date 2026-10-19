@@ -1,14 +1,4 @@
-# A blocked route that later clears.
-#
-# THIS IS THE CASE THE DESPAWN HALF EXISTS FOR, and the one a scenario `static:` block cannot
-# express at all: an object present from t=0 is furniture, and the robot simply plans around
-# it. The interesting question needs the obstruction to arrive after the plan, and then to
-# leave: does a robot that gave up on a route ever retry it?
-#
-# Watch for the residue. A despawned object may stay in the costmap until the clearing
-# raycast catches up, so "the robot still avoids a cart that is no longer there" is a real
-# and expected outcome here - arguably the more interesting one. It is a result to report,
-# not a bug to work around.
+# The object must arrive after the plan and then leave; costmap residue after the despawn is a result, not a bug.
 
 events:
   - action: spawn

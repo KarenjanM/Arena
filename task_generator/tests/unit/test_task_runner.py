@@ -49,13 +49,6 @@ def test_sequence_advances_and_finishes():
     assert runner.done and runner.outcomes("met") == [0, 1]
 
 
-def test_a_mode_can_end_the_active_phase_as_met():
-    runner = TaskRunner("r")
-    runner.submit([goto(1.0, 1.0), goto(3.0, 3.0)])
-    ended = runner.complete_active().ended
-    assert ended is not None and ended.index == 0 and ended.outcome == "met" and runner.active == 1
-
-
 def test_failed_phase_policies():
     runner = TaskRunner("r")
     runner.submit([goto(1.0, 1.0, on_failure="continue"), goto(2.0, 2.0, on_failure="stop_task"), goto(3.0, 3.0)])

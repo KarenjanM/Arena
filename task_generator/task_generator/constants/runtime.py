@@ -29,7 +29,6 @@ DEPRECATED_PARAMS: dict[str, str] = {
     'episodes': 'task.episode.count',
     'auto_reset': 'task.episode.auto_reset',
     'fail_on_collision': 'task.episode.fail_on_collision',
-    'fail_on_static_collision': 'task.episode.fail_on_static_collision',
     'timeout': 'task.episode.timeout',
     'robot.ready_timeout': 'task.episode.timeout.robot_ready',
     'max_reset_fail_times': 'task.episode.reset.max_fails',

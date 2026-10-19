@@ -1,36 +1,4 @@
-"""Scripted object timelines: things that appear and disappear while the robot is driving.
-
-Levels A-D all perturb *people*. This is the level that perturbs the *world*: a cart wheeled
-into a doorway, a cleaning sign put out after the robot has committed to a corridor, an
-obstruction that later clears. It is the static-object analogue of Level C — the interest is
-not the object, it is **where and when** it meets the robot's route.
-
-Why it needs its own timeline rather than a scenario `static:` block: a scenario places
-objects at t=0, and an object present from the start is just furniture. The robot plans
-around it and nothing is learned. The failure modes worth measuring all require the world to
-change *after* the plan exists:
-
-* a corridor narrows once the robot is inside it — does it replan or freeze?
-* a blocked doorway **clears** — does a robot that gave up on a route ever retry it?
-* an object appears behind the robot in a dead end — is backtracking even attempted?
-
-Two coordinate conventions, and the choice matters:
-
-``route_fraction``
-    Position along the robot's *planned* route, by arc length. Portable: the same timeline
-    is a valid case in every one of the twelve generated office worlds, because it never
-    names a coordinate. This is the only way `arena_arena_002` gets object cases at all —
-    its scenarios must use zone references, since only `open_work_area` and `reception`
-    exist in all twelve, and hand-authored coordinates would be right in exactly one world
-    and silently wrong in eleven.
-
-``pose``
-    Absolute map-frame coordinates, for a hand-authored world like `hospital_1` where the
-    geometry is known and the point is a *specific* doorway.
-
-Nothing here touches ROS or the filesystem beyond reading the timeline file, so the
-arithmetic is testable without a simulator.
-"""
+"""Scripted object timelines: objects that spawn and despawn mid-episode, placed by route fraction or absolute pose."""
 
 from __future__ import annotations
 
@@ -45,7 +13,6 @@ from .pathing import point_at_arc, route_length
 
 Point = tuple[float, float]
 
-#: Actions a timeline entry may take.
 SPAWN = "spawn"
 DESPAWN = "despawn"
 _ACTIONS = (SPAWN, DESPAWN)
@@ -56,16 +23,12 @@ _PLACE_KEYS = frozenset({"route_fraction", "lateral_offset", "pose", "yaw"})
 
 
 class TimelineError(Exception):
-    """A timeline could not be read, or says something that cannot be executed."""
+    pass
 
 
 @attrs.frozen
 class ObjectEvent:
-    """One entry of a timeline, before it is resolved against a route."""
-
     action: str
-    #: Timeline-local name. A `despawn` refers to the `spawn` that used the same one, so the
-    #: author never has to know the `sim_path` the spawn will return.
     entity: str
     model: str = ""
     at_t: float | None = None
@@ -79,24 +42,11 @@ class ObjectEvent:
 
 @attrs.frozen
 class ResolvedEvent:
-    """An event with a concrete fire time and, for a spawn, a concrete pose.
-
-    Both the requested and the achieved quantities travel with it, for the same reason
-    `approach_angle_requested` / `_achieved` do on a case record: a timeline whose events
-    silently landed elsewhere reports a factor that was never run.
-    """
-
     event: ObjectEvent
     t: float
     pose: Point | None = None
     yaw: float = 0.0
-    #: How far along the route the robot is when this fires, in metres. Combined with
-    #: `pose`, this is what says whether the object appeared in front of the robot or on
-    #: top of it.
     robot_arc: float = 0.0
-    #: Distance between the robot and the spawned object at the moment it appears. Small
-    #: values are not rejected - a cart wheeled out at 1 m is a real and nasty case - but
-    #: they change what the episode measures, so they are never left implicit.
     reveal_distance_m: float | None = None
 
     @property
@@ -209,7 +159,6 @@ def parse_event(raw: object, index: int) -> ObjectEvent:
 
 
 def parse_timeline(document: object, *, source: str = "<timeline>") -> list[ObjectEvent]:
-    """Validate a whole timeline. Ordering, references and duplicates are checked here."""
     if document is None:
         raise TimelineError(f"{source}: timeline is empty")
     if isinstance(document, Sequence) and not isinstance(document, (str, bytes)):
@@ -229,9 +178,6 @@ def parse_timeline(document: object, *, source: str = "<timeline>") -> list[Obje
 
     events = [parse_event(raw, i) for i, raw in enumerate(raw_events)]
 
-    # Reference checking. A despawn of something never spawned is the mistake this catches,
-    # and it is worth catching at parse time: at runtime it looks exactly like an object
-    # that vanished on its own.
     spawned: set[str] = set()
     for i, event in enumerate(events):
         if event.action == SPAWN:
@@ -244,27 +190,10 @@ def parse_timeline(document: object, *, source: str = "<timeline>") -> list[Obje
     return events
 
 
-#: In-package timelines, shipped so a case does not need an absolute path to be reproducible.
 _TIMELINE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "timelines")
 
 
 def resolve_timeline_path(name_or_path: str, search: Sequence[str] = ()) -> str:
-    """Resolve a timeline name or path to a file.
-
-    Same rule as `resolve_catalogue_path`, and deliberately so: `task.edge_case.catalogue`
-    already takes "a name or a path", and having its sibling parameter take only a path
-    would be a difference with no reason behind it.
-
-    Tries, in order: an explicit path; each directory in `search`; the installed share
-    directory; the in-package ``timelines/`` directory, which covers running straight from a
-    source tree.
-
-    `search` is how a timeline lives *beside the scenario it belongs to* -
-    `objects: ./objects.yaml` next to a `scenario.yaml`, the same convention agent types
-    already use with `agent_type: ./talker.yaml`. A hand-authored timeline is written against
-    one world's coordinates and belongs with that world, not in a shared directory where it
-    would look portable.
-    """
     if os.path.isfile(name_or_path):
         return os.path.abspath(name_or_path)
 
@@ -277,14 +206,9 @@ def resolve_timeline_path(name_or_path: str, search: Sequence[str] = ()) -> str:
     base = os.path.basename(name_or_path)
     stem = base if os.path.splitext(base)[1] else f"{base}.yaml"
 
-    try:
-        from ament_index_python.packages import get_package_share_directory
-
-        share = os.path.join(get_package_share_directory("task_generator"), "edge_case", "timelines", stem)
-        if os.path.isfile(share):
-            return share
-    except Exception:  # noqa: BLE001 - ament is absent outside a sourced workspace
-        pass
+    share = _installed_timeline(stem)
+    if share is not None and os.path.isfile(share):
+        return share
 
     local = os.path.join(_TIMELINE_DIR, stem)
     if os.path.isfile(local):
@@ -295,14 +219,23 @@ def resolve_timeline_path(name_or_path: str, search: Sequence[str] = ()) -> str:
 
 
 def available_timelines() -> list[str]:
-    """Names of the shipped timelines, sorted."""
     if not os.path.isdir(_TIMELINE_DIR):
         return []
     return sorted(os.path.splitext(f)[0] for f in os.listdir(_TIMELINE_DIR) if f.endswith((".yaml", ".yml")))
 
 
+def _installed_timeline(stem: str) -> str | None:
+    try:
+        from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+    except ImportError:  # ament is absent outside a sourced workspace
+        return None
+    try:
+        return os.path.join(get_package_share_directory("task_generator"), "edge_case", "timelines", stem)
+    except PackageNotFoundError:
+        return None
+
+
 def load_timeline(name_or_path: str, search: Sequence[str] = ()) -> list[ObjectEvent]:
-    """Read and validate a timeline, named or given as a path."""
     import yaml
 
     path = resolve_timeline_path(name_or_path, search)
@@ -323,18 +256,8 @@ def resolve(
     robot_speed: float,
     delay: float = 0.0,
 ) -> list[ResolvedEvent]:
-    """Turn route fractions into times and poses, and sort by fire time.
-
-    `delay` shifts every fire time later by that many sim seconds - the block's `delay:` field.
-    It is applied after route fractions are converted to times, so a route-relative event keeps
-    its place in the route and simply happens later; the alternative, shifting the fraction,
-    would move the object somewhere else entirely.
-
-    `robot_speed` is the nominal speed the encounter geometry is designed against, not a
-    measurement. A robot that is slower than nominal reaches a `route_fraction` later than
-    the timeline fires, so the object appears further ahead than intended — which is why
-    `reveal_distance_m` is recorded per event rather than assumed.
-    """
+    """`delay` shifts fire times after fractions become times, so an event keeps its place on the route.
+    `robot_speed` is nominal, not measured, which is why `reveal_distance_m` is recorded per event."""
     if len(route) < 2:
         raise TimelineError("resolving a route-relative timeline needs a route of at least two points")
     speed = max(float(robot_speed), 1e-6)
@@ -350,8 +273,6 @@ def resolve(
         else:
             t = (event.at_fraction or 0.0) * total / speed
 
-        # Geometry is computed from the UNSHIFTED time so a route-relative event keeps its
-        # place on the route; only the moment it fires moves.
         robot_arc = min(total, max(0.0, t * speed))
         t += shift
 
@@ -363,15 +284,10 @@ def resolve(
             else:
                 fraction = event.place_fraction
                 if fraction is None:
-                    # Default to where the timing put it. Same point, so the object lands on
-                    # the robot's own position at that moment - which is a legitimate thing
-                    # to ask for (an object dropped in its path) and is exactly why
-                    # reveal_distance_m is reported rather than assumed.
                     fraction = event.at_fraction if event.at_fraction is not None else robot_arc / total if total else 0.0
                 point, heading = point_at_arc(route, fraction * total)
                 pose = _offset(point, heading, event.lateral_offset)
                 if event.yaw is None:
-                    # Face back down the route, i.e. toward an oncoming robot.
                     yaw = math.atan2(-heading[1], -heading[0])
             poses[event.entity] = pose
         else:
@@ -393,14 +309,12 @@ def resolve(
             )
         )
 
-    # Stable sort: two events at the same time keep their authored order, so a despawn
-    # written after its spawn cannot be reordered ahead of it.
+    # stable: a despawn authored after its spawn at the same t stays after it
     resolved.sort(key=lambda r: r.t)
     return resolved
 
 
 def _offset(point: Point, heading: Point, lateral: float) -> Point:
-    """`point` shifted `lateral` metres to the *left* of the direction of travel."""
     if not lateral:
         return point
     return (point[0] - heading[1] * lateral, point[1] + heading[0] * lateral)

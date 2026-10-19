@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -94,7 +95,7 @@ def test_realize_position_zero_offset_unchanged(zero_realizer, _position):
 
 
 def test_realize_pose_translates_position(_pose, realizer):
-    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
+    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
 
     p = Pose(Position(0.0, 0.0), Orientation.from_yaw(0.5))
     result = realizer.realize(p)
@@ -104,7 +105,7 @@ def test_realize_pose_translates_position(_pose, realizer):
 
 
 def test_realize_pose_orientation_preserved(realizer):
-    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
+    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
 
     yaw = 1.2
     p = Pose(Position(1.0, 1.0), Orientation.from_yaw(yaw))
@@ -113,7 +114,7 @@ def test_realize_pose_orientation_preserved(realizer):
 
 
 def test_ezilear_translates_pose_by_negative_offset(realizer):
-    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
+    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
 
     p = Pose(Position(5.0, 7.0), Orientation.from_yaw(0.5))
     result = realizer.ezilear(p)
@@ -123,7 +124,7 @@ def test_ezilear_translates_pose_by_negative_offset(realizer):
 
 
 def test_ezilear_round_trips_with_realize(realizer):
-    from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
+    from arena_simulation_setup.utils.geometry import Pose, Position, Orientation
 
     p = Pose(Position(3.0, -2.5), Orientation.from_yaw(1.2))
     assert math.isclose(realizer.ezilear(realizer.realize(p)).position.x, p.position.x)
@@ -248,7 +249,7 @@ def test_realize_dynamic_obstacle_waypoints_follow_their_own_level():
 
 def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
     from arena_simulation_setup.shared import DynamicObstacle
-    from arena_simulation_setup.utils.geometry import Pose, Position
+    from arena_simulation_setup.utils.geometry import Position, Pose
 
     obs = DynamicObstacle(
         name="human1",
@@ -268,7 +269,7 @@ def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
 
 def test_realize_dynamic_obstacle_empty_waypoints(realizer):
     from arena_simulation_setup.shared import DynamicObstacle
-    from arena_simulation_setup.utils.geometry import Pose, Position
+    from arena_simulation_setup.utils.geometry import Position, Pose
 
     obs = DynamicObstacle(
         name="human2",

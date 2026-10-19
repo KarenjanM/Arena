@@ -121,7 +121,7 @@ separately.
 The mode takes the base population from the scenario mode and adds runtime **effects** on top:
 pedestrians whose spawn geometry is solved so they meet the robot at a designed point on its
 route (`intercept`), and mid-episode rewrites of the crowd (`rally`, `shuffle`, `scatter`,
-`track_robot`, `hold`, `retune`, `stimulus`).
+`track_robot`, `hold`, `stimulus`).
 
 ```bash
 arena launch sim:=gazebo world:=hospital_1 robot:=jackal human:=arena \
@@ -555,11 +555,9 @@ given) and will be removed in a future release.
 | `episodes` | `task.episode.count` |
 | `auto_reset` | `task.episode.auto_reset` |
 | `fail_on_collision` | `task.episode.fail_on_collision` |
-| `fail_on_static_collision` | `task.episode.fail_on_static_collision` |
 | `task.episodes` | `task.episode.count` |
 | `task.auto_reset` | `task.episode.auto_reset` |
 | `task.fail_on_collision` | `task.episode.fail_on_collision` |
-| `task.fail_on_static_collision` | `task.episode.fail_on_static_collision` |
 | `mobile`, `mobile.<key>` | `robot.mobile`, `robot.mobile.<key>` |
 | `arm`, `arm.<key>` | `robot.arm`, `robot.arm.<key>` |
 | `planner` | `robot.planner` |

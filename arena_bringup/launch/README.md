@@ -45,7 +45,6 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
 | `task.episode.fail_on_static_collision` | bool string | `false` | Abort the episode as FAILED on robot contact with a wall or static obstacle |
-| `task.run_seed` | string | `` (empty) | Seed for per-episode seed derivation (empty = random per boot) |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/`. A comma list (`hospital_1,office_1`) stacks the worlds as the levels of one world, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#linked-levels) |
 | `world.lighting` | string | `authored` | `authored` renders the lights the world declares. `auto` also gives every zone with a ceiling and no lights of its own a calibrated ceiling rig, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md). |
 | `kg.derive` | string | `auto` | `auto` derives which zones hold each door, object, light, sound and elevator, and which zones a door connects, from geometry wherever `kg.yaml` states none. `all` derives them for everything and ignores the stated ones, keeping every other entity, prop, fact and constraint of `kg.yaml`. `off` keeps the stated facts only, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#kg). |

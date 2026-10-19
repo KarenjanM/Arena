@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Sequence
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
@@ -10,34 +11,32 @@ from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 
+# a robot not spawned yet is assumed this wide
+NOMINAL_ROBOT_RADIUS = 0.3
+
+
+def spawn_clearance(safe_distances: Sequence[float], spawn_safe_dist: float) -> float:
+    """Free space a robot's start and goal need: the widest managed robot's, else a nominal robot's."""
+    return max(safe_distances) if safe_distances else NOMINAL_ROBOT_RADIUS + spawn_safe_dist
+
 
 class TM_Scenario(TM_Robots):
     _config: ROSParamT[str]
     _linger_after_completion: ROSParamT[bool]
     _idle_robots: set[str]
 
-    def _spawn_clearance(self) -> float:
-        """Free radius a robot start/goal must have, in metres.
-
-        Not `Obstacles.SAFE_DIST`, which is the clearance a **pedestrian** needs: nav2's collision
-        monitor stops on anything inside its stop polygon and its costmap inflates obstacles further,
-        so a start placed to pedestrian tolerances is a start the robot cannot drive out of.
-        `Robot.SPAWN_ROBOT_SAFE_DIST` plus the robot's radius (`RobotManager.safe_distance`) is the
-        constant for this; the largest managed robot's value when robots exist, a conservative
-        nominal radius otherwise.
-        """
-        managed = [r.safe_distance for r in self._ctx.robots.values()] if self._ctx.robots else []
-        if managed:
-            return max(managed)
-        nominal_radius = 0.3
-        return nominal_radius + self.node.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
+    def _plan(self, start: Pose, phases: list[TaskPhase]) -> list[TaskPhase]:
+        """The phases submitted for a robot starting at `start`; subclasses reshape the scenario's route here."""
+        del start
+        return phases
 
     async def reset(self) -> None:
         await super().reset()
 
         self._idle_robots = set()
 
-        is_valid = make_is_valid(self._ctx.world_manager.map, self._spawn_clearance())
+        clearance = spawn_clearance([r.safe_distance for r in self._ctx.robots.values()], self.node.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value)
+        is_valid = make_is_valid(self._ctx.world_manager.map, clearance)
         zone_conv = self._ctx.world_manager.world_compacted().zone_converter(
             self.node.conf.General.RNG.stream("robots", "scenario"),
             is_valid=is_valid,
@@ -88,7 +87,7 @@ class TM_Scenario(TM_Robots):
             forbidden: list[PositionRadius] = [
                 PositionRadius(x=start_pose.position.x, y=start_pose.position.y, radius=robot.safe_distance),
             ]
-            phases = [localize(phase, config.goal_level, forbidden, robot.safe_distance) for phase in config.phases]
+            phases = self._plan(start_pose, [localize(phase, config.goal_level, forbidden, robot.safe_distance) for phase in config.phases])
 
             # An empty phase list intentionally describes a stationary robot.
             # Do not submit it to RobotManager: an empty TaskRequest has no

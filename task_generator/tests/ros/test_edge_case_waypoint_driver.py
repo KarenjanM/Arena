@@ -19,14 +19,14 @@ HOMES = {"a": (0.0, 0.0), "b": (10.0, 0.0)}
 class _Harness:
     """A driver whose clock, reroutes and robot pose are all under the test's control."""
 
-    def __init__(self, *, reroute_result=True, reroute_raises=None, submit_raises=None, pose=(5.0, 5.0), depart_after_m=None):
+    def __init__(self, *, reroute_result=True, reroute_raises=None, pose=(5.0, 5.0), depart_after_m=None):
+        import rclpy.logging
         from task_generator.tasks.obstacles.edge_case.waypoint_driver import WaypointDriver
 
         self.sent: list[dict] = []
         self.submitted: list[object] = []
         self._result = reroute_result
         self._raises = reroute_raises
-        self._submit_raises = submit_raises
         self.pose = pose
         self.now = 0.0
 
@@ -37,15 +37,7 @@ class _Harness:
             return self._result
 
         def submit(coroutine):
-            if self._submit_raises is not None:
-                raise self._submit_raises
             self.submitted.append(coroutine)
-
-        self.retuned: list[dict] = []
-
-        async def retune(changes):
-            self.retuned.append({k: dict(v) for k, v in changes.items()})
-            return len(changes)
 
         self.stimulated: list[tuple[list[str], str, float]] = []
 
@@ -53,19 +45,18 @@ class _Harness:
             self.stimulated.append((list(names), need, intensity))
             return len(names) - 1
 
-        self.driver = WaypointDriver("/pytest_waypoints", reroute=reroute, robot_pose=lambda: self.pose, submit=submit, retune=retune, stimulus=stimulus, depart_after_m=depart_after_m)
-        self.driver._now = lambda: self.now
+        self.driver = WaypointDriver(reroute=reroute, robot_pose=lambda: self.pose, submit=submit, logger=rclpy.logging.get_logger("pytest_waypoints"), stimulus=stimulus, depart_after_m=depart_after_m)
 
     def arm(self, *entries, origin=None):
         # t0 is taken on the first tick, not on arm; prime at an epsilon (an exact zero reads
         # as "the sim clock has not started").
         self.now = 1e-6
         self.driver.arm([e if isinstance(e, tuple) else (e, None, None) for e in entries], origin=origin)
-        self.driver._tick()
+        self.driver.tick(self.now)
 
     def run(self, at):
         self.now = at
-        self.driver._tick()
+        self.driver.tick(self.now)
         for coroutine in self.submitted:
             asyncio.run(coroutine)
         self.submitted.clear()
@@ -73,7 +64,6 @@ class _Harness:
     def close(self):
         for coroutine in self.submitted:
             coroutine.close()
-        self.driver.shutdown()
 
 
 @pytest.fixture()
@@ -254,34 +244,11 @@ def test_a_reroute_reaching_nobody_is_counted() -> None:
         h.close()
 
 
-def test_a_scheduling_failure_disables_the_driver_and_says_why() -> None:
-    h = _Harness(submit_raises=RuntimeError("loop closed"))
-    try:
-        h.arm(_plan("shuffle", period=1.0))
-        h.run(at=1.0)
-        h.run(at=5.0)
-        (outcome,) = h.driver.outcomes()
-        assert "loop closed" in outcome.reason and h.sent == []
-    finally:
-        h.close()
-
-
 def test_arming_nothing_disarms(harness) -> None:
     harness.arm(_rally())
     harness.driver.arm([])
     harness.run(at=5.0)
     assert harness.sent == [] and harness.driver.outcomes() == []
-
-
-def test_a_retune_fires_once_through_the_hook(harness) -> None:
-    harness.arm(_plan("retune", at=3.0, retune={"a": {"agent_type": "./types/x.yaml", "desired_velocity": 0.6}, "b": {"agent_type": "elder"}}))
-    harness.run(at=2.0)
-    assert harness.retuned == []
-    harness.run(at=3.5)
-    harness.run(at=9.0)
-    assert len(harness.retuned) == 1 and harness.retuned[0]["a"]["desired_velocity"] == 0.6
-    (outcome,) = harness.driver.outcomes()
-    assert outcome.issued == 2 and outcome.t_first == pytest.approx(3.5 - 1e-6) and harness.sent == []
 
 
 def test_a_stimulus_fires_once_and_counts_who_it_missed(harness) -> None:

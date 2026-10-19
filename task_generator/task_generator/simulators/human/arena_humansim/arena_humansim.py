@@ -425,18 +425,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if response is not None and all(result.successful for result in response.results):
             self._viz_config = cfg
 
-    #: Wall seconds without an agent_states message before the subscription is recreated.
-    #: arena_humansim publishes the roster continuously once its node is up (~6 Hz even
-    #: pre-spawn), so sustained silence means the subscription died, not the publisher.
+    # arena_humansim publishes the roster continuously (~6 Hz even pre-spawn): silence means a dead subscription
     _AGENT_STATES_STALE_S = 10.0
 
     def _resubscribe_agent_states(self, stale: float) -> None:
-        # A subscription that goes silent while the topic still flows is recreated, which re-runs
-        # discovery.
         self._logger.warning(f"agent_states silent for {stale:.0f} s (wall) - recreating the subscription")
         try:
             self.node.destroy_subscription(self._agent_states_sub)
-        except Exception as e:  # a dead handle must not kill the interpolation loop
+        except Exception as e:
             self._logger.warning(f"agent_states resubscribe: destroy failed ({e})")
         self._agent_states_wall = time.monotonic()
         self._agent_states_sub = self.node.create_subscription(
@@ -462,7 +458,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         async with self._agents_lock:
             self._arena_pedestrians = peds
         if not self.node.context.ok():
-            return  # shutting down: the publisher's context is already gone (a traceback per pending task otherwise)
+            return
         self.publish_arena_peds(peds)
 
     def _interpolate_agent_states(self, now_ns: int) -> AgentFrameMsg | None:
@@ -647,8 +643,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     TICK_RATE = 50.0  # Hz, local interpolation rate
     FLOW_META_TICKS = 50
-    # no asset is named "default": a failed provider fetch per flow spawn starves the human simulator
-    FLOW_MODEL = BaseHumanSimulator._PEDESTRIAN_FALLBACK
+    FLOW_MODEL = "default"
     FEEDBACK_RATE = 20.0  # Hz, matches the possession stream rate
 
     async def _interpolation_loop(self):
@@ -1191,7 +1186,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return bool(response.success)
 
     async def _stimulate_impl(self, names: Sequence[str], need: str, intensity: float) -> int:
-        """`NotifyStimulus` per named agent, resolved through `_agent_names` like `_set_waypoints_impl`."""
         by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
         reached = 0
         for name in names:
@@ -1266,19 +1260,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self,
         routes: Mapping[str, Sequence[tuple[float, float]]],
     ) -> bool:
-        """Rewrite the routes of named agents through `SetWaypoints`.
-
-        `_agent_names` maps id -> sim_path for the pedestrian bus, so the reverse lookup is
-        the whole of the resolution, exactly as in `_remove_pedestrian_names_impl`.
-
-        `MODE_ONCE`: a rewritten route is a destination, not a patrol. Leaving the default
-        `MODE_REPEAT` would send an evacuating crowd back out of the exit and round again.
-
-        One call per agent because the service takes one agent. An unknown name is skipped
-        with a warning rather than failing the batch - a crowd where one agent despawned
-        mid-episode should still evacuate - but a request where *nothing* resolved returns
-        False, so a rewrite that reached no one cannot be reported as a success.
-        """
         by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
         sent = 0
         for name, points in routes.items():
@@ -1291,9 +1272,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             request.agent_id = agent_id
             request.name = name
             wp_msg = WaypointsMsg()
+            # a rewritten route is a destination; MODE_REPEAT would walk an evacuating crowd back out
             wp_msg.mode = WaypointsMsg.MODE_ONCE
             for x, y in points:
-                # the points arrive realized into `map`; the engine runs in the world frame, as at spawn
+                # points arrive in `map`; the engine runs in the world frame, as at spawn
                 ex, ey = self._to_engine(x, y)
                 wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=ex, y=ey, theta=0.0)))
             request.waypoints = wp_msg
@@ -1315,16 +1297,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return True
 
     async def _remove_pedestrian_names_impl(self, names: Sequence[str]) -> bool:
-        """Remove *specific* agents, named by ``sim_path``.
-
-        `RemoveAgents` has always taken an id list - the reset path just passes an empty one
-        meaning "all". `_agent_names` already maps id -> sim_path for the pedestrian bus, so
-        the reverse lookup is the whole of it.
-
-        An unknown name is not a failure: the agent is gone, which is the state the caller
-        wanted. Only a request where *nothing* resolved and the caller asked for something
-        returns False, so a despawn of a never-spawned agent cannot be reported as success.
-        """
         if not names:
             return True
 
@@ -1346,9 +1318,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"RemoveAgents failed: {response.message}")
             return False
 
-        # Only the removed agents are forgotten. `_next_id` is deliberately NOT rewound:
-        # reusing an id whose removal the simulator has not finished processing would
-        # rebind a fresh agent onto a dying one.
+        # `_next_id` is not rewound: reusing an id still being removed would rebind a fresh agent onto a dying one
         for aid in agent_ids:
             self._agent_names.pop(aid, None)
             self._bridge_agent_ids.discard(aid)

@@ -1,19 +1,4 @@
-"""Criticality metrics — what actually happened in an episode.
-
-Everything else in this package *designs* an encounter. This measures one. The distinction is
-the whole point: ``designed_ttc`` is a construction, fixed the moment the pedestrian is placed,
-and it is **not** an outcome. A Level A tail that makes an agent slow to react, or a Level D
-tail that makes it dawdle mid-sequence, changes what actually happens without changing a single
-designed number. Reporting the designed value as a result would report the experiment's input
-as its output.
-
-So these functions take a *trajectory* — a time series of robot and pedestrian poses sampled
-from ``arena_peds`` — and reduce it to the panel from ``edge_case_changes.md`` section 9:
-min-TTC, min-clearance, PET, freeze duration, intrusion time.
-
-Pure functions over plain tuples: no ROS, no simulator, no I/O. The live sampling that feeds
-them lives in :mod:`scoring`.
-"""
+"""Criticality measured from a sampled trajectory: outcomes, as opposed to the designed encounter. No ROS."""
 
 from __future__ import annotations
 
@@ -25,39 +10,27 @@ import attrs
 
 Point = tuple[float, float]
 
-#: Robot speed below which it counts as not moving, m/s. Matches `FREEZE_SPEED_THRESHOLD`
-#: used by the existing robot metrics, so "frozen" means the same thing across the codebase.
+# same as FREEZE_SPEED_THRESHOLD in the robot metrics
 FREEZE_SPEED = 0.05
 
-#: Personal space, metres. Surface-to-surface clearance below this counts as an intrusion.
 PERSONAL_SPACE = 0.5
 
-#: Settling window at episode start, seconds. The robot is spawned, nav2 is still bringing its
-#: costmaps up, and nothing has been commanded yet - counting that as a freeze would score
-#: every episode as frozen regardless of what the tail did.
+# nav2 is still bringing costmaps up; counting this as freeze would score every episode frozen
 SETTLE_S = 2.0
 
 
 @attrs.frozen
 class Sample:
-    """One instant: where the robot is, and where everyone else is.
-
-    ``radius`` values are surface radii, so clearance can be reported surface-to-surface
-    rather than centre-to-centre - a 0.3 m gap between centres is a collision, not a near miss.
-    """
-
     t: float
     robot: Point
     robot_vel: Point = (0.0, 0.0)
     robot_radius: float = 0.3
-    #: name -> (position, velocity, radius)
     peds: dict[str, tuple[Point, Point, float]] = attrs.Factory(dict)
 
 
+# None means "not observed", never zero
 @attrs.frozen
 class Criticality:
-    """One episode's outcome. ``None`` means "not observed", never "zero"."""
-
     min_ttc_s: float | None = None
     min_ttc_with: str = ""
     min_ttc_at: float | None = None
@@ -71,9 +44,6 @@ class Criticality:
     intrusion_time_s: float = 0.0
 
     collided: bool = False
-    #: Who closed the gap at the FIRST contact: "robot" (drove into a slow/still pedestrian),
-    #: "pedestrian" (walked into a slow/still robot), "mutual" (both closing), "static" (overlap
-    #: with neither closing - e.g. a spawn on top of the robot). "" = no contact.
     collision_fault: str = ""
     collision_with: str = ""
     collision_at: float | None = None
@@ -84,8 +54,6 @@ class Criticality:
 
     @property
     def observed(self) -> bool:
-        """Whether anything was measurable. A run with no pedestrian in sight yields a record
-        full of `None`, which must not be mistaken for a safe episode."""
         return self.samples > 0 and self.min_clearance_m is not None
 
 
@@ -97,24 +65,18 @@ def time_to_collision(
     v_b: Point,
     r_b: float,
 ) -> float | None:
-    """Constant-velocity time until two discs touch, or ``None`` if they never do.
-
-    Solves ``|Δp + Δv·t| = r_a + r_b`` for the smallest positive root. Constant velocity is an
-    approximation over a single sample, which is why this is evaluated every frame and
-    minimised rather than computed once.
-    """
     dpx, dpy = p_b[0] - p_a[0], p_b[1] - p_a[1]
     dvx, dvy = v_b[0] - v_a[0], v_b[1] - v_a[1]
     r = r_a + r_b
 
     a = dvx * dvx + dvy * dvy
     if a < 1e-12:
-        return None  # no relative motion: never closes
+        return None
     b = 2.0 * (dpx * dvx + dpy * dvy)
     c = dpx * dpx + dpy * dpy - r * r
 
     if c <= 0.0:
-        return 0.0  # already overlapping
+        return 0.0
 
     disc = b * b - 4.0 * a * c
     if disc < 0.0:
@@ -131,20 +93,10 @@ def _speed(v: Point) -> float:
 
 
 def post_encroachment_time(samples: Sequence[Sample], encounter: Point) -> float | None:
-    """|t_ped(E) − t_rob(E)| at the designed encounter point.
-
-    How near a miss was in *time* rather than distance: both parties passed through the same
-    place, this is the gap between them doing so. Needs the designed encounter point, so it is
-    only defined for a `place: intercept` case; returns ``None`` otherwise.
-
-    Uses the closest approach to ``E`` for each party, and only counts a party that actually
-    came near it - a pedestrian that never went there has no crossing time, and pretending it
-    did would invent a PET out of two unrelated moments.
-    """
     if not samples:
         return None
 
-    near = 1.5  # metres; "passed through E" rather than "was vaguely in the room"
+    near = 1.5
 
     def crossing_time(track: Iterable[tuple[float, Point]]) -> float | None:
         best_t, best_d = None, math.inf
@@ -177,13 +129,6 @@ def score(
     only: Sequence[str] | None = None,
     settle_s: float = SETTLE_S,
 ) -> Criticality:
-    """Reduce a trajectory to the criticality panel.
-
-    ``only`` restricts the pairwise metrics to named pedestrians — pass ``["edge_0"]`` to score
-    the injected agent alone rather than whichever bystander happened to be closest. Without it
-    a busy scenario reports the crowd's ambient near-misses and the tail's effect disappears
-    into them.
-    """
     if not samples:
         return Criticality()
 
@@ -201,10 +146,7 @@ def score(
     fault_rc: float | None = None
     fault_pc: float | None = None
 
-    # Forward hold: the state observed at a sample is taken to persist until the next one.
-    # Crediting an interval to the sample that *ends* it is subtly wrong - it would count the
-    # window straddling the settle boundary as post-settle, and attribute a pedestrian's
-    # proximity to time before it arrived.
+    # forward hold: crediting dt to the sample that ends it would count the straddling window as post-settle
     for i, s in enumerate(samples):
         dt = (samples[i + 1].t - s.t) if i + 1 < len(samples) else 0.0
         dt = max(0.0, dt)
@@ -222,8 +164,6 @@ def score(
                 min_clear, clear_with, clear_at = clearance, name, s.t - t0
             if clearance <= 0.0:
                 if not collided:
-                    # attribute the FIRST contact by who was closing the gap along the
-                    # centre line; below FREEZE_SPEED a party counts as standing
                     dx, dy = p[0] - s.robot[0], p[1] - s.robot[1]
                     norm = math.hypot(dx, dy) or 1.0
                     ux, uy = dx / norm, dy / norm
@@ -264,24 +204,11 @@ def score(
     )
 
 
-# Formations
-# ----------
-
-
 def _bare(name: str) -> str:
     return name.rsplit("/", 1)[-1]
 
 
 def formation_hold(samples: Sequence[Sample], members: Sequence[str], *, radius: float = 1.5, centre: Point | None = None) -> dict[str, Any]:
-    """Whether a placed group formed, how long it stood together, and when it broke.
-
-    The Type D success criterion (`new_plan_2.md` §10) is positional. With a `centre` (where
-    the generator put the formation) the group counts as *formed* from the first sample at
-    which every member is within `radius` m of it; `held_s` is how long that lasted and
-    `broke_at` the first departure afterwards. Without a centre the members' first positions
-    define it. `seen` is False when no member ever appeared on the stream, which is a build
-    failure, not a quiet success; `formed_at` is None when they never all arrived.
-    """
     wanted = {str(m) for m in members}
     out: dict[str, Any] = {"members": sorted(wanted), "seen": False, "formed_at": None, "held_s": None, "broke_at": None, "arrived": 0}
     if not wanted or not samples:
@@ -296,7 +223,6 @@ def formation_hold(samples: Sequence[Sample], members: Sequence[str], *, radius:
             continue
         out["seen"] = True
         if ref is not None:
-            # How many were ever there at once: a line five of six reached is not "never formed".
             out["arrived"] = max(out["arrived"], sum(1 for p in present.values() if math.dist(p, ref) <= radius))
         if len(present) < len(wanted):
             if formed_at is None:

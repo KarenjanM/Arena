@@ -1,30 +1,20 @@
-"""Grid path planning over the world occupancy, for Level C.
-
-Level C designs an encounter *on the robot's route*. Modelling that route as the straight
-line from start to goal only works inside one open area: in a furnished multi-room world the
-real path bends through doorways, so the straight line cuts through walls and every encounter
-designed on it sits somewhere the robot never goes.
-
-This module plans the route the robot will approximately take, so the encounter can be placed
-on *that* instead. It does not try to match nav2's plan exactly: the encounter only needs to
-be somewhere the robot will pass through at a predictable time, and a shortest free-space
-path through the same occupancy grid is close enough. Achieved timing is measured either way.
-"""
-
 from __future__ import annotations
 
 import heapq
 import math
 from collections.abc import Callable, Iterable, Sequence
+from typing import TYPE_CHECKING
 
 from task_generator.shared import Position
+
+if TYPE_CHECKING:
+    from task_generator.manager.world_manager.utils import WorldMap
 
 Point = tuple[float, float]
 Cell = tuple[int, int]
 
 IsValid = Callable[[Position], bool]
 
-#: 8-connected neighbourhood, with the diagonal cost baked in.
 _NEIGHBOURS: tuple[tuple[int, int, float], ...] = (
     (-1, 0, 1.0),
     (1, 0, 1.0),
@@ -36,42 +26,33 @@ _NEIGHBOURS: tuple[tuple[int, int, float], ...] = (
     (1, 1, math.sqrt(2)),
 )
 
-#: Cap on expanded cells. A 109x69 world is ~7.5k cells, so this is generous for a single
-#: route while still bounding a pathological search.
 _MAX_EXPANSIONS = 200_000
 
-#: Spacing for the line-of-sight check used to simplify the raw cell path.
 _LOS_STEP_M = 0.2
 
-#: How far to look for a free cell near an endpoint, in cells. The robot's start and goal are
-#: forbidden for the crowd, so A* starts from the nearest genuinely free cell and the true
-#: endpoints are attached afterwards.
+# start and goal are forbidden for the crowd, so A* starts from the nearest free cell and the true endpoints are attached after
 _ENDPOINT_SEARCH_CELLS = 40
 
 
 class PathError(RuntimeError):
-    """No route could be planned. Recorded and aborted like any other unbuildable case."""
+    pass
 
 
 class _Grid:
-    """Occupancy lookups in cell space, memoised.
+    """Memoised: ``is_valid`` reduces over a slice per call and A* revisits cells constantly."""
 
-    ``is_valid`` is comparatively expensive - it transforms a point to a rectangle and reduces
-    over a slice - and A* revisits cells constantly, so caching is what makes this practical.
-    """
-
-    def __init__(self, world_map: object, is_valid: IsValid | None) -> None:
+    def __init__(self, world_map: WorldMap, is_valid: IsValid | None) -> None:
         self._map = world_map
         self._is_valid = is_valid
-        self.rows, self.cols = world_map.occupancy.grid.shape  # type: ignore[attr-defined]
+        self.rows, self.cols = world_map.occupancy.grid.shape
         self._cache: dict[Cell, bool] = {}
 
     def to_cell(self, pt: Point) -> Cell:
-        r, c = self._map.tf_pos2grid(Position(x=pt[0], y=pt[1]))  # type: ignore[attr-defined]
+        r, c = self._map.tf_pos2grid(Position(x=pt[0], y=pt[1]))
         return int(r), int(c)
 
     def to_point(self, cell: Cell) -> Point:
-        pos = self._map.tf_grid2pos((float(cell[0]), float(cell[1])))  # type: ignore[attr-defined]
+        pos = self._map.tf_grid2pos((float(cell[0]), float(cell[1])))
         return float(pos.x), float(pos.y)
 
     def in_bounds(self, cell: Cell) -> bool:
@@ -87,11 +68,6 @@ class _Grid:
         return cached
 
     def nearest_free(self, cell: Cell, *, limit: int = _ENDPOINT_SEARCH_CELLS) -> Cell | None:
-        """The closest free cell to ``cell``, searched outward in rings.
-
-        Used for both endpoints, which are occupied by construction rather than by geometry.
-        Searching adapts to whatever radius ``forbid`` used instead of hardcoding a guess.
-        """
         if self.free(cell):
             return cell
         for radius in range(1, limit + 1):
@@ -120,12 +96,6 @@ def _reconstruct(came_from: dict[Cell, Cell], cell: Cell) -> list[Cell]:
 
 
 def _astar(grid: _Grid, start: Cell, goal: Cell) -> list[Cell]:
-    """Shortest 8-connected free path between two cells.
-
-    The endpoints are treated as passable whatever the occupancy says. Both are routinely
-    occupied by construction: the robots scenario mode ``forbid``s its own start and goal so
-    the crowd cannot spawn on them, and the robot itself stands at the start.
-    """
     if start == goal:
         return [start]
 
@@ -157,9 +127,7 @@ def _astar(grid: _Grid, start: Cell, goal: Cell) -> list[Cell]:
                 continue
             if nxt != goal and not grid.free(nxt):
                 continue
-            # No corner cutting. A diagonal between two free cells can still clip the corner
-            # of a wall when both orthogonal neighbours are blocked, which produces a path
-            # whose own segments are not navigable - exactly what the route must never be.
+            # no corner cutting: a diagonal past two blocked orthogonal neighbours clips the wall
             if dr and dc and not (grid.free((cell[0] + dr, cell[1])) and grid.free((cell[0], cell[1] + dc))):
                 continue
             tentative = g + step
@@ -173,7 +141,6 @@ def _astar(grid: _Grid, start: Cell, goal: Cell) -> list[Cell]:
 
 
 def line_of_sight(a: Point, b: Point, is_valid: IsValid | None, *, step: float = _LOS_STEP_M) -> bool:
-    """Whether the straight segment ``a``->``b`` stays in free space."""
     if is_valid is None:
         return True
     length = math.dist(a, b)
@@ -186,18 +153,6 @@ def line_of_sight(a: Point, b: Point, is_valid: IsValid | None, *, step: float =
 
 
 def simplify(points: Sequence[Point], is_valid: IsValid | None) -> list[Point]:
-    """Drop intermediate points a straight segment can already see past.
-
-    A raw cell path is a staircase of 0.2 m steps; the encounter geometry wants long straight
-    runs so that "the robot's heading at E" is a meaningful direction rather than the angle of
-    one grid step.
-
-    Greedy string-pulling: from each kept point, take the *furthest* later point still in line
-    of sight, so every segment of the result is verified navigable. When nothing further is
-    visible it falls back to the next raw point, an adjacent cell that is always reachable; that
-    keeps the occupied endpoints (the robot stands at the start, start and goal are forbidden)
-    from breaking it.
-    """
     if len(points) <= 2:
         return list(points)
 
@@ -218,19 +173,13 @@ def simplify(points: Sequence[Point], is_valid: IsValid | None) -> list[Point]:
 
 
 def plan_route(
-    world_map: object,
+    world_map: WorldMap,
     start: Point,
     goal: Point,
     *,
     is_valid: IsValid | None,
 ) -> list[Point]:
-    """The route the robot will approximately take, as a simplified polyline.
-
-    Returns ``[start, goal]`` unchanged when the straight line is already clear, so open-area
-    routes keep exactly the behaviour they had before planning existed.
-
-    Raises :class:`PathError` when start or goal is off the map, or no free route joins them.
-    """
+    """Returns ``[start, goal]`` unchanged when the straight line is clear; raises PathError when no free route joins them."""
     if line_of_sight(start, goal, is_valid):
         return [start, goal]
 
@@ -247,14 +196,8 @@ def plan_route(
 
     cells = _astar(grid, endpoints[0], endpoints[1])
 
-    # Keep the true endpoints rather than their cell centres, so the route still starts where
-    # the robot stands and ends where it was actually sent.
     points: list[Point] = [start, *(grid.to_point(c) for c in cells[1:-1]), goal]
     return simplify(points, is_valid)
-
-
-# Polyline geometry
-# -----------------
 
 
 def route_length(route: Sequence[Point]) -> float:
@@ -262,11 +205,6 @@ def route_length(route: Sequence[Point]) -> float:
 
 
 def point_at_arc(route: Sequence[Point], distance: float) -> tuple[Point, Point]:
-    """Position at ``distance`` along the polyline, and the unit heading there.
-
-    Heading is the direction of the segment the point falls on - the robot's direction of
-    travel at that moment, which is what the approach angle is measured against.
-    """
     if len(route) < 2:
         raise PathError("a route needs at least two points")
 
@@ -289,7 +227,6 @@ def point_at_arc(route: Sequence[Point], distance: float) -> tuple[Point, Point]
 
 
 def iter_points(route: Sequence[Point], step: float) -> Iterable[Point]:
-    """Sample the polyline at roughly ``step`` metres, endpoints included."""
     total = route_length(route)
     n = max(1, int(math.ceil(total / max(step, 1e-6))))
     for i in range(n + 1):

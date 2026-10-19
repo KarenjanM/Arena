@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -39,7 +40,7 @@ class _FakeLogger:
     def warning(self, *a, **kw): ...
     def error(self, *a, **kw): ...
     def fatal(self, *a, **kw): ...
-    def get_child(self, name: str) -> _FakeLogger:
+    def get_child(self, name: str) -> "_FakeLogger":
         return self
 
 

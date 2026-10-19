@@ -1,27 +1,3 @@
-"""What an `edge_case:` block means - a list of runtime *effects*.
-
-Everything that can be known before the robot moves is written into the scenario file itself
-(the population, its profiles, a placed formation). What is left for run time is what depends
-on the live robot: an interception solved against its planned route, a route rewrite with an
-onset, a proximity trigger. Those are the effects, and this module is their grammar.
-
-```yaml
-edge_case:
-  id: hospital_1_004
-  prompt_id: hospital_1_004
-  steps: [A:blackout, D:formation_break, C:approach]
-  effects:
-  - {type: intercept, profile: child, angle: 90, route_fraction: 0.5, speed: 1.7, after: continue}
-  - {type: rally, scope: all, target: exit_north, when: {at: 8.0}}
-  - {type: scatter, scope: [talker_1, talker_2], radius: 2.0, when: {robot_within: 3.0}}
-  provenance: {prompt_sha256: ..., model: ...}
-```
-
-Pure: no ROS, no world. Zone names and route fractions are resolved by the mode at reset,
-which is the half that has the world and the robot. Strict, for the usual reason: a block that
-silently ignored `tpye: rally` would report a crowd that rushed an exit it never rushed.
-"""
-
 from __future__ import annotations
 
 import enum
@@ -35,15 +11,13 @@ Point = tuple[float, float]
 
 
 class EffectError(Exception):
-    """An effect is malformed."""
+    pass
 
 
-#: Every placed agent.
 SCOPE_ALL = "all"
-#: Only the agents an `intercept` effect added.
 SCOPE_INJECTED = "injected"
 
-#: Metres. A `route_fraction` onset fires when the robot comes this close to that point.
+# a `route_fraction` onset is resolved at reset into `robot_within` this many metres of that route point
 ROUTE_TRIGGER_M = 1.5
 
 
@@ -54,13 +28,10 @@ class Kind(enum.StrEnum):
     SCATTER = "scatter"
     TRACK_ROBOT = "track_robot"
     HOLD = "hold"
-    RETUNE = "retune"
     STIMULUS = "stimulus"
 
 
 class After(enum.StrEnum):
-    """What an intercepting pedestrian does once it reaches the encounter."""
-
     CONTINUE = "continue"
     STOP_FACING = "stop_facing"
     FOLLOW = "follow"
@@ -70,19 +41,10 @@ class After(enum.StrEnum):
 
 @attrs.frozen
 class When:
-    """When an effect starts. One clock, one optional proximity gate.
-
-    `at` counts from the episode start, or from the gate firing when there is one. Exactly one
-    of `robot_within`, `robot_beyond`, `route_fraction` may be set; `of` is the reference for
-    the first two (a zone name or `[x, y]`; None means the centroid of the agents the effect
-    owns). `route_fraction` is resolved at reset into `robot_within ROUTE_TRIGGER_M` of the
-    point that far along the robot's planned route.
-    """
-
     at: float = 0.0
     robot_within: float | None = None
     robot_beyond: float | None = None
-    of: Any = None
+    of: str | Point | None = None
     route_fraction: float | None = None
 
     @property
@@ -149,7 +111,6 @@ def parse_when(spec: object, *, where: str = "when") -> When:
 
 
 def _target(raw: object, *, where: str) -> str | Point:
-    """A zone name, or a literal `[x, y]`. Resolution happens at reset."""
     if isinstance(raw, str):
         name = raw.strip()
         if not name:
@@ -167,7 +128,6 @@ Scope = str | tuple[str, ...]
 
 
 def parse_scope(raw: object, *, where: str) -> Scope:
-    """`all`, `injected`, or an explicit list of agent names."""
     if raw is None:
         return SCOPE_ALL
     if isinstance(raw, str):
@@ -183,18 +143,10 @@ def parse_scope(raw: object, *, where: str) -> Scope:
     raise EffectError(f"{where}.scope: expected 'all', 'injected' or a list, got {type(raw).__name__}")
 
 
-def scope_as_json(scope: Scope) -> str | list[str]:
-    return list(scope) if isinstance(scope, tuple) else scope
-
-
-# --- effects --------------------------------------------------------------------------------
-
-
 @attrs.frozen(kw_only=True)
 class Effect:
     kind: Kind
     when: When = When()
-    #: Free label carried into the records, so an effect can be told apart from its twin.
     label: str = ""
 
     def as_dict(self) -> dict[str, Any]:
@@ -212,37 +164,26 @@ class Effect:
 
 @attrs.frozen(kw_only=True)
 class Intercept(Effect):
-    """One pedestrian placed so it meets the robot at a designed point and time."""
-
     kind: Kind = Kind.INTERCEPT
-    #: Agent type: a builtin name, or `./types/name.yaml` beside the scenario. Empty adopts one
-    #: from the base population; on an empty population, `adult`.
     profile: str = ""
-    #: Human mesh. Empty adopts one from the base population; on an empty population, `arenian`.
     model: str = ""
-    #: Degrees relative to the robot's heading at the encounter: 180 head-on, 90 crossing, 0 overtaking.
+    # degrees to the robot's heading at the encounter: 180 head-on, 90 crossing, 0 overtaking
     angle: float = 180.0
-    #: Where on the robot's planned route the meeting is designed, by arc length.
     route_fraction: float = 0.5
-    #: Walking speed, m/s. 0 reads the profile's own nominal.
     speed: float = 0.0
-    #: Seconds the pedestrian arrives after the robot (negative: before).
+    # seconds the pedestrian arrives after the robot (negative: before)
     offset: float = 0.0
     lead_out: float = 3.0
-    #: Max angular deviation allowed when hunting free space; 0 aborts instead.
+    # max angular deviation when hunting free space; 0 aborts instead
     search: float = 90.0
     after: After = After.CONTINUE
-    #: Seconds for `stop_facing`, `follow`, `stand`. 0 means the rest of the episode.
     duration: float = 0.0
-    #: `veer` only: where the pedestrian turns off to.
     veer_to: str | Point | None = None
     waypoint_mode: str = "reverse"
 
 
 @attrs.frozen(kw_only=True)
 class Rally(Effect):
-    """Send the agents in scope to one target, once. Several `targets` are dealt round-robin."""
-
     kind: Kind = Kind.RALLY
     scope: Scope = SCOPE_ALL
     targets: tuple[str | Point, ...] = ()
@@ -250,9 +191,6 @@ class Rally(Effect):
 
 @attrs.frozen(kw_only=True)
 class Shuffle(Effect):
-    """Throw each agent in scope a new point near where it started, every `period` seconds.
-    `once` (the `scatter` spelling) throws one point and stops - a formation breaking."""
-
     kind: Kind = Kind.SHUFFLE
     scope: Scope = SCOPE_ALL
     period: float = 4.0
@@ -262,37 +200,14 @@ class Shuffle(Effect):
 
 @attrs.frozen(kw_only=True)
 class TrackRobot(Effect):
-    """Re-issue the robot's position as the goal of the agents in scope."""
-
     kind: Kind = Kind.TRACK_ROBOT
     scope: Scope = SCOPE_ALL
     period: float = 2.0
-    #: Seconds of tracking; 0 tracks until the episode ends.
     duration: float = 0.0
 
 
 @attrs.frozen(kw_only=True)
-class Retune(Effect):
-    """Swap the agents in scope onto another profile at `when`: removed and respawned under
-    the same name where they stand, keeping their route. This is how a parameter change
-    happens *when the case runs* rather than being baked from t=0 - the pedestrian backend
-    has no in-place parameter update."""
-
-    kind: Kind = Kind.RETUNE
-    scope: Scope = SCOPE_ALL
-    #: Agent type to switch to: a builtin, or `./types/x.yaml` beside the scenario.
-    profile: str = ""
-    #: Walking speed after the switch, m/s; 0 keeps each agent's own.
-    speed: float = 0.0
-    #: Speed multiplier applied to each agent's own speed when `speed` is 0; 1 keeps it.
-    speed_scale: float = 1.0
-
-
-@attrs.frozen(kw_only=True)
 class Hold(Effect):
-    """Pin the agents in scope where they are for `duration` seconds, then release them to
-    their original goal."""
-
     kind: Kind = Kind.HOLD
     scope: Scope = SCOPE_ALL
     duration: float = 10.0
@@ -300,15 +215,14 @@ class Hold(Effect):
 
 @attrs.frozen(kw_only=True)
 class Stimulus(Effect):
-    """Raise `need` on the agents in scope at `when`: a behaviour-tree type with a `transitions`
-    entry keyed on it switches sequence, so behaviour changes without a respawn."""
-
     kind: Kind = Kind.STIMULUS
     scope: Scope = SCOPE_ALL
     need: str = ""
-    #: The backend sets the need to 100 x intensity.
     intensity: float = 1.0
 
+
+# every effect but an intercept rewrites agents already placed
+ScopedEffect = Rally | Shuffle | TrackRobot | Hold | Stimulus
 
 _COMMON = frozenset({"type", "when", "label"})
 _KEYS: dict[Kind, frozenset[str]] = {
@@ -318,12 +232,11 @@ _KEYS: dict[Kind, frozenset[str]] = {
     Kind.SCATTER: _COMMON | {"scope", "radius"},
     Kind.TRACK_ROBOT: _COMMON | {"scope", "period", "duration"},
     Kind.HOLD: _COMMON | {"scope", "duration"},
-    Kind.RETUNE: _COMMON | {"scope", "profile", "speed", "speed_scale"},
     Kind.STIMULUS: _COMMON | {"scope", "need", "intensity"},
 }
 
 _WAYPOINT_MODES = ("reverse", "once", "repeat", "random")
-#: Floor on a re-issuing period: below about a second an agent only ever turns around.
+# below about a second an agent only ever turns around
 MIN_PERIOD_S = 1.0
 
 
@@ -408,14 +321,6 @@ def parse_effect(spec: object, *, index: int = 0) -> Effect:
             duration=_number(spec, "duration", 0.0, where=where, floor=0.0),
         )
 
-    if kind is Kind.RETUNE:
-        profile = str(spec.get("profile", "") or "")
-        speed = _number(spec, "speed", 0.0, where=where, floor=0.0)
-        scale = _number(spec, "speed_scale", 1.0, where=where, positive=True)
-        if not profile and not speed and abs(scale - 1.0) < 1e-9:
-            raise EffectError(f"{where}: a retune needs a 'profile', a 'speed' or a 'speed_scale' - it would change nothing")
-        return Retune(when=when, label=label, scope=scope, profile=profile, speed=speed, speed_scale=scale)
-
     if kind is Kind.STIMULUS:
         need = str(spec.get("need", "") or "").strip()
         if not need:
@@ -434,7 +339,3 @@ def parse_effects(raw: object) -> tuple[Effect, ...]:
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, Mapping)):
         raise EffectError(f"effects: expected a list, got {type(raw).__name__}")
     return tuple(parse_effect(item, index=i) for i, item in enumerate(raw))
-
-
-def injected_count(effects: Sequence[Effect]) -> int:
-    return sum(1 for e in effects if isinstance(e, Intercept))

@@ -1,11 +1,4 @@
-# An object closes in behind the robot after it has committed.
-#
-# Tests whether backtracking is attempted at all. The failure this looks for is a planner
-# that treats its own back-track as blocked and reports "no valid path" rather than trying
-# the remaining space.
-#
-# Deliberately paired with a despawn: without it the episode can only ever end in failure,
-# and an arm that cannot succeed measures the timeout, not the robot.
+# Paired with a despawn: an arm that cannot succeed measures the timeout, not the robot.
 
 events:
   - action: spawn

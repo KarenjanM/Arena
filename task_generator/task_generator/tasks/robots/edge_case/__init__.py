@@ -1,8 +1,4 @@
-"""``edge_case`` robot task mode — routed traversals with obstruction as an outcome.
-
-Registered at import, unlike its obstacle-side namesake: this mode has no HumanSim
-dependency, so it is available under any `human:=` backend.
-"""
+"""``edge_case`` robot task mode; registered at import since, unlike the obstacle mode, it needs no HumanSim."""
 
 import typing
 
@@ -16,10 +12,7 @@ from task_generator.tasks.registry import _REGISTRY_NAMESPACE, ROBOTS_MODES
 if typing.TYPE_CHECKING:
     from task_generator.tasks.robots import TM_Robots
 
-# Own namespace rather than sharing `task.edge_case` with the obstacle mode: the two are
-# separate modes with separate lifetimes, and a leaf-name collision would only surface at
-# node start. The scenario file itself is read from the shared `task.scenario.file`, so the
-# route and the crowd always come from the same scenario — see impl.__init__.
+# own namespace: a leaf-name collision with the obstacle mode's `task.edge_case` would only surface at node start
 _NS = _REGISTRY_NAMESPACE("edge_case_robot")
 
 
@@ -50,14 +43,7 @@ def declare_schema(node: ROSParamServer, ns: Namespace) -> None:
         ns("accept_within"),
         0.6,
         label="Accept a leg within",
-        description="Metres from the leg's goal at which a robot that has stopped getting closer (see accept_after) counts as arrived. nav2 refuses to plan into a goal cell inside the robot's inflation; without this the robot stood 0.23 m from such a goal for a whole recording. 0 = off.",
-    )
-    declare_double(
-        node,
-        ns("accept_after"),
-        5.0,
-        label="Accept after",
-        description="Seconds without progress (blocked_distance) inside accept_within before the leg is accepted.",
+        description="Goal tolerance of every leg, when wider than task.episode.goto_pose.tolerance.radius. nav2 refuses to plan into a goal cell inside the robot's inflation; without this the robot stood 0.23 m from such a goal for a whole recording. 0 = the robot's own tolerance.",
     )
     declare_double(
         node,

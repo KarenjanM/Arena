@@ -1,13 +1,4 @@
-"""End-to-end: a generated prompt scenario runs in the real stack.
-
-Boots `arena launch` (gazebo, arena_humansim, nav2, the edge_case modes) on one generated
-scenario and checks the whole chain the demos rely on: the case builds, the robot sets off and
-the case clock starts, every runtime effect fires, the case's own encounter and formation agents come
-within 1.5 m of the robot, the population walks, the robot's lidar sees
-the pedestrians and HumanSim is told where the robot is, the score row lands, and nothing
-crashes. Minutes per test and it owns the machine's simulator, so it only runs with
-`ARENA_SIM_TESTS=1` (see `data/promptgen/tools/sim_test.sh`).
-"""
+"""End-to-end: a generated prompt scenario runs in the real stack (only with ARENA_SIM_TESTS=1)."""
 
 from __future__ import annotations
 
@@ -69,7 +60,6 @@ def _topic(node: object, suffix: str, kind: str = "") -> str:
 
 
 def _tf_buffer(node: object) -> object:
-    """A tf2 buffer fed from the env's own tf topics: `TransformListener` reads the global `/tf`, which the env does not publish on."""
     import tf2_ros
     from rclpy.qos import DurabilityPolicy, QoSProfile
     from tf2_msgs.msg import TFMessage
@@ -101,10 +91,8 @@ def stack():
     try:
         yield proc
     finally:
-        # The launch's own process group first; killsim.sh then sweeps what outlives it. Note
-        # that killsim.sh matches on command lines ("task_generator", "arena launch", ...): the
-        # process running this test must not carry those words (see sim_test.sh).
         try:
+            # killsim.sh matches command lines, so this process must not carry those words (see sim_test.sh)
             os.killpg(proc.pid, signal.SIGINT)
             proc.wait(timeout=20)
         except Exception:  # noqa: BLE001 - already gone, or stuck: the sweep below handles it
@@ -114,14 +102,12 @@ def stack():
 
 @pytest.fixture(scope="module")
 def episode(stack) -> dict:
-    """The first episode the case is built for (episode 1 runs before the robot is placed)."""
     started = _wait(r"EPISODE STARTED #2", BOOT_S)
     assert started, f"no second episode within {BOOT_S:.0f}s; log tail:\n" + _log()[-3000:]
     log = _log()
     first = log.index("EPISODE STARTED #1")
     block = log[first : started.start()]
     built = re.search(rf"edge_case: {re.escape(SCENARIO)} built - (\d+) injected, (\d+) plan\(s\), (\d+) base agent\(s\)", block)
-    # an effect-free case is read at the reset, before episode 1 starts
     no_effects = re.search(rf"-> {re.escape(SCENARIO)}: 0 effect\(s\)", log[: started.start()])
     assert built or no_effects, "the obstacles mode never reported the case built:\n" + block[-3000:]
     return {"at": started.start(), "plans": int(built.group(2)) if built else 0, "agents": int(built.group(3)) if built else 0}
@@ -147,12 +133,18 @@ def test_every_runtime_effect_fires(episode) -> None:
     ungated = [(label, float(at)) for label, at, gate in armed if not gate]
     for label, at in ungated:
         if at > EFFECTS_S:
-            continue  # beyond what this test waits for
+            continue
         assert _wait(rf"edge_case: {re.escape(label)}(?: at t=| fired at t=| trigger fired)", EFFECTS_S + at, since=episode["at"]), f"{label} (due at {at:.0f}s) never fired"
 
 
+def _scenario_dir() -> Path:
+    """Where the runtime loads the scenario from: the world as arena_simulation_setup resolves its name."""
+    from arena_simulation_setup.tree.World import WorldIdentifier
+
+    return Path(WorldIdentifier(WORLD).resolve_sync().path) / "scenarios" / SCENARIO
+
+
 def _case(root: Path) -> dict:
-    # the generator's reader: format 2 humans under `dynamic`, the block from edge_case.yaml
     from arena_evaluation.generation.formats import read_scenario
 
     return read_scenario(root / "scenario.yaml")
@@ -169,8 +161,6 @@ def _handed_to(type_doc: dict, need: str) -> dict:
 
 
 def _speed_polys(path: Path, need: str) -> list[tuple[float, ...]]:
-    """The `desired_velocity` transforms raising `need` holds on the type at `path`, in HumanSim's fold order: its
-    type-level `tunes:` on the need, then the sequence the need preempts into."""
     from arena_humansim.core.agents.loader import load_agent_type_from_file
 
     agent_type = load_agent_type_from_file(path)
@@ -182,7 +172,6 @@ def _speed_polys(path: Path, need: str) -> list[tuple[float, ...]]:
 
 
 def _destination(type_doc: dict, need: str) -> tuple[float, float] | None:
-    # the first go_to of the sequence the need preempts into
     step = next((st for st in _handed_to(type_doc, need).get("steps", {}).values() if st.get("kind") == "go_to"), None)
     return None if step is None else (float(step["target_pose"]["x"]), float(step["target_pose"]["y"]))
 
@@ -194,7 +183,7 @@ def test_stimulated_trees_head_for_their_destination(episode) -> None:
     from rclpy.qos import DurabilityPolicy, QoSProfile
     from tf2_msgs.msg import TFMessage
 
-    root = WS / "src/Arena/arena_simulation_setup/worlds" / WORLD / "scenarios" / SCENARIO
+    root = _scenario_dir()
     case = _case(root)
     stimuli = [e for e in (case.get("edge_case") or {}).get("effects", []) if e["type"] == "stimulus"]
     if not stimuli:
@@ -232,12 +221,10 @@ def test_stimulated_trees_head_for_their_destination(episode) -> None:
             last[name] = (round(p.pose.position.x - offset[0][0], 1), round(p.pose.position.y - offset[0][1], 1))
 
     def on_static(msg: TFMessage) -> None:
-        # the world frame the generator wrote in sits in `map` at the env's `<prefix>/map` anchor
         for t in msg.transforms:
             if not offset and t.header.frame_id.strip("/") == "map" and t.child_frame_id.strip("/").endswith("/map"):
                 offset.append((t.transform.translation.x, t.transform.translation.y))
 
-    # tf is per env under gazebo (`<env ns>/tf_static`), global otherwise
     node.create_subscription(TFMessage, _topic(node, "/tf_static"), on_static, QoSProfile(depth=100, durability=DurabilityPolicy.TRANSIENT_LOCAL))
     node.create_subscription(Pedestrians, _topic(node, "/arena_peds"), on_peds, 10)
     t0 = time.time()
@@ -258,7 +245,7 @@ def test_stimulated_trees_take_their_tune(episode) -> None:
     from rclpy.node import Node
     from rclpy.qos import DurabilityPolicy, QoSProfile
 
-    root = WS / "src/Arena/arena_simulation_setup/worlds" / WORLD / "scenarios" / SCENARIO
+    root = _scenario_dir()
     case = _case(root)
     agents = {a["name"]: a for a in case["dynamic"]}
     expected: dict[str, float] = {}
@@ -267,7 +254,6 @@ def test_stimulated_trees_take_their_tune(episode) -> None:
         for name in effect["scope"]:
             block = agents[name]["agent"]
             polys = _speed_polys(root / block["agent_type"], effect["need"])
-            # the spawn speed is the agent block's; without one it was sampled and cannot be predicted
             if polys and block.get("desired_velocity"):
                 speed = float(block["desired_velocity"])
                 for poly in polys:
@@ -312,7 +298,7 @@ def test_the_population_walks_and_the_robot_is_seen_and_sees(episode) -> None:
     from sensor_msgs.msg import LaserScan
 
     if not rclpy.ok():
-        rclpy.init()  # the ros conftest may already have done it
+        rclpy.init()
     node = Node("sim_test_probe")
     tf = _tf_buffer(node)
 
@@ -358,8 +344,7 @@ def test_the_population_walks_and_the_robot_is_seen_and_sees(episode) -> None:
     node.destroy_node()
 
     assert len(peds) >= 2, "no pedestrians published"
-    # talkers (behaviour trees without a baked `walk` route) and designed standers may stand
-    root = WS / "src/Arena/arena_simulation_setup/worlds" / WORLD / "scenarios" / SCENARIO
+    root = _scenario_dir()
     case = _case(root)
 
     def stands(agent: dict) -> bool:
@@ -388,11 +373,10 @@ def test_the_episode_ends_with_a_score_row(episode) -> None:
     assert "Traceback" not in tail.replace("KeyboardInterrupt", ""), "a traceback during the episode"
 
 
-#: Metres the agents an encounter or a formation owns must come to the robot, as in the hand-baked demo scenes.
 CASE_REACH_M = 1.5
 
 
-# last: it may watch for two minutes, and the tests before it time themselves on the first episode's onsets
+# last: it may watch for two minutes, and earlier tests time themselves on the first episode's onsets
 def test_the_cases_own_agents_come_to_the_robot(episode) -> None:
     import json
 
@@ -401,7 +385,7 @@ def test_the_cases_own_agents_come_to_the_robot(episode) -> None:
     from rclpy.node import Node
     from rclpy.qos import DurabilityPolicy, QoSProfile
 
-    root = WS / "src/Arena/arena_simulation_setup/worlds" / WORLD / "scenarios" / SCENARIO
+    root = _scenario_dir()
     record = json.loads((root / "record.json").read_text()) if (root / "record.json").is_file() else {}
     by_step = {step: {str(n) for n in (record.get("owned") or {}).get(step) or []} for step in ("C", "D")}
     by_step = {step: names for step, names in by_step.items() if names}
@@ -411,7 +395,6 @@ def test_the_cases_own_agents_come_to_the_robot(episode) -> None:
     if not rclpy.ok():
         rclpy.init()
     node = Node("sim_test_reach_probe")
-    # the robot as Arena feeds it to HumanSim and the pedestrians HumanSim reports, both in the engine's frame
     names: dict[int, str] = {}
     robot: list[tuple[float, float]] = []
     closest: dict[str, float] = {}
@@ -440,5 +423,4 @@ def test_the_cases_own_agents_come_to_the_robot(episode) -> None:
     (Path("/tmp/sim_test_rec") / SCENARIO).mkdir(parents=True, exist_ok=True)
     (Path("/tmp/sim_test_rec") / SCENARIO / "reach.json").write_text(json.dumps({"reach": reach(), "closest": closest}))
     assert closest, f"none of the case's agents {sorted(owned)} appeared beside the robot on /agent_states"
-    # each encounter (C) and each formation (D) on its own: one close agent must not stand in for another step
     assert all(d < CASE_REACH_M for d in reach().values()), f"a step's agents stayed away from the robot: {reach()} ({closest})"

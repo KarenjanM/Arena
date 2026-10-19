@@ -19,7 +19,6 @@ and what depends on the live robot is solved at reset:
 | `shuffle` / `scatter` | throw each agent a new point near where it started, every `period` s / once | same |
 | `track_robot` | re-issue the robot's position as the goal | same |
 | `hold` | pin the agents in scope, then release them to their own goal | same |
-| `retune` | change the agents in scope to another `profile` and/or `speed` / `speed_scale`, once, in place (position, velocity and route continue). HumanSim has no in-place update, so under `human:=arena` every retune counts as failures on the plan's outcome | same, [`impl.py`](impl.py) `_retune_agents` |
 | `stimulus` | raise a `need` (to 100 x `intensity`, default 1) on the agents in scope, once, through HumanSim's `notify_stimulus`; each agent reacts after its own `reaction_time`. A behaviour-tree type with a `transitions` entry keyed on that need switches sequence: behaviour changes without a respawn, parameters do not | same, [`impl.py`](impl.py) `_stimulate_agents` |
 | `objects:` | a hand-authored object timeline (not written by the generator) | [`object_driver.py`](object_driver.py) |
 
@@ -67,7 +66,6 @@ effects:
    angle: 180.0, route_fraction: 0.3, speed: 0.9, after: continue, waypoint_mode: once}
 - {type: rally, label: A:evacuation, scope: [normal_1, normal_2], target: central_hallway, when: {at: 8.0}}
 - {type: scatter, label: D:formation_break, scope: [d_1, d_2, d_3], radius: 2.0, when: {robot_within: 3.0, of: [12.1, 4.0]}}
-- {type: retune, label: A:blackout, scope: [normal_1, normal_3], profile: ./types/adult__vision_range_low.yaml, speed_scale: 0.545, when: {at: 10.0}}
 - {type: stimulus, label: A:evacuation, scope: [break_1, break_2], need: alarm, when: {at: 8.0}}
 formation: {centre: [12.1, 4.0], radius: 1.8, variant: circle, at: {at: 8.0}}   # where Step D's group forms
 decisions: {...}      # the generator's typed decisions, for review
@@ -162,17 +160,18 @@ during reset (so the route exists when effects are built), traverses repeatedly,
 
 | File | Role |
 |---|---|
-| [`impl.py`](impl.py) | `TM_EdgeCase` - population → effects → arm → record |
+| [`impl.py`](impl.py) | `TM_EdgeCase` - population → `build` → arm → record |
+| [`build.py`](build.py) | the case built against one episode's `Scene` (route, zones, free space, agent types): intercepts and armed plans |
 | [`effects.py`](effects.py) | the block grammar |
 | [`scenario_block.py`](scenario_block.py) | reading the block from the active scenario |
-| [`waypoints.py`](waypoints.py), [`waypoint_driver.py`](waypoint_driver.py) | resolved route-rewrite plans and the sim-time node that fires them |
+| [`waypoints.py`](waypoints.py), [`waypoint_driver.py`](waypoint_driver.py) | resolved route-rewrite plans and the driver that fires them, ticked on sim time from the node's event loop |
 | [`triggers.py`](triggers.py) | proximity gates |
 | [`geometry.py`](geometry.py), [`pathing.py`](pathing.py) | the interception solver and the route planner |
 | [`objects.py`](objects.py), [`object_driver.py`](object_driver.py), [`timelines/`](timelines/README.md) | object timelines |
-| [`agent_types.py`](agent_types.py) | reading a profile's nominal speed |
-| [`scoring.py`](scoring.py), [`criticality.py`](criticality.py) | the per-episode panel |
+| [`agent_types.py`](agent_types.py) | agent types through HumanSim's loader |
+| [`scoring.py`](scoring.py), [`criticality.py`](criticality.py) | the per-episode panel: `score_scope`, `score_episode` and the sampling node |
 | [`provenance.py`](provenance.py) | `cases.jsonl` |
 
-Tests: `tests/test_edge_case_*.py` (pure) and `tests/ros/test_edge_case_*.py`
-(`test_edge_case_effects_apply.py` drives a whole reset with fakes; `edge_case_fixtures.py`
-is the shared bare-mode builder).
+Tests: `tests/test_edge_case_*.py` and `tests/ros/test_edge_case_*.py` call these functions on real
+inputs (`test_edge_case_build.py` builds cases from parsed blocks and real `WorldMap`s). The mode's
+wiring - reset, the driver loops, the scorer node - runs only in `tests/sim/test_edge_case_in_sim.py`.

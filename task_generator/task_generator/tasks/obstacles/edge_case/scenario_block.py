@@ -1,14 +1,3 @@
-"""Reading the `edge_case:` block out of the active scenario file.
-
-A case is authored inside the scenario it applies to, as a top-level `edge_case:` key. Arena's
-scenario loader accepts and ignores unknown top-level keys, so the block is inert to everything
-except this mode - an annotated scenario still loads and runs as an ordinary scenario.
-
-The block is the *only* source of a case's configuration. There is no parameter surface to
-fill in and no precedence to resolve: a scenario is a complete, self-describing situation, and
-what happens at run time is exactly the list of effects it carries.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -20,20 +9,16 @@ import yaml
 
 from .effects import Effect, EffectError, parse_effects
 
-#: The top-level key. Matches `arena_evaluation.generation`'s writer.
 BLOCK_KEY = "edge_case"
-#: The block's own file beside `scenario.yaml`.
 SIDECAR = "edge_case.yaml"
 
-#: Provenance fields, carried for humans and for the records; never acted on.
 LABELS: tuple[str, ...] = ("id", "note", "base", "prompt_id", "steps", "provenance", "decisions", "owned", "formation")
 
-#: Fields that do something.
 ACTIVE: tuple[str, ...] = ("effects", "objects")
 
 
 class BlockError(Exception):
-    """The scenario carries a block that cannot be applied."""
+    pass
 
 
 @attrs.frozen
@@ -45,12 +30,9 @@ class Block:
     steps: tuple[str, ...] = ()
     provenance: Mapping[str, Any] = attrs.Factory(dict)
     decisions: Mapping[str, Any] = attrs.Factory(dict)
-    #: Step label -> agent names it owns, as the generator recorded them.
     owned: Mapping[str, tuple[str, ...]] = attrs.Factory(dict)
-    #: Step D's formation as the generator placed it: `centre: [x, y]`, `radius`, `variant`, `at`.
     formation: Mapping[str, Any] = attrs.Factory(dict)
     effects: tuple[Effect, ...] = ()
-    #: Object timeline: a shipped name, a path, or `./file.yaml` beside the scenario.
     objects: str = ""
 
     @property
@@ -63,7 +45,6 @@ class Block:
 
 
 def scenario_path(world: str, scenario: str) -> Path | None:
-    """Filesystem path of a scenario's `scenario.yaml`, or None if it cannot be resolved."""
     if not world or not scenario:
         return None
     # outside the try: an API move must fail loudly, not read as "no block" (the 2026-10-13 sync moved this module)
@@ -71,15 +52,14 @@ def scenario_path(world: str, scenario: str) -> Path | None:
 
     try:
         view = WorldIdentifier(world).resolve_sync().scenario(scenario).resolve_sync()
-    except Exception:  # noqa: BLE001 - an unknown world or scenario carries no block
+    except FileNotFoundError:
         return None
-    path = Path(getattr(view, "path", "")) / "scenario.yaml"
+    path = Path(view.scenario_path)
     return path if path.is_file() else None
 
 
 def parse(raw: object, *, where: str = BLOCK_KEY) -> Block:
-    """A block from its mapping. Strict: an unknown key is a typo that would otherwise be a
-    silent no-op, which is the one failure this format exists to refuse."""
+    """Strict: an unknown key is a typo that would otherwise be a silent no-op."""
     if not isinstance(raw, Mapping):
         raise BlockError(f"{where}: must be a mapping, got {type(raw).__name__}")
     unknown = sorted(set(raw) - set(LABELS) - set(ACTIVE))
@@ -119,12 +99,7 @@ def parse(raw: object, *, where: str = BLOCK_KEY) -> Block:
 
 
 def read(path: Path) -> Block | None:
-    """The block of the scenario at `path` (its `scenario.yaml`): the `edge_case.yaml` beside it, which format 2
-    needs since it rejects unknown keys, else a format 1 file's own `edge_case:` key. None when there is none.
-
-    A malformed block raises: a scenario that *says* it carries a case and does not deliver
-    one is the silent no-op this pipeline exists to refuse.
-    """
+    """The `edge_case.yaml` beside `path`, else its own `edge_case:` key; None when neither, BlockError when malformed."""
     sidecar = path.with_name(SIDECAR)
     source = sidecar if sidecar.is_file() else path
     try:

@@ -845,23 +845,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self,
         routes: Mapping[str, Sequence[tuple[float, float]]],
     ) -> bool:
-        """Send already-spawned agents somewhere else, *mid-episode*.
-
-        The counterpart to `remove_obstacles_by_id` for people rather than props, and the
-        only way to perturb where a crowd is going rather than what it is: an evacuation
-        rallying on an exit, an agent walking at the robot. Everything else that sets a route
-        does so at spawn, which is the right time for a population and the wrong one for a
-        fire alarm.
-
-        Keys are agent names; the point list replaces the agent's remaining goals. Plain
-        names and ``sim_path`` both resolve, for the same reason they do in
-        :meth:`remove_obstacles_by_id`: the caller that *placed* an agent knows it by the
-        name it wrote, and refusing that would be a papercut for no benefit. Resolution goes
-        through the known-obstacle registry rather than being recomputed, so it cannot drift
-        from how the agent was actually registered.
-
-        Returns whether the backend accepted the rewrite.
-        """
+        """Replace spawned agents' remaining goals mid-episode; plain names and ``sim_path`` both resolve."""
         if not routes:
             return True
 
@@ -870,84 +854,35 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         resolved = {index.get(name, name): points for name, points in routes.items()}
         return await self._set_waypoints_impl(resolved)
 
-    async def update_agents(self, obstacles: Sequence[DynamicObstacle]) -> bool:
-        """Change already-spawned agents' parameters *in place*, mid-episode.
-
-        The counterpart to :meth:`set_agent_waypoints` for *what* an agent is rather than
-        where it goes: a blackout that slows everyone down and shortens their sight, a
-        group that stops yielding. Each obstacle carries the agent's new ``agent``
-        block under the name it was spawned with (plain name or ``sim_path``, resolved through
-        the known-obstacle registry as everywhere else). Nothing respawns: position, velocity
-        and route continue, which is what "the lights go out" looks like.
-
-        Returns whether the backend changed anyone; a backend that cannot reports False and
-        the caller records the change as failed.
-        """
-        if not obstacles:
-            return True
-        index = self._sim_path_index()
-        resolved = {index.get(str(getattr(o, "sim_path", "") or o.name), index.get(str(o.name), str(o.name))): o for o in obstacles}
-        return await self._update_agents_impl(resolved)
-
     def _sim_path_index(self) -> dict[str, str]:
-        """Plain name and sim_path -> sim_path, for every known obstacle."""
         index: dict[str, str] = {}
         for name, known in self._known_obstacles.items():
-            sim_path = str(getattr(known.obstacle, "sim_path", "") or name)
+            sim_path = known.obstacle.sim_path
             index.setdefault(name, sim_path)
             index.setdefault(sim_path, sim_path)
         return index
 
     async def stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> int:
-        """Raise `need` to 100 x `intensity` on named agents, mid-episode, so a behaviour-tree type with a
-        `transitions` entry on it switches sequence. Names resolve as in :meth:`set_agent_waypoints`;
-        returns how many agents the backend reached."""
         index = self._sim_path_index()
         return await self._stimulate_impl([index.get(n, n) for n in names], need, intensity)
 
     async def _stimulate_impl(self, names: Sequence[str], need: str, intensity: float) -> int:
-        """Backend hook for :meth:`stimulate_agents`; defaults to "this backend cannot" (0)."""
         del names, need, intensity
         return 0
 
-    async def _update_agents_impl(self, obstacles: Mapping[str, DynamicObstacle]) -> bool:
-        """Backend hook for :meth:`update_agents`; defaults to "this backend cannot" (False)
-        for the same reason :meth:`_set_waypoints_impl` does."""
-        del obstacles
-        return False
-
     async def remove_obstacles_by_id(self, ids: Sequence[str]) -> tuple[list[str], list[str]]:
-        """Remove specific spawned obstacles *mid-episode*.
-
-        The counterpart to `TM_Obstacles.extend`. Everything else here removes by *layer* at
-        a reset boundary, which is the right granularity for rebuilding a population and the
-        wrong one for "the cart blocking the doorway goes away now" - an edge case whose
-        whole point is that the world changes while the robot is in it.
-
-        `ids` are what the spawn returned, i.e. ``sim_path``. Plain names resolve too: the
-        two differ only by the env prefix, and refusing the name would be a papercut for no
-        benefit. Resolution goes through the known-obstacle registry rather than being
-        recomputed, so it cannot drift from how the entity was actually registered.
-
-        Returns ``(removed, missing)``. Missing is not an error - an id that is already gone
-        is the state the caller asked for - but it is reported separately so "already gone"
-        stays distinguishable from "the backend cannot remove that one", which is the real
-        answer for a pedestrian under any backend except arena_humansim.
-        """
+        """Remove specific spawned obstacles mid-episode by ``sim_path`` or name; returns ``(removed, missing)``."""
         if not ids:
             return [], []
 
         index: dict[str, str] = {}
         for name, known in self._known_obstacles.items():
             index.setdefault(name, name)
-            sim_path = getattr(known.obstacle, "sim_path", None)
-            if sim_path:
-                index.setdefault(str(sim_path), name)
+            index.setdefault(known.obstacle.sim_path, name)
 
         static: list[Obstacle] = []
         dynamic: list[DynamicObstacle] = []
         missing: list[str] = []
-        #: requested id -> (registry key, is_dynamic), so the outcome can be reported per id
         resolved: dict[str, tuple[str, bool]] = {}
 
         for requested in ids:
@@ -975,9 +910,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if dynamic:
             dynamic_ok = await self._remove_pedestrian_names_impl([str(o.sim_path) for o in dynamic])
             if dynamic_ok:
-                # Same bookkeeping `remove_obstacles` does: the stream gate is closed so a
-                # pedestrian tick cannot arrive for an agent that no longer exists, and the
-                # bus index is cleared under both keys it is written under.
                 self._close_stream_gate()
                 for obstacle in dynamic:
                     self._ped_bus_index.pop(obstacle.name, None)
@@ -1195,14 +1127,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self,
         names: Sequence[str],
     ) -> bool:
-        """Remove *specific* pedestrians, by ``sim_path``.
-
-        Not abstract, and defaults to "this backend cannot": `_remove_pedestrians_impl`
-        clears everything, which is all a reset ever needs, and only `arena_humansim` keeps
-        the per-agent id mapping that makes a targeted removal possible. Returning False
-        lets :meth:`remove_obstacles_by_id` report the id as *not removed* instead of
-        clearing the entire crowd as a side effect of despawning one cart.
-        """
+        """Defaults to False: only arena_humansim keeps the per-agent ids a targeted removal needs."""
         del names
         return False
 
@@ -1210,14 +1135,6 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self,
         routes: Mapping[str, Sequence[tuple[float, float]]],
     ) -> bool:
-        """Replace the waypoint list of already-spawned agents, mid-episode.
-
-        Not abstract, and defaults to "this backend cannot", for the same reason
-        :meth:`_remove_pedestrian_names_impl` does: rewriting a route needs the per-agent id
-        mapping only `arena_humansim` keeps. A backend that cannot do it reports False, and
-        the caller records a case that did not run - which is honest, and better than a
-        silent no-op that would report a crowd rerouted to an exit it never walked to.
-        """
         del routes
         return False
 

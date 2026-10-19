@@ -11,7 +11,6 @@ from task_generator.tasks.obstacles.edge_case.effects import (
     Rally,
     Shuffle,
     TrackRobot,
-    injected_count,
     parse_effect,
     parse_effects,
     parse_scope,
@@ -114,7 +113,7 @@ def test_scope_forms() -> None:
 
 def test_effects_list_and_count() -> None:
     effects = parse_effects([{"type": "intercept"}, {"type": "rally", "target": "exit"}, {"type": "intercept", "angle": 90}])
-    assert injected_count(effects) == 2
+    assert [type(e).__name__ for e in effects] == ["Intercept", "Rally", "Intercept"]
     assert parse_effects(None) == ()
     with pytest.raises(EffectError, match="expected a list"):
         parse_effects({"type": "rally"})
@@ -126,14 +125,9 @@ def test_as_dict_is_json_shaped() -> None:
     assert d["when"] == {"at": 1.0}
 
 
-def test_retune_needs_a_change() -> None:
-    from task_generator.tasks.obstacles.edge_case.effects import Retune
-
-    with pytest.raises(EffectError, match="would change nothing"):
-        parse_effect({"type": "retune", "scope": ["a"]})
-    e = parse_effect({"type": "retune", "scope": ["a"], "profile": "./types/adult__vision_range_low.yaml", "speed_scale": 0.55, "when": {"at": 10}})
-    assert isinstance(e, Retune) and e.speed_scale == 0.55 and e.when.at == 10.0
-    assert parse_effect({"type": "retune", "speed": 0.6}).speed == 0.6
+def test_retune_is_not_an_effect() -> None:
+    with pytest.raises(EffectError, match="retune"):
+        parse_effect({"type": "retune", "scope": ["a"], "speed": 0.6})
 
 
 def test_stimulus_needs_a_need_and_an_intensity_within_one() -> None:

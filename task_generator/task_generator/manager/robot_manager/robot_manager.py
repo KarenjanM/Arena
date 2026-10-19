@@ -110,45 +110,19 @@ class RobotManager(NodeInterface):
 
     @property
     def start_pos(self) -> Pose:
-        """Where the robot was last placed, in the **abstract** frame (see `move`)."""
         return self._start_pos
 
     @property
     def start_assigned(self) -> bool:
-        """Whether `move` has ever placed this robot.
-
-        Until it has, `start_pos` is the constructed `Pose()` - the map origin, which is a
-        plausible-looking coordinate rather than an obviously missing one. On the first
-        episode the obstacle modes can run before placement, so anything reasoning about the
-        robot's route must check this or it will silently design against the origin.
-        """
         return self._start_assigned
 
     @property
     def goal_pos(self) -> Pose:
-        """Target of the phase currently being driven, in the **map** frame.
-
-        Owned by the mobile adapters: each `dispatch_phase` overwrites it with the leg it is
-        about to drive, and `publish_goal_loop` republishes it on `<ns>/goal_pose` with
-        `frame_id: "map"`. It is therefore neither the final destination nor comparable with
-        `start_pos`. For either of those, use `route_goal`.
-        """
         return self._goal_pos
 
     @property
     def route_goal(self) -> Pose:
-        """Final destination of the current request, in the **abstract** frame.
-
-        The counterpart to `start_pos`, and what the task-generation layer must use: obstacle
-        poses are abstract until the environment manager realizes them downstream, and
-        `world_manager.map` is the abstract occupancy grid. Comparing `start_pos` against
-        `goal_pos` instead mixes frames — on any env with a non-zero grid offset that yields a
-        "route" leaving the world entirely.
-
-        Feeding this back into a new `TaskRequest` is also the only safe round trip: phases are
-        realized at dispatch, so re-submitting `goal_pos` realizes an already-realized pose a
-        second time.
-        """
+        """Final destination of the current request in the abstract frame, unlike the map-frame `goal_pos` leg."""
         return self._route_goal
 
     @property
@@ -496,10 +470,6 @@ class RobotManager(NodeInterface):
             transition = self._runner.step(sample, zones, action_done, self._outcome_for_phase(state.phase), adapter.signal)
         return await self._settle(transition)
 
-    async def complete_active_phase(self) -> Transition:
-        """End the active phase as met now, for a task mode that judges arrival itself, and dispatch the next."""
-        return await self._settle(self._runner.complete_active())
-
     async def _settle(self, transition: Transition) -> Transition:
         ended = transition.ended
         if ended is not None and ended.outcome == "failed":
@@ -596,10 +566,6 @@ class RobotManager(NodeInterface):
             if kind_of(phase) not in self._adapters and kind_of(phase) not in self._unsupported_kinds_logged:
                 self._logger.warning(f"robot {self.name!r} has no adapter for phase kind {phase.kind!r}, the phase will fail as UNSUPPORTED_CAP")
 
-        # `route_goal` is this request's final destination in the ABSTRACT frame (phases stay abstract until
-        # dispatch), comparable with `start_pos` and obstacle poses and safe to resubmit. `goal_pos` is MAP
-        # frame, published on `<ns>/goal_pose`; adapters overwrite it with the leg they drive, so seed it with
-        # the realized destination or a robot whose phase kind has no adapter reports the map origin.
         last_goto = next((p for p in reversed(phases) if isinstance(p, GoToPhase) and p.pose is not None), None)
         if last_goto is not None:
             self._route_goal = last_goto.pose

@@ -1,68 +1,35 @@
-"""Rewriting agent routes *during* an episode.
-
-The ROS half of :mod:`waypoints`. Built on `arena_humansim_msgs/srv/SetWaypoints` through
-:meth:`BaseHumanSimulator.set_agent_waypoints`. Modelled on :mod:`object_driver`, and for the
-same reasons:
-
-* **Its own node, on sim time.** The tick is gated while the simulator is paused, so an
-  `at: 8.0` rally does not fire the instant a long pause ends.
-* **Its own failure boundary.** A reroute that cannot be sent disables the driver and says
-  so; it never takes the episode down.
-
-Several plans are armed at once, each with its own gate, clock and outcome: a crowd rally at
-8 s and a hold on the injected walker when the robot reaches it are independent effects and
-are reported independently.
-
-**The case clock starts when the robot is under way** (`depart_after_m`): every plan's `at`
-counts from the tick the robot has moved that far from where it stood when the plans were
-armed, not from the reset. nav2 takes a few seconds to produce its first plan and the robot
-mode may hold the robot on purpose; either way the case waits for the robot rather than the
-robot for the case - an onset "eight seconds in" is eight seconds into the drive.
-"""
-
 from __future__ import annotations
 
 import collections
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING
 
 import attrs
-import rclpy.node
-from rclpy.parameter import Parameter
 
 from .triggers import Trigger, distance_to
 from .waypoints import Mode, Plan, Point, WaypointOutcome
 
-Work = Coroutine[Any, Any, object]
+if TYPE_CHECKING:
+    from rclpy.impl.rcutils_logger import RcutilsLogger
 
-#: How often plans are checked, Hz. Deliberately slower than the object driver's 5 Hz: every
-#: re-issue costs the pedestrian backend a path recomputation.
+Work = Coroutine[None, None, object]
+
+# slower than the object driver: every re-issue costs the pedestrian backend a path recomputation
 DEFAULT_RATE_HZ = 2.0
 
-#: Metres the robot must have moved from its armed position before the case clock starts.
-#: Below nav2's goal tolerance, so a robot that has genuinely set off counts at once.
 ROBOT_DEPART_M = 0.3
-#: A displacement of this much between two ticks (2 Hz: 3 m/s, beyond any of our robots) is a
-#: teleport - the reset putting the robot on its start after the plans were armed - and moves
-#: the origin rather than starting the clock.
+# a jump this large between ticks is the reset placing the robot, which moves the origin rather than starting the clock
 ROBOT_TELEPORT_M = 1.5
-#: With a known start, seconds to wait for the robot to be seen on it (the reset's teleport)
-#: before falling back to "under way from wherever it is first seen".
 ROBOT_SETTLE_S = 10.0
-#: Seconds of robot track an arrival-time trigger's speed averages over.
 SPEED_WINDOW_S = 2.0
 
 
 @attrs.define
 class Armed:
-    """One plan under execution."""
-
     plan: Plan
     trigger: Trigger | None = None
     reference: Point | None = None
-    #: Sim time at the first tick after arming, i.e. when the episode's clock started.
     armed_at: float | None = None
-    #: When this plan's own clock started: `armed_at`, or the trigger's firing.
     t0: float | None = None
     last: float | None = None
     issues: int = 0
@@ -71,59 +38,35 @@ class Armed:
     outcome: WaypointOutcome = attrs.Factory(WaypointOutcome)
 
 
-class WaypointDriver(rclpy.node.Node):
-    """Ticks every armed plan and rewrites the routes it owns."""
+class WaypointDriver:
+    """Fires armed route-rewrite plans against sim time once the robot is under way; `tick` is called by the mode's sim-time loop."""
 
     def __init__(
         self,
-        namespace: str,
         *,
         reroute: Callable[[Mapping[str, Sequence[Point]]], Work],
         robot_pose: Callable[[], Point | None],
         submit: Callable[[Work], None],
-        rate_hz: float = DEFAULT_RATE_HZ,
-        retune: Callable[[Mapping[str, Mapping[str, Any]]], Work] | None = None,
+        logger: RcutilsLogger,
         stimulus: Callable[[Sequence[str], str, float], Work] | None = None,
         depart_after_m: float | None = None,
     ) -> None:
-        super().__init__(
-            "edge_case_waypoint_driver",
-            namespace=namespace,
-            use_global_arguments=False,
-            parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)],
-        )
         self._reroute = reroute
-        self._retune = retune
         self._stimulus = stimulus
         self._robot_pose = robot_pose
         self._submit = submit
         self._armed: list[Armed] = []
-        self._broken = False
-        #: None: clocks start on the first tick after arming (tests, no robot to wait for).
         self._depart_after_m = depart_after_m
         self._origin: Point | None = None
         self._origin_given = False
-        #: With a known start: the robot has been seen on it (the reset placed it there).
         self._settled = False
         self._last_seen: Point | None = None
-        #: (sim time, robot position) over the last `SPEED_WINDOW_S`, for an arrival-time trigger.
         self._track: collections.deque[tuple[float, Point]] = collections.deque()
         self._armed_at: float | None = None
         self.clock_started_at: float | None = None
-        self._timer = self.create_timer(1.0 / max(rate_hz, 1e-3), self._tick)
-
-    # Lifecycle
-    # ---------
+        self._logger = logger
 
     def arm(self, entries: Sequence[tuple[Plan, Trigger | None, Point | None]], origin: Point | None = None) -> None:
-        """Load plans, starting each clock at the next tick.
-
-        The clock starts on the first *tick* rather than here, because `arm` is called at the
-        end of a reset while the simulator may still be paused. Arming with nothing disarms.
-        `origin` is where the robot starts this episode (abstract frame); with it the robot is
-        under way once `depart_after_m` from there, without it from where it is first seen -
-        and a jump of `ROBOT_TELEPORT_M` between ticks (the reset placing it) moves that origin.
-        """
         self._armed = [
             Armed(
                 plan=plan,
@@ -138,7 +81,6 @@ class WaypointDriver(rclpy.node.Node):
             )
             for plan, trigger, reference in entries
         ]
-        self._broken = False
         self._origin = origin
         self._origin_given = origin is not None
         self._settled = False
@@ -149,22 +91,11 @@ class WaypointDriver(rclpy.node.Node):
     def outcomes(self) -> list[WaypointOutcome]:
         return [a.outcome for a in self._armed]
 
-    def shutdown(self) -> None:
-        self._timer.cancel()
-        self.destroy_node()
-
-    # Ticking
-    # -------
-
-    def _now(self) -> float:
-        return self.get_clock().now().nanoseconds * 1e-9
-
-    def _tick(self) -> None:
-        if self._broken or not self._armed:
+    def tick(self, now: float) -> None:
+        if not self._armed:
             return
-        now = self._now()
         if now <= 0.0:
-            return  # sim clock has not started publishing yet
+            return
         robot = self._robot_pose()
         speed = self._robot_speed(now, robot)
         if not self._robot_under_way(now, robot):
@@ -174,8 +105,6 @@ class WaypointDriver(rclpy.node.Node):
                 self._tick_one(armed, now, robot, speed)
 
     def _robot_speed(self, now: float, robot: Point | None) -> float | None:
-        """Metres per second the robot covered over the last `SPEED_WINDOW_S`; None until half of it is seen. A
-        teleport (a reset placing the robot) starts the track again."""
         if robot is None:
             return None
         if self._track and (distance_to(robot, self._track[-1][1]) or 0.0) >= ROBOT_TELEPORT_M:
@@ -190,8 +119,7 @@ class WaypointDriver(rclpy.node.Node):
         return sum(distance_to(b, a) or 0.0 for a, b in zip(points, points[1:], strict=False)) / span
 
     def _robot_under_way(self, now: float, robot: Point | None) -> bool:
-        """Whether the case clock runs: at once without `depart_after_m`, else from the tick
-        the robot has moved that far from where it stood when the plans were armed."""
+        """The case clock starts once the robot has moved `depart_after_m` from its start, so an onset counts from the drive, not the reset."""
         if self.clock_started_at is not None:
             return True
         if self._depart_after_m is None:
@@ -204,24 +132,23 @@ class WaypointDriver(rclpy.node.Node):
         jumped = self._last_seen is not None and (distance_to(robot, self._last_seen) or 0.0) >= ROBOT_TELEPORT_M
         self._last_seen = robot
         if self._origin_given and not self._settled:
-            # Plans are armed before the reset has placed the robot: wait until it is seen on
-            # its start, or give up on the start after a while and take it from where it is.
+            # plans are armed before the reset has placed the robot
             near = distance_to(robot, self._origin)
             if near is not None and near < self._depart_after_m:
                 self._settled = True
             elif now - self._armed_at >= ROBOT_SETTLE_S:
-                self.get_logger().warn(f"edge_case: robot never seen on its start {self._origin} ({near:.2f} m off after {ROBOT_SETTLE_S:.0f}s); taking its departure from here")
+                self._logger.warning(f"edge_case: robot never seen on its start {self._origin} ({near:.2f} m off after {ROBOT_SETTLE_S:.0f}s); taking its departure from here")
                 self._origin_given = False
                 self._origin = robot
             return False
         if not self._origin_given and (self._origin is None or jumped):
-            self._origin = robot  # first sighting, or the reset just put the robot on its start
+            self._origin = robot
             return False
         moved = distance_to(robot, self._origin)
         if moved is None or moved < self._depart_after_m:
             return False
         self.clock_started_at = now
-        self.get_logger().warn(f"edge_case: robot under way ({moved:.2f} m from its start, {now - self._armed_at:.1f}s after the plans were armed) at sim t={now:.1f}s - the case clock starts now")
+        self._logger.warning(f"edge_case: robot under way ({moved:.2f} m from its start, {now - self._armed_at:.1f}s after the plans were armed) at sim t={now:.1f}s - the case clock starts now")
         return True
 
     def _tick_one(self, armed: Armed, now: float, robot: Point | None, speed: float | None = None) -> None:
@@ -235,7 +162,7 @@ class WaypointDriver(rclpy.node.Node):
                 if not armed.trigger.satisfied(distance, speed):
                     return
                 armed.outcome.t_trigger = now - armed.armed_at
-                self.get_logger().warn(f"edge_case: {plan.label or plan.mode} trigger fired at t={armed.outcome.t_trigger:.1f}s - {armed.trigger.describe(armed.reference)}, robot at {distance:.2f}m")
+                self._logger.warning(f"edge_case: {plan.label or plan.mode} trigger fired at t={armed.outcome.t_trigger:.1f}s - {armed.trigger.describe(armed.reference)}, robot at {distance:.2f}m")
             armed.t0 = now
             return
 
@@ -243,7 +170,6 @@ class WaypointDriver(rclpy.node.Node):
         if elapsed < plan.at:
             return
 
-        # Release: a hold or a tracking plan that has run its duration.
         if plan.mode in (Mode.HOLD, Mode.TRACK_ROBOT) and armed.issues and plan.duration > 0 and elapsed >= plan.at + plan.duration:
             armed.done = True
             armed.outcome.t_release = elapsed
@@ -255,7 +181,7 @@ class WaypointDriver(rclpy.node.Node):
         if armed.last is not None and elapsed - armed.last < plan.period:
             return
 
-        if plan.mode in (Mode.RETUNE, Mode.STIMULUS):
+        if plan.mode is Mode.STIMULUS:
             armed.done = True
             armed.issues += 1
             armed.outcome.t_first = elapsed
@@ -273,7 +199,7 @@ class WaypointDriver(rclpy.node.Node):
         if plan.mode is Mode.RALLY or (plan.mode is Mode.SHUFFLE and plan.once):
             armed.done = True
         if plan.mode is Mode.HOLD and plan.duration <= 0:
-            armed.done = True  # pinned for the rest of the episode
+            armed.done = True
         self._send(armed, routes, elapsed)
 
     def _routes(self, armed: Armed, robot: Point | None) -> dict[str, list[Point]] | None:
@@ -282,74 +208,51 @@ class WaypointDriver(rclpy.node.Node):
             return {name: [plan.targets[name]] for name in plan.homes}
         if plan.mode is Mode.TRACK_ROBOT:
             if robot is None:
-                return None  # respawn window; not an error
+                return None
             return {name: [robot] for name in plan.homes}
         if plan.mode is Mode.HOLD:
             if armed.issues:
-                return None  # already pinned; waiting for release
+                return None
             return plan.hold_routes()
         return plan.shuffle_routes(armed.issues)
 
     def _send_once(self, armed: Armed, elapsed: float) -> None:
-        if (self._retune if armed.plan.mode is Mode.RETUNE else self._stimulus) is None:
+        if self._stimulus is None:
             armed.outcome.failures += 1
             armed.outcome.reason = f"no {armed.plan.mode} hook"
             return
-        work = self._run_once(armed, elapsed)
-        try:
-            self._submit(work)
-        except Exception as exc:
-            work.close()
-            self._fail(f"could not schedule: {exc!r}")
+        self._submit(self._run_once(armed, elapsed))
 
     async def _run_once(self, armed: Armed, elapsed: float) -> None:
         plan = armed.plan
-        retune = plan.mode is Mode.RETUNE
-        wanted = len(plan.retune) if retune else len(plan.homes)
+        wanted = len(plan.homes)
         try:
-            if retune:
-                assert self._retune is not None
-                ok = await self._retune(plan.retune)
-            else:
-                assert self._stimulus is not None
-                ok = await self._stimulus(sorted(plan.homes), plan.need, plan.intensity)
+            assert self._stimulus is not None
+            ok = await self._stimulus(sorted(plan.homes), plan.need, plan.intensity)
         except Exception as exc:
             armed.outcome.failures += 1
-            self.get_logger().warn(f"edge_case: {plan.mode} at t={elapsed:.1f}s failed ({exc!r})")
+            self._logger.warning(f"edge_case: {plan.mode} at t={elapsed:.1f}s failed ({exc!r})")
             return
         n = int(ok) if isinstance(ok, int) and not isinstance(ok, bool) else (wanted if ok else 0)
         armed.outcome.issued += n
         if n < wanted:
             armed.outcome.failures += wanted - n
-        done = "retuned" if retune else f"stimulated ({plan.need})"
-        self.get_logger().warn(f"edge_case: {plan.label or plan.mode} at t={elapsed:.1f}s - {n} of {wanted} agent(s) {done}")
+        self._logger.warning(f"edge_case: {plan.label or plan.mode} at t={elapsed:.1f}s - {n} of {wanted} agent(s) stimulated ({plan.need})")
 
     def _send(self, armed: Armed, routes: Mapping[str, Sequence[Point]], elapsed: float) -> None:
-        work = self._run(armed, routes, elapsed)
-        try:
-            self._submit(work)
-        except Exception as exc:
-            work.close()
-            self._fail(f"could not schedule: {exc!r}")
+        self._submit(self._run(armed, routes, elapsed))
 
     async def _run(self, armed: Armed, routes: Mapping[str, Sequence[Point]], elapsed: float) -> None:
         try:
             ok = await self._reroute(routes)
         except Exception as exc:
             armed.outcome.failures += 1
-            self.get_logger().warn(f"edge_case: reroute at t={elapsed:.1f}s failed ({exc!r})")
+            self._logger.warning(f"edge_case: reroute at t={elapsed:.1f}s failed ({exc!r})")
             return
         if not ok:
             armed.outcome.failures += 1
-            self.get_logger().warn(f"edge_case: reroute at t={elapsed:.1f}s reached no agent - {len(routes)} name(s) did not resolve")
+            self._logger.warning(f"edge_case: reroute at t={elapsed:.1f}s reached no agent - {len(routes)} name(s) did not resolve")
             return
         armed.outcome.issued += len(routes)
         if armed.outcome.issued == len(routes):
-            self.get_logger().warn(f"edge_case: {armed.plan.label or armed.plan.mode} fired at t={elapsed:.1f}s - {len(routes)} agent(s) rerouted")
-
-    def _fail(self, reason: str) -> None:
-        self._broken = True
-        for armed in self._armed:
-            if not armed.done:
-                armed.outcome.reason = reason
-        self.get_logger().warn(f"edge_case: waypoint driver disabled for this episode ({reason})")
+            self._logger.warning(f"edge_case: {armed.plan.label or armed.plan.mode} fired at t={elapsed:.1f}s - {len(routes)} agent(s) rerouted")

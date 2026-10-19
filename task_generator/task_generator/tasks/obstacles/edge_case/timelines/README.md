@@ -88,7 +88,7 @@ The same split as `designed_ttc` versus `min_ttc_s`:
 | File | Field | Contents |
 |---|---|---|
 | `cases.jsonl` | `object_timeline`, `object_events` | the timeline as **designed** — entity, action, model, fire time, pose, reveal distance |
-| `scores.jsonl` | `object_events`, `objects_pending` | what actually **fired** — `t_fired` against `t_designed`, the `sim_path` each spawn returned, and per-event status |
+| `scores.jsonl` | `object_events`, `objects_pending` | what actually **fired** — `t_fired` against `t_designed`, and per-event status |
 
 `objects_pending` non-zero means the episode ended before the timeline did.
 
@@ -106,11 +106,9 @@ interesting one. Report it; do not tune it away.
 
 ## Failure discipline
 
-A **spawn** that fails aborts the case: the object never appeared, so the case did not run,
-and an unperturbed episode reported as a result is the worst thing this pipeline can produce.
-A **despawn** that fails does not: the case ran, and an object left behind is recorded as an
-anomaly on it. A despawn whose spawn failed is `skipped`, not `failed` — nothing is there,
-which is what it wanted.
+A spawn or despawn that fails is recorded as `failed` in its event's outcome, with the reason,
+and logged; the episode continues, so read `object_events` before counting an episode as a run
+case. A despawn whose spawn failed is `skipped`, not `failed`: nothing is there.
 
 The driver ([`../object_driver.py`](../object_driver.py)) runs on **sim time**, so a paused
 episode does not race through its timeline, and it disables itself rather than taking an
