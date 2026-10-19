@@ -60,7 +60,8 @@ walks it calling `destination()`.
 | `DynamicPathResolver` | [tree/__init__.py:191](__init__.py#L191) | `DynamicPath` whose value can change at runtime (e.g. `DynamicPaths.WORLD`); optional transform `fn` |
 | `DynamicPathListResolver` | [tree/__init__.py](__init__.py) | `DynamicPathList` whose paths can change at runtime (`DynamicPaths.LINKED`), the first path holding the asset wins; optional transform `fn` |
 | `NetResolver` | [tree/__init__.py:212](__init__.py#L212) | Batches same-tick `resolve()` requests; calls `ros2 run arena_assets arena_assets -s net <provider> fetch`. `locate()` instead runs a non-fetching `... exists` check. Constructor takes `formats=` (defaults to the `ARENA_MODELS_FORMATS` env filter; pass `formats=()` to opt out) and `ttl=` (defaults to `ARENA_MODELS_TTL`, seconds). `listall(network=True)` caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` regardless of the payload `ttl=`, and `listall_async` shares one in-flight fetch per provider. `NetResolver.all(_T, providers=NETWORK_PROVIDERS, ...)` builds one instance per bucket name |
-| `FallbackResolver` | [tree/__init__.py:406](__init__.py#L406) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
+| `LocalResolver` | [tree/__init__.py](__init__.py) | Reads and writes a subdirectory of the local root (`$ARENA_ASSETS_DIR_LOCAL`, looked up at every use, never cached): `resolve()` checks existence, `destination()` is the write target |
+| `FallbackResolver` | [tree/__init__.py](__init__.py) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
 
 ### `DynamicPaths` singleton
 
@@ -85,7 +86,7 @@ type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, then `ARENA`.
 | `MaterialIdentifier` | [tree/assets/Material.py](assets/Material.py) | `ModifiersDomainAssetIdentifier[Material]` | `Material` | DynamicPaths (world/assets + local), then NetResolver |
 | `SoundIdentifier` | [tree/assets/Sound.py](assets/Sound.py) | `DomainAssetIdentifier[SoundView]` | `Sound` | DynamicPaths (world/assets + local), then NetResolver (`formats=()`, listed by `--children` under `Common/Sound`) |
 | `WallIdentifier` | [tree/Wall.py](Wall.py) | `DomainAssetIdentifier[WallDescription]` | `Wall` | DynamicPaths (world/assets + local), then NetResolver |
-| `WorldIdentifier` | [tree/World/view.py](World/view.py) | `Identifier[WorldView]` | - | `ARENA_WORLD_PATH` roots, then `ASS_DIR / 'worlds'` (existence-checked), then a `NetResolver` per `WORLD_BUCKETS` provider, then `FallbackResolver` (write target only) |
+| `WorldIdentifier` | [tree/World/view.py](World/view.py) | `Identifier[WorldView]` | - | `ComposedResolver`, `ARENA_WORLD_PATH` roots, `LocalResolver('worlds')` (also the write target), `ASS_DIR / 'worlds'` (existence-checked), then a `NetResolver` per `WORLD_BUCKETS` provider |
 | `EnvironmentIdentifier` | [tree/configs/environment.py](configs/environment.py) | `Identifier[EnvironmentDescription]` | - | `EnvironmentResolver` → `ASS_DIR / 'configs' / 'environment'` |
 | `ParametrizedIdentifier` | [tree/configs/parametrized.py](configs/parametrized.py) | `Identifier[ParametrizedConfig]` | - | `ParametrizedResolver` → `AB_DIR / 'configs' / 'parametrized'` |
 
@@ -148,13 +149,16 @@ In `world.yaml`, a wall entry without a `kind` field generates a plain
 
 ### `WorldIdentifier`
 
-Resolvers, in order (first hit wins): one `SimplePathResolver` per
-`ARENA_WORLD_PATH` root (colon-separated env var), then a `SimplePathResolver`
-rooted at `ASS_DIR / 'worlds'`, then one `NetResolver` per `WORLD_BUCKETS`
-provider (default `arena-worlds-prod-public`, constructed with `formats=()`
-since a world payload is not model files, so the `ARENA_MODELS_FORMATS`
-filter would otherwise drop it), then a `FallbackResolver` rooted at
-`ASS_DIR / 'worlds'` as a write-only fallback for programmatic world creation.
+Resolvers, in order (first hit wins): the `ComposedResolver` for stacked
+worlds (`a,b[1]`), one `SimplePathResolver` per `ARENA_WORLD_PATH` root
+(colon-separated env var), then a `LocalResolver` on
+`$ARENA_ASSETS_DIR_LOCAL/worlds`, then a `SimplePathResolver` rooted at
+`ASS_DIR / 'worlds'`, then one `NetResolver` per `WORLD_BUCKETS` provider
+(default `arena-worlds-prod-public`, constructed with `formats=()` since a
+world payload is not model files, so the `ARENA_MODELS_FORMATS` filter would
+otherwise drop it). `resolve_write_sync()` returns the `LocalResolver`
+destination, so generated and authored worlds land in the local root, outside
+the install tree, and a local world shadows a shipped one of the same name.
 
 `.load()` returns a `WorldView`, not the parsed YAML. Call
 `.load()` on the view to get a `World` (format 2, format 1 upgraded). `WorldIdentifier` has

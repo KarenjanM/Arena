@@ -75,10 +75,15 @@ class DynamicPathList:
         self.paths: list[Path] = []
 
 
+def local_root() -> Path:
+    """The writable local asset root, ARENA_ASSETS_DIR_LOCAL as set at call time."""
+    return Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local'))
+
+
 class DynamicPaths:
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
-    ARENA = DynamicPath(Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local')))
+    ARENA = DynamicPath(local_root())
 
     @classmethod
     def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
@@ -303,6 +308,28 @@ class DynamicPathResolver(PathResolverBase[IdentifierT], typing.Generic[Identifi
     @property
     def path(self) -> Path:
         return self._fn(self._dynamic_path.path)
+
+
+class LocalResolver(PathResolverBase[IdentifierT], typing.Generic[IdentifierT]):
+    """Reads and writes `subdir` of the local root, which is looked up again at every use."""
+
+    def __init__(self, _T: type[IdentifierT], /, subdir: str, **kwargs: object) -> None:
+        super().__init__(_T, **kwargs)
+        self._subdir = subdir
+
+    @property
+    def path(self) -> Path:
+        return local_root() / self._subdir
+
+    async def resolve(self, identifier: IdentifierT) -> Path | None:
+        root = self.path
+        return next((root / candidate for candidate in self._candidates(identifier.relpath()) if (root / candidate).exists()), None)
+
+    async def listall_async(self, **kwargs: object) -> list[IdentifierT]:
+        return list(self.listall(**kwargs))
+
+    def destination(self, identifier: IdentifierT) -> Path | None:
+        return self.path / identifier.relpath()
 
 
 class DynamicPathListResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):

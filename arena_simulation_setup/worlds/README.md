@@ -403,13 +403,17 @@ Resolvers run in order, first hit wins
 ([tree/World/view.py](../src/arena_simulation_setup/tree/World/view.py), bottom of file):
 
 1. Each `ARENA_WORLD_PATH` root (colon-separated env var), if set.
-2. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
-3. One `NetResolver` per `WORLD_BUCKETS` provider (default
+2. The writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds` (default
+   `$ARENA_ASSETS_DIR/local/worlds`), a `LocalResolver` that reads the variable
+   again at every use. It is also the only write target
+   (`resolve_write_path()` / `resolve_write_sync()`), so every saved world lands
+   here: the world generator node, `save_generated`, `WorldView.save` on a
+   `resolve_write_sync()` view and the `worlds` MCP tools. A world written here
+   under the name of a shipped world shadows the shipped one.
+3. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
+4. One `NetResolver` per `WORLD_BUCKETS` provider (default
    `arena-worlds-prod-public`), fetching into `$ARENA_ASSETS_DIR/<bucket>/<name>/`.
    A world keys off its bare name, so the worlds bucket is itself the namespace.
-4. A `FallbackResolver` rooted at `ASS_DIR / 'worlds'`. It never answers reads
-   and so can never shadow an earlier source. It only supplies a write target
-   (`resolve_write_path()` / `resolve_write_sync()`) for programmatic world creation.
 
 Worlds not shipped in this package are hosted in the public bucket(s) named
 by `WORLD_BUCKETS` and pulled on demand. `arena asset find world <name>`

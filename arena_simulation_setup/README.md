@@ -65,7 +65,8 @@ pulled into the workspace via `_meta/repos/gazebo.repos`.
 Key `Identifier` types from `arena_simulation_setup.tree`:
 
 - **`WorldIdentifier`** ([tree/World/view.py](src/arena_simulation_setup/tree/World/view.py)):
-  resolves a world name to `ASS_DIR / 'worlds' / <name>`; `.load()` returns
+  resolves a world name through `ARENA_WORLD_PATH`, the writable local root
+  `$ARENA_ASSETS_DIR_LOCAL/worlds`, `ASS_DIR / 'worlds'` and the world buckets, and `.load()` returns
   a `WorldView` that exposes `view.load()` (the `World`), `view.map_yaml(level_id)`
   and `view.scenario`.
 - **`ObjectIdentifier`** ([tree/assets/Object.py](src/arena_simulation_setup/tree/assets/Object.py)):

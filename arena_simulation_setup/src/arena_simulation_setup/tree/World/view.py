@@ -16,6 +16,7 @@ from arena_simulation_setup.tree import (
     WORLD_PROVIDERS,
     FallbackResolver,
     Identifier,
+    LocalResolver,
     NetResolver,
     PathView,
     References,
@@ -466,6 +467,10 @@ class ComposedResolver(ResolverBase[WorldIdentifier]):
         self._root = root
         self._parts: dict[WorldIdentifier, tuple[list[WorldView], list[tuple[Path, float, float]]]] = {}
 
+    @property
+    def root(self) -> Path:
+        return self._root
+
     async def resolve(self, identifier: WorldIdentifier) -> Path | None:
         if len(composite_parts(identifier.name)) < 2:
             return None
@@ -492,12 +497,12 @@ class ComposedResolver(ResolverBase[WorldIdentifier]):
 
 
 def _world_search_roots() -> list[Path]:
-    """Extra world roots from ARENA_WORLD_PATH (colon-separated), searched before the canonical tree."""
+    """Extra world roots from ARENA_WORLD_PATH (colon-separated), searched before the writable local root and the canonical tree."""
     return [Path(p) for p in os.environ.get('ARENA_WORLD_PATH', '').split(':') if p]
 
 
 WorldIdentifier.use(ComposedResolver(ARENA_ASSETS_DIR / '_composed'))
 WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _world_search_roots()))
+WorldIdentifier.use(LocalResolver(WorldIdentifier, 'worlds'))
 WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
 WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))
-WorldIdentifier.use(FallbackResolver(WorldIdentifier, ASS_DIR / 'worlds'))

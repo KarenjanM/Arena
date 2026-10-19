@@ -23,8 +23,11 @@ mkdir -p \
 current working directory.
 
 `WorldIdentifier` resolves a name against, in order: `ARENA_WORLD_PATH` roots,
-then this package's `worlds/`, then a network bucket named by `WORLD_BUCKETS`,
-then a local write-only fallback. Once authored, publish a world with
+then the writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds`, then this
+package's `worlds/`, then a network bucket named by `WORLD_BUCKETS`. Worlds
+saved through `resolve_write_sync()` (the world generator, the `worlds` MCP
+tools) land in the writable local root, outside the repo and the install
+space. Once authored, publish a world with
 `arena asset push world <name>`, which refuses to publish if any asset it
 references would not resolve for someone else. `arena asset find world <name>`
 shows which source a name currently resolves against. See

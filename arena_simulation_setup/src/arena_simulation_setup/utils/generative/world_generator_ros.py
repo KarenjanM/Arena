@@ -69,7 +69,7 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
             diagnostics = diagnostics_of(level)
 
             if not request.preview_only:
-                save_generated(WorldIdentifier(request.world or self.get_parameter('world').value).resolve_sync(), world, self.files())
+                save_generated(WorldIdentifier(request.world or self.get_parameter('world').value).resolve_write_sync(), world, self.files())
 
             resolution = request.resolution or max(0.05, max(diagnostics.extent) / PREVIEW_PIXEL_BUDGET)
             response.png, map_origin = level.render(resolution=resolution)
