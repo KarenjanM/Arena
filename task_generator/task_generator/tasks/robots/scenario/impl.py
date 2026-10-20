@@ -1,5 +1,6 @@
 import asyncio
 import typing
+from collections.abc import Iterator, Mapping
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
@@ -10,6 +11,35 @@ from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.registry import default_scenario
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
+
+
+def to_map_frame(pose: Pose, level: str, level_origins: Mapping[str, tuple[float, float]]) -> Pose:
+    """A level-local pose shifted into the flattened map frame, unchanged without a level."""
+    if not level:
+        return pose
+    ox, oy = level_origins.get(level, (0.0, 0.0))
+    return Pose(
+        position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z),
+        orientation=pose.orientation,
+    )
+
+
+def localize_phase(phase: TaskPhase, goal_level: str, level_origins: Mapping[str, tuple[float, float]]) -> TaskPhase:
+    """A scenario phase with its goto poses in the map frame, a zone-sampled dispatch pose already is."""
+    if isinstance(phase, LoopPhase):
+        return attrs.evolve(phase, phases=[localize_phase(inner, goal_level, level_origins) for inner in phase.phases])
+    if isinstance(phase, GoToPhase) and phase.pose is not None:
+        return attrs.evolve(phase, pose=to_map_frame(phase.pose, "" if phase.pose_zone else goal_level, level_origins))
+    return phase
+
+
+def goto_poses(phase: TaskPhase) -> Iterator[Pose]:
+    """Every goto pose of a phase, loops included."""
+    if isinstance(phase, LoopPhase):
+        for inner in phase.phases:
+            yield from goto_poses(inner)
+    elif isinstance(phase, GoToPhase) and phase.pose is not None:
+        yield phase.pose
 
 
 class TM_Scenario(TM_Robots):
@@ -44,32 +74,12 @@ class TM_Scenario(TM_Robots):
         # Shift level-tagged poses from level-local to the flattened map frame.
         level_origins = self._ctx.world_manager.map.level_origins
 
-        def _to_map_frame(pose: Pose, level: str) -> Pose:
-            if not level:
-                return pose
-            ox, oy = level_origins.get(level, (0.0, 0.0))
-            return Pose(
-                position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z),
-                orientation=pose.orientation,
-            )
-
-        def localize(phase: TaskPhase, goal_level: str, forbidden: list[PositionRadius], safe_distance: float) -> TaskPhase:
-            if isinstance(phase, LoopPhase):
-                return attrs.evolve(phase, phases=[localize(inner, goal_level, forbidden, safe_distance) for inner in phase.phases])
-            if isinstance(phase, GoToPhase) and phase.pose is not None:
-                goto_pose = _to_map_frame(phase.pose, goal_level)
-                forbidden.append(PositionRadius(x=goto_pose.position.x, y=goto_pose.position.y, radius=safe_distance))
-                return attrs.evolve(phase, pose=goto_pose)
-            return phase
-
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
-            start_pose = _to_map_frame(config.start, "" if config.start_zone else config.level)
+            start_pose = to_map_frame(config.start, "" if config.start_zone else config.level, level_origins)
             self._start_poses[robot.name] = start_pose
 
-            forbidden: list[PositionRadius] = [
-                PositionRadius(x=start_pose.position.x, y=start_pose.position.y, radius=robot.safe_distance),
-            ]
-            phases = [localize(phase, config.goal_level, forbidden, robot.safe_distance) for phase in config.phases]
+            phases = [localize_phase(phase, config.goal_level, level_origins) for phase in config.phases]
+            forbidden: list[PositionRadius] = [PositionRadius(x=pose.position.x, y=pose.position.y, radius=robot.safe_distance) for pose in (start_pose, *(goto for phase in phases for goto in goto_poses(phase)))]
 
             # An empty phase list intentionally describes a stationary robot.
             # Do not submit it to RobotManager: an empty TaskRequest has no

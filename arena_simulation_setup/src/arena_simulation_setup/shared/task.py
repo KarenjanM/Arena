@@ -99,6 +99,7 @@ class GoToPhase(TaskPhase):
     tolerance_angle: float | None = None
     hold_time: float | None = None
     signal: str | None = None
+    pose_zone: str = ""
 
     @property
     def hold(self) -> bool:
@@ -109,11 +110,13 @@ class GoToPhase(TaskPhase):
         goto = data.pop("goto", None)
         pose: Pose | None = None
         target: str | None = None
+        pose_zone = ""
         if isinstance(goto, str):
             target = goto
             dispatch = data.pop("pose", None)
             if dispatch is not None:
                 pose = Pose.parse(dispatch)
+                pose_zone = dispatch if isinstance(dispatch, str) else ""
         elif goto is not None:
             pose = Pose.parse(goto)
         return cls(
@@ -123,6 +126,7 @@ class GoToPhase(TaskPhase):
             tolerance_angle=_optional_float(data.pop("tolerance_angle", None)),
             hold_time=_optional_float(data.pop("hold_time", None)),
             signal=None if data.get("signal") is None else str(data.pop("signal")),
+            pose_zone=pose_zone,
             **common,
         )
 
