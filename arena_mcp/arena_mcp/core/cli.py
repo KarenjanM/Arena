@@ -12,10 +12,13 @@ from .jobs import JOBS, Job
 
 
 def arena_dir() -> Path:
-    value = os.environ.get("ARENA_DIR")
-    if not value:
-        raise ToolError("ARENA_DIR is not set", hint="serve from a sourced Arena container")
-    return Path(value)
+    """The Arena checkout: ARENA_DIR, else the checkout this source file lives in."""
+    if value := os.environ.get("ARENA_DIR"):
+        return Path(value)
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "_meta" / "arena_cli").is_dir():
+            return parent
+    raise ToolError("ARENA_DIR is not set and arena_mcp runs outside an Arena checkout", hint="serve from a sourced Arena container")
 
 
 def argv(*args: str) -> list[str]:

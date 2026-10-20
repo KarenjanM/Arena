@@ -21,7 +21,11 @@ if typing.TYPE_CHECKING:
 
 
 def _ready() -> str | None:
-    return None if os.environ.get("ARENA_DIR") else "ARENA_DIR is not set, serve from a sourced Arena container"
+    try:
+        cli.arena_dir()
+    except ToolError as exc:
+        return exc.message
+    return None
 
 
 domain = Domain(
