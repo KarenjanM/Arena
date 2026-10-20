@@ -80,11 +80,23 @@ def test_waypoint_from_any_string_with_context():
         wp = Waypoint.from_any("zone_a")
     assert isinstance(wp, Waypoint)
     assert _inside(wp)
+    assert (wp.zone, wp.level) == ("zone_a", "")
+
+
+def test_shifted_zone_waypoint_keeps_its_zone():
+    with activate_resolver(_resolver()):
+        wp = Waypoint.from_any("zone_a") + Position(10.0, 0.0)
+    assert isinstance(wp, Waypoint)
+    assert wp.zone == "zone_a"
 
 
 def test_waypoint_from_any_string_requires_context():
     with pytest.raises(ValueError, match="no world resolution context active"):
         Waypoint.from_any("zone_a")
+
+
+def test_waypoint_from_any_mapping_keeps_its_level():
+    assert Waypoint.from_any({"x": 1.0, "y": 2.0, "level": "1"}) == Waypoint(x=1.0, y=2.0, z=0.0, level="1")
 
 
 def test_non_string_inputs_unaffected_without_context():

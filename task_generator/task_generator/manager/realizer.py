@@ -125,7 +125,7 @@ class Realizer:
         return attrs.evolve(
             obstacle,
             pose=self._realize_pose(obstacle.pose, level_id),
-            waypoints=[self._realize_position(w.position, w.level) for w in obstacle.waypoints],
+            waypoints=[self._realize_position(w.position, w.level if w.level or w.zone else level_id) for w in obstacle.waypoints],
         )
 
     @typing.overload

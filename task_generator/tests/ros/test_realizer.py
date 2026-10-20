@@ -240,11 +240,41 @@ def test_realize_dynamic_obstacle_waypoints_follow_their_own_level():
 
     from task_generator.manager.realizer import Realizer
 
-    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"1": (30.0, 0.0)})
-    human = DynamicObstacle(name="walker", pose=Pose(Position(0, 0)), model="human", waypoints=[Waypoint(x=1.0, y=0.0, level="1"), Waypoint(x=1.0, y=0.0)])
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    human = DynamicObstacle(name="walker", pose=Pose(Position(0, 0)), model="human", waypoints=[Waypoint(x=1.0, y=0.0, level="0"), Waypoint(x=1.0, y=0.0, level="1")])
     result = realizer.realize(human, "1")
     assert (result.pose.position.x, result.pose.position.y) == (31.0, 2.0)
-    assert [(w.x, w.y) for w in result.waypoints] == [(32.0, 2.0), (2.0, 2.0)]
+    assert [(w.x, w.y) for w in result.waypoints] == [(2.0, 2.0), (32.0, 2.0)]
+
+
+def test_realize_dynamic_obstacle_waypoint_without_level_stands_on_its_human_level():
+    from arena_simulation_setup.shared import DynamicObstacle
+    from arena_simulation_setup.shared.entities import Waypoint
+    from arena_simulation_setup.utils.geometry import Pose, Position
+
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    human = DynamicObstacle(name="walker", pose=Pose(Position(0, 0)), model="human", waypoints=[Waypoint.from_any([1.0, 0.0]), Waypoint.from_any({"x": 1.0, "y": 0.0})])
+    result = realizer.realize(human, "1")
+    assert [(w.x, w.y) for w in result.waypoints] == [(32.0, 2.0), (32.0, 2.0)]
+
+
+def test_realize_dynamic_obstacle_zone_waypoint_stays_in_the_map_frame():
+    import numpy as np
+    from arena_simulation_setup.shared import DynamicObstacle
+    from arena_simulation_setup.shared.entities import Waypoint
+    from arena_simulation_setup.utils.geometry import PointResolver, Pose, Position
+    from arena_simulation_setup.utils.resolution import activate_resolver
+
+    from task_generator.manager.realizer import Realizer
+
+    with activate_resolver(PointResolver(lookup={"lobby_1": [Position(30.0, 0.0)]}.get, rng=np.random.default_rng(0))):
+        waypoint = Waypoint.from_any("lobby_1")
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"1": (30.0, 0.0)})
+    human = DynamicObstacle(name="walker", pose=Pose(Position(0, 0)), model="human", waypoints=[waypoint])
+    result = realizer.realize(human, "1")
+    assert [(w.x, w.y) for w in result.waypoints] == [(31.0, 2.0)]
 
 
 def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):

@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 @attrs.define(auto_attribs=True, kw_only=True)
 class Waypoint(Position):
     level: str = ''
+    zone: str = ''
 
     @property
     def position(self) -> Position:
@@ -45,7 +46,7 @@ class Waypoint(Position):
     def from_any(cls, obj: Union[Position, Mapping, str, typing.Sequence[float], 'Waypoint']) -> 'Waypoint':
         """A waypoint from a zone name, a position, `[x, y[, z]]` or `{x, y[, z][, level]}`."""
         if isinstance(obj, str):
-            return cls.from_position(pos=resolve_zone_point(obj))
+            return cls.from_position(pos=resolve_zone_point(obj), zone=obj)
         if isinstance(obj, Waypoint):
             return obj
         if isinstance(obj, Position):
@@ -54,22 +55,22 @@ class Waypoint(Position):
             unknown = set(obj) - {'x', 'y', 'z', 'level'}
             if unknown:
                 raise ValueError(f'waypoint has unknown keys {sorted(unknown)}')
-            pos = Position.converter({k: obj[k] for k in ('x', 'y', 'z') if k in obj})
+            pos = Position.parse({k: obj[k] for k in ('x', 'y', 'z') if k in obj})
             return cls.from_position(pos=pos, level=str(obj.get('level', '')))
         return cls.from_position(pos=Position.parse(obj))
 
     @classmethod
-    def from_position(cls, pos: Position, level: str = '') -> 'Waypoint':
-        return cls(x=pos.x, y=pos.y, z=pos.z, level=level)
+    def from_position(cls, pos: Position, level: str = '', zone: str = '') -> 'Waypoint':
+        return cls(x=pos.x, y=pos.y, z=pos.z, level=level, zone=zone)
 
     def __add__(self, other: Vector3) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
-            return type(self).from_position(pos=super().__add__(other), level=self.level)
+            return type(self).from_position(pos=super().__add__(other), level=self.level, zone=self.zone)
         return NotImplemented
 
     def __radd__(self, other: Position) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
-            return type(self).from_position(pos=other + Position(x=self.x, y=self.y, z=self.z), level=self.level)
+            return type(self).from_position(pos=other + Position(x=self.x, y=self.y, z=self.z), level=self.level, zone=self.zone)
         return NotImplemented
 
 
