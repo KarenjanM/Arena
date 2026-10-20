@@ -12,6 +12,7 @@ from task_generator.constants import Constants
 from task_generator.shared import Orientation, Pose, Position
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.obstacles._validation import in_map_bounds, make_is_traversable, make_is_valid
+from task_generator.tasks.robots.request import GoToPhase
 
 from . import ROBOT_SPEED_MPS
 from .agent_types import AgentTypeError
@@ -280,15 +281,15 @@ class TM_EdgeCase(TM_Obstacles):
     def _reroute(self, routes: dict[str, Sequence[Point]]) -> Work:
         return self._ctx.environment_manager.set_agent_waypoints(routes)
 
-    def _stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> Work:
-        return self._ctx.environment_manager.stimulate_agents(names, need, intensity)
+    async def _stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> int:
+        return sum([await self._ctx.environment_manager.notify_stimulus(name, need, intensity) for name in names])
 
     def _robot_start(self) -> Point | None:
         robots = self._ctx.robots
         if not robots:
             return None
         _, manager = next(iter(robots.items()))
-        if not manager.start_assigned:
+        if not manager.runner.phases:
             return None
         start = manager.start_pos
         return (float(start.position.x), float(start.position.y))
@@ -327,12 +328,14 @@ class TM_EdgeCase(TM_Obstacles):
         if not robots:
             raise CaseAborted("an effect needs the robot's route, but no robot is present")
         name, manager = next(iter(robots.items()))
-        if not manager.start_assigned:
-            raise CaseAborted(f"robot {name!r} has not been placed yet, so `start_pos` is still the map origin. This happens on the first episode, where obstacles can be generated before the robot is moved.")
+        goals = [state.phase.pose for state in manager.runner.phases if isinstance(state.phase, GoToPhase) and state.phase.pose is not None]
+        if not goals:
+            raise CaseAborted(f"robot {name!r} has no goal at obstacle-generation time, so there is no route to design against. Use tm_robots:=edge_case (or :=scenario); tm_robots:=explore assigns goals lazily.")
+        # the request's start, which the robot mode submitted with it; the robot is teleported there only after the obstacles spawn
         start = (float(manager.start_pos.position.x), float(manager.start_pos.position.y))
-        goal = (float(manager.route_goal.position.x), float(manager.route_goal.position.y))
+        goal = (float(goals[-1].position.x), float(goals[-1].position.y))
         if math.dist(start, goal) < 1e-6:
-            raise CaseAborted(f"robot {name!r} has no distinct goal at obstacle-generation time, so there is no route to design against. Use tm_robots:=edge_case (or :=scenario); tm_robots:=explore assigns goals lazily.")
+            raise CaseAborted(f"robot {name!r} has no distinct goal at obstacle-generation time, so there is no route to design against.")
         world_map = self._ctx.world_manager.map
         if world_map is None:
             return [start, goal]

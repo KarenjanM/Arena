@@ -3,7 +3,6 @@
 import array
 import asyncio
 import math
-import time
 import traceback
 from collections.abc import Mapping, Sequence
 
@@ -287,14 +286,12 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         )
 
         # Subscribe to agent_states topic from arena_humansim
-        self._agent_states_sub = self.node.create_subscription(
+        self.node.create_subscription(
             AgentFrameMsg,
             self.node.service_namespace("agent_states"),
             self._agent_states_callback,
             10,
         )
-        self._agent_states_wall: float = time.monotonic()
-        self._roster_empty_seen: bool = True
 
         self._debug_markers_sub = LazySubscription(
             self.node,
@@ -364,14 +361,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     def _agent_states_callback(self, msg: AgentFrameMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
-        self._agent_states_wall = time.monotonic()
-        empty = not msg.agent_id
-        if empty != self._roster_empty_seen:
-            self._roster_empty_seen = empty
-            if empty:
-                self._logger.warning("received agent_states roster went EMPTY")
-            else:
-                self._logger.warning(f"received agent_states roster non-empty: {len(msg.agent_id)} agent(s)")
         self._prev_agent_states = self._curr_agent_states
         self._curr_agent_states = msg
         self._engine_stamp_ns = msg.header.stamp.sec * int(1e9) + msg.header.stamp.nanosec
@@ -425,28 +414,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if response is not None and all(result.successful for result in response.results):
             self._viz_config = cfg
 
-    # arena_humansim publishes the roster continuously (~6 Hz even pre-spawn): silence means a dead subscription
-    _AGENT_STATES_STALE_S = 10.0
-
-    def _resubscribe_agent_states(self, stale: float) -> None:
-        self._logger.warning(f"agent_states silent for {stale:.0f} s (wall) - recreating the subscription")
-        try:
-            self.node.destroy_subscription(self._agent_states_sub)
-        except Exception as e:
-            self._logger.warning(f"agent_states resubscribe: destroy failed ({e})")
-        self._agent_states_wall = time.monotonic()
-        self._agent_states_sub = self.node.create_subscription(
-            AgentFrameMsg,
-            self.node.service_namespace("agent_states"),
-            self._agent_states_callback,
-            10,
-        )
-
     async def _publish_interpolated(self) -> None:
         """Interpolate at the current sim time, never before the engine's latest frame, and publish the roster."""
-        stale = time.monotonic() - self._agent_states_wall
-        if stale > self._AGENT_STATES_STALE_S:
-            self._resubscribe_agent_states(stale)
         now = self.node.sim_time
         now_ns = now.sec * int(1e9) + now.nanosec
         if self._engine_stamp_ns is not None:
@@ -457,8 +426,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         peds = self._agent_states_to_pedestrians(states)
         async with self._agents_lock:
             self._arena_pedestrians = peds
-        if not self.node.context.ok():
-            return
         self.publish_arena_peds(peds)
 
     def _interpolate_agent_states(self, now_ns: int) -> AgentFrameMsg | None:
@@ -1168,9 +1135,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         finally:
             self._spawns_in_flight -= 1
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> bool:
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        if isinstance(agent, str):
+            sim_path = self._sim_path_index().get(agent, agent)
+            agent_id = next((aid for aid, name in self._agent_names.items() if name == sim_path), None)
+            if agent_id is None:
+                self._logger.warning(f"NotifyStimulus: {agent!r} is not a known agent")
+                return False
+            agent = agent_id
         request = NotifyStimulus.Request()
-        request.agent_id = agent_id
+        request.agent_id = agent
         request.stimulus = stimulus
         request.intensity = intensity
         try:
@@ -1184,17 +1158,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if not response.success:
             self._logger.error(f"NotifyStimulus failed: {response.message}")
         return bool(response.success)
-
-    async def _stimulate_impl(self, names: Sequence[str], need: str, intensity: float) -> int:
-        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
-        reached = 0
-        for name in names:
-            agent_id = by_name.get(name)
-            if agent_id is None:
-                self._logger.warning(f"NotifyStimulus: {name!r} is not a known agent")
-                continue
-            reached += int(await self.notify_stimulus(agent_id, need, intensity))
-        return reached
 
     async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
         """Remove static obstacles (and their matching world objects) from arena_humansim."""
@@ -1226,8 +1189,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         return ok
 
-    async def _remove_pedestrians_impl(self) -> bool:
-        """Remove all dynamic agents from arena_humansim."""
+    async def _remove_pedestrians_impl(self, names: Sequence[str] = ()) -> bool:
+        """Remove all dynamic agents from arena_humansim, or just `names`."""
+        if names:
+            return await self._remove_named_agents(names)
         request = RemoveAgents.Request()
         request.agent_ids = []  # empty = remove all
 
@@ -1296,10 +1261,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._logger.info(f"SetWaypoints: rerouted {sent} of {len(routes)} agent(s)")
         return True
 
-    async def _remove_pedestrian_names_impl(self, names: Sequence[str]) -> bool:
-        if not names:
-            return True
-
+    async def _remove_named_agents(self, names: Sequence[str]) -> bool:
         by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
         agent_ids = [by_name[name] for name in names if name in by_name]
         if not agent_ids:

@@ -105,7 +105,7 @@ class TM_EdgeCase(TM_Scenario):
     def _log_departures(self) -> None:
         now = float(self.node.sim_time.sec) + self.node.sim_time.nanosec * 1e-9
         for name, robot in self._ctx.robots.items():
-            if name in self._departed or robot.pose is None or not robot.start_assigned:
+            if name in self._departed or robot.pose is None or not robot.placed:
                 continue
             start = robot.start_pos
             here = self._ctx.environment_manager.ezilear(robot.pose)

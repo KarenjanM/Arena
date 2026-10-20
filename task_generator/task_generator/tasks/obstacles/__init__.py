@@ -46,8 +46,7 @@ class TM_Obstacles(TaskMode):
         return obstacle
 
     async def retract(self, entity_id: str) -> bool:
-        removed, _ = await self._ctx.environment_manager.remove_obstacles_by_id([entity_id])
-        return bool(removed)
+        return bool(await self._ctx.environment_manager.remove_obstacles([entity_id]))
 
 
 __all__ = ["TM_Obstacles", "ObstacleKind", "Obstacles", "edge_case", "environment", "parametrized", "prompt", "random", "scenario"]

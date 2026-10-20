@@ -80,8 +80,6 @@ class RobotManager(NodeInterface):
     _environment_manager: EnvironmentManager
     _start_pos: Pose
     _goal_pos: Pose
-    _route_goal: Pose
-    _start_assigned: bool
     _robot_radius: float
     _robot: Robot
     _move_base_pub: rclpy.publisher.Publisher
@@ -113,17 +111,8 @@ class RobotManager(NodeInterface):
         return self._start_pos
 
     @property
-    def start_assigned(self) -> bool:
-        return self._start_assigned
-
-    @property
     def goal_pos(self) -> Pose:
         return self._goal_pos
-
-    @property
-    def route_goal(self) -> Pose:
-        """Final destination of the current request in the abstract frame, unlike the map-frame `goal_pos` leg."""
-        return self._route_goal
 
     @property
     def controls_orientation(self) -> bool:
@@ -187,8 +176,6 @@ class RobotManager(NodeInterface):
 
         self._start_pos = Pose()
         self._goal_pos = Pose()
-        self._route_goal = Pose()
-        self._start_assigned = False
         self._robot_radius = 0.25
 
         self._robot = robot
@@ -531,6 +518,9 @@ class RobotManager(NodeInterface):
         if start is None:
             observed = self.pose
             start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
+        else:
+            # obstacle modes reset before the robot is teleported, so they read this episode's start here
+            self._start_pos = start
         current_level = world_manager.level_of_point(start.position.x, start.position.y)
         boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
 
@@ -565,11 +555,6 @@ class RobotManager(NodeInterface):
                     raise ValueError(f"robot {self.name!r}: goto target {phase.target!r} is neither a zone, door, elevator nor a pedestrian")
             if kind_of(phase) not in self._adapters and kind_of(phase) not in self._unsupported_kinds_logged:
                 self._logger.warning(f"robot {self.name!r} has no adapter for phase kind {phase.kind!r}, the phase will fail as UNSUPPORTED_CAP")
-
-        last_goto = next((p for p in reversed(phases) if isinstance(p, GoToPhase) and p.pose is not None), None)
-        if last_goto is not None:
-            self._route_goal = last_goto.pose
-            self._goal_pos = self._environment_manager.realize(last_goto.pose)
 
         states = self._runner.submit(phases, request.conditions)
         self.node.on_task_submitted(self)
@@ -732,7 +717,6 @@ class RobotManager(NodeInterface):
     async def move(self, pose: Pose) -> None:
         """Teleport the robot to ``pose``. Positioning only, no task dispatch."""
         self._start_pos = pose
-        self._start_assigned = True
         await self._apply_pose(pose)
         self._notify()
 

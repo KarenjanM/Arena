@@ -11,7 +11,6 @@ EPISODE_PARAMS: dict[str, str] = {
     'task.episode.count': 'Stop the env after N episodes (-1 = run forever).',
     'task.episode.auto_reset': 'true = standalone: node auto-advances episodes. false = managed: external controller drives resets via lifecycle/reset_episode.',
     'task.episode.fail_on_collision': 'true = abort the episode (FAILED) when the robot footprint contacts a wall, static obstacle, or pedestrian.',
-    'task.episode.fail_on_static_collision': 'true = abort the episode (FAILED) when the robot footprint contacts a wall or static obstacle; pedestrians excluded.',
     'task.episode.timeout': 'Episode time limit in sim seconds (-1 = none).',
     'task.episode.timeout.robot_ready': 'Seconds to wait for robot adapters to become ready (-1 = unbounded).',
     'task.episode.reset.max_fails': 'Consecutive reset failures before the env gives up.',

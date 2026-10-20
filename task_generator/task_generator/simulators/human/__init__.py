@@ -862,123 +862,69 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             index.setdefault(sim_path, sim_path)
         return index
 
-    async def stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> int:
-        index = self._sim_path_index()
-        return await self._stimulate_impl([index.get(n, n) for n in names], need, intensity)
-
-    async def _stimulate_impl(self, names: Sequence[str], need: str, intensity: float) -> int:
-        del names, need, intensity
-        return 0
-
-    async def remove_obstacles_by_id(self, ids: Sequence[str]) -> tuple[list[str], list[str]]:
-        """Remove specific spawned obstacles mid-episode by ``sim_path`` or name; returns ``(removed, missing)``."""
-        if not ids:
-            return [], []
-
-        index: dict[str, str] = {}
-        for name, known in self._known_obstacles.items():
-            index.setdefault(name, name)
-            index.setdefault(known.obstacle.sim_path, name)
-
-        static: list[Obstacle] = []
-        dynamic: list[DynamicObstacle] = []
-        missing: list[str] = []
-        resolved: dict[str, tuple[str, bool]] = {}
-
-        for requested in ids:
-            name = index.get(requested)
-            known = self._known_obstacles.get(name) if name is not None else None
-            if name is None or known is None:
-                missing.append(requested)
-                continue
-            is_dynamic = isinstance(known.obstacle, DynamicObstacle)
-            resolved[requested] = (name, is_dynamic)
-            if is_dynamic:
-                dynamic.append(known.obstacle)
-            else:
-                static.append(known.obstacle)
-
-        static_ok = True
-        dynamic_ok = True
-        futures: list[typing.Awaitable] = []
-
-        if static:
-            static_ok = await self._remove_obstacles_impl([o.name for o in static])
-            if static_ok:
-                futures.append(self._simulator.obstacle_delete(static))
-
-        if dynamic:
-            dynamic_ok = await self._remove_pedestrian_names_impl([str(o.sim_path) for o in dynamic])
-            if dynamic_ok:
-                self._close_stream_gate()
-                for obstacle in dynamic:
-                    self._ped_bus_index.pop(obstacle.name, None)
-                    self._ped_bus_index.pop(obstacle.sim_path, None)
-                futures.append(self._simulator.pedestrian_delete(dynamic))
-
-        if futures:
-            await asyncio.gather(*futures)
-
-        removed: list[str] = []
-        for requested, (name, is_dynamic) in resolved.items():
-            if dynamic_ok if is_dynamic else static_ok:
-                self._known_obstacles.forget(name)
-                removed.append(requested)
-            else:
-                missing.append(requested)
-
-        if removed:
-            self._logger.debug(f"removed {len(removed)} obstacle(s) mid-episode: {removed}")
-        return removed, missing
-
-    async def remove_obstacles(self, purge: ObstacleLayer = ObstacleLayer.UNUSED):
+    async def remove_obstacles(self, purge: ObstacleLayer = ObstacleLayer.UNUSED, ids: Sequence[str] = ()) -> list[str]:
         """Removes obstacles from simulator.
 
         Args:
             purge (ObstacleLayer, optional): Level of obstacles to remove. Defaults to ObstacleLayer.UNUSED.
+            ids (Sequence[str], optional): Remove only these known obstacles, by name or ``sim_path`` and whatever their layer; walls, doors and the world stay.
+
+        Returns:
+            The names of the removed obstacles.
         """
-        self._logger.debug(f"removing obstacles (level {purge})")
+        self._logger.debug(f"removing obstacles {list(ids)}" if ids else f"removing obstacles (level {purge})")
         futures: list[typing.Awaitable] = []
 
-        stale_walls = [name for name, known in self._known_walls.items() if purge >= known.layer]
-        stale_doors = [name for name, known in self._known_doors.items() if purge >= known.layer]
+        if ids:
+            index = {key: oid for oid, known in self._known_obstacles.items() for key in (oid, known.obstacle.sim_path)}
+            wanted = {index[i] for i in ids if i in index}
+            targets = {oid: known.obstacle for oid, known in self._known_obstacles.items() if oid in wanted}
+        else:
+            stale_walls = [name for name, known in self._known_walls.items() if purge >= known.layer]
+            stale_doors = [name for name, known in self._known_doors.items() if purge >= known.layer]
 
-        if purge >= ObstacleLayer.WORLD:
-            await self._simulator.remove_mechanisms()
-            await self._simulator.remove_lights()
-            futures.append(self._simulator.remove_world())
+            if purge >= ObstacleLayer.WORLD:
+                await self._simulator.remove_mechanisms()
+                await self._simulator.remove_lights()
+                futures.append(self._simulator.remove_world())
 
-        if stale_walls:
-            futures.append(self._remove_walls_impl(stale_walls))
-            for name in stale_walls:
-                self._known_walls.forget(name)
-        if stale_doors:
-            futures.append(self._remove_doors_impl(stale_doors))
-            for name in stale_doors:
-                self._known_doors.forget(name)
+            if stale_walls:
+                futures.append(self._remove_walls_impl(stale_walls))
+                for name in stale_walls:
+                    self._known_walls.forget(name)
+            if stale_doors:
+                futures.append(self._remove_doors_impl(stale_doors))
+                for name in stale_doors:
+                    self._known_doors.forget(name)
 
-        static: list[Obstacle] = []
-        dynamic: list[DynamicObstacle] = []
-        for oid, known in list(self._known_obstacles.items()):
-            if purge >= known.layer:  # tmp: always respawn all dynamic obstacles
-                if isinstance(known.obstacle, DynamicObstacle):
-                    dynamic.append(known.obstacle)
-                else:
-                    static.append(known.obstacle)
-                self._known_obstacles.forget(name=oid)
+            # tmp: always respawn all dynamic obstacles
+            targets = {oid: known.obstacle for oid, known in self._known_obstacles.items() if purge >= known.layer}
+
+        static = {oid: o for oid, o in targets.items() if not isinstance(o, DynamicObstacle)}
+        dynamic = {oid: o for oid, o in targets.items() if isinstance(o, DynamicObstacle)}
+
+        if ids:
+            # mid-episode the human simulator still runs them; a purge follows unuse_obstacles, which removed every pedestrian
+            if static and not await self._remove_obstacles_impl([o.name for o in static.values()]):
+                static = {}
+            if dynamic and not await self._remove_pedestrians_impl([str(o.sim_path) for o in dynamic.values()]):
+                dynamic = {}
+        elif static:
+            futures.append(self._remove_obstacles_impl([o.name for o in static.values()]))
+
+        for oid in (*static, *dynamic):
+            self._known_obstacles.forget(name=oid)
 
         if dynamic:
             self._close_stream_gate()
-            for obstacle in dynamic:
+            for obstacle in dynamic.values():
                 self._ped_bus_index.pop(obstacle.name, None)
                 self._ped_bus_index.pop(obstacle.sim_path, None)
 
-        static_names = [o.name for o in static]
-        if static_names:
-            futures.append(self._remove_obstacles_impl(static_names))
-        futures.append(self._simulator.obstacle_delete(static))
-        futures.append(self._simulator.pedestrian_delete(dynamic))
+        futures.append(self._simulator.obstacle_delete(list(static.values())))
+        futures.append(self._simulator.pedestrian_delete(list(dynamic.values())))
         await asyncio.gather(*futures)
+        return [*static, *dynamic]
 
     async def _sim_then_impl(
         self,
@@ -1086,7 +1032,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def unpause(self):
         pass
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> bool:
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        """`agent` is an engine agent id, or a spawned agent's name or ``sim_path``; True when the engine took it."""
         return False
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
@@ -1121,15 +1068,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     @abc.abstractmethod
     async def _remove_pedestrians_impl(
         self,
-    ) -> bool: ...
-
-    async def _remove_pedestrian_names_impl(
-        self,
-        names: Sequence[str],
+        names: Sequence[str] = (),
     ) -> bool:
-        """Defaults to False: only arena_humansim keeps the per-agent ids a targeted removal needs."""
-        del names
-        return False
+        """Removes every pedestrian, or just `names` (sim paths), which only arena_humansim's per-agent ids allow."""
 
     async def _set_waypoints_impl(
         self,

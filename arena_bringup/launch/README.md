@@ -36,15 +36,14 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `complexity` | string | `1` | `1` map+position known; `2` map known AMCL; `3` SLAM |
 | `record.dir` | string | `` (empty) | Directory for data recording; empty disables |
 | `record.auto` | bool string | `true` | `false` = do not auto-start the recorder even when `record.dir` is set (the benchmark runner starts its own) |
-| `task.robots` | string | `explore` | Robot task mode (legacy single-kind shorthand): `explore`, `random`, `guided`, `scenario`, `demo`, `stationary`, `characterization`, `edge_case` |
+| `task.robots` | string | `explore` | Robot task mode (legacy single-kind shorthand) |
 | `task.config` | string | `` (empty) | Path to a [TaskModeSpec YAML](../configs/tasks/README.md); empty -> synthesize from `task.robots` (wins if both set) |
-| `task.obstacles` | string | `random` | Obstacle task mode: `random`, `scenario`, `parametrized`, `environment`, `prompt`, `edge_case` |
+| `task.obstacles` | string | `random` | Obstacle task mode |
 | `task.modules` | string | `rviz_ui` | Comma-separated task modules to load |
 | `task.scenario.file` | string | `` (empty) | Scenario for the `scenario` task modes (empty = use the `task.params` default) |
 | `task.params` | string | `configs/task_generator.yaml` | Task-generator ROS parameter YAML |
 | `task.episode.count` | int string | `-1` | Stop the env after N episodes (`-1` = run forever) |
 | `task.episode.fail_on_collision` | bool string | `false` | Abort the episode as FAILED on robot footprint contact |
-| `task.episode.fail_on_static_collision` | bool string | `false` | Abort the episode as FAILED on robot contact with a wall or static obstacle |
 | `world` | string | `map_empty` | World name; resolved under `arena_simulation_setup/worlds/`. A comma list (`hospital_1,office_1`) stacks the worlds as the levels of one world, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#linked-levels) |
 | `world.lighting` | string | `authored` | `authored` renders the lights the world declares. `auto` also gives every zone with a ceiling and no lights of its own a calibrated ceiling rig, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md). |
 | `kg.derive` | string | `auto` | `auto` derives which zones hold each door, object, light, sound and elevator, and which zones a door connects, from geometry wherever `kg.yaml` states none. `all` derives them for everything and ignores the stated ones, keeping every other entity, prop, fact and constraint of `kg.yaml`. `off` keeps the stated facts only, see [AUTHORING.md](../../arena_simulation_setup/AUTHORING.md#kg). |

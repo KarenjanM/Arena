@@ -28,15 +28,13 @@ human-sim `_*_impl` methods:
 | `spawn_dynamic_obstacles(obstacles)` | spawn or move dynamic obstacles (`INUSE`) |
 | `spawn_world(walls, doors, collision_walls=())` | spawn world geometry in both sim and human-sim layers. `collision_walls` register in the human-sim layer only (avoidance), never spawned visually |
 | `unuse_obstacles()` | call `_remove_obstacles_impl`, then flip all `INUSE` layers to `UNUSED` |
-| `remove_obstacles(purge)` | remove all obstacles at or below `purge` layer from both layers. `WORLD` survives unless `purge >= WORLD` |
+| `remove_obstacles(purge, ids=())` | remove all obstacles at or below `purge` layer from both layers. `WORLD` survives unless `purge >= WORLD`. With `ids`, only those known obstacles (name or `sim_path`, any layer) mid-episode; pedestrians then go through `_remove_pedestrians_impl(names)`, which only arena_humansim implements. Returns the removed obstacles' names |
 | `spawn_robot(robots)` | spawn in physics sim, start tracking the robot, then call `_spawn_robot_impl` |
 | `remove_robot(robots)` | remove from physics sim, stop tracking, then call `_remove_robot_impl` |
 | `move_robot(robots)` | move in physics sim, set the tracked pose at rest, then call `_move_robot_impl` |
 | `tracked_robots()` | every spawned robot as a `TrackedRobot`: map-frame pose from the `map` to base-frame TF and the velocity between its last two TF stamps |
 | `set_agent_waypoints(routes)` | mid-episode reroute; names and `sim_path`s resolve through the known-obstacle registry, `_set_waypoints_impl` does the work (default: False) |
-| `remove_obstacles_by_id(ids)` | mid-episode removal of any known obstacle, world and scenario furniture included; returns `(removed, missing)`. Pedestrians go through `_remove_pedestrian_names_impl` (default: False, arena_humansim implements it) |
-| `stimulate_agents(names, need, intensity)` | raise a need on named agents mid-episode (the edge_case `stimulus` effect) through `_stimulate_impl`; returns how many were reached (default 0) |
-| `notify_stimulus(agent_id, stimulus, intensity)` | stimulus seam, returns False by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) |
+| `notify_stimulus(agent, stimulus, intensity)` | stimulus seam, returns False by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) and by the edge_case `stimulus` effect; `agent` is an engine id or a spawned agent's name or `sim_path` |
 
 ### `HumanSimulator` Protocol surface
 

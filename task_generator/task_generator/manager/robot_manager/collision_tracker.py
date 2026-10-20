@@ -196,9 +196,7 @@ class CollisionTrackerNode(rclpy.node.Node):
         evmsg.events = events
         self._pub_events.publish(evmsg)
 
-        fail_all = self._rm.node.rosparam[bool].get_unsafe('task.episode.fail_on_collision')
-        fail_static = self._rm.node.rosparam[bool].get_unsafe('task.episode.fail_on_static_collision')
-        if (hit is not None and fail_static) or (events and fail_all):
+        if events and self._rm.node.rosparam[bool].get_unsafe('task.episode.fail_on_collision'):
             self._rm.node.fail_episode('collision')
 
     def _pedestrians(self) -> list[tuple[arena_people_msgs.msg.Pedestrian, float, float]]:

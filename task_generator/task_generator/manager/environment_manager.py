@@ -487,14 +487,17 @@ class EnvironmentManager(NodeInterface):
         await self.spawn_obstacles(setups)
         self._sync_static_polygons()
 
-    async def remove_obstacles_by_id(self, ids: Sequence[str]) -> tuple[list[str], list[str]]:
-        removed, missing = await self._human_simulator.remove_obstacles_by_id(ids)
+    async def remove_obstacles(self, ids: Sequence[str]) -> list[str]:
+        """Remove known obstacles mid-episode by name or ``sim_path``, returning the removed ones."""
+        if not ids:
+            return []
+        removed = await self._human_simulator.remove_obstacles(ids=ids)
         if removed:
             self._sync_static_polygons()
-        return removed, missing
+        return removed
 
-    async def stimulate_agents(self, names: Sequence[str], need: str, intensity: float) -> int:
-        return await self._human_simulator.stimulate_agents(names, need, intensity)
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        return await self._human_simulator.notify_stimulus(agent, stimulus, intensity)
 
     async def set_agent_waypoints(
         self,

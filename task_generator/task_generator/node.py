@@ -217,13 +217,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             ),
         )
         self._declare_mutable_param(
-            "task.episode.fail_on_static_collision",
-            False,
-            ParameterDescriptor(
-                description=("true = abort the episode as FAILED when the robot footprint contacts a wall or a static obstacle (pedestrian contact stays a recorded metric, not an abort)."),
-            ),
-        )
-        self._declare_mutable_param(
             "run_seed",
             run_seed,
             ParameterDescriptor(
@@ -532,9 +525,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         req = arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request()
         req.action = arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request.ACQUIRE
         req.caller_id = self.get_fully_qualified_name()
-        granted = await self._arena_unpause_window_client.call_timeout(req, timeout_sec=120.0)
-        if granted is None:
-            raise RuntimeError("unpause window not granted within 120 s (runtime lifecycle stalled?)")
+        await self._arena_unpause_window_client.call_forever(req)
         try:
             yield
         finally:

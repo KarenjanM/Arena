@@ -49,6 +49,7 @@ behave exactly as before.
 | `scenario` | `TM_Scenario` | [`scenario/`](scenario/) | reads `static` and `dynamic` lists from a world scenario YAML |
 | `environment` | `TM_Environment` | [`environment/`](environment/) | places obstacle groups from an environment config into detected or declared rooms |
 | `prompt` | `TM_Prompt` | [`prompt/`](prompt/) | LLM-driven obstacle generation; PROMPT registered per `BaseHumanSimulator` subclass |
+| `edge_case` | `TM_EdgeCase` | [`edge_case/`](edge_case/) | a generated scenario's crowd plus runtime effects (intercepts, crowd rewrites, stimuli, object timelines) against the robot's route; registered by the `arena` human backend only, pair with the `edge_case` robot mode |
 
 ## Package structure
 

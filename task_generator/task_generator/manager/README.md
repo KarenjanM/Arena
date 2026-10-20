@@ -54,11 +54,9 @@ Key public surface:
 | --- | --- |
 | `robot` | the `Robot` config (model, name, initial pose) |
 | `pose` | current `Pose` in the map frame; `None` during reset/respawn windows |
-| `start_pos` / `goal_pos` | last placement (abstract frame, set by `move`) / target of the leg being driven (map frame, set by the adapter) |
-| `start_assigned` | whether `move` has placed the robot yet; until then `start_pos` is the origin |
-| `route_goal` | final destination of the current request, abstract frame; set by `submit_task` |
+| `start_pos` / `goal_pos` | last set start and goal positions |
 | `goal` | pose of the first `GoToPhase` in the current `TaskRequest`, or `None` |
-| `submit_task(request, start=None)` | hand a typed `TaskRequest` to the adapter, routed across levels from `start` (the live pose when omitted), loop bodies routed and defaulted like top-level phases |
+| `submit_task(request, start=None)` | hand a typed `TaskRequest` to the adapter, routed across levels from `start` (the live pose when omitted, else it becomes `start_pos`), loop bodies routed and defaulted like top-level phases |
 | `move(pose)` | teleport the robot via `EnvironmentManager.move_robot`, blocking until TF shows it at the target |
 | `is_done` | whether the current task request is satisfied |
 | `accepts` | `frozenset[TaskKind]`: the set of task kinds this robot's adapter handles |
@@ -135,7 +133,8 @@ All obstacle/robot operations go through here.
 | `move_robot(robots)` | teleport robots |
 | `remove_robot(robots)` | remove robots from both layers |
 | `respawn(callback)` | `unuse_obstacles()` → `callback()` → `remove_obstacles(UNUSED)` |
-| `remove_obstacles_by_id(ids)` | mid-episode removal of named obstacles; returns `(removed, missing)` and resyncs the static footprints |
+| `remove_obstacles(ids)` | mid-episode removal of named obstacles; returns the removed ones and resyncs the static footprints |
+| `notify_stimulus(agent, stimulus, intensity)` | forwards to the human simulator |
 | `set_agent_waypoints(routes)` | mid-episode reroute of named agents; points are abstract and realized here |
 | `reset(purge)` | remove all obstacles at or below `purge` layer |
 | `before_reset_episode()` | delegates to `BaseSim.before_reset_episode()` (pauses sim) |

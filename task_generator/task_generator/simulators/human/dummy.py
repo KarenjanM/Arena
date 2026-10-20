@@ -111,7 +111,9 @@ class DummyHumanSimulator(NoopHumanSimulator):
             self._cache[obstacle.sim_path] = ped
         return obstacles
 
-    async def _remove_pedestrians_impl(self) -> bool:
+    async def _remove_pedestrians_impl(self, names: Sequence[str] = ()) -> bool:
+        if names:
+            return False
         tracked = [obstacle for key, obstacle in self._ped_bus_index.items() if key == obstacle.sim_path]
         await self._simulator.pedestrian_delete(tracked)
         self._cache.clear()

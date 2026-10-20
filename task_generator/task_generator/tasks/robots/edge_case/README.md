@@ -26,7 +26,7 @@ repeated traversals or blocked-detection, not only for edge cases.
 
 The first matters most. `Task._reset_episode` awaits `tm_robots.reset()` **before**
 `tm_obstacles.reset()`, so the obstacle mode can design its effects against this episode's
-goal (`RobotManager.route_goal`). Under `explore` the goal is still unset at that moment and
+route: the last goal of the request in `RobotManager.runner`, from the `start_pos` it was submitted with. Under `explore` the goal is still unset at that moment and
 every route-designed effect aborts the case.
 
 `task.robots:=scenario` fixes the first two and is a reasonable fallback. What it does not do

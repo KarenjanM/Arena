@@ -516,8 +516,10 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
         self._logger.debug(f"Removed obstacle walls for {len(names)} obstacles, {len(self._wall_segments)} wall segments remaining")
         return True
 
-    async def _remove_pedestrians_impl(self) -> bool:
+    async def _remove_pedestrians_impl(self, names: Sequence[str] = ()) -> bool:
         """Remove all spawned pedestrians from simulation safely."""
+        if names:
+            return False
         self._logger.debug(f"=== REMOVING {len(self._pedestrians)} PEDESTRIANS ===")
 
         async with self._agents_lock:

@@ -58,14 +58,13 @@ def _on_env(body: typing.Callable[[EnvironmentManager, NoopHumanSimulator], typi
     asyncio.run(main())
 
 
-def test_removal_resolves_the_spawned_id_and_the_plain_name_and_reports_the_rest(world_dir: Path) -> None:
+def test_removal_resolves_the_spawned_id_and_the_plain_name_and_skips_the_rest(world_dir: Path) -> None:
     from task_generator.shared import Obstacle, Pose, Position
 
     async def body(env: EnvironmentManager, human: NoopHumanSimulator) -> None:
         await env.spawn_obstacles([Obstacle(name=name, model="crate", pose=Pose(Position(float(i), 1.0))) for i, name in enumerate(("cart", "sign", "crate"))])
-        assert await env.remove_obstacles_by_id([]) == ([], [])
-        removed, missing = await env.remove_obstacles_by_id(["env_0/cart", "sign", "env_0/never_existed"])
-        assert removed == ["env_0/cart", "sign"] and missing == ["env_0/never_existed"]
+        assert await env.remove_obstacles([]) == []
+        assert await env.remove_obstacles(["env_0/cart", "sign", "env_0/never_existed"]) == ["cart", "sign"]
         assert sorted(human._known_obstacles.keys()) == ["crate"]
 
     _on_env(body)
@@ -76,7 +75,7 @@ def test_a_backend_without_per_agent_removal_keeps_the_pedestrian() -> None:
 
     async def body(env: EnvironmentManager, human: NoopHumanSimulator) -> None:
         await env.spawn_dynamic_obstacles([DynamicObstacle(name="edge_0", model="arenian", pose=Pose(Position(3.0, 1.0)), waypoints=[])])
-        assert await env.remove_obstacles_by_id(["env_0/edge_0"]) == ([], ["env_0/edge_0"])
+        assert await env.remove_obstacles(["env_0/edge_0"]) == []
         assert "edge_0" in human._known_obstacles.keys(), "a failed removal must not forget the entity"
 
     _on_env(body)

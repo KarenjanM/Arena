@@ -48,7 +48,7 @@ class WaypointDriver:
         robot_pose: Callable[[], Point | None],
         submit: Callable[[Work], None],
         logger: RcutilsLogger,
-        stimulus: Callable[[Sequence[str], str, float], Work] | None = None,
+        stimulus: Callable[[Sequence[str], str, float], Coroutine[None, None, int]] | None = None,
         depart_after_m: float | None = None,
     ) -> None:
         self._reroute = reroute
@@ -228,12 +228,11 @@ class WaypointDriver:
         wanted = len(plan.homes)
         try:
             assert self._stimulus is not None
-            ok = await self._stimulus(sorted(plan.homes), plan.need, plan.intensity)
+            n = await self._stimulus(sorted(plan.homes), plan.need, plan.intensity)
         except Exception as exc:
             armed.outcome.failures += 1
             self._logger.warning(f"edge_case: {plan.mode} at t={elapsed:.1f}s failed ({exc!r})")
             return
-        n = int(ok) if isinstance(ok, int) and not isinstance(ok, bool) else (wanted if ok else 0)
         armed.outcome.issued += n
         if n < wanted:
             armed.outcome.failures += wanted - n

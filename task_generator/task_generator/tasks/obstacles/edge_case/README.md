@@ -128,6 +128,12 @@ Namespace `task.edge_case.*`, declared in [`__init__.py`](__init__.py).
 | `objects`, `objects_rate_hz` | `""`, `5` | Object timeline override. |
 
 There is no knob surface any more: a case is its scenario file. To sweep, list scenarios.
+To switch case on a running stack, set the scenario and reset; the next episode builds it:
+
+```bash
+ros2 param set /arena/env_0/task_generator_node task.scenario.file normal__u_021
+ros2 service call /arena/env_0/task_generator_node/lifecycle/reset_episode task_generator_msgs/srv/ResetEpisode "{}"
+```
 
 ---
 
