@@ -115,6 +115,22 @@ def test_resolve_sound_placement_position_uses_context_level(sounds) -> None:
     assert position.z == pytest.approx(1.0)
 
 
+def test_resolve_sound_placement_zone_position_stays_in_the_map_frame(sounds) -> None:
+    import numpy as np
+    from arena_simulation_setup.utils.cattrs import converter
+    from arena_simulation_setup.utils.geometry import PointResolver
+
+    c = converter.copy()
+    c.set_resolver(PointResolver(lookup={"lobby_1": [Position(32.0, 3.0)]}.get, rng=np.random.default_rng(0)))
+    sound = c.structure({"name": "alarm", "asset_id": "alarm_loop", "position": "lobby_1", "level": "b"}, Sound)
+    world = _world(a=_level([]), b=_level([]))
+
+    position, _, level_id = sounds._resolve_sound_placement(sound, world, {}, None)
+
+    assert level_id == ""
+    assert (position.x, position.y) == pytest.approx((32.0, 3.0))
+
+
 def test_resolve_sound_placement_position_infers_sole_level(sounds) -> None:
     sound = Sound(name="alarm", asset_id="alarm_loop", position=Position(0.0, 0.0, 0.0))
     world = _world(only=_level([]))

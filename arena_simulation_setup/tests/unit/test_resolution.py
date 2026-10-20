@@ -95,6 +95,17 @@ def test_waypoint_from_any_string_requires_context():
         Waypoint.from_any("zone_a")
 
 
+def test_parsed_entity_remembers_the_zone_its_pose_was_sampled_from():
+    from arena_simulation_setup.shared import DynamicObstacle
+
+    c = converter.copy()
+    c.set_resolver(_resolver())
+    zoned = c.structure({"name": "walker", "model": "human", "pose": "zone_a"}, DynamicObstacle)
+    literal = c.structure({"name": "walker", "model": "human", "pose": [1.0, 1.0]}, DynamicObstacle)
+    assert (zoned.placement_zone, literal.placement_zone) == ("zone_a", "")
+    assert _inside(zoned.pose.position)
+
+
 def test_waypoint_from_any_mapping_keeps_its_level():
     assert Waypoint.from_any({"x": 1.0, "y": 2.0, "level": "1"}) == Waypoint(x=1.0, y=2.0, z=0.0, level="1")
 

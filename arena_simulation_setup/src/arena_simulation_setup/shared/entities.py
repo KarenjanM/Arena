@@ -87,6 +87,11 @@ class Named(Parseable, Serializable):
     def sim_path(self, value: str) -> None:
         self.extra['sim_path'] = str(value)
 
+    @property
+    def placement_zone(self) -> str:
+        """The zone name a parsed `pose` or `position` was sampled from, its point then lies in the map frame."""
+        return self.extra.get('placement_zone', '')
+
     @classmethod
     def parse(cls, value: dict) -> Self:
         if not isinstance(value, Mapping):
@@ -94,7 +99,11 @@ class Named(Parseable, Serializable):
         unknown = set(value) - {field.name for field in attrs.fields(cls)} | ({'extra'} & set(value))
         if unknown:
             raise ValueError(f"{cls.__name__.lower()} {value.get('name')!r} has unknown keys {sorted(unknown)}")
-        return ArenaConverter.current().structure_attrs_fromdict(dict(value), cls)
+        result = ArenaConverter.current().structure_attrs_fromdict(dict(value), cls)
+        zones = [value[key] for key in ('pose', 'position') if isinstance(value.get(key), str)]
+        if zones:
+            result.extra['placement_zone'] = zones[0]
+        return result
 
     def serialize(self) -> dict:
         result = cattrs.gen.make_dict_unstructure_fn(type(self), converter, _cattrs_omit_if_default=True)(self)

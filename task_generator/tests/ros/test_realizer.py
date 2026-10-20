@@ -277,6 +277,52 @@ def test_realize_dynamic_obstacle_zone_waypoint_stays_in_the_map_frame():
     assert [(w.x, w.y) for w in result.waypoints] == [(31.0, 2.0)]
 
 
+def _scenario_human(pose: object):
+    import numpy as np
+    from arena_simulation_setup.shared import DynamicObstacle
+    from arena_simulation_setup.utils.cattrs import converter
+    from arena_simulation_setup.utils.geometry import PointResolver, Position
+
+    c = converter.copy()
+    c.set_resolver(PointResolver(lookup={"lobby_1": [Position(32.0, 3.0)]}.get, rng=np.random.default_rng(0)))
+    return c.structure({"name": "walker", "model": "human", "level": "1", "pose": pose}, DynamicObstacle)
+
+
+def test_realize_level_human_placed_by_zone_name_stands_at_the_zone():
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    human = _scenario_human("lobby_1")
+    result = realizer.realize(human, human.level)
+    assert (result.pose.position.x, result.pose.position.y) == (33.0, 5.0)
+
+
+def test_realize_level_human_with_literal_pose_gets_its_level_origin():
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    human = _scenario_human([2.0, 3.0])
+    result = realizer.realize(human, human.level)
+    assert (result.pose.position.x, result.pose.position.y) == (33.0, 5.0)
+    assert human.placement_zone == ""
+
+
+def test_realize_level_object_placed_by_zone_name_stands_at_the_zone():
+    import numpy as np
+    from arena_simulation_setup.shared import Obstacle
+    from arena_simulation_setup.utils.cattrs import converter
+    from arena_simulation_setup.utils.geometry import PointResolver, Position
+
+    from task_generator.manager.realizer import Realizer
+
+    c = converter.copy()
+    c.set_resolver(PointResolver(lookup={"lobby_1": [Position(32.0, 3.0)]}.get, rng=np.random.default_rng(0)))
+    desk = c.structure({"name": "desk", "model": "desk", "level": "1", "pose": "lobby_1"}, Obstacle)
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"1": (30.0, 0.0)})
+    result = realizer.realize(desk, desk.level)
+    assert (result.pose.position.x, result.pose.position.y) == (33.0, 5.0)
+
+
 def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
     from arena_simulation_setup.shared import DynamicObstacle
     from arena_simulation_setup.utils.geometry import Position, Pose

@@ -118,13 +118,13 @@ class Realizer:
     def _realize_entity(self, entity: EntityPropsT, level_id: str = "") -> EntityPropsT:
         return attrs.evolve(
             entity,
-            pose=self._realize_pose(entity.pose, level_id),
+            pose=self._realize_pose(entity.pose, '' if entity.placement_zone else level_id),
         )
 
     def _realize_dynamic_obstacle(self, obstacle: DynamicObstacle, level_id: str = "") -> DynamicObstacle:
         return attrs.evolve(
             obstacle,
-            pose=self._realize_pose(obstacle.pose, level_id),
+            pose=self._realize_pose(obstacle.pose, '' if obstacle.placement_zone else level_id),
             waypoints=[self._realize_position(w.position, w.level if w.level or w.zone else level_id) for w in obstacle.waypoints],
         )
 

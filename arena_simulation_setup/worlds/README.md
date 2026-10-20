@@ -306,8 +306,8 @@ humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 `random`), `level`, the humansim `agent:` block and a `hunav:` block for the
 HuNav backend. Any other key fails the load. A waypoint is `[x, y[, z]]`,
 `{x, y[, z][, level]}` or a zone name. One without `level` stands on its
-human's level, and a zone name as a waypoint samples the zone wherever it
-lies.
+human's level. A zone name as a waypoint, a `pose` or a sound `position`
+samples the zone wherever it lies, whatever the entry's `level`.
 
 `sounds` is a list of `Sound` entries, same schema as a world level's
 `sounds:` but episode-scoped (attached at reset, gone at the next one).

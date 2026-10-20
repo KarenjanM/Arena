@@ -48,7 +48,7 @@ def _resolve_sound_placement(
     indexed_entities: dict[str, list[tuple[str, Obstacle]]],
     context_level_id: str | None,
 ) -> tuple[Position, float, str]:
-    """Level-local (position, yaw, level_id) for a Sound: context_level_id pins a world-embedded sound to its structural level, None falls back to sound.level or the world's sole level."""
+    """Level-local (position, yaw, level_id) for a Sound: context_level_id pins a world-embedded sound to its structural level, None falls back to sound.level or the world's sole level, a zone-placed sound is map-frame with level ''."""
     if sound.attach:
         matches = indexed_entities.get(sound.attach, [])
         if not matches:
@@ -68,6 +68,8 @@ def _resolve_sound_placement(
 
     if sound.position is None:
         raise RuntimeError("validated sound has no position")
+    if sound.placement_zone:
+        return sound.position + sound.offset, 0.0, ""
     if context_level_id is not None:
         level_id = context_level_id
     else:
