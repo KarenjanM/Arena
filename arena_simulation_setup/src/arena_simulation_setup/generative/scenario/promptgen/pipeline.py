@@ -160,7 +160,7 @@ def generate(
         from . import step_a_llm  # live mode only
 
         try:
-            a_llm, who_block, notes = step_a_llm.decide(prompt.text, record, cache_dir=cache_dir)
+            a_llm, who_block, notes = step_a_llm.decide(prompt.text, record, cache_dir=cache_dir, model=model)
             record.warnings.extend(notes)
             if who_block:
                 record.provenance["who"] = who_block

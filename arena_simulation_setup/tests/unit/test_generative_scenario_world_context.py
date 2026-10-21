@@ -147,3 +147,27 @@ def test_formats_read_the_loaded_world_as_they_read_the_root(furnished: Path) ->
     loaded = load_world(furnished)
     assert first_level(furnished, loaded) == first_level(furnished)
     assert world_roles(furnished, loaded) == world_roles(furnished)
+
+
+def _kg_world() -> WorldContext:
+    from arena_simulation_setup.generative.scenario.zones import Role
+
+    def zone(name: str, x0: float) -> dict:
+        return {"name": name, "corners": [{"x": x, "y": y} for x, y in ((x0, 0.0), (x0 + 6.0, 0.0), (x0 + 6.0, 6.0), (x0, 6.0))]}
+
+    zones = [zone("open_work_area", 0.0), zone("studio", 10.0), zone("corridor", 20.0)]
+    roles = {"open_work_area": Role.BREAK, "studio": Role.WORK, "corridor": Role.TRANSIT}
+    robot = {"start": [21.0, 3.0, 0.0], "goal": [25.0, 3.0]}
+    return WorldContext(name="kg", root=Path("kg"), zones=zones, roles=roles, robot=robot, grid=None, start=(21.0, 3.0), goal=(25.0, 3.0), route=[(21.0, 3.0), (25.0, 3.0)], homes=frozenset(), kind="office")
+
+
+def test_the_work_zone_follows_the_kg_roles() -> None:
+    assert _kg_world().work_zone() == "studio"
+
+
+def test_busy_pedestrians_start_in_the_kg_work_zones() -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.step_a import inject_busy
+
+    doc: dict = {"humans": []}
+    names = inject_busy(doc, _kg_world(), 2.0, seed=0)
+    assert names and {a["pose"] for a in doc["humans"]} == {"studio"}

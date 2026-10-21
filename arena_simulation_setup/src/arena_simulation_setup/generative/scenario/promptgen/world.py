@@ -324,7 +324,7 @@ class WorldContext:
         return max(self.polygons, key=lambda n: (_area(self.polygons[n]), n)) if self.polygons else None
 
     def work_zone(self) -> str | None:
-        wanted = [n for n in work_zones(self.zones) if n in self.polygons]
+        wanted = [n for n in work_zones(self.zones, self.roles) if n in self.polygons]
         return max(wanted, key=lambda n: (round(_area(self.polygons[n]), 1), "work" in n.lower(), n)) if wanted else None
 
     def other_zones(self, exclude: Sequence[str] = ()) -> list[str]:

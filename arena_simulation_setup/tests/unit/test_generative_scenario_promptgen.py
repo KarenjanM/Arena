@@ -613,12 +613,12 @@ def test_kb_system_prompts_are_committed_builds() -> None:
         assert (root / name).read_text() == text, f"{name} is stale - run python3 -m arena_simulation_setup.generative.scenario.promptgen.build_kb"
 
 
-def _cache_a(cache: Path, text: str, answer: dict) -> Path:
+def _cache_a(cache: Path, text: str, answer: dict, model: str | None = None) -> Path:
     from arena_simulation_setup.generative.scenario.promptgen import step_a_llm
     from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
 
     cache.mkdir(exist_ok=True)
-    (cache / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": json.dumps(answer)}))
+    (cache / f"{prompt_sha256(model or step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": json.dumps(answer)}))
     return cache
 
 
@@ -644,25 +644,38 @@ from arena_simulation_setup.generative.scenario.promptgen.pipeline import genera
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 
 worlds, base, cache, text = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4]
+model = sys.argv[5] if len(sys.argv) > 5 else None
 doc = read_scenario(base / "scenario.yaml")
 world = WorldContext.load(worlds / "toy", doc)
 prompt = P.Prompt(id="t_001", text=text, targets=("A:evacuation",), oracle={})
-record = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=False, cache_dir=cache).record
-print(json.dumps({"a": record.a.case if record.a else None, "warnings": record.warnings, "who": record.provenance.get("who")}))
+record = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=False, cache_dir=cache, model=model).record
+print(json.dumps({"a": record.a.case if record.a else None, "warnings": record.warnings, "who": record.provenance.get("who"), "a_models": [p["model"] for p in record.provenance.get("A", [])]}))
 """
+
+
+def _live_a(worlds: Path, base: Path, cache: Path, text: str, *model: str) -> dict:
+    env = {k: v for k, v in os.environ.items() if k not in ("LLM_API_ENDPOINT", "GOOGLE_API_KEY", "GEMINI_API_KEY")}
+    done = subprocess.run([sys.executable, "-c", _LIVE_A, str(worlds), str(base), str(cache), text, *model], env=env, capture_output=True, text=True, timeout=300, check=False)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout.strip().splitlines()[-1])
 
 
 def test_llm_a_overrides_a_silent_lexicon(toy, tmp_path: Path) -> None:
     worlds, _doc, base, _world = toy
     text = "An evacation is caled; evrybody hurrys out."
     cache = _cache_a(tmp_path / "llm_cache", text, {"case": "evacuation", "who": [{"mention": "a visiter", "profile": "adult", "count": 1}]})
-    env = {k: v for k, v in os.environ.items() if k not in ("LLM_API_ENDPOINT", "GOOGLE_API_KEY", "GEMINI_API_KEY")}
-    done = subprocess.run([sys.executable, "-c", _LIVE_A, str(worlds), str(base), str(cache), text], env=env, capture_output=True, text=True, timeout=300, check=False)
-    assert done.returncode == 0, done.stderr
-    got = json.loads(done.stdout.strip().splitlines()[-1])
+    got = _live_a(worlds, base, cache, text)
     assert got["a"] == "evacuation"
     assert any("lexicon silent" in w for w in got["warnings"])
     assert got["who"] == [{"mention": "a visiter", "profile": "adult", "count": 1}]
+
+
+def test_the_model_override_reaches_step_a(toy, tmp_path: Path) -> None:
+    worlds, _doc, base, _world = toy
+    text = "An evacation is caled; evrybody hurrys out."
+    cache = _cache_a(tmp_path / "llm_cache", text, {"case": "evacuation"}, model="override-model")
+    got = _live_a(worlds, base, cache, text, "override-model")
+    assert got["a"] == "evacuation" and got["a_models"] == ["override-model"]
 
 
 _WITHIN = re.compile(r"robot within (\S+) of (\S+),(\S+)")
