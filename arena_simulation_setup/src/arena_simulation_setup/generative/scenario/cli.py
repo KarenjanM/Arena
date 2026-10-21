@@ -445,6 +445,8 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
         try:
             if parts is None:
                 parts = LoadedWorld.read(root)
+                if parts.unresolved:
+                    print(f"  ! {len(parts.unresolved)} asset(s) with no annotated footprint, stamped as the runtime's {2 * UNKNOWN_FOOTPRINT_RADIUS:g} m box: {', '.join(parts.unresolved)}")
             world = WorldContext.load(root, base_doc, parts, robot_radius=robot.radius)
         except WorldError as exc:
             print(f"  ! {base_id}: {exc}")

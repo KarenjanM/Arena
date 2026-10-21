@@ -59,6 +59,14 @@ def test_an_unannotated_object_is_the_runtime_box(world: Path) -> None:
     assert not plant["resolved"]
 
 
+def test_promptgen_names_the_assets_without_a_footprint(world: Path) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.world import LoadedWorld
+
+    unresolved = LoadedWorld.read(world).unresolved
+    assert len(unresolved) == 1
+    assert unresolved[0].endswith("TestPlant")
+
+
 def test_an_annotated_object_is_marked_resolved(world: Path) -> None:
     assert {s["name"]: s["resolved"] for s in world_statics(world)} == {"counter": True, "plant": False, "kiosk": True}
 

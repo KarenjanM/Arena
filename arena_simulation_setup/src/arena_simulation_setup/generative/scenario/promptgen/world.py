@@ -131,6 +131,7 @@ class LoadedWorld:
     overrides: dict[str, Role]
     grid: Grid | None
     origin: Point = (0.0, 0.0)
+    unresolved: tuple[str, ...] = ()
 
     @classmethod
     def read(cls, root: str | Path) -> LoadedWorld:
@@ -141,10 +142,12 @@ class LoadedWorld:
         doc = first_level(root, world)
         if doc is None:
             raise WorldError(f"{root.name}: no world.yaml")
-        loaded = level_grid(root, world_statics(root, world), world)
+        statics = world_statics(root, world)
+        loaded = level_grid(root, statics, world)
         grid = None if loaded is None else Grid(occupied=loaded[0], res=loaded[1], ox=loaded[2], oy=loaded[3])
         origins = WorldView(root.resolve()).level_origins() or {}
-        return cls(doc=doc, overrides=world_roles(root, world), grid=grid, origin=origins.get(str(doc["id"]), (0.0, 0.0)))
+        unresolved = tuple(sorted({str(s["model"]) for s in statics if not s["resolved"]}))
+        return cls(doc=doc, overrides=world_roles(root, world), grid=grid, origin=origins.get(str(doc["id"]), (0.0, 0.0)), unresolved=unresolved)
 
 
 @attrs.define
