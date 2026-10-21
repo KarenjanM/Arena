@@ -55,7 +55,7 @@ A prompt scenario directory holds:
 |---|---|
 | `scenario.yaml` | `arena-scenario/2`: `humans`, `robots`, `timeline`, checked by `parse_scenario` against the world's zones before it is written |
 | `types/*.yaml` | the scenario's own HumanSim agent types, referenced as `./types/<name>.yaml` |
-| `provenance.yaml` | `id`, `prompt_id`, `steps`, `note`, `decisions`, `owned` (`C`, `D`, `injected`), `formation` (`centre`, `radius`, `variant`, `at`), `encounters` (`agent`, `point` per interception), `provenance` (prompt and answer hashes, generator version, status, dedup key). The runtime never reads it, the arena_evaluation metrics scope by it |
+| `provenance.yaml` | `id`, `prompt_id`, `steps`, `note`, `decisions`, `owned` (`C`, `D`, `injected`), `formation` (`center`, `radius`, `variant`, `at`), `encounters` (`agent`, `point` per interception), `provenance` (prompt and answer hashes, generator version, status, dedup key). The runtime never reads it, the arena_evaluation metrics scope by it |
 | `record.json` | the full decision record with warnings and failures |
 
 Points in the timeline and in `provenance.yaml` are in the frame of the level the robot starts on, `robots[0].level`, which the generator always writes.

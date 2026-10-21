@@ -102,7 +102,7 @@ def test_clearance_is_the_runtime_square_window() -> None:
     assert grid.clear_of(0.0) is None
 
 
-def test_cell_and_centre_round_trip() -> None:
+def test_cell_and_center_round_trip() -> None:
     grid = OccupancyGrid(occupied=np.zeros((40, 60), dtype=bool), res=0.05, ox=-1.0, oy=2.0)
     for cell in ((0, 0), (39, 59), (12, 31)):
         assert grid.cell(grid.xy(cell)) == cell

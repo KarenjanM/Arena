@@ -1,5 +1,5 @@
 """Step 1 - Type A, the whole crowd: `blackout`, `evacuation` and `stampede` change it at the onset; `busy` injects pedestrians.
-HumanSim cannot change a running agent from outside, so every agent the change reaches becomes a behaviour tree a `stimulus` retunes."""
+HumanSim cannot change a running agent from outside, so every agent the change reaches becomes a behavior tree a `stimulus` retunes."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 
 from ..populate import BUSY_MIX, extra_agents
 from .agents import TypeFiles, agent_type_of, profile_of_agent
-from .profiles import TIERS, ProfileError, is_behaviour_tree, tune_block
+from .profiles import TIERS, ProfileError, is_behavior_tree, tune_block
 from .spec import ADecision
 from .world import WorldContext
 
@@ -51,7 +51,7 @@ def bake(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, na
 
 
 def is_tree(files: TypeFiles, agent: Mapping[str, Any]) -> bool:
-    return is_behaviour_tree(files.base_doc(agent_type_of(agent)))
+    return is_behavior_tree(files.base_doc(agent_type_of(agent)))
 
 
 def set_type(agent: dict[str, Any], ref: str) -> None:
@@ -96,7 +96,7 @@ def walks_from(agent: Mapping[str, Any]) -> bool:
 def walks(agent: Mapping[str, Any], files: TypeFiles) -> bool:
     """Whether `agent` walks anywhere: a tree with a `go_to` step, or a plain walker leaving its spawn."""
     base = files.base_doc(agent_type_of(agent))
-    if is_behaviour_tree(base):
+    if is_behavior_tree(base):
         return any(isinstance(step, Mapping) and step.get("kind") == "go_to" for seq in base["sequences"].values() for step in (seq.get("steps") or {}).values())
     return walks_from(agent)
 

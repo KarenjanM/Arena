@@ -77,7 +77,7 @@ def test_derive_pins_point_masses_and_refuses_bt_params_on_plain_types() -> None
     doc = derive({"extends": "adult"}, {"vision_range": "low", "speed": "high"}, name="x", prof=profile("adult"))
     assert doc["perception"]["vision_range"] == {"mean": 2.0, "std": 0.0, "clip_low": 2.0, "clip_high": 2.0}
     assert doc["desired_velocity"]["mean"] == 1.7
-    with pytest.raises(ProfileError, match="behaviour-tree"):
+    with pytest.raises(ProfileError, match="behavior-tree"):
         derive({"extends": "adult"}, {"need_decay": "high"}, name="y")
     assert derived_name("./talker.yaml", {"repulsion": "low"}) == "talker__repulsion_low"
 
@@ -324,7 +324,7 @@ def test_blocking_line_spans_the_corridor(toy) -> None:
     assert ys[-1] - ys[0] >= 0.5 * (len(members) - 1)
     assert all(abs(pt["x"] - world.point_at(0.5)[0][0]) < 1.5 for pt in spots)
     assert all(t["sequences"]["form"]["tune"] == {"local_planner_params": {"repulsion_strength": 0.5}} for t in types)
-    assert result.record.formation["variant"] == "blocking" and abs(result.record.formation["centre"][0] - world.point_at(0.5)[0][0]) < 1.5
+    assert result.record.formation["variant"] == "blocking" and abs(result.record.formation["center"][0] - world.point_at(0.5)[0][0]) < 1.5
 
 
 def test_a_talking_pair_stands_in_the_corridor_too_close_to_drive_between(toy) -> None:
@@ -346,8 +346,8 @@ def test_formation_break_scatters_on_approach(toy) -> None:
     form, scatter = result.effects
     assert form["type"] == "rally" and form["when"] == {"at": 4.0} and len(form["targets"]) == 3
     assert scatter["type"] == "scatter" and scatter["when"]["robot_within"] >= 3.0 and len(scatter["scope"]) == 3
-    centre = tuple(scatter["when"]["of"])
-    assert centre == tuple(result.record.formation["centre"]) and world.zone_of(centre) == "reception"
+    center = tuple(scatter["when"]["of"])
+    assert center == tuple(result.record.formation["center"]) and world.zone_of(center) == "reception"
     members = [a for a in result.doc["humans"] if a["name"] in scatter["scope"]]
     assert all(isinstance(a["pose"], str) and a["pose"] != "reception" for a in members)
 
@@ -775,8 +775,8 @@ def test_a_formation_forms_and_scatters_on_needs_from_the_timeline(toy) -> None:
     members = sorted(result.record.owned["D"])
     assert form == {"at": 4.0, "stimulus": [{"agents": members, "need": "form"}]}
     assert scatter["stimulus"] == [{"agents": members, "need": "break"}]
-    radius, centre = _within(scatter)
-    assert radius >= 3.0 and centre == pytest.approx(tuple(result.record.formation["centre"]), abs=0.01)
+    radius, center = _within(scatter)
+    assert radius >= 3.0 and center == pytest.approx(tuple(result.record.formation["center"]), abs=0.01)
     assert result.record.formation["at"] == {"at": 4.0}
     for agent in (a for a in result.doc["humans"] if a["name"] in members):
         tree = result.files.docs[agent["agent"]["agent_type"]]
@@ -826,7 +826,7 @@ def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> N
     assert set(raw) == {"format", "humans", "robots", "timeline"}
     provenance = yaml.safe_load((out / "provenance.yaml").read_text())
     assert set(provenance) == {"id", "prompt_id", "steps", "note", "decisions", "owned", "formation", "encounters", "provenance"}
-    assert set(provenance["formation"]) == {"centre", "radius", "variant", "at"}
+    assert set(provenance["formation"]) == {"center", "radius", "variant", "at"}
     assert "effects" not in json.dumps(provenance) + json.dumps(raw)
 
     from arena_simulation_setup.tree.World import WorldView

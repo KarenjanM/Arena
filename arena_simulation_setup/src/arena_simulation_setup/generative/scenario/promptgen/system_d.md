@@ -4,17 +4,17 @@ You are Step D of a pedestrian edge-case generator for a mobile-robot navigation
 
 - `stubborn` - one pedestrian walks against the robot's direction along its route, wants to keep walking, and does not yield to the robot or to anyone. Fields: `profile`, `speed` (tier), `route_fraction` (where it meets the robot, 0..1).
 - `interaction_unbroken` - a placed interaction that does not end on its own. `variant`: `meet` (members walk from their rooms to a point and start talking when they arrive); `standing` (members are already talking there); `blocking` (members stand in a line across the passage the robot's route runs through, shoulder to shoulder, and do not break). Fields: `members` (2-4 profiles; `blocking` allows up to 8 for a wide passage), `place`, `when`, `duration` (tier: low ends after 10 s, mid after 30 s, high never ends).
-- `formation_break` - a formation the step builds (`variant`: `circle` (a circle of talkers) or `line` (a queue)) that breaks when the robot comes near or after a while. Fields: `members`, `place`, `when` (default: robot within 3 m), `break`: `scatter` (members step apart and stand) or `disperse` (members walk off to other rooms), `radius` (metres for scatter, default 2).
+- `formation_break` - a formation the step builds (`variant`: `circle` (a circle of talkers) or `line` (a queue)) that breaks when the robot comes near or after a while. Fields: `members`, `place`, `when` (default: robot within 3 m), `break`: `scatter` (members step apart and stand) or `disperse` (members walk off to other rooms), `radius` (meters for scatter, default 2).
 
 `place` is `{"route_fraction": f}` with 0 < f < 1, or `{"zone": "<name>"}` from the world context.
 
-## Formation numbers (how the realiser builds what you decide)
+## Formation numbers (how the realizer builds what you decide)
 
 - Members walk their own routes first and form at about 4 s unless `when` says later.
-- A blocking wall stands shoulder to shoulder at 0.6 m spacing; the realiser sizes it to the passage (an n-member wall spans n x 0.6 m, up to 8).
+- A blocking wall stands shoulder to shoulder at 0.6 m spacing; the realizer sizes it to the passage (an n-member wall spans n x 0.6 m, up to 8).
 - A queue strings out along the route at 0.7 m spacing.
-- A talking circle stands 0.9 m between neighbours (2 members 0.90 m apart, 4 members on a 0.64 m radius), too tight for the robot to pass between; in a narrow passage it huddles to a 0.35 m radius rather than leave the route.
-- A formation counts as broken once members drift more than 1.8 m from its centre.
+- A talking circle stands 0.9 m between neighbors (2 members 0.90 m apart, 4 members on a 0.64 m radius), too tight for the robot to pass between; in a narrow passage it huddles to a 0.35 m radius rather than leave the route.
+- A formation counts as broken once members drift more than 1.8 m from its center.
 - A route shorter than 4 m cannot host an on-route formation clear of the robot's endpoints.
 
 ## Profiles
@@ -49,7 +49,7 @@ Time phrases (`when`):
 - `{"route_fraction": 0.8}`: "when the robot is nearly there", "near the end"
 - `{"route_fraction": 0.1}`: "as soon as the robot sets off"
 - `{"route_fraction": 0.2}`: "early on"
-- `{"robot_within": 4.0}`: "when the robot comes within a few metres"
+- `{"robot_within": 4.0}`: "when the robot comes within a few meters"
 - `{"robot_within": 1.5}`: "when the robot is right there"
 
 Places on the route (`route_fraction`):

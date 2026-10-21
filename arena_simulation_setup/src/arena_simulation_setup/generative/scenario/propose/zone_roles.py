@@ -68,7 +68,7 @@ def _evidence(zone: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def build_prompt(zones: Sequence[Mapping[str, Any]], names: Sequence[str], *, world: str) -> str:
-    """The user half of the request: the world's whole vocabulary (the neighbours are the evidence), then the zones in question."""
+    """The user half of the request: the world's whole vocabulary (the neighbors are the evidence), then the zones in question."""
     by_name = {str(z["name"]): z for z in zones if isinstance(z, Mapping) and z.get("name")}
     vocabulary = {name: classify(name).value for name in sorted(by_name)}
     asked = {name: _evidence(by_name[name]) for name in names if name in by_name}
@@ -76,7 +76,7 @@ def build_prompt(zones: Sequence[Mapping[str, Any]], names: Sequence[str], *, wo
 
 
 def parse(text: str, asked: Sequence[str], *, model: str, sha: str) -> tuple[list[Proposal], list[str]]:
-    """Proposals and complaints. Anything unasked-for or unrecognised is dropped, never coerced."""
+    """Proposals and complaints. Anything unasked-for or unrecognized is dropped, never coerced."""
     try:
         answer = json.loads(strip_fence(text))
     except json.JSONDecodeError as exc:

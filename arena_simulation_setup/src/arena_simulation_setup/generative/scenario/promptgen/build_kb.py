@@ -1,4 +1,4 @@
-"""Render `system_{a,bc,d}.md` from the hand-written `.tmpl.md` notes, the constants the parser and realiser judge answers by, and `kb_ranges.yaml`.
+"""Render `system_{a,bc,d}.md` from the hand-written `.tmpl.md` notes, the constants the parser and realizer judge answers by, and `kb_ranges.yaml`.
 The built files are committed, so a KB change is a reviewed diff and a cache invalidation: `python3 -m arena_simulation_setup.generative.scenario.promptgen.build_kb [--check]`."""
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ _DIR = Path(__file__).parent
 #: Semantics that live nowhere in code constants: one line per case / variant / mode.
 B_CASE_NOTES = {
     "erratic_route": "their routes change every few seconds",
-    "erratic_behaviour": "they keep switching what they are doing; falls back to erratic_route on plain walkers",
+    "erratic_behavior": "they keep switching what they are doing; falls back to erratic_route on plain walkers",
     "intrinsic": "one to three parameters pinned at a tier",
 }
 C_AFTER_NOTES = {
@@ -150,7 +150,7 @@ def _bc_contract() -> str:
             f"- `case`: {b_cases}.",
             '- `select` (who, from the unowned agents listed): `{"profile": "<name>"}` | `{"amount": "half" | "all_but_one" | "all"}` | `{"n": <count>}` | `{"zone": "<name>"}` | `{"names": [...]}`.',
             f"- `params` (intrinsic, one to three, tier per key): {', '.join(params)}.",
-            f"- `period` (seconds between reroutes, default 4), `radius` (metres, default 3) and `around` for the erratic cases: {' or '.join(f'`{a}`' for a in ERRATIC_AROUND)} (points either side of the robot's route, or around each walker's own start; default `{_default(BDecision, 'around')}`).",
+            f"- `period` (seconds between reroutes, default 4), `radius` (meters, default 3) and `around` for the erratic cases: {' or '.join(f'`{a}`' for a in ERRATIC_AROUND)} (points either side of the robot's route, or around each walker's own start; default `{_default(BDecision, 'around')}`).",
             "- `when`: see the time table; without a time phrase, omit it (the runtime defaults to 10 s).",
             "",
             _tier_table(params),
@@ -183,17 +183,17 @@ def _d_contract() -> str:
             + f" Fields: `members` (2-4 profiles; `blocking` allows up to 8 for a wide passage), `place`, `when`, `duration` (tier: low ends after {lo:g} s, mid after {mid:g} s, high never ends).",
             "- `formation_break` - a formation the step builds (`variant`: "
             + " or ".join(f"`{v}` ({D_VARIANT_NOTES[v]})" for v in ("circle", "line"))
-            + f") that breaks when the robot comes near or after a while. Fields: `members`, `place`, `when` (default: robot within {FORMATION_TRIGGER_M:g} m), `break`: `scatter` (members step apart and stand) or `disperse` (members walk off to other rooms), `radius` (metres for scatter, default {_default(DDecision, 'radius'):g}).",
+            + f") that breaks when the robot comes near or after a while. Fields: `members`, `place`, `when` (default: robot within {FORMATION_TRIGGER_M:g} m), `break`: `scatter` (members step apart and stand) or `disperse` (members walk off to other rooms), `radius` (meters for scatter, default {_default(DDecision, 'radius'):g}).",
             "",
             '`place` is `{"route_fraction": f}` with 0 < f < 1, or `{"zone": "<name>"}` from the world context.',
             "",
-            "## Formation numbers (how the realiser builds what you decide)",
+            "## Formation numbers (how the realizer builds what you decide)",
             "",
             f"- Members walk their own routes first and form at about {D.FORM_AT_S:g} s unless `when` says later.",
-            f"- A blocking wall stands shoulder to shoulder at {D.LINE_SPACING:g} m spacing; the realiser sizes it to the passage (an n-member wall spans n x {D.LINE_SPACING:g} m, up to 8).",
+            f"- A blocking wall stands shoulder to shoulder at {D.LINE_SPACING:g} m spacing; the realizer sizes it to the passage (an n-member wall spans n x {D.LINE_SPACING:g} m, up to 8).",
             f"- A queue strings out along the route at {D.QUEUE_SPACING:g} m spacing.",
-            f"- A talking circle stands {D.CIRCLE_SPACING_M:g} m between neighbours (2 members {2 * D.circle_radius(2):.2f} m apart, 4 members on a {D.circle_radius(4):.2f} m radius), too tight for the robot to pass between; in a narrow passage it huddles to a {D.HUDDLE_RADIUS_M:g} m radius rather than leave the route.",
-            f"- A formation counts as broken once members drift more than {D.FORMATION_RADIUS_M:g} m from its centre.",
+            f"- A talking circle stands {D.CIRCLE_SPACING_M:g} m between neighbors (2 members {2 * D.circle_radius(2):.2f} m apart, 4 members on a {D.circle_radius(4):.2f} m radius), too tight for the robot to pass between; in a narrow passage it huddles to a {D.HUDDLE_RADIUS_M:g} m radius rather than leave the route.",
+            f"- A formation counts as broken once members drift more than {D.FORMATION_RADIUS_M:g} m from its center.",
             f"- A route shorter than {D.MIN_ROUTE_FOR_FORMATION_M:g} m cannot host an on-route formation clear of the robot's endpoints.",
             "",
             _profile_table(),

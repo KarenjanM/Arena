@@ -15,7 +15,7 @@ from ..populate import MODELS, for_people, speed_for
 from .agents import TypeFiles, agent_type_of, mesh_for, profile_of_agent
 from .lexicon import when_in
 from .llm import AnswerError, Oracle, call
-from .profiles import BT_ONLY, TUNABLE, ProfileError, is_behaviour_tree, profile, scaled_speed, tier_value
+from .profiles import BT_ONLY, TUNABLE, ProfileError, is_behavior_tree, profile, scaled_speed, tier_value
 from .spec import A_CASES, BDecision, CDecision, Record, SchemaError, Selection, conflict_m, parse_b, parse_c
 from .step_a import StepError, bake, set_type, tune_trees, walk_as_tree, walks
 from .step_d import population_summary
@@ -206,17 +206,17 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
         notes.append(f"erratic_route: {len(names)} agent(s) switch to a new point around the {decision.around} every {decision.period:g} s")
         return effects, names, notes
 
-    if decision.case == "erratic_behaviour":
+    if decision.case == "erratic_behavior":
         bt, plain = [], []
         for agent in chosen:
-            (bt if is_behaviour_tree(files.base_doc(agent_type_of(agent))) else plain).append(agent)
+            (bt if is_behavior_tree(files.base_doc(agent_type_of(agent))) else plain).append(agent)
         if bt:
             bake(doc, {"need_decay": "high"}, files, names=[str(a["name"]) for a in bt])
         if plain:
             effects.extend(erratic_trees(doc, files, world, [str(a["name"]) for a in plain], period=decision.period, radius=decision.radius, around=decision.around, label=label, when=decision.when.as_effect()))
-            notes.append(f"erratic_behaviour: {len(plain)} plain walker(s) fell back to erratic_route")
+            notes.append(f"erratic_behavior: {len(plain)} plain walker(s) fell back to erratic_route")
         if bt:
-            notes.append(f"erratic_behaviour: {len(bt)} behaviour-tree agent(s) with need_decay high from the start")
+            notes.append(f"erratic_behavior: {len(bt)} behavior-tree agent(s) with need_decay high from the start")
         return effects, names, notes
 
     params = dict(decision.params)
@@ -227,10 +227,10 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
             base = files.base_doc(ref)
         except ProfileError as exc:
             raise StepError(f"intrinsic: {exc}") from None
-        usable = {k: v for k, v in params.items() if k not in BT_ONLY or is_behaviour_tree(base)}
+        usable = {k: v for k, v in params.items() if k not in BT_ONLY or is_behavior_tree(base)}
         dropped = sorted(set(params) - set(usable))
         if dropped:
-            notes.append(f"intrinsic: {dropped} skipped on {agent['name']} (not a behaviour-tree type)")
+            notes.append(f"intrinsic: {dropped} skipped on {agent['name']} (not a behavior-tree type)")
         if usable:
             by_usable.setdefault(tuple(sorted(usable.items())), []).append(str(agent["name"]))
     for key, members in by_usable.items():

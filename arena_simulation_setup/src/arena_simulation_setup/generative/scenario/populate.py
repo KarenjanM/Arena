@@ -12,7 +12,7 @@ from arena_humansim.core.agents import BUILTIN_AGENTS
 
 from .zones import Role, zones_by_role
 
-# the builtin agent types are all `mode: simple`, which a behaviour-tree case cannot act on
+# the builtin agent types are all `mode: simple`, which a behavior-tree case cannot act on
 BT_AGENT_TYPE = "talker.yaml"
 
 TALKERS = 2
@@ -115,8 +115,8 @@ def route_points(
     pts: list[tuple[float, float]] = []
     for endpoint in _endpoints(robot):
         if isinstance(endpoint, str):
-            if (centre := centroids.get(endpoint)) is not None:
-                pts.append(centre)
+            if (center := centroids.get(endpoint)) is not None:
+                pts.append(center)
         elif isinstance(endpoint, Sequence):
             pts.append((float(endpoint[0]), float(endpoint[1])))
     return pts

@@ -29,7 +29,7 @@ from ..zones import Role, zones_by_role
 
 Point = tuple[float, float]
 
-#: Metres the robot needs on either side to drive a cell; also the pedestrian body clearance.
+#: Meters the robot needs on either side to drive a cell; also the pedestrian body clearance.
 ROBOT_CLEAR = 0.35
 #: Clearance the robot's start and goal get: nav2 will not plan into the inscribed radius plus inflation (mpo700: 0.48 m + 0.35 m).
 #: Falls back to `ROBOT_CLEAR` when no such cell is within 3 m.
@@ -76,7 +76,7 @@ def _truncate(route: Sequence[Point], cap_m: float) -> list[Point]:
 
 def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, beat: float = 0.0) -> tuple[Point, list[Point]] | None:
     """The candidate goal (snapped into free space) with the longest drivable route from `start` up to `MAX_LEG_M`;
-    None when none beats `beat` by a metre. A small world may never reach `MIN_LEG_M`; its longest leg is still the right one."""
+    None when none beats `beat` by a meter. A small world may never reach `MIN_LEG_M`; its longest leg is still the right one."""
     best: tuple[float, Point, list[Point]] | None = None
     for pt in candidates:
         goal = endpoint(grid, pt)
@@ -377,7 +377,7 @@ class WorldContext:
         return math.dist(ends[0], ends[1]), ends[0], ends[1]
 
     def narrowest_passage(self, fraction: float, span: float = 3.0, step: float = 0.25) -> tuple[Point, Point, float]:
-        """The narrowest cross-section of the route within `span` metres of `fraction`.
+        """The narrowest cross-section of the route within `span` meters of `fraction`.
         Returns (point, heading, width)."""
         total = max(self.route_length, 1e-9)
         samples: list[tuple[float, Point, Point, float]] = []
@@ -439,7 +439,7 @@ class WorldContext:
         return None
 
     def _candidates(self, pt: Point, *, radius: float, on_route: bool, within: float) -> list[Point]:
-        """Cell centres within `within` of `pt` clear by `ROBOT_CLEAR` at least that pass the checks of `valid`, nearest first."""
+        """Cell centers within `within` of `pt` clear by `ROBOT_CLEAR` at least that pass the checks of `valid`, nearest first."""
         import numpy as np
 
         grid = self.grid

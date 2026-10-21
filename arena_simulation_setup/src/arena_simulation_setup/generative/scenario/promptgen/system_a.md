@@ -33,7 +33,7 @@ Time phrases (`when`):
 - `{"route_fraction": 0.8}`: "when the robot is nearly there", "near the end"
 - `{"route_fraction": 0.1}`: "as soon as the robot sets off"
 - `{"route_fraction": 0.2}`: "early on"
-- `{"robot_within": 4.0}`: "when the robot comes within a few metres"
+- `{"robot_within": 4.0}`: "when the robot comes within a few meters"
 - `{"robot_within": 1.5}`: "when the robot is right there"
 
 ## Rules

@@ -94,7 +94,7 @@ class TypeFiles:
         return out
 
     def walking(self, agent: Mapping[str, Any], route: Sequence[Point]) -> str:
-        """`agent`'s own type as a behaviour tree whose `walk` sequence is `route`, one go_to per point, looped: a walker that can
+        """`agent`'s own type as a behavior tree whose `walk` sequence is `route`, one go_to per point, looped: a walker that can
         switch sequence or hold a tune on a need. Named after the base type and the agent, one per walker."""
         base = agent_type_of(agent)
         stem = base.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
@@ -108,7 +108,7 @@ class TypeFiles:
         return out
 
     def standing(self, ref: str, name: str) -> str:
-        """`ref` as a behaviour tree whose `wait` sequence stands where the agent spawned, one per agent `name`, for a switch to start from."""
+        """`ref` as a behavior tree whose `wait` sequence stands where the agent spawned, one per agent `name`, for a switch to start from."""
         stem = ref.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
         type_name = f"{stem}__wait_{name}"
         out = f"./{TYPES_DIR}/{type_name}.yaml"

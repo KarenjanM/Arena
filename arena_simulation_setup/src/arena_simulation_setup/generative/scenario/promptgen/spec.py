@@ -14,7 +14,7 @@ import attrs
 from .profiles import PROFILES, TIER_NAMES, TIERS, ProfileError, profile
 
 A_CASES = ("blackout", "evacuation", "stampede", "busy")
-B_CASES = ("erratic_route", "erratic_behaviour", "intrinsic")
+B_CASES = ("erratic_route", "erratic_behavior", "intrinsic")
 # where erratic points lie: along the robot's route, or around each wanderer's own start
 ERRATIC_AROUND = ("route", "home")
 C_CASES = ("blocking", "approach")
@@ -24,10 +24,10 @@ C_AFTER = ("continue", "stop_facing", "follow", "veer")
 D_VARIANTS = {"interaction_unbroken": ("meet", "standing", "blocking"), "formation_break": ("circle", "line"), "stubborn": ("one",)}
 D_BREAKS = ("scatter", "disperse")
 
-#: Metres. Two placements closer than this on the route are a conflict.
+#: Meters. Two placements closer than this on the route are a conflict.
 CONFLICT_M = 2.0
 
-#: Metres. A formation_break with no `when` breaks when the robot comes this close.
+#: Meters. A formation_break with no `when` breaks when the robot comes this close.
 FORMATION_TRIGGER_M = 3.0
 
 
@@ -88,7 +88,7 @@ PHRASES: tuple[tuple[str, When], ...] = (
     ("near the end", When(route_fraction=0.8)),
     ("as soon as the robot sets off", When(route_fraction=0.1)),
     ("early on", When(route_fraction=0.2)),
-    ("when the robot comes within a few metres", When(robot_within=4.0)),
+    ("when the robot comes within a few meters", When(robot_within=4.0)),
     ("when the robot is right there", When(robot_within=1.5)),
 )
 
@@ -409,7 +409,7 @@ class Record:
     c: CDecision | None = None
     #: Step label -> agent names it owns.
     owned: dict[str, list[str]] = attrs.Factory(dict)
-    #: Where Step D's formation stands (`centre`, `radius`, `variant`, `at`), for the success criterion.
+    #: Where Step D's formation stands (`center`, `radius`, `variant`, `at`), for the success criterion.
     formation: dict[str, Any] | None = None
     failures: list[Failure] = attrs.Factory(list)
     provenance: dict[str, Any] = attrs.Factory(dict)

@@ -17,7 +17,7 @@ Cell = tuple[int, int]
 
 IsValid = Callable[[Point], bool]
 
-_NEIGHBOURS: tuple[tuple[int, int, float], ...] = (
+_NEIGHBORS: tuple[tuple[int, int, float], ...] = (
     (-1, 0, 1.0),
     (1, 0, 1.0),
     (0, -1, 1.0),
@@ -58,7 +58,7 @@ class OccupancyGrid:
         return rows - 1 - int((pt[1] - self.oy) / self.res), int((pt[0] - self.ox) / self.res)
 
     def xy(self, cell: Cell) -> Point:
-        """The centre of a cell, so `cell(xy(c)) == c` regardless of float rounding."""
+        """The center of a cell, so `cell(xy(c)) == c` regardless of float rounding."""
         rows = self.shape[0]
         return ((cell[1] + 0.5) * self.res + self.ox, (rows - 1 - cell[0] + 0.5) * self.res + self.oy)
 
@@ -170,7 +170,7 @@ def _astar(grid: _Planner, start: Cell, goal: Cell) -> list[Cell]:
         if expansions > _MAX_EXPANSIONS:
             raise PathError(f"path search exceeded {_MAX_EXPANSIONS} expansions between {start} and {goal}")
 
-        for dr, dc, step in _NEIGHBOURS:
+        for dr, dc, step in _NEIGHBORS:
             nxt = (cell[0] + dr, cell[1] + dc)
             if nxt in seen or not grid.in_bounds(nxt):
                 continue

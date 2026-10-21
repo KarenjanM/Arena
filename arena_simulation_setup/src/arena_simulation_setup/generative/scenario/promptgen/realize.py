@@ -1,4 +1,4 @@
-"""The steps' design realised offline: intercepting pedestrians solved against the planned route, behaviour trees that switch on a need, and the timeline entries that raise it."""
+"""The steps' design realized offline: intercepting pedestrians solved against the planned route, behavior trees that switch on a need, and the timeline entries that raise it."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ LEAD_OUT_M = 3.0
 
 
 @attrs.define
-class Realised:
+class Realized:
     timeline: list[dict[str, Any]] = attrs.Factory(list)
     injected: list[str] = attrs.Factory(list)
     encounters: list[dict[str, Any]] = attrs.Factory(list)
@@ -233,9 +233,9 @@ def _scatter_points(names: Sequence[str], spots: Mapping[str, Point], radius: fl
     return out, notes
 
 
-def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: WorldContext, files: TypeFiles, *, seed: int, robot_speed: float) -> Realised:
+def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: WorldContext, files: TypeFiles, *, seed: int, robot_speed: float) -> Realized:
     """Add the injected pedestrians and every switch to `doc` and `files`, and return the timeline that drives them."""
-    out = Realised()
+    out = Realized()
     made: set[str] = set()
     spots: dict[str, Point] = {}
     doc.setdefault("humans", [])
@@ -247,7 +247,7 @@ def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: Wo
     return out
 
 
-def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, files: TypeFiles, out: Realised, made: set[str], spots: dict[str, Point], *, seed: int, robot_speed: float) -> None:
+def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, files: TypeFiles, out: Realized, made: set[str], spots: dict[str, Point], *, seed: int, robot_speed: float) -> None:
     kind = effect["type"]
     if kind == "intercept":
         name = f"{INJECT_PREFIX}_{len(out.injected)}"

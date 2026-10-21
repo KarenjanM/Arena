@@ -1,5 +1,5 @@
 """Prompt-driven edge-case generation: Type A by lexicon or model, then Type D, then Type B+C by model.
-Static changes go into the population; what the case changes at its onset is a behaviour-tree switch the scenario timeline raises."""
+Static changes go into the population; what the case changes at its onset is a behavior-tree switch the scenario timeline raises."""
 
 from __future__ import annotations
 

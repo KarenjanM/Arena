@@ -43,7 +43,7 @@ def rasterize(poly: Sequence[tuple[float, float]], shape: tuple[int, int], res: 
     return np.asarray(canvas, dtype=bool)
 
 
-def _cell_centres(mask: np.ndarray, res: float, ox: float, oy: float) -> tuple[np.ndarray, np.ndarray]:
+def _cell_centers(mask: np.ndarray, res: float, ox: float, oy: float) -> tuple[np.ndarray, np.ndarray]:
     import numpy as np
 
     rows, cols = np.nonzero(mask)
@@ -81,7 +81,7 @@ def screen_zones(
     robot_zones: frozenset[str] = frozenset(),
     clearance_map: tuple[np.ndarray, float, float, float] | None = None,
 ) -> dict[str, Verdict]:
-    """A verdict per zone, screened on `clearance_map` (metres to the nearest occupied cell, resolution, origin x, origin y) or else on `world_root` rendered with `statics`; an unscreenable world gets verdicts that all refuse, and `robot_zones` are refused whole."""
+    """A verdict per zone, screened on `clearance_map` (meters to the nearest occupied cell, resolution, origin x, origin y) or else on `world_root` rendered with `statics`; an unscreenable world gets verdicts that all refuse, and `robot_zones` are refused whole."""
     verdicts: dict[str, Verdict] = {}
     names = [str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name")]
 
@@ -132,7 +132,7 @@ def screen_zones(
             )
             continue
 
-        xs, ys = _cell_centres(mask, res, ox, oy)
+        xs, ys = _cell_centers(mask, res, ox, oy)
         xs, ys, clearance = xs[admissible], ys[admissible], clearance[admissible]
 
         route_bad = route_clearance(xs, ys, route) < min_route_clearance

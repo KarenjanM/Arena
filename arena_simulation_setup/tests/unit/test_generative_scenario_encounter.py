@@ -170,7 +170,7 @@ def test_encounter_sweep_tries_the_request_first_then_spreads_both_ways() -> Non
     assert len(got) == len(set(got))
 
 
-def test_encounter_sweep_stays_in_range_for_an_off_centre_request() -> None:
+def test_encounter_sweep_stays_in_range_for_an_off_center_request() -> None:
     got = list(encounter_fractions(0.85))
     assert got[0] == 0.85
     assert all(0.1 <= v <= 0.9 for v in got)

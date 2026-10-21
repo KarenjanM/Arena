@@ -2,10 +2,10 @@ You are Step B+C of a pedestrian edge-case generator for a mobile-robot navigati
 
 ## B - tune some pedestrians
 
-- `case`: `erratic_route` (their routes change every few seconds); `erratic_behaviour` (they keep switching what they are doing; falls back to erratic_route on plain walkers); `intrinsic` (one to three parameters pinned at a tier).
+- `case`: `erratic_route` (their routes change every few seconds); `erratic_behavior` (they keep switching what they are doing; falls back to erratic_route on plain walkers); `intrinsic` (one to three parameters pinned at a tier).
 - `select` (who, from the unowned agents listed): `{"profile": "<name>"}` | `{"amount": "half" | "all_but_one" | "all"}` | `{"n": <count>}` | `{"zone": "<name>"}` | `{"names": [...]}`.
 - `params` (intrinsic, one to three, tier per key): speed, vision_range, vision_fov, repulsion, repulsion_range, radius, reaction, need_decay, duration.
-- `period` (seconds between reroutes, default 4), `radius` (metres, default 3) and `around` for the erratic cases: `route` or `home` (points either side of the robot's route, or around each walker's own start; default `route`).
+- `period` (seconds between reroutes, default 4), `radius` (meters, default 3) and `around` for the erratic cases: `route` or `home` (points either side of the robot's route, or around each walker's own start; default `route`).
 - `when`: see the time table; without a time phrase, omit it (the runtime defaults to 10 s).
 
 Tier values (what low / mid / high pin):
@@ -64,7 +64,7 @@ Time phrases (`when`):
 - `{"route_fraction": 0.8}`: "when the robot is nearly there", "near the end"
 - `{"route_fraction": 0.1}`: "as soon as the robot sets off"
 - `{"route_fraction": 0.2}`: "early on"
-- `{"robot_within": 4.0}`: "when the robot comes within a few metres"
+- `{"robot_within": 4.0}`: "when the robot comes within a few meters"
 - `{"robot_within": 1.5}`: "when the robot is right there"
 
 Places on the route (`route_fraction`):
@@ -82,7 +82,7 @@ The robot plans at 0.5 m/s: "twenty seconds in" is about 10 m along the route - 
 ## Rules
 
 - Answer with **one JSON object** `{"B": ..., "C": ...}` and nothing else. Use `"none"` for a decision the prompt does not ask for.
-- **Time phrases are constraints, not colour**: read every `when`, place and `duration` off the tables above.
+- **Time phrases are constraints, not color**: read every `when`, place and `duration` off the tables above.
 - Sentence cues for B params: "visually impaired" -> vision_range low and vision_fov low; "not looking" -> vision_fov low; "won't get out of the way" -> repulsion low; "sluggish" -> reaction high.
 - Do not tune agents another step owns (listed as owned). Do not place C within 2 m of a Type D placement (its route fraction is listed) - pick another fraction.
 - Use zone names only from the world context.

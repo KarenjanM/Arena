@@ -75,12 +75,12 @@ def _sub_route(route: Sequence[Point], start_s: float, end_s: float) -> list[Poi
         return [point_at_arc(route, start_s)[0], point_at_arc(route, end_s)[0]]
 
     out = [point_at_arc(route, start_s)[0]]
-    travelled = 0.0
+    traveled = 0.0
     for a, b in zip(route, route[1:], strict=False):
         seg = math.dist(a, b)
-        if seg > 1e-12 and start_s < travelled + seg < end_s:
+        if seg > 1e-12 and start_s < traveled + seg < end_s:
             out.append(b)
-        travelled += seg
+        traveled += seg
     out.append(point_at_arc(route, end_s)[0])
     return out
 

@@ -42,7 +42,7 @@ PATHS: dict[str, tuple[str, ...]] = {
 }
 
 BT_ONLY = frozenset({"need_decay", "duration"})
-# a running behaviour tree holds these from a sequence `tune:`; the rest need a respawn
+# a running behavior tree holds these from a sequence `tune:`; the rest need a respawn
 TUNABLE = frozenset({"speed", "max_speed", "vision_range", "vision_fov", "repulsion", "repulsion_range", "reaction"})
 
 ADULT_SPEED = KINEMATICS["adult"][0]
@@ -149,18 +149,18 @@ def _set_path(doc: dict[str, Any], keys: Sequence[str], value: dict[str, float])
     return _set_path(child, rest, value)
 
 
-def is_behaviour_tree(raw: Mapping[str, Any]) -> bool:
+def is_behavior_tree(raw: Mapping[str, Any]) -> bool:
     return raw.get("mode") == "behavior_tree" and bool(raw.get("sequences"))
 
 
 def derive(raw: Mapping[str, Any], params: Mapping[str, str], *, name: str, prof: Profile | None = None) -> dict[str, Any]:
-    """`raw` with every tuned parameter pinned to its tier; a behaviour-tree-only parameter on a plain type raises."""
+    """`raw` with every tuned parameter pinned to its tier; a behavior-tree-only parameter on a plain type raises."""
     doc = copy.deepcopy(dict(raw))
     doc["name"] = name
     for param, tier in params.items():
         value = tier_value(param, tier, prof=prof)
-        if param in BT_ONLY and not is_behaviour_tree(doc):
-            raise ProfileError(f"{param} needs a behaviour-tree type; {doc.get('extends') or doc.get('name')!r} is not one")
+        if param in BT_ONLY and not is_behavior_tree(doc):
+            raise ProfileError(f"{param} needs a behavior-tree type; {doc.get('extends') or doc.get('name')!r} is not one")
         written = _set_path(doc, PATHS[param], point_mass(value))
         if written == 0:
             raise ProfileError(f"{param}: nothing at {'.'.join(PATHS[param])} on {doc.get('name')!r}")
@@ -171,7 +171,7 @@ def tune_block(params: Mapping[str, str], *, prof: Profile | None = None, speed_
     out: dict[str, Any] = {}
     for param, tier in params.items():
         if param not in TUNABLE:
-            raise ProfileError(f"{param} cannot be tuned on a running behaviour tree")
+            raise ProfileError(f"{param} cannot be tuned on a running behavior tree")
         *head, leaf = PATHS[param]
         node = out
         for key in head:

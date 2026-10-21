@@ -1,7 +1,7 @@
 """prompt + world + base scenario -> `scenarios/<base>__<prompt_id>/`.
 
-Steps A, D and B+C run in that order over one decision record, so no step re-reads a sentence another realised; an agent belongs to at most one step.
-Their design is then realised offline (`realize`) into injected pedestrians, behaviour-tree switches and the scenario timeline."""
+Steps A, D and B+C run in that order over one decision record, so no step re-reads a sentence another realized; an agent belongs to at most one step.
+Their design is then realized offline (`realize`) into injected pedestrians, behavior-tree switches and the scenario timeline."""
 
 from __future__ import annotations
 
@@ -253,11 +253,11 @@ def generate(
         except StepError as exc:
             _fail(record, "C", exc)
 
-    return _realised(Result(record=record, doc=doc, files=files, effects=effects, scenario_id=f"{base_id}__{prompt.id}", prompt=prompt), world, seed=seed, robot_speed=robot.speed)
+    return _realized(Result(record=record, doc=doc, files=files, effects=effects, scenario_id=f"{base_id}__{prompt.id}", prompt=prompt), world, seed=seed, robot_speed=robot.speed)
 
 
-def _realised(result: Result, world: WorldContext, *, seed: int, robot_speed: float) -> Result:
-    """The steps' design realised offline; a step whose realisation fails is recorded as failed and dropped, the rest realised again without it."""
+def _realized(result: Result, world: WorldContext, *, seed: int, robot_speed: float) -> Result:
+    """The steps' design realized offline; a step whose realization fails is recorded as failed and dropped, the rest realized again without it."""
     record = result.record
     while True:
         doc, files = copy.deepcopy(result.doc), copy.deepcopy(result.files)
