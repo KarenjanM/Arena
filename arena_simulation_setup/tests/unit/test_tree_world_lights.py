@@ -139,7 +139,7 @@ def test_ceiling_rig_grid_on_rectangular_zone():
 
 
 def test_ceiling_rig_is_one_rig_light_named_after_the_zone():
-    cfg = CeilingLights(fixture='tube', spacing=3.0, lumens=2000.0, cct_K=3000.0, cast_shadows=True, light_on='!blackout', level=0.8, dead_fraction=0.25)
+    cfg = CeilingLights(fixture='tube', spacing=3.0, lumens=2000.0, cct_K=3000.0, cast_shadows=True, light_on='!blackout', dim=0.8, dead_fraction=0.25)
     rig = _only_light(_lit_zone(name='central_hallway', ceiling_height=2.5, ceiling_lights=cfg))
     assert rig.name == 'central_hallway'
     assert rig.rig is True
@@ -150,13 +150,13 @@ def test_ceiling_rig_is_one_rig_light_named_after_the_zone():
     assert rig.cast_shadows is True
     assert rig.light_on == '!blackout'
     assert rig.lit is None
-    assert rig.level == pytest.approx(0.8)
+    assert rig.dim == pytest.approx(0.8)
     assert rig.dead_fraction == pytest.approx(0.25)
     assert rig.pose is None
     assert rig.attach == ''
     assert rig.frame == ''
     assert len(rig.fixture_ranks) == len(rig.fixtures)
-    assert [(entry.role, entry.name) for entry in rig.semantics] == [('predicate', 'lit'), ('state', 'level'), ('state', 'dead_fraction')]
+    assert [(entry.role, entry.name) for entry in rig.semantics] == [('predicate', 'lit'), ('state', 'dim'), ('state', 'dead_fraction')]
 
 
 def test_ceiling_rig_carries_lit_false():
@@ -577,9 +577,9 @@ def test_object_lights_follow_their_entity_pose_and_scale(world_assets: Path) ->
 
 
 def test_object_lights_take_the_placement_settings(world_assets: Path) -> None:
-    lamp = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [2.0, 1.0, 0.7]}, 'light': {'light_on': '!daylight', 'level': 0.5}}
+    lamp = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [2.0, 1.0, 0.7]}, 'light': {'light_on': '!daylight', 'dim': 0.5}}
     lights = asyncio.run(_lamp_level(lamp).all_lights())
-    assert [(light.light_on, light.level) for light in lights] == [('!daylight', 0.5), ('!daylight', 0.5)]
+    assert [(light.light_on, light.dim) for light in lights] == [('!daylight', 0.5), ('!daylight', 0.5)]
 
 
 def test_objects_without_annotated_lights_add_none(world_assets: Path) -> None:

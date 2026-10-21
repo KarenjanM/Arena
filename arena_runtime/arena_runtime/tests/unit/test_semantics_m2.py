@@ -1056,13 +1056,13 @@ def test_writable_sets_per_kind():
     assert ElevatorSemantics.WRITABLE == frozenset()
 
 
-def _light_cfgs(light_on=None, lit=None, level=None, dead_fraction=None):
+def _light_cfgs(light_on=None, lit=None, dim=None, dead_fraction=None):
     params = {}
     if light_on is not None:
         params["light_on"] = light_on
     cfgs = [
         _MCfg("predicate", "lit", value=lit, params=params),
-        _MCfg("state", "level", value=level),
+        _MCfg("state", "dim", value=dim),
     ]
     if dead_fraction is not None:
         cfgs.append(_MCfg("state", "dead_fraction", value=dead_fraction))
@@ -1085,14 +1085,14 @@ def test_regime_leading_bang_negates():
     assert mgr._regime_stack == set()
 
 
-def test_light_attach_defaults_lit_at_full_level():
+def test_light_attach_defaults_lit_and_undimmed():
     mech = _Mech()
     _manager(mech)
     lamp = _attach_light(mech, _light_cfgs())
     snap = lamp.snapshot()
     assert snap.kind == "light"
     assert snap.predicates == {"lit": True}
-    assert snap.continuous == {"level": 1.0}
+    assert snap.continuous == {"dim": 1.0}
     assert lamp.output() == (1.0, 0.0)
     assert lamp.asserts_regime("lit") is False
 
@@ -1158,35 +1158,35 @@ def test_light_lit_write_overrides_negated_regime_until_it_flips():
     assert lamp.snapshot().predicates["lit"] is True
 
 
-def test_light_level_write_in_range_reaches_output_and_snapshot():
+def test_light_dim_write_in_range_reaches_output_and_snapshot():
     mech = _Mech()
     _manager(mech)
-    lamp = _attach_light(mech, _light_cfgs(level=0.75))
-    assert lamp.snapshot().continuous["level"] == pytest.approx(0.75)
+    lamp = _attach_light(mech, _light_cfgs(dim=0.75))
+    assert lamp.snapshot().continuous["dim"] == pytest.approx(0.75)
     assert lamp.output() == pytest.approx((0.75, 0.0))
     for value in ("0", "0.25", "1"):
-        lamp.set_value("level", value)
-        assert lamp.snapshot().continuous["level"] == pytest.approx(float(value))
+        lamp.set_value("dim", value)
+        assert lamp.snapshot().continuous["dim"] == pytest.approx(float(value))
         assert lamp.output() == pytest.approx((float(value), 0.0))
 
 
-def test_light_level_write_rejects_out_of_range_and_non_numeric():
+def test_light_dim_write_rejects_out_of_range_and_non_numeric():
     mech = _Mech()
     _manager(mech)
-    lamp = _attach_light(mech, _light_cfgs(level=0.75))
+    lamp = _attach_light(mech, _light_cfgs(dim=0.75))
     for value in ("-0.1", "1.5", "nan", "inf", "bright", ""):
         with pytest.raises(ValueError, match="malformed value"):
-            lamp.set_value("level", value)
-    assert lamp.snapshot().continuous["level"] == pytest.approx(0.75)
+            lamp.set_value("dim", value)
+    assert lamp.snapshot().continuous["dim"] == pytest.approx(0.75)
     assert lamp.output() == pytest.approx((0.75, 0.0))
 
 
-def test_light_output_level_is_zero_while_unlit():
+def test_light_output_dim_is_zero_while_unlit():
     mech = _Mech()
     _manager(mech)
-    lamp = _attach_light(mech, _light_cfgs(lit=False, level=0.5, dead_fraction=0.25))
+    lamp = _attach_light(mech, _light_cfgs(lit=False, dim=0.5, dead_fraction=0.25))
     assert lamp.snapshot().predicates["lit"] is False
-    assert lamp.snapshot().continuous["level"] == pytest.approx(0.5)
+    assert lamp.snapshot().continuous["dim"] == pytest.approx(0.5)
     assert lamp.output() == pytest.approx((0.0, 0.25))
     lamp.set_value("lit", "true")
     assert lamp.output() == pytest.approx((0.5, 0.25))
@@ -1243,18 +1243,18 @@ def test_light_write_to_unknown_field_rejected():
         lamp.set_value("color", "red")
 
 
-def test_light_reset_restores_lit_level_and_dead_fraction():
+def test_light_reset_restores_lit_dim_and_dead_fraction():
     mech = _Mech()
     _manager(mech)
-    rig = _attach_light(mech, _light_cfgs(lit=False, level=0.75, dead_fraction=0.25), entity="hall")
+    rig = _attach_light(mech, _light_cfgs(lit=False, dim=0.75, dead_fraction=0.25), entity="hall")
     rig.set_value("lit", "true")
-    rig.set_value("level", "0.5")
+    rig.set_value("dim", "0.5")
     rig.set_value("dead_fraction", "1")
     assert rig.output() == pytest.approx((0.5, 1.0))
     rig.reset()
     snap = rig.snapshot()
     assert snap.predicates["lit"] is False
-    assert snap.continuous["level"] == pytest.approx(0.75)
+    assert snap.continuous["dim"] == pytest.approx(0.75)
     assert snap.continuous["dead_fraction"] == pytest.approx(0.25)
     assert rig.output() == pytest.approx((0.0, 0.25))
 
@@ -1304,26 +1304,26 @@ def test_manager_light_outputs_lists_exactly_attached_lights():
     assert mgr.light_outputs() == {}
     mgr.attach("schedule", "sc", _schedule_cfgs([]))
     mgr.attach("sound", "snd", _sound_cfgs())
-    mgr.attach("light", "lamp", _light_cfgs(level=0.5))
+    mgr.attach("light", "lamp", _light_cfgs(dim=0.5))
     mgr.attach("light", "hall", _light_cfgs(lit=False, dead_fraction=0.25))
     assert mgr.light_outputs() == {"lamp": (0.5, 0.0), "hall": (0.0, 0.25)}
     mgr.detach("lamp")
     assert mgr.light_outputs() == {"hall": (0.0, 0.25)}
 
 
-def test_manager_set_value_light_emits_level_and_lit_changes():
+def test_manager_set_value_light_emits_dim_and_lit_changes():
     mech = _Mech()
     mgr = _manager(mech)
     batches = []
     mgr.set_change_callback(lambda b: batches.append(list(b)))
     mgr.attach("light", "lamp", _light_cfgs())
     mgr.step(0.0)
-    assert mgr.set_value("lamp", "level", "0.5") is True
+    assert mgr.set_value("lamp", "dim", "0.5") is True
     assert mgr.set_value("lamp", "lit", "false") is True
-    assert [(c.field, c.current) for batch in batches[1:] for c in batch] == [("level", "0.5"), ("lit", "false")]
+    assert [(c.field, c.current) for batch in batches[1:] for c in batch] == [("dim", "0.5"), ("lit", "false")]
     assert mgr.light_outputs() == {"lamp": (0.0, 0.0)}
     with pytest.raises(ValueError, match="malformed value"):
-        mgr.set_value("lamp", "level", "2")
+        mgr.set_value("lamp", "dim", "2")
 
 
 def test_sound_on_negated_regime_follows_complement():

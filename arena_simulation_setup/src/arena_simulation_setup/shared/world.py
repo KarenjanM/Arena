@@ -271,7 +271,7 @@ class Light(Named):
     cast_shadows: bool = False
     light_on: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     lit: bool | None = None
-    level: float = attrs.field(converter=float, default=1.0)
+    dim: float = attrs.field(converter=float, default=1.0)
     dead_fraction: float = attrs.field(converter=float, default=0.0)
     intrinsic: bool = False
     owner: str = attrs.field(converter=lambda value: str(value).strip(), default='')
@@ -323,7 +323,7 @@ class Light(Named):
             raise ValueError(f'light {self.name!r} ({self.fixture}) takes no orientation')
         if self.cone_deg is not None and (self.fixture != 'spot' or not 0.0 < self.cone_deg < 180.0):
             raise ValueError(f'light {self.name!r} takes cone_deg only as a spot, within 0..180 exclusive')
-        check_light_state(f'light {self.name!r}', self.cct_K, self.level, self.dead_fraction, self.light_on, self.lit)
+        check_light_state(f'light {self.name!r}', self.cct_K, self.dim, self.dead_fraction, self.light_on, self.lit)
         if self.dead_fraction and not self.rig:
             raise ValueError(f'light {self.name!r} takes dead_fraction only as a rig')
 
@@ -352,7 +352,7 @@ class Light(Named):
         lit = None if self.light_on else (True if self.lit is None else self.lit)
         result = [
             SemanticCfg(role='predicate', name='lit', value=lit, params={'light_on': self.light_on} if self.light_on else {}),
-            SemanticCfg(role='state', name='level', value=self.level),
+            SemanticCfg(role='state', name='dim', value=self.dim),
         ]
         if self.rig:
             result.append(SemanticCfg(role='state', name='dead_fraction', value=self.dead_fraction))
@@ -386,7 +386,7 @@ def object_light(owner: str, entry: dict, settings: ObjectLightSettings | None) 
         cone_deg=entry.get('cone_deg') if fixture == 'spot' else None,
         light_on=settings.light_on,
         lit=settings.lit,
-        level=settings.level,
+        dim=settings.dim,
         intrinsic=True,
         glow=entry.get('glow') or '',
     )
@@ -403,7 +403,7 @@ class CeilingLights(Parseable, Serializable):
     cast_shadows: bool = False
     light_on: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     lit: bool | None = None
-    level: float = attrs.field(converter=float, default=1.0)
+    dim: float = attrs.field(converter=float, default=1.0)
     dead_fraction: float = attrs.field(converter=float, default=0.0)
 
     def __attrs_post_init__(self) -> None:
@@ -413,7 +413,7 @@ class CeilingLights(Parseable, Serializable):
             raise ValueError('ceiling_lights spacing must be positive')
         if not self.lumens >= 0.0:
             raise ValueError('ceiling_lights requires lumens >= 0')
-        check_light_state('ceiling_lights', self.cct_K, self.level, self.dead_fraction, self.light_on, self.lit)
+        check_light_state('ceiling_lights', self.cct_K, self.dim, self.dead_fraction, self.light_on, self.lit)
 
     def serialize(self) -> dict:
         return cattrs.gen.make_dict_unstructure_fn(type(self), converter, _cattrs_omit_if_default=True)(self)

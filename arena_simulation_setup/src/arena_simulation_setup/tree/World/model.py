@@ -517,7 +517,7 @@ class Level:
             cast_shadows=cfg.cast_shadows,
             light_on=cfg.light_on,
             lit=cfg.lit,
-            level=cfg.level,
+            dim=cfg.dim,
             dead_fraction=cfg.dead_fraction,
             rig=True,
             fixtures=fixtures,

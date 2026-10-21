@@ -297,7 +297,7 @@ behavior (sequences, interactions, needs), see
 `humansim/arena_humansim/config/agent_types/README.md` and the
 `hospital_1/scenarios/showcase` scenario for a worked example.
 
-`objects` (`Obstacle`) also takes `light: {lit, light_on, level}` for the lights its
+`objects` (`Obstacle`) also takes `light: {lit, light_on, dim}` for the lights its
 object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: [x, y, z]` (default identity),
 `level` (multi-level worlds) and a `humansim:` block (`type`, `capacity`,
 `interaction_radius`, `formation`, `satisfies`, `seats`) that becomes its

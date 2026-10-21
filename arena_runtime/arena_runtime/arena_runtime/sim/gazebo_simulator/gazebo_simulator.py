@@ -517,7 +517,7 @@ class GazeboSimulator(BaseSim):
         for light in lights:
             if light.fixture == 'dome' or (light.spec.ambient and not self._owns_ambient):
                 continue
-            level = 0.0 if light.lit is False else light.level
+            level = 0.0 if light.lit is False else light.dim
             names = []
             for params in _light_params(light, level, light.alive(light.dead_fraction)):
                 names.append(self._realizer.realize(f"light_{next(self._wall_counter)}"))

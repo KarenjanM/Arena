@@ -112,7 +112,7 @@ STAGE_AMBIENT_ENV = 'env_0'
 def stage_ambient(lights: Sequence[Light]) -> list[dict]:
     """The dome and sun lights of a world as comparable settings, sorted, names left out."""
     return sorted(
-        ({'fixture': light.fixture, 'lux': light.lux, 'cct_K': light.cct_K, 'direction': list(light.direction), 'level': light.level, 'lit': light.lit, 'light_on': light.light_on} for light in lights if light.spec.ambient),
+        ({'fixture': light.fixture, 'lux': light.lux, 'cct_K': light.cct_K, 'direction': list(light.direction), 'dim': light.dim, 'lit': light.lit, 'light_on': light.light_on} for light in lights if light.spec.ambient),
         key=json.dumps,
     )
 

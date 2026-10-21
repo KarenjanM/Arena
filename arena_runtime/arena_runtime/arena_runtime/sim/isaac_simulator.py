@@ -623,7 +623,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             intensity=_ISAAC_EXPOSURE_GAIN * intensity,
             cct_k=light.cct_K,
             cast_shadows=light.cast_shadows,
-            level=0.0 if light.lit is False else light.level,
+            level=0.0 if light.lit is False else light.dim,
             alive=light.alive(light.dead_fraction),
             intrinsic=light.intrinsic,
             glow_prim=self._NS_PRIM(light.owner) if light.glow else '',
