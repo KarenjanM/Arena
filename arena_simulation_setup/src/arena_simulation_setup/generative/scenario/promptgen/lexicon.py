@@ -94,7 +94,7 @@ def _onset(prompt: str, default: When, case: str, lexicon: dict[str, Any]) -> Wh
 
 
 def when_in(text: str, *, exclude_cases: Sequence[str] = (), lexicon: dict[str, Any] | None = None) -> When | None:
-    """The first time phrase in a sentence of `text` that names none of `exclude_cases`; None without one."""
+    """The first time phrase in a sentence of `text` that names none of `exclude_cases`, None without one."""
     lex = lexicon or load()
     owned = [str(p) for case in exclude_cases for p in (lex.get(case, {}).get("phrases") or {})]
     for sentence in re.split(r"(?<=[.!?])\s+", text.lower()):

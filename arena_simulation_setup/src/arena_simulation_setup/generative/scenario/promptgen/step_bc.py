@@ -24,7 +24,7 @@ from .world import WorldContext, WorldError
 
 ERRATIC = "erratic"
 ERRATIC_STOPS = 6
-# a wanderer starting this close to the route meets the robot; fewer than ERRATIC_NEAR_MIN such are topped up beside it
+# a wanderer starting this close to the route meets the robot, fewer than ERRATIC_NEAR_MIN such are topped up beside it
 ERRATIC_NEAR_M = 4.0
 ERRATIC_NEAR_MIN = 3
 _GOLDEN_ANGLE = math.pi * (3.0 - math.sqrt(5.0))
@@ -85,7 +85,7 @@ def _zone_of_agent(agent: Mapping[str, Any], world: WorldContext) -> str:
 
 
 def select(doc: Mapping[str, Any], sel: Selection, world: WorldContext, owned: set[str], files: TypeFiles, *, walking_only: bool = False) -> list[dict[str, Any]]:
-    """The agents a Type B selection names, in scenario order, never one another step owns; with `walking_only`, only agents that walk."""
+    """The unowned agents a Type B selection names, in scenario order, with `walking_only` only those that walk."""
     pool = [a for a in _agents(doc) if str(a.get("name")) not in owned and (not walking_only or walks(a, files))]
     if sel.names:
         by_name = {str(a.get("name")): a for a in pool}

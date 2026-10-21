@@ -566,11 +566,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--robot-radius", type=_positive_float, default=ROBOT_CLEAR, help=f"meters the robot's route keeps clear of walls and furniture when the base route is picked, above 0 (default {ROBOT_CLEAR})")
 
     p = verb("promptgen", _cmd_promptgen, "realize prompt x base scenarios for a world as scenarios with a timeline")
-    p.add_argument("world", nargs="?", help="the world whose bases to realize the prompts on; bare, the verb lists the worlds")
+    p.add_argument("world", nargs="?", help="the world whose bases to realize the prompts on (bare, the verb lists the worlds)")
     p.add_argument("--bases", default="", help="comma-separated base scenario ids of the world (default: normal, break, night, empty)")
     p.add_argument("--ids", default="", help="comma-separated prompt ids to restrict to (default: every shipped prompt for the world and every --prompts one)")
     p.add_argument("--prompts", nargs="*", help="extra prompt files, YAML lists in the shipped prompts/*.yaml format")
-    p.add_argument("--seed", type=int, default=0, help="seed of every random draw; the same seed writes the same cases (default 0)")
+    p.add_argument("--seed", type=int, default=0, help="seed of every random draw, the same seed writes the same cases (default 0)")
     p.add_argument("--cache", default=None, help="model answer cache directory (default $ARENA_DATA_DIR/promptgen/llm_cache)")
     p.add_argument("--model", default=None, help=f"override the model of every step (default {DEFAULT_MODEL}, step A $ARENA_PROMPT_LLM_A when set)")
     p.add_argument("--oracle", action="store_true", help="use each prompt's own template slots instead of a model")

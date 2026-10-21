@@ -73,7 +73,7 @@ def _place(decision: DDecision, world: WorldContext) -> tuple[Point, Point, bool
         return pt, heading, True
     zone = str(decision.place["zone"])
     if not for_people([zone]):
-        raise StepError("placement", f"{zone!r} is a room nobody is placed in (wc/storage; sealed in the inflated grid)")
+        raise StepError("placement", f"{zone!r} is a room nobody is placed in (wc/storage, sealed in the inflated grid)")
     pt = world.zone_point(zone, need=circle_radius(len(decision.members)))
     _rp, heading = world.point_at(world.fraction_of(pt))
     return pt, heading, world.route_clearance(pt) < 1.5
@@ -172,7 +172,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
             except WorldError as exc:
                 raise StepError("placement", f"{exc}") from None
             on_route = world.route_clearance(center) < 1.5
-            notes.append(f"no stretch of the {world.route_length:.1f} m route fits the formation; placed {'on' if on_route else 'beside'} it in {room}")
+            notes.append(f"no stretch of the {world.route_length:.1f} m route fits the formation, placed {'on' if on_route else 'beside'} it in {room}")
 
     reused = _take_reuse(doc, decision.reuse, owned) if decision.reuse else []
     profiles = [profile(m) for m in decision.members]
@@ -182,7 +182,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         pt, heading, width = world.narrowest_passage(world.fraction_of(center)) if on_route else (center, heading, world.passage_width(center, heading)[0])
         n = min(8, max(2, int(round(width / LINE_SPACING))))
         if width > n * LINE_SPACING + 0.8:
-            notes.append(f"blocking: passage is {width:.1f} m wide; {n} members leave a gap")
+            notes.append(f"blocking: passage is {width:.1f} m wide, {n} members leave a gap")
         profiles = (profiles * 8)[:n]
         normal = (-heading[1], heading[0])
         points = [(pt[0] + normal[0] * (i - (n - 1) / 2) * LINE_SPACING, pt[1] + normal[1] * (i - (n - 1) / 2) * LINE_SPACING) for i in range(n)]
@@ -236,7 +236,6 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         members.append(member)
     doc["humans"] = [*doc.get("humans", []), *members]
 
-    # sorted-name order is how the runtime deals targets
     spot = {name: pt for name, pt in zip(names, resolved, strict=True)}
     ordered = sorted(names)
     targets = [[round(spot[n][0], 2), round(spot[n][1], 2)] for n in ordered]

@@ -32,7 +32,7 @@ ROBOT_CLEAR = 0.35
 ENDPOINT_MARGIN = 0.35
 #: A planned leg shorter than this is replaced by the longest leg the zones offer: the base scenarios' own floor.
 MIN_LEG_M = MIN_EPISODE_S * ROBOT_SPEED_MPS
-#: The episode budget minus the case's reserve; a longer route is truncated there.
+#: The episode budget minus the case's reserve, where a longer route is truncated.
 MAX_LEG_M = MAX_ROUTE_M
 #: Name fragments marking a zone a building empties through, best first.
 EGRESS_HINTS = ("exit", "entrance", "entry", "lobby", "reception", "hallway", "corridor", "foyer", "living")
@@ -67,7 +67,7 @@ def _truncate(route: Sequence[Point], cap_m: float) -> list[Point]:
 
 
 def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, radius: float, beat: float = 0.0) -> tuple[Point, list[Point]] | None:
-    """The snapped candidate goal with the longest drivable route from `start` up to `MAX_LEG_M`; None when none beats `beat` by a meter."""
+    """The snapped goal with the longest drivable route from `start` up to `MAX_LEG_M`, None when none beats `beat` by a meter."""
     best: tuple[float, Point, list[Point]] | None = None
     for pt in candidates:
         goal = endpoint(grid, pt, radius)
@@ -234,9 +234,9 @@ class WorldContext:
         return next((name for name, shape in self.shapes.items() if shape.covers(here)), None)
 
     def zone_point(self, name: str, *, need: float = 0.4) -> Point:
-        """The reachable point nearest the zone's centroid clear of walls by `need` and away from the robot's endpoints; the centroid without a grid."""
+        """The reachable point nearest the zone's centroid `need` clear of walls, off the robot's endpoints, else the centroid."""
         if name not in self.centroids:
-            raise WorldError(f"{name!r} is not a zone of {self.name}; known: {self.zone_names()}")
+            raise WorldError(f"{name!r} is not a zone of {self.name}, known: {self.zone_names()}")
         c = self.centroids[name]
         grid = self.grid
         if grid is None:
@@ -264,9 +264,9 @@ class WorldContext:
         raise WorldError(f"zone {name!r} has no room for a formation of radius {need:.1f} m away from the robot's endpoints")
 
     def zone_sample(self, name: str, rng: random.Random, *, need: float = 0.4) -> Point:
-        """A random reachable point in the zone clear of walls and furniture by `need`; the centroid without a grid or a clear cell."""
+        """A random reachable point in the zone `need` clear of walls and furniture, the centroid without a grid or a clear cell."""
         if name not in self.centroids:
-            raise WorldError(f"{name!r} is not a zone of {self.name}; known: {self.zone_names()}")
+            raise WorldError(f"{name!r} is not a zone of {self.name}, known: {self.zone_names()}")
         grid = self.grid
         if grid is None:
             return self.centroids[name]
@@ -355,7 +355,7 @@ class WorldContext:
         return pt, heading, width
 
     def fit_along_route(self, fraction: float, need: float, *, span: float = 0.3, step: float = 0.25) -> tuple[Point, Point, float] | None:
-        """(point, heading, fraction) nearest `fraction` where a formation of radius `need` fits on the route; None when none does."""
+        """(point, heading, fraction) nearest `fraction` where a formation of radius `need` fits on the route, None when none does."""
         total = max(self.route_length, 1e-9)
         n = int(span * total / step)
         for i in range(0, n + 1):
@@ -376,7 +376,7 @@ class WorldContext:
         return None
 
     def valid(self, pt: Point, *, radius: float = 0.4, on_route: bool = False) -> str | None:
-        """None when a pedestrian may stand at `pt`; otherwise why not."""
+        """None when a pedestrian may stand at `pt`, otherwise why not."""
         if self.grid is not None:
             if not self.grid.inside(self.grid.cell(pt)):
                 return "outside the map"

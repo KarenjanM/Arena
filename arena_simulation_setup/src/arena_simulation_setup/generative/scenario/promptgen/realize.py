@@ -1,4 +1,4 @@
-"""The steps' design realized offline into intercepting pedestrians, behavior-tree switches and the timeline that raises them."""
+"""The steps' design realized offline as intercepting pedestrians, behavior-tree switches and the timeline raising them."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | 
 
 
 def release_point(route: Sequence[Point], at: float, radius: float = ROUTE_TRIGGER_M) -> tuple[Point, float]:
-    """The route point whose `radius` circle the robot enters `at` meters along `route`, and that radius, shorter near the goal."""
+    """The route point whose `radius` circle the robot enters `at` meters along `route`, and that radius, less near the goal."""
     total = route_length(route)
     here = point_at_arc(route, at)[0]
     s = at
@@ -102,7 +102,7 @@ def release_point(route: Sequence[Point], at: float, radius: float = ROUTE_TRIGG
 
 
 def entered_at(route: Sequence[Point], pt: Point, radius: float) -> float | None:
-    """Meters along `route` where the robot first comes within `radius` of `pt`; None when it never does."""
+    """Meters along `route` where the robot first comes within `radius` of `pt`, None when it never does."""
     total = route_length(route)
     steps = max(1, math.ceil(total / TRIGGER_STEP_M))
     return next((total * i / steps for i in range(steps + 1) if math.dist(point_at_arc(route, total * i / steps)[0], pt) <= radius), None)

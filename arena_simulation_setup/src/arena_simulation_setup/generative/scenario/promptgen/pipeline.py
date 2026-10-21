@@ -31,7 +31,7 @@ from .step_d import apply as apply_d
 from .step_d import decide as decide_d
 from .world import ROBOT_CLEAR, WorldContext, WorldError
 
-#: Type A cases that run on an empty base; the others need a crowd.
+#: Type A cases that run on an empty base, the others need a crowd.
 A_ON_EMPTY = frozenset({"busy"})
 GENERATOR_VERSION = "promptgen-2"
 PROVENANCE = "provenance.yaml"
@@ -40,7 +40,7 @@ _STEP_OF = {"A": "a", "B": "b", "C": "c", "D": "d"}
 
 @attrs.frozen(kw_only=True)
 class RobotPlan:
-    """How the robot drives a case: the speed releases are timed at, traversals, start hold, goal tolerance and route clearance."""
+    """The robot a case is designed for: release speed, traversals, start hold, goal tolerance and route clearance."""
 
     speed: float = ROBOT_SPEED_MPS
     traversals: int = 1
@@ -82,7 +82,7 @@ class Result:
 
     @property
     def provenance(self) -> dict[str, Any]:
-        """What `provenance.yaml` records beside the scenario; the runtime never reads it."""
+        """What `provenance.yaml` records beside the scenario, never read by the runtime."""
         r = self.record
         return {
             "id": self.scenario_id,
@@ -170,9 +170,9 @@ def generate(
                 record.warnings.append(f"A read by the model (lexicon silent): {a_llm.case}")
                 a = a_llm
             elif a is not None and a_llm is None:
-                record.warnings.append(f"lexicon reads A:{a.case}, the model reads none; keeping the lexicon")
+                record.warnings.append(f"lexicon reads A:{a.case}, the model reads none, keeping the lexicon")
             elif a is not None and a_llm is not None and a_llm.case != a.case:
-                record.warnings.append(f"A disagreement: lexicon {a.case}, model {a_llm.case}; taking the model")
+                record.warnings.append(f"A disagreement: lexicon {a.case}, model {a_llm.case}, taking the model")
                 a = a_llm
         except (StepError, Unavailable) as exc:
             record.warnings.append(f"A model unavailable, lexicon only: {exc}")
@@ -296,7 +296,7 @@ def _header(result: Result) -> str:
             f"# base: {r.base}, steps: {', '.join(r.steps) or 'none'}, status: {r.status}",
             "#",
             GENERATED_MARKER,
-            f"# The timeline raises the case's needs; {PROVENANCE} records the decisions.",
+            f"# The timeline raises the case's needs, {PROVENANCE} records the decisions.",
             "",
             "",
         )
@@ -304,7 +304,7 @@ def _header(result: Result) -> str:
 
 
 def write_result(result: Result, world_root: Path, *, keep_partial: bool = True) -> Path | None:
-    """Write `scenarios/<base>__<prompt_id>/`, None when infeasible, denied or partial without `keep_partial`, refusing a hand-authored one."""
+    """Write `scenarios/<base>__<prompt_id>/` over a generated one only, None when infeasible, denied or a dropped partial."""
     if result.record.status in ("infeasible", "denied") or (result.record.status == "partial" and not keep_partial):
         return None
     out = Path(world_root) / "scenarios" / result.scenario_id

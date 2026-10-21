@@ -1,4 +1,4 @@
-"""Cast helpers: naming, meshes, per-agent entries, and the derived profile files written beside a scenario (`types/<name>.yaml`)."""
+"""Cast helpers: naming, meshes, per-agent entries and the derived type files beside a scenario (`types/<name>.yaml`)."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def entry(name: str, prof: Profile, pose: Point | str, waypoints: Sequence[Point
 @attrs.define
 class TypeFiles:
     base_dir: Path
-    #: The working level's shift into the map frame; a scenario-local file's targets are read back into the level frame.
+    #: The working level's shift into the map frame, a scenario-local file's targets read back into the level frame.
     origin: Point = (0.0, 0.0)
     docs: dict[str, dict[str, Any]] = attrs.Factory(dict)
     #: Files copied verbatim from the base scenario directory (a `./talker.yaml`).
@@ -143,7 +143,6 @@ class TypeFiles:
             doc.setdefault("needs", {})[need] = {"initial": 0.0, "decay_rate": 0.0}
             for sequence in doc["sequences"].values():
                 sequence.setdefault("transitions", []).append({"when": {need: {"above": 50.0}}, "goto": to})
-            # `then: to` holds the agent in the switched sequence without restarting the tree
             held = {"tune": dict(tune)} if tune else {}
             if advance:
                 chain = [to, *(f"{to}_{k}" for k in range(2, len(steps) + 1))]

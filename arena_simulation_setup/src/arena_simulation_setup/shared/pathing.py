@@ -41,7 +41,7 @@ class PathError(RuntimeError):
 
 @attrs.define
 class OccupancyGrid:
-    """A north-up boolean occupancy grid (row 0 is the top edge) with its resolution and the map-frame origin of its bottom-left corner."""
+    """A north-up boolean occupancy grid (row 0 on top), its resolution and the map-frame origin of its bottom-left corner."""
 
     occupied: typing.Any
     res: float
@@ -64,12 +64,12 @@ class OccupancyGrid:
     def xy(self, cell: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray]: ...
 
     def xy(self, cell: Cell | tuple[np.ndarray, np.ndarray]) -> Point | tuple[np.ndarray, np.ndarray]:
-        """The center of a cell, or of arrays of rows and columns elementwise; `cell(xy(c)) == c`."""
+        """The center of a cell, or of arrays of rows and columns elementwise, with `cell(xy(c)) == c`."""
         rows = self.shape[0]
         return ((cell[1] + 0.5) * self.res + self.ox, (rows - 1 - cell[0] + 0.5) * self.res + self.oy)
 
     def nearest(self, cell: Cell, limit: float, ok: Callable[[slice, slice], np.ndarray]) -> Cell | None:
-        """The cell nearest `cell` within `limit` cells where `ok(rows, cols)`, a mask of that window, holds; None when none does."""
+        """The cell nearest `cell` within `limit` cells where the window mask `ok(rows, cols)` holds, None when none does."""
         import numpy as np
 
         r0, c0 = cell
@@ -89,7 +89,7 @@ class OccupancyGrid:
         return 0 <= cell[0] < self.shape[0] and 0 <= cell[1] < self.shape[1]
 
     def blocked_within(self, radius: float) -> np.ndarray:
-        """Cells with an occupied cell in the square of half-width `radius` around them, the window the runtime validates a spawn in."""
+        """Cells with an occupied cell in the square of half-width `radius` around them, the runtime's spawn check window."""
         import numpy as np
         import scipy.ndimage
 
@@ -100,7 +100,7 @@ class OccupancyGrid:
         return self._clear_cache[key]
 
     def clear_of(self, radius: float) -> IsValid | None:
-        """A predicate true where a point is on the grid with no occupied cell within `radius` square; None for a non-positive radius."""
+        """A predicate true where a point is on the grid with no occupied cell within `radius` square, None for radius <= 0."""
         if radius <= 0:
             return None
         blocked = self.blocked_within(radius)
@@ -239,7 +239,7 @@ def plan_route(
     *,
     is_valid: IsValid | None,
 ) -> list[Point]:
-    """A free-space route from `start` to `goal`, `[start, goal]` when the line is clear; raises PathError when none exists."""
+    """A free-space route from `start` to `goal`, `[start, goal]` when the line is clear, PathError when none exists."""
     if line_of_sight(start, goal, is_valid):
         return [start, goal]
 
@@ -251,7 +251,7 @@ def plan_route(
             raise PathError(f"robot {label} ({pt[0]:.2f}, {pt[1]:.2f}) is outside the occupancy grid")
         free_cell = planner.nearest_free(cell)
         if free_cell is None:
-            raise PathError(f"no free cell within {_ENDPOINT_SEARCH_CELLS} cells of the robot's {label} ({pt[0]:.2f}, {pt[1]:.2f}); it is walled in, not merely forbidden")
+            raise PathError(f"no free cell within {_ENDPOINT_SEARCH_CELLS} cells of the robot's {label} ({pt[0]:.2f}, {pt[1]:.2f}): it is walled in, not merely forbidden")
         endpoints.append(free_cell)
 
     cells = _astar(planner, endpoints[0], endpoints[1])

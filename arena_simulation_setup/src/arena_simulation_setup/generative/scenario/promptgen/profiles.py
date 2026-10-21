@@ -13,10 +13,9 @@ from ..populate import KINEMATICS, MODELS
 
 TIER_NAMES = ("low", "mid", "high")
 
-# `speed` scales by the profile's nominal; the rest are absolute
+# `speed` scales by the profile's nominal, the rest are absolute
 TIERS: dict[str, tuple[float, float, float]] = {
     "speed": (0.6, 1.1, 1.7),
-    # the engine clamps `speed` to `max_velocity`
     "max_speed": (1.5, 1.8, 2.6),
     "vision_range": (2.0, 5.0, 8.0),
     "vision_fov": (90.0, 180.0, 270.0),
@@ -42,7 +41,7 @@ PATHS: dict[str, tuple[str, ...]] = {
 }
 
 BT_ONLY = frozenset({"need_decay", "duration"})
-# a running behavior tree holds these from a sequence `tune:`; the rest need a respawn
+# a running behavior tree holds these from a sequence `tune:`, the rest need a respawn
 TUNABLE = frozenset({"speed", "max_speed", "vision_range", "vision_fov", "repulsion", "repulsion_range", "reaction"})
 
 ADULT_SPEED = KINEMATICS["adult"][0]
@@ -154,13 +153,13 @@ def is_behavior_tree(raw: Mapping[str, Any]) -> bool:
 
 
 def derive(raw: Mapping[str, Any], params: Mapping[str, str], *, name: str, prof: Profile | None = None) -> dict[str, Any]:
-    """`raw` with every tuned parameter pinned to its tier; a behavior-tree-only parameter on a plain type raises."""
+    """`raw` with every tuned parameter pinned to its tier, raising on a behavior-tree-only parameter of a plain type."""
     doc = copy.deepcopy(dict(raw))
     doc["name"] = name
     for param, tier in params.items():
         value = tier_value(param, tier, prof=prof)
         if param in BT_ONLY and not is_behavior_tree(doc):
-            raise ProfileError(f"{param} needs a behavior-tree type; {doc.get('extends') or doc.get('name')!r} is not one")
+            raise ProfileError(f"{param} needs a behavior-tree type, {doc.get('extends') or doc.get('name')!r} is not one")
         written = _set_path(doc, PATHS[param], point_mass(value))
         if written == 0:
             raise ProfileError(f"{param}: nothing at {'.'.join(PATHS[param])} on {doc.get('name')!r}")

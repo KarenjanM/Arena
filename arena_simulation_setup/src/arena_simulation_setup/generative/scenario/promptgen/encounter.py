@@ -1,4 +1,4 @@
-"""Ego-relative spawn geometry: where and when an injected pedestrian must start to meet the robot on its planned route, solved offline."""
+"""Ego-relative spawn geometry: where an injected pedestrian starts to meet the robot on its planned route, solved offline."""
 
 from __future__ import annotations
 
@@ -156,7 +156,7 @@ def solve_encounter(
     spawn_valid: IsValid | None = None,
     max_lead_in: float | None = None,
 ) -> Encounter:
-    """A pedestrian meeting the robot at `encounter_at` of the route from `approach_angle` (180 head-on, 90 from its right); raises GeometryError when none fits."""
+    """A pedestrian meeting the robot at `encounter_at` of the route from `approach_angle` (180 head-on), else GeometryError."""
     if robot_speed <= 0:
         raise GeometryError(f"robot_speed must be positive, got {robot_speed}")
     if ped_speed <= 0:
@@ -171,7 +171,7 @@ def solve_encounter(
     robot_start, robot_goal = route[0], route[-1]
     leg_length = route_length(route)
     if leg_length < 1e-9:
-        raise GeometryError("robot start and goal coincide; there is no route to intercept")
+        raise GeometryError("robot start and goal coincide, there is no route to intercept")
 
     attempts = 0
     reasons: list[str] = []
@@ -185,7 +185,7 @@ def solve_encounter(
         if max_lead_in is not None and travel > 1e-6:
             travel = min(travel, max_lead_in)
         if travel <= 1e-6:
-            raise GeometryError(f"co_arrival_offset={co_arrival_offset:g}s cancels the pedestrian's approach (it would have to start at or past the encounter point, {travel:.2f} m away); the offset must exceed -{t_enc:.2f}s at encounter_at={enc_at:g}")
+            raise GeometryError(f"co_arrival_offset={co_arrival_offset:g}s cancels the pedestrian's approach (it would have to start at or past the encounter point, {travel:.2f} m away), the offset must exceed -{t_enc:.2f}s at encounter_at={enc_at:g}")
 
         direction = rotate(heading, angle)
         spawn = _along(encounter, direction, -travel)
@@ -221,7 +221,7 @@ def solve_encounter(
             retries=attempts - 1,
         )
 
-    detail = "; ".join(reasons[:3])
+    detail = ". ".join(reasons[:3])
     leg = f"({robot_start[0]:.2f},{robot_start[1]:.2f})->({robot_goal[0]:.2f},{robot_goal[1]:.2f}) [{leg_length:.2f} m]"
 
     margin = min(min_robot_clearance, 0.4 * leg_length)

@@ -80,13 +80,12 @@ def walk_route(agent: Mapping[str, Any], world: WorldContext, *, seed: int) -> l
     elif mode == "reverse":
         stops = [*stops, *stops[-2:0:-1]]
     elif mode == "repeat" and len(stops) == 1 and walks_from(agent):
-        # HumanSim stops a one-waypoint walker at its waypoint
         stops = [stops[0], agent["pose"]]
     return [world.zone_sample(s, rng) if isinstance(s, str) else (float(s[0]), float(s[1])) for s in stops]
 
 
 def walks_from(agent: Mapping[str, Any]) -> bool:
-    """Whether a plain walker's waypoints take it away from its spawn; a zone counts when it is not the spawn zone."""
+    """Whether a plain walker's waypoints take it away from its spawn, a zone counting when it is not the spawn zone."""
     start = agent.get("pose")
     for stop in agent.get("waypoints") or []:
         if isinstance(stop, str) or isinstance(start, str):

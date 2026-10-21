@@ -20,7 +20,7 @@ def system_prompt(step: str) -> str:
 
 
 def ask(step: str, system: str, user: str, record: Record, parse: Callable[[dict[str, Any]], T], *, cache_dir: Path | None, model: str | None, oracle: Oracle | None = None) -> T:
-    """`parse` of the answer to `user`, asked again once with the rejection, each prompt and answer hash in `record.provenance[step]`."""
+    """`parse` of the answer to `user`, asked once more with the rejection, the hashes logged in `record.provenance[step]`."""
     complaint = ""
     kind: FailureKind = "schema"
     for attempt in range(2):

@@ -9,7 +9,7 @@ from arena_simulation_setup.shared.pathing import OccupancyGrid, PathError, iter
 
 
 def _grid(blocked: np.ndarray) -> OccupancyGrid:
-    # grids below are written with row r at y = r; a grid's row 0 is its top edge
+    # grids below are written with row r at y = r, a grid's row 0 is its top edge
     return OccupancyGrid(occupied=np.flipud(blocked).copy(), res=1.0, ox=0.0, oy=0.0)
 
 
