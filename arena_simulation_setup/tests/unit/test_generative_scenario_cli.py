@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from arena_simulation_setup.generative.scenario.cli import _override_robot, _parser, main
+from arena_simulation_setup.generative.scenario.cli import _grid_loader, _override_robot, _parser, _route_reachable, _world_parts, main
 
 SHIPPED = Path(__file__).resolve().parents[2] / "worlds"
 
@@ -243,3 +243,26 @@ def test_a_cache_entry_is_written_whole_or_not_at_all(tmp_path: Path) -> None:
     assert [p.name for p in tmp_path.iterdir()] == ["k.json"]
     answer = _read_cached(path, "m")
     assert answer is not None and answer.text == "{}" and answer.cached
+
+
+def _sealed_rooms(tmp_path: Path, n: int = 4) -> Path:
+    zones = "\n".join(f"  - {{name: room_{i}, polygon: [[{10 * i}.0, 0.0], [{10 * i + 4}.0, 0.0], [{10 * i + 4}.0, 4.0], [{10 * i}.0, 4.0]]}}" for i in range(n))
+    walls = "\n".join(f"  - {{path: [[{10 * i}.0, 0.0], [{10 * i + 4}.0, 0.0], [{10 * i + 4}.0, 4.0], [{10 * i}.0, 4.0], [{10 * i}.0, 0.0]]}}" for i in range(n))
+    root = tmp_path / "sealed" / "rooms"
+    root.mkdir(parents=True)
+    (root / "world.yaml").write_text(f"format: arena-world/2\nlevels:\n- id: '0'\n  zones:\n{zones}\n  walls:\n{walls}\n")
+    return root
+
+
+def test_the_route_checks_of_a_world_share_one_grid(tmp_path: Path) -> None:
+    root = _sealed_rooms(tmp_path)
+    grid = _grid_loader(root)
+    zones = [{"name": f"room_{i}", "corners": [{"x": 10 * i + dx, "y": dy} for dx, dy in ((0, 0), (4, 0), (4, 4), (0, 4))]} for i in range(4)]
+    assert [_route_reachable(grid, zones, {"start": f"room_{i}", "goal": f"room_{j}"}) for i in range(4) for j in range(i + 1, 4)] == [False] * 6
+    assert _route_reachable(grid, zones, {"start": [1.0, 2.0, 0.0], "goal": [3.0, 2.0]})
+    assert grid.cache_info().misses == 1
+
+
+def test_without_a_reachable_pair_the_farthest_zones_are_the_endpoints(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _, robot = _world_parts(_sealed_rooms(tmp_path))
+    assert robot == {"start": "room_0", "goal": "room_3"}

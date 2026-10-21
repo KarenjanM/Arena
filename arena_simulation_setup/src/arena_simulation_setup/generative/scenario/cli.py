@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import itertools
 import math
 import os
@@ -16,7 +17,7 @@ import yaml
 
 from .formats import first_level, is_world, levels, read_scenario, world_roles
 from .materialize import WouldOverwrite, prune_generated, write_base
-from .occupancy import level_grid, world_statics
+from .occupancy import level_grid, load_world, world_statics
 from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points
 from .populate import build as build_base
 from .promptgen import prompts as P
@@ -109,17 +110,33 @@ def default_suites_dir() -> Path:
     return out
 
 
-def _route_reachable(root: Path, zones: list[dict[str, Any]], robot: dict[str, Any]) -> bool:
+def _grid_loader(root: Path) -> Callable[[], Grid | None]:
+    """The world's planning grid with its furniture stamped, built on the first call and kept; None when it cannot be built."""
+
+    @functools.cache
+    def grid() -> Grid | None:
+        try:
+            world = load_world(root)
+            loaded = level_grid(root, world_statics(root, world), world)
+        except Exception:
+            return None
+        if loaded is None:
+            return None
+        occupied, res, ox, oy = loaded
+        return Grid(occupied=occupied, res=res, ox=ox, oy=oy)
+
+    return grid
+
+
+def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]], robot: dict[str, Any]) -> bool:
     """Whether the runtime's planner finds a route along the robot's legs, from endpoints snapped clear of walls and furniture."""
     try:
         pts = route_points(robot, zones)
-        loaded = level_grid(root, world_statics(root)) if len(pts) >= 2 else None
-        if loaded is None:
+        held = grid() if len(pts) >= 2 else None
+        if held is None:
             return True
-        occupied, res, ox, oy = loaded
-        grid = Grid(occupied=occupied, res=res, ox=ox, oy=oy)
         for a, b in itertools.pairwise(pts):
-            _plan(grid, _endpoint(grid, a), _endpoint(grid, b))
+            _plan(held, _endpoint(held, a), _endpoint(held, b))
     except WorldError:
         return False
     except Exception:  # a hint only: populate and promptgen validate the route again
@@ -134,12 +151,13 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if doc is None:
         raise FileNotFoundError(f"{world}: no world.yaml")
     zones = doc.get("zones") or []
+    grid = _grid_loader(root)
 
     for cand in sorted((root / "scenarios").glob("*/scenario.yaml")):
         robots = read_scenario(cand).get("robots") or []
         if robots and isinstance(robots[0], dict) and robots[0].get("start"):
             robot = dict(robots[0])
-            if _route_reachable(root, zones, robot):
+            if _route_reachable(grid, zones, robot):
                 return zones, robot
             # a scenario copied from another world carries that world's coordinates (acoustics_bend45_wide, 2026-08-30)
             print(f"  ! {world}: {cand.parent.name}'s robot route is not plannable on this map; ignoring it")
@@ -156,7 +174,7 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     # the farthest pair can sit in disconnected rooms (arena_arena_032, _009, _065, _006, _007, 2026-08-30)
     _, start, goal = pairs[0]
     for _d, a_name, b_name in pairs:
-        if _route_reachable(root, named, {"start": a_name, "goal": b_name}):
+        if _route_reachable(grid, named, {"start": a_name, "goal": b_name}):
             start, goal = a_name, b_name
             break
     print(f"  ! {world}: no scenario declares a robot; using the two most separated reachable zones as endpoints - start={start!r} goal={goal!r}")
