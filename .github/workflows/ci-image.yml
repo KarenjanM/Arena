@@ -1,0 +1,46 @@
+name: ci image
+
+on:
+  workflow_dispatch:
+    inputs:
+      missing_only:
+        description: Skip the build when this week's image exists
+        type: boolean
+        default: false
+
+concurrency: ci-image
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      current: ${{ steps.pick.outputs.current }}
+      build: ${{ !inputs.missing_only || steps.pick.outputs.image != steps.pick.outputs.current }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/ci
+      - id: pick
+        run: .github/ci/pick-image.sh
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: provision the image
+        run: docker run --name provision -v "$PWD:/src:ro" ros:jazzy /src/.github/ci/provision.sh /src
+      - name: publish the image
+        env:
+          IMAGE: ${{ needs.check.outputs.current }}
+          TOKEN: ${{ github.token }}
+        run: |
+          docker commit --change 'CMD ["bash"]' --change "LABEL org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" provision "$IMAGE"
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE"
