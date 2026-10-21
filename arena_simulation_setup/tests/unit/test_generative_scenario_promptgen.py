@@ -955,3 +955,13 @@ def test_a_release_on_a_bent_route_fires_its_designed_arc_before_the_encounter(t
     designed = world.fraction_of(encounter) * world.route_length - release
     assert world.zone_of(encounter) == "north_arm" and entered_at(world.route, encounter, release) < designed - 3.0
     assert radius == ROUTE_TRIGGER_M and entered_at(world.route, point, radius) == pytest.approx(designed, abs=0.2)
+
+
+def test_a_proximity_onset_without_a_point_measures_to_the_route_beside_the_crowd(toy) -> None:
+    worlds, doc, base, world = toy
+    crowd = {"robots": doc["robots"], "humans": [_one_stop("walker", [4.0, 7.0, 0.0], [6.0, 7.0, 0.0])]}
+    prompt = _prompt("Everybody here is rushing when the robot is right there.", ["B:intrinsic"], B={"case": "intrinsic", "select": {"amount": "all"}, "params": {"speed": "high"}, "when": {"robot_within": 1.5}})
+    result = generate(prompt, world=world, base_id="normal_a", base_doc=crowd, base_dir=base, oracle=True)
+    assert result.record.status == "ok", result.record.failures
+    radius, point = _within(result.timeline[0])
+    assert radius == 1.5 and point == pytest.approx((4.0, 4.0), abs=0.05) and world.route_clearance(point) < 0.05

@@ -289,7 +289,9 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
         return
     scope = [str(n) for n in effect["scope"]]
     placed = [p for a in doc["humans"] if str(a["name"]) in scope and (p := _position(a, world)) is not None]
-    trig = trigger(effect["when"], world, reference=_centroid(placed), origin=world.origin)
+    crowd = _centroid(placed)
+    reference = None if crowd is None else world.point_at(world.fraction_of(crowd))[0]
+    trig = trigger(effect["when"], world, reference=reference, origin=world.origin)
     if kind == "stimulus":
         out.timeline.append(_entry(trig, scope, str(effect["need"])))
         return
