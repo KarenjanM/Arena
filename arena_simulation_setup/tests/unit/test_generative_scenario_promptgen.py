@@ -965,3 +965,22 @@ def test_a_proximity_onset_without_a_point_measures_to_the_route_beside_the_crow
     assert result.record.status == "ok", result.record.failures
     radius, point = _within(result.timeline[0])
     assert radius == 1.5 and point == pytest.approx((4.0, 4.0), abs=0.05) and world.route_clearance(point) < 0.05
+
+
+def test_a_blocker_near_the_start_moves_until_its_trigger_does_not_hold_there(toy) -> None:
+    worlds, doc, base, world = toy
+    prompt = _prompt("A visitor stands still right in the robot's way as it sets off.", ["C:blocking"], C={"case": "blocking", "mode": "stand", "route_fraction": 0.1, "duration": 6})
+    result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert result.record.status == "ok", result.record.failures
+    radius, spot = _within(result.timeline[0])
+    assert 0.1 * world.route_length < STAND_TRIGGER_M and math.dist(world.start, spot) > radius
+
+
+def test_an_intercept_whose_release_holds_at_the_start_moves_along_the_route(toy) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.realize import holds_at_start
+
+    world = toy[3]
+    result = _approach(toy, profile="elder", speed="low", route_fraction=0.1)
+    assert result.record.status == "ok", result.record.failures
+    radius, point = _within(result.timeline[0])
+    assert not holds_at_start(world, point, radius) and world.fraction_of(_encounter(result)) > 0.1

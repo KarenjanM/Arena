@@ -13,7 +13,7 @@ from arena_simulation_setup.shared.pathing import Point, point_at_arc, route_len
 
 from ..zone_screen import RUNTIME_SAFE_DIST
 from .agents import STAND_STEP, WALK_PATIENCE_S, TypeFiles, agent_type_of
-from .encounter import GeometryError, encounter_fractions, solve_encounter
+from .encounter import Encounter, GeometryError, encounter_fractions, solve_encounter
 from .step_a import StepError, is_tree, set_type, walk_as_tree
 from .world import WorldContext, WorldError
 
@@ -27,6 +27,7 @@ STAND_TRIGGER_M = 3.0
 ROUTE_TRIGGER_M = 1.5
 MIN_RELEASE_S = 0.5
 TRIGGER_STEP_M = 0.05
+START_MARGIN_M = 0.25
 FOLLOW_STEP_M = 2.0
 ANGLE_SEARCH_DEG = 90.0
 LEAD_OUT_M = 3.0
@@ -107,6 +108,11 @@ def entered_at(route: Sequence[Point], pt: Point, radius: float) -> float | None
     return next((total * i / steps for i in range(steps + 1) if math.dist(point_at_arc(route, total * i / steps)[0], pt) <= radius), None)
 
 
+def holds_at_start(world: WorldContext, pt: Point, radius: float) -> bool:
+    """Whether `robot within radius of pt` already holds, give or take `START_MARGIN_M`, with the robot at its start."""
+    return math.dist(world.start, pt) <= radius + START_MARGIN_M
+
+
 def _go_to(pt: Point, *, theta: float = 0.0, duration: float | None = None) -> dict[str, Any]:
     step: dict[str, Any] = {"kind": "go_to", "target_pose": {"x": round(pt[0], 2), "y": round(pt[1], 2), "theta": round(theta, 3)}, "patience": {"mean": WALK_PATIENCE_S}}
     if duration is not None:
@@ -136,15 +142,15 @@ def _human(name: str, effect: Mapping[str, Any], ref: str, spawn: Point, yaw: fl
 def _stand(effect: Mapping[str, Any], name: str, world: WorldContext, files: TypeFiles) -> tuple[dict[str, Any], list[dict[str, Any]], str, Point]:
     route = world.route
     total = route_length(route)
+    duration = float(effect.get("duration") or 0.0)
     for fraction in encounter_fractions(float(effect["route_fraction"])):
         spot, heading = point_at_arc(route, fraction * total)
-        if world.valid(spot, radius=RUNTIME_SAFE_DIST, on_route=True) is None:
+        if world.valid(spot, radius=RUNTIME_SAFE_DIST, on_route=True) is None and not (duration > 0 and holds_at_start(world, spot, STAND_TRIGGER_M)):
             break
     else:
-        raise StepError(f"placement: {name} has no free point on the robot's route to stand on")
+        raise StepError(f"placement: {name} has no free point on the robot's route to stand on {STAND_TRIGGER_M:g} m past its start")
     release = point_at_arc(route, min(total, fraction * total + float(effect.get("lead_out", LEAD_OUT_M))))[0]
     ref = files.standing(str(effect["profile"]), name)
-    duration = float(effect.get("duration") or 0.0)
     entries: list[dict[str, Any]] = []
     if duration > 0:
         steps = {"hold": {"duration": {"mean": duration}, "patience": {"mean": duration + STAND_STEP["patience"]["mean"]}}, "release": _go_to(release, theta=_heading(spot, release)), "stay": dict(STAND_STEP)}
@@ -155,28 +161,48 @@ def _stand(effect: Mapping[str, Any], name: str, world: WorldContext, files: Typ
     return human, entries, note, spot
 
 
+def _solved(effect: Mapping[str, Any], name: str, world: WorldContext, *, robot_speed: float) -> tuple[Encounter, float, Point, float]:
+    """The encounter nearest the asked fraction whose release holds neither at the start nor early, with that release."""
+    speed = float(effect["speed"])
+    offset = float(effect.get("offset") or 0.0)
+    total = route_length(world.route)
+    why = f"{name} has no encounter on the route"
+    for fraction in encounter_fractions(float(effect["route_fraction"])):
+        try:
+            enc = solve_encounter(
+                world.route,
+                robot_speed=robot_speed,
+                ped_speed=speed,
+                approach_angle=float(effect.get("angle", 180.0)),
+                encounter_at=fraction,
+                co_arrival_offset=offset,
+                lead_out=float(effect.get("lead_out", LEAD_OUT_M)),
+                angle_search=ANGLE_SEARCH_DEG,
+                is_valid=world.grid.clear_of(RUNTIME_SAFE_DIST) if world.grid is not None else None,
+                spawn_valid=lambda pt: world.valid(pt, radius=RUNTIME_SAFE_DIST, on_route=True) is None,
+                max_lead_in=LEAD_IN_M,
+            )
+        except GeometryError as exc:
+            raise StepError(f"placement: {exc}") from None
+        release = robot_speed * max(math.dist(enc.spawn, enc.encounter) / speed - offset, MIN_RELEASE_S)
+        at = max(0.0, enc.encounter_at_achieved * total - release)
+        point, radius = release_point(world.route, at)
+        entered = entered_at(world.route, point, radius)
+        if holds_at_start(world, point, radius):
+            why = f"{name}'s release holds with the robot at its start"
+        elif entered is not None and entered < at - 0.5:
+            why = f"{name}'s release at {at:.1f} m along the route is within {radius:g} m of the route {at - entered:.1f} m earlier"
+        else:
+            return enc, release, point, radius
+    raise StepError(f"placement: {why}")
+
+
 def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files: TypeFiles, *, robot_speed: float) -> tuple[dict[str, Any], list[dict[str, Any]], str, Point]:
     """The pedestrian `name`, the timeline entry that releases it, a note, and the designed encounter point."""
     if effect.get("after") == "stand":
         return _stand(effect, name, world, files)
     speed = float(effect["speed"])
-    offset = float(effect.get("offset") or 0.0)
-    try:
-        enc = solve_encounter(
-            world.route,
-            robot_speed=robot_speed,
-            ped_speed=speed,
-            approach_angle=float(effect.get("angle", 180.0)),
-            encounter_at=float(effect["route_fraction"]),
-            co_arrival_offset=offset,
-            lead_out=float(effect.get("lead_out", LEAD_OUT_M)),
-            angle_search=ANGLE_SEARCH_DEG,
-            is_valid=world.grid.clear_of(RUNTIME_SAFE_DIST) if world.grid is not None else None,
-            spawn_valid=lambda pt: world.valid(pt, radius=RUNTIME_SAFE_DIST, on_route=True) is None,
-            max_lead_in=LEAD_IN_M,
-        )
-    except GeometryError as exc:
-        raise StepError(f"placement: {exc}") from None
+    enc, release, point, radius = _solved(effect, name, world, robot_speed=robot_speed)
     total = route_length(world.route)
     _at, robot_heading = point_at_arc(world.route, enc.encounter_at_achieved * total)
     facing = math.atan2(-robot_heading[1], -robot_heading[0])
@@ -203,17 +229,10 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
         steps = {"cross": leave}
     steps["stay"] = dict(STAND_STEP)
     ref = files.switching(files.standing(str(effect["profile"]), name), need=GO, to="walk", steps=steps)
-    walk = math.dist(enc.spawn, enc.encounter) / speed
-    release = robot_speed * max(walk - offset, MIN_RELEASE_S)
-    at = max(0.0, enc.encounter_at_achieved * total - release)
-    point, radius = release_point(world.route, at)
-    entered = entered_at(world.route, point, radius)
-    if entered is not None and entered < at - 0.5:
-        raise StepError(f"placement: {name}'s release at {at:.1f} m along the route is within {radius:g} m of the route {at - entered:.1f} m earlier")
     human = _human(name, effect, ref, enc.spawn, _heading(enc.spawn, enc.encounter))
     note = (
         f"{effect.get('label')}: {name} waits at ({enc.spawn[0]:.1f}, {enc.spawn[1]:.1f}) and walks when the robot has {release:.1f} m of its route left to the encounter ({enc.encounter[0]:.1f}, {enc.encounter[1]:.1f}), "
-        f"angle {enc.angle_achieved:g} (asked {enc.angle_requested:g}), fraction {enc.encounter_at_achieved:g} (asked {enc.encounter_at_requested:g}), then {after}"
+        f"angle {enc.angle_achieved:g} (asked {enc.angle_requested:g}), fraction {enc.encounter_at_achieved:g} (asked {float(effect['route_fraction']):g}), then {after}"
     )
     return human, [_entry({"when": within(radius, point, world.origin)}, [name], GO)], note, enc.encounter
 

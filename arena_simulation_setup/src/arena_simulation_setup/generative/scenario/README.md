@@ -102,7 +102,7 @@ A plain walker a change reaches first becomes its own walking tree (`types/<type
 
 ## Interceptions
 
-An interception is solved offline against the planned route ([`promptgen/encounter.py`](promptgen/encounter.py)): the encounter point at the requested route fraction, the spawn at most `LEAD_IN_M` = 4 m before it along the requested angle (180 head-on, 90 from the robot's right, 0 overtaking), and a lead-out of 3 m past it. When the walk or the spawn is blocked the solver tries other angles within 90 degrees, shorter lead-outs and nearby encounter fractions, and the achieved values are noted. The pedestrian stands at its spawn and walks on `go`, which the timeline raises when the robot has `speed * (walk time - offset)` meters of its planned route left to the encounter point, at least half a second out: the trigger is `robot within 1.5 of` the route point whose 1.5 m circle the robot enters there, and a release whose circle an earlier stretch of the route already enters is a placement failure.
+An interception is solved offline against the planned route ([`promptgen/encounter.py`](promptgen/encounter.py)): the encounter point at the requested route fraction, the spawn at most `LEAD_IN_M` = 4 m before it along the requested angle (180 head-on, 90 from the robot's right, 0 overtaking), and a lead-out of 3 m past it. When the walk or the spawn is blocked the solver tries other angles within 90 degrees, shorter lead-outs and nearby encounter fractions, and the achieved values are noted. The pedestrian stands at its spawn and walks on `go`, which the timeline raises when the robot has `speed * (walk time - offset)` meters of its planned route left to the encounter point, at least half a second out: the trigger is `robot within 1.5 of` the route point whose 1.5 m circle the robot enters there, and the encounter moves along the route, as for a blocked walk, while its release circle holds with the robot at its start or is entered on an earlier stretch of the route.
 
 | `after` | Walk |
 |---|---|
@@ -110,7 +110,7 @@ An interception is solved offline against the planned route ([`promptgen/encount
 | `stop_facing` | to the encounter, facing the robot for `duration`, then the lead-out |
 | `follow` | to the encounter, then along the robot's route for `duration` at its own speed, then the lead-out |
 | `veer` | to the encounter, then to a point of the `veer_to` zone |
-| `stand` | stands on the route, steps on `duration` s after the robot comes within 3 m |
+| `stand` | stands on the route more than 3 m past the robot's start, steps on `duration` s after the robot comes within 3 m |
 
 ## Grid and route
 
