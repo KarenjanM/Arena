@@ -1000,7 +1000,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         pass
 
     async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
-        """`agent` is an engine agent id, or a spawned agent's name or ``sim_path``; True when the engine took it."""
+        """True when the engine took the stimulus for `agent`, an engine agent id or a spawned agent's name or ``sim_path``."""
         return False
 
     def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:

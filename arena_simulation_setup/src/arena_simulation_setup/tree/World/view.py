@@ -324,7 +324,7 @@ class WorldView(PathView):
 
 @contextlib.contextmanager
 def world_assets(view: WorldView, world: World | None = None) -> Iterator[None]:
-    """Point world-local asset resolution at `view` and the worlds it links levels from (`world` when already loaded) for the block, then restore the previous paths."""
+    """Point world-local asset resolution at `view` and its linked worlds for the block, then restore the previous paths."""
     sources = list((world if world is not None else view.load(validate=False)).sources)
     previous = DynamicPaths.WORLD.path, list(DynamicPaths.LINKED.paths)
     point_world_assets(view.path, sources)
