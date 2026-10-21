@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from arena_simulation_setup.tree.World.model import Level, World
 
 SCENARIO_ORDER = ("objects", "humans", "sounds", "lights", "robots", "regions", "timeline", "conditions")
+PROVENANCE = "provenance.yaml"
 
 
 def read_scenario(path: Path) -> dict[str, Any]:

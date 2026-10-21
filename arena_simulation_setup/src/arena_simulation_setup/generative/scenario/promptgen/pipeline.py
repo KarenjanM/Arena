@@ -13,7 +13,7 @@ from typing import Any
 import attrs
 import yaml
 
-from ..formats import scenario_text
+from ..formats import PROVENANCE, scenario_text
 from ..materialize import GENERATED_MARKER, WouldOverwrite, is_generated
 from ..route import ROBOT_SPEED_MPS
 from .agents import TYPES_DIR, TypeFiles, agent_type_of
@@ -34,7 +34,6 @@ from .world import ROBOT_CLEAR, WorldContext, WorldError
 #: Type A cases that run on an empty base, the others need a crowd.
 A_ON_EMPTY = frozenset({"busy"})
 GENERATOR_VERSION = "promptgen-2"
-PROVENANCE = "provenance.yaml"
 _STEP_OF = {"A": "a", "B": "b", "C": "c", "D": "d"}
 
 
