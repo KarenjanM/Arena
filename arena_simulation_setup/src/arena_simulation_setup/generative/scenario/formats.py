@@ -72,24 +72,33 @@ def check_scenario(scenario: Mapping[str, Any], world_root: Path) -> None:
     parse_scenario(dict(scenario), world.compact_world(origins).zone_converter(np.random.default_rng(0)))
 
 
-def write_scenario(out: Path, doc: Mapping[str, Any], *, world_root: Path, header: str = "") -> Path:
-    """Write `doc` as `out/scenario.yaml` in format 2, refusing a key format 2 does not know or a scenario the model rejects."""
+def scenario_text(doc: Mapping[str, Any], *, world_root: Path, types_dir: Path, header: str = "") -> str:
+    """`doc` as format 2 scenario text, scenario-local types resolved against `types_dir`; raises on a key format 2 does not know or a scenario the model rejects."""
     from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
     from arena_simulation_setup.tree.World.write import to_yaml
 
     unknown = sorted(set(doc) - set(SCENARIO_ORDER))
     if unknown:
-        raise ValueError(f"{out}: format 2 does not know {unknown}")
+        raise ValueError(f"format 2 does not know {unknown}")
     work = dict(doc)
     if isinstance(work.get("humans"), list):
-        work["humans"] = _with_radius(work["humans"], out)
+        work["humans"] = _with_radius(work["humans"], types_dir)
     scenario = {"format": SCENARIO_FORMAT, **{key: work[key] for key in SCENARIO_ORDER if work.get(key)}}
     try:
         check_scenario(scenario, world_root)
     except (ValueError, TypeError) as exc:
+        raise ValueError(str(exc)) from exc
+    return header + to_yaml(scenario)
+
+
+def write_scenario(out: Path, doc: Mapping[str, Any], *, world_root: Path, header: str = "") -> Path:
+    """Write `doc` as `out/scenario.yaml` in format 2, refusing a key format 2 does not know or a scenario the model rejects."""
+    try:
+        text = scenario_text(doc, world_root=world_root, types_dir=out, header=header)
+    except ValueError as exc:
         raise ValueError(f"{out}: {exc}") from exc
     out.mkdir(parents=True, exist_ok=True)
-    (out / "scenario.yaml").write_text(header + to_yaml(scenario))
+    (out / "scenario.yaml").write_text(text)
     return out / "scenario.yaml"
 
 

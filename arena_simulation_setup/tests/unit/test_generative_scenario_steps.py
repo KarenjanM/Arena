@@ -243,3 +243,15 @@ def test_an_erratic_route_over_an_owned_crowd_adds_wanderers(tmp_path: Path) -> 
 
     assert result.record.status == "ok", result.record.failures
     assert result.record.owned["B"] and all(n.startswith("wander_") for n in result.record.owned["B"])
+
+
+def test_a_scenario_the_model_rejects_leaves_no_type_files(tmp_path: Path) -> None:
+    world, doc, base = _toy(tmp_path)
+    result = _run(world, doc, base, "The lights go out and everyone slows down.", ["A:blackout"])
+    assert result.record.status == "ok" and result.files.docs, result.record.failures
+    result.doc["humans"][0]["pose"] = "kitchen"
+
+    with pytest.raises(ValueError, match="kitchen"):
+        write_result(result, world.root)
+
+    assert not (world.root / "scenarios" / result.scenario_id).exists()

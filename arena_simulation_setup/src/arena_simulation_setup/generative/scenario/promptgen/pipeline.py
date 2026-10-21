@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 import attrs
 import yaml
 
-from ..formats import write_scenario
+from ..formats import scenario_text
 from ..materialize import GENERATED_MARKER
 from ..route import ROBOT_SPEED_MPS
 from .agents import TypeFiles, agent_type_of
@@ -309,9 +310,16 @@ def write_result(result: Result, world_root: Path, *, keep_partial: bool = True)
         ref = agent_type_of(agent)
         if ref.startswith("./") and ref not in result.files.docs:
             result.files.base_doc(ref)  # a scenario-local type no step derived from is still copied beside the scenario
-    result.files.write(out)
     doc = {**result.doc, **({"timeline": result.timeline} if result.timeline else {})}
-    write_scenario(out, doc, world_root=Path(world_root), header=_header(result))
+    with tempfile.TemporaryDirectory() as stage:
+        result.files.write(Path(stage))
+        try:
+            text = scenario_text(doc, world_root=Path(world_root), types_dir=Path(stage), header=_header(result))
+        except ValueError as exc:
+            raise ValueError(f"{out}: {exc}") from exc
+    result.files.write(out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "scenario.yaml").write_text(text)
     (out / PROVENANCE).write_text(_header(result) + yaml.safe_dump(result.provenance, sort_keys=False, default_flow_style=None, allow_unicode=False))
     (out / "record.json").write_text(json.dumps(result.record.as_dict(), indent=1, sort_keys=True, default=str))
     result.written = out
