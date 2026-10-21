@@ -37,10 +37,15 @@ def world_root(worlds: Path | None, world: str) -> Path:
     """`worlds/<world>` under an explicit root, else wherever arena_simulation_setup resolves the name, as the runtime does
     (`ARENA_WORLD_PATH` first, then the installed worlds)."""
     if worlds is not None:
+        if not (worlds / world).is_dir():
+            raise FileNotFoundError(f"no world {world!r} under {worlds}. Worlds there: {_world_names(worlds)}")
         return worlds / world
     from arena_simulation_setup.tree.World import WorldIdentifier
 
-    return Path(WorldIdentifier(world).resolve_sync().path)
+    try:
+        return Path(WorldIdentifier(world).resolve_sync().path)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"no world {world!r} where the runtime resolves worlds. Worlds in the tree: {_world_names(None)}, or pass --worlds DIR") from None
 
 
 def _all_worlds(worlds: Path | None) -> list[str]:
@@ -49,6 +54,20 @@ def _all_worlds(worlds: Path | None) -> list[str]:
     root = worlds if worlds is not None else ASS_DIR / "worlds"
     # a dotted directory (`.generated`) is scratch beside the worlds, not a world
     return sorted(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".") and is_world(p))
+
+
+def _world_names(worlds: Path | None) -> str:
+    try:
+        return ", ".join(_all_worlds(worlds)) or "none"
+    except OSError:
+        return f"none, {worlds} is no directory"
+
+
+def _bare(args: argparse.Namespace) -> int:
+    """A verb run without a world: its help and the worlds it can take."""
+    print(args.help_text())
+    print(f"worlds{f' under {args.worlds}' if args.worlds is not None else ''}: {_world_names(args.worlds)}")
+    return 2
 
 
 def default_suites_dir() -> Path:
@@ -135,6 +154,8 @@ def _all_zones(root: Path) -> list[dict[str, Any]]:
 
 
 def _cmd_zones(args: argparse.Namespace) -> int:
+    if args.world is None:
+        return _bare(args)
     root = world_root(args.worlds, args.world)
     zones, _ = _world_parts(root)
     overrides = world_roles(root)
@@ -228,6 +249,10 @@ def _override_robot(robot: dict[str, Any], zones: list[dict[str, Any]], *, start
 
 
 def _cmd_populate(args: argparse.Namespace) -> int:
+    if args.world is None:
+        return _bare(args)
+    if args.prune and not args.write:
+        raise ValueError("--prune removes stale generated bases, which only a writing run does: add --write")
     root = world_root(args.worlds, args.world)
     zones, robot = _world_parts(root)
     if args.robot_start is not None or args.robot_goal is not None:
@@ -275,7 +300,7 @@ def _cmd_populate(args: argparse.Namespace) -> int:
         for gone in prune_generated(root, keep):
             print(f"  - pruned stale generated base {gone}")
     if not args.write:
-        print("(dry run - pass --write to materialise)")
+        print("(dry run - pass --write to write them)")
     return 0
 
 
@@ -283,15 +308,24 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
     from .promptgen import RobotPlan, generate, write_result
     from .promptgen.world import WorldContext
 
+    if args.world is None:
+        return _bare(args)
     root = world_root(args.worlds, args.world)
     prompts = P.load_sets(args.world, extra=[Path(p) for p in args.prompts or []])
     if args.ids:
-        wanted = {i.strip() for i in args.ids.split(",") if i.strip()}
+        wanted = [i.strip() for i in args.ids.split(",") if i.strip()]
+        if unknown := [i for i in wanted if i not in {p.id for p in prompts}]:
+            raise ValueError(f"--ids {', '.join(unknown)}: no such prompt in {P.shipped_dir()} or the --prompts files. Known ids: {', '.join(p.id for p in prompts) or 'none'}")
         prompts = [p for p in prompts if p.id in wanted]
     if not prompts:
-        print(f"no prompts: none of the --ids in {P.shipped_dir()} or the --prompts files")
+        print(f"no prompts: {P.shipped_dir()} and the --prompts files hold none for {args.world}")
         return 1
-    bases = [b.strip() for b in args.bases.split(",") if b.strip()] if args.bases else list(PROFILES)
+    bases = list(PROFILES)
+    if args.bases:
+        bases = [b.strip() for b in args.bases.split(",") if b.strip()]
+        have = sorted(d.parent.name for d in (root / "scenarios").glob("*/scenario.yaml") if "__" not in d.parent.name)
+        if unknown := [b for b in bases if b not in have]:
+            raise ValueError(f"--bases {', '.join(unknown)}: no such base scenario in {args.world}. Its bases: {', '.join(have) or 'none, run `populate --write` first'}")
     cache = Path(args.cache) if args.cache else None
     robot = RobotPlan(speed=args.robot_speed, traversals=args.traversals, hold=args.hold, tolerance=args.tolerance)
     seen: dict[str, str] = {}
@@ -354,6 +388,8 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
 def _cmd_suite(args: argparse.Namespace) -> int:
     from .suite import build, scenarios
 
+    if not args.world:
+        return _bare(args)
     worlds = {world: scenarios(world_root(args.worlds, world), args.match) for world in args.world}
     for world, names in worlds.items():
         print(f"  {world:28s} {len(names):4d} scenario(s)")
@@ -372,7 +408,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="generate_scenario",
         description=(
             "Generate scenarios for an Arena world. Verbs: zones (print each zone's role), classify (ask a model for the roles no rule covers), "
-            "populate (write the four base scenarios), promptgen (realise prompts on the bases as timeline scenarios), suite (write a benchmark suite over them). "
+            "populate (write the four base scenarios), promptgen (realize prompts on the bases as timeline scenarios), suite (write a benchmark suite over them). "
             "Writing verbs are dry runs without --write; `generate_scenario <verb> --help` lists a verb's options."
         ),
     )
@@ -381,11 +417,11 @@ def _parser() -> argparse.ArgumentParser:
     def verb(name: str, fn: Callable[[argparse.Namespace], int], text: str) -> argparse.ArgumentParser:
         p = verbs.add_parser(name, help=text, description=text)
         p.add_argument("--worlds", type=Path, default=None, help="worlds root (default: each world where arena_simulation_setup resolves its name)")
-        p.set_defaults(fn=fn)
+        p.set_defaults(fn=fn, help_text=p.format_help)
         return p
 
     p = verb("zones", _cmd_zones, "classify a world's zones into roles (work, break, transit, private, unknown)")
-    p.add_argument("world")
+    p.add_argument("world", nargs="?", help="the world whose zones to print; bare, the verb lists the worlds")
 
     p = verb("classify", _cmd_classify, "ask a model for the zone roles no rule or KG fact covers and write them as has_purpose facts into each world's kg.yaml")
     p.add_argument("world", nargs="*", help="worlds to classify; default every world")
@@ -393,33 +429,33 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--write", action="store_true", help="call the model and write what it returns into the world's kg.yaml")
 
     p = verb("populate", _cmd_populate, "write the four base scenarios (normal, break, night, empty) for a world")
-    p.add_argument("world")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--write", action="store_true")
+    p.add_argument("world", nargs="?", help="the world to populate; bare, the verb lists the worlds")
+    p.add_argument("--seed", type=int, default=0, help="seed of the crowd draws; the same world and seed write the same bases (default 0)")
+    p.add_argument("--write", action="store_true", help="write the bases under the world's scenarios/ (default: a dry run that prints them)")
     p.add_argument("--robot-start", default=None, help="robot start: a zone name of its level or 'x,y[,yaw]' (default: the route of the world's first scenario with a robot)")
     p.add_argument("--robot-goal", default=None, help="robot goal: a zone name of its level or 'x,y[,yaw]'; replaces the route's legs with the single leg to it")
-    p.add_argument("--prune", action="store_true", help="remove generated bases this run did not write (never hand-authored ones)")
+    p.add_argument("--prune", action="store_true", help="with --write, remove generated bases this run did not write (never hand-authored ones)")
     p.add_argument("--force", action="store_true", help="replace scenarios this tool did not generate (they may be hand-authored)")
 
-    p = verb("promptgen", _cmd_promptgen, "realise prompt x base scenarios for a world as scenarios with a timeline")
-    p.add_argument("world")
-    p.add_argument("--bases", default="", help="comma-separated base ids (default: every base)")
-    p.add_argument("--ids", default="", help="comma-separated prompt ids to restrict to")
-    p.add_argument("--prompts", nargs="*", help="extra prompt files")
-    p.add_argument("--seed", type=int, default=0)
+    p = verb("promptgen", _cmd_promptgen, "realize prompt x base scenarios for a world as scenarios with a timeline")
+    p.add_argument("world", nargs="?", help="the world whose bases to realize the prompts on; bare, the verb lists the worlds")
+    p.add_argument("--bases", default="", help="comma-separated base scenario ids of the world (default: normal, break, night, empty)")
+    p.add_argument("--ids", default="", help="comma-separated prompt ids to restrict to (default: every shipped prompt for the world and every --prompts one)")
+    p.add_argument("--prompts", nargs="*", help="extra prompt files, YAML lists in the shipped prompts/*.yaml format")
+    p.add_argument("--seed", type=int, default=0, help="seed of every random draw; the same seed writes the same cases (default 0)")
     p.add_argument("--cache", default=None, help="model answer cache directory")
-    p.add_argument("--model", default=None)
+    p.add_argument("--model", default=None, help=f"override the model of every step (default {DEFAULT_MODEL}, step A $ARENA_PROMPT_LLM_A when set)")
     p.add_argument("--oracle", action="store_true", help="use each prompt's own template slots instead of a model")
     p.add_argument("--robot-speed", type=float, default=ROBOT_SPEED_MPS, help=f"m/s the robot is designed to drive at, which times every interception release (default {ROBOT_SPEED_MPS})")
     p.add_argument("--traversals", type=int, default=1, help="round trips through the population: N traversals are 2N-1 legs (default 1, the single start->goal leg)")
     p.add_argument("--hold", type=float, default=0.0, help="seconds the robot holds at its start before the first leg (default 0, no hold phase)")
-    p.add_argument("--tolerance", type=float, default=0.0, help="goal tolerance radius of every leg in metres (default 0: the runtime's goal tolerance)")
+    p.add_argument("--tolerance", type=float, default=0.0, help="goal tolerance radius of every leg in meters (default 0: the runtime's goal tolerance)")
     p.add_argument("--strict", action="store_true", help="do not write partial scenarios")
-    p.add_argument("--verbose", "-v", action="store_true")
-    p.add_argument("--write", action="store_true")
+    p.add_argument("--verbose", "-v", action="store_true", help="print each case's warnings and failures, and the traceback of a crashed prompt")
+    p.add_argument("--write", action="store_true", help="write each ok or partial case under the world's scenarios/ (default: a dry run)")
 
     p = verb("suite", _cmd_suite, "write a benchmark suite with one scenario stage per (world, scenario)")
-    p.add_argument("world", nargs="+")
+    p.add_argument("world", nargs="*", help="the worlds whose scenarios become stages; bare, the verb lists the worlds")
     p.add_argument("--name", default="edge_case", help="suite name, the file stem under arena_evaluation's configs/benchmark/suites (default edge_case)")
     p.add_argument("--out", default=None, help="write here instead of arena_evaluation's configs/benchmark/suites/<name>.yaml")
     p.add_argument("--match", nargs="*", default=[], help="scenario globs (default: every scenario the generator wrote)")

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import shutil
 from pathlib import Path
 
 import pytest
 import yaml
-from arena_simulation_setup.generative.scenario.cli import _override_robot, main
+from arena_simulation_setup.generative.scenario.cli import _override_robot, _parser, main
 
 SHIPPED = Path(__file__).resolve().parents[2] / "worlds"
 
@@ -91,3 +92,41 @@ def test_promptgen_succeeds_when_a_case_is_realized(tmp_path: Path, capsys: pyte
     rc, out, err = _promptgen(worlds, capsys, "--bases", "normal", "--ids", "u_002")
     assert rc == 0, out + err
     assert "ok=1" in out or "partial=1" in out
+
+
+def test_every_verb_and_option_has_help() -> None:
+    verbs = next(a for a in _parser()._actions if isinstance(a, argparse._SubParsersAction))
+    missing = [f"{name} {action.dest}" for name, sub in verbs.choices.items() for action in sub._actions if not action.help]
+    assert missing == []
+
+
+@pytest.mark.parametrize("verb", ["zones", "populate", "promptgen", "suite"])
+def test_a_bare_verb_prints_its_help_and_the_worlds(tmp_path: Path, capsys: pytest.CaptureFixture[str], verb: str) -> None:
+    assert main([verb, "--worlds", str(_worlds(tmp_path))]) == 2
+    out = capsys.readouterr().out
+    assert f"usage: generate_scenario {verb}" in out
+    assert "sbend" in out
+
+
+def test_an_unknown_world_names_the_worlds(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["zones", "nope", "--worlds", str(_worlds(tmp_path))]) == 1
+    err = capsys.readouterr().err
+    assert "'nope'" in err and "sbend" in err
+
+
+def test_prune_without_write_says_to_add_write(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, _, err = _populate(tmp_path, capsys, "--prune")
+    assert rc == 1
+    assert "add --write" in err
+
+
+def test_unknown_bases_and_ids_name_the_valid_ones(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    worlds = _worlds(tmp_path)
+    assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0
+    capsys.readouterr()
+    rc, _, err = _promptgen(worlds, capsys, "--bases", "normal,nope")
+    assert rc == 1
+    assert "nope" in err and "break, empty, night, normal" in err
+    rc, _, err = _promptgen(worlds, capsys, "--ids", "u_002,nope")
+    assert rc == 1
+    assert "nope" in err and "u_001" in err
