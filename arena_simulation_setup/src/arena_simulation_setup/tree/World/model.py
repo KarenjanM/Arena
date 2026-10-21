@@ -35,7 +35,7 @@ from arena_simulation_setup.shared.semantics import parse_semantics
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.utils.cattrs import ArenaConverter, converter
-from arena_simulation_setup.utils.geometry import PointResolver, Pose, Position
+from arena_simulation_setup.utils.geometry import Orientation, PointResolver, Pose, Position
 
 from .Map import Map
 from .Scenario import RegionAssignment
@@ -1051,6 +1051,17 @@ def elevator_doorway_corners(elevator: Elevator) -> list[Position]:
         Position(outer_cx + tangent[0] * tan_extent, outer_cy + tangent[1] * tan_extent),
         Position(inner_cx + tangent[0] * tan_extent, inner_cy + tangent[1] * tan_extent),
     ]
+
+
+def elevator_doorway_pose(elevator: Elevator, standoff: float = 0.0) -> Pose:
+    """Pose facing the cabin on the outer edge of its doorway, moved `standoff` further out along the door normal."""
+    outward, _tangent = _door_axis(elevator.door_side or '+x')
+    out_extent = elevator.size[0] / 2.0 if outward[0] != 0 else elevator.size[1] / 2.0
+    reach = out_extent + _ELEVATOR_DOORWAY_DEPTH + standoff
+    return Pose(
+        position=Position(elevator.position.x + outward[0] * reach, elevator.position.y + outward[1] * reach, elevator.position.z),
+        orientation=Orientation.from_yaw(math.atan2(-outward[1], -outward[0])),
+    )
 
 
 def render_door_polygons(door: Door) -> list:

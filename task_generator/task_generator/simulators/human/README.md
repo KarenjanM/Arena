@@ -27,6 +27,8 @@ human-sim `_*_impl` methods:
 | `spawn_obstacles(obstacles, layer)` | spawn or move static obstacles, layer defaults to `INUSE` |
 | `spawn_dynamic_obstacles(obstacles)` | spawn or move dynamic obstacles (`INUSE`) |
 | `spawn_world(walls, doors, collision_walls=())` | spawn world geometry in both sim and human-sim layers. `collision_walls` register in the human-sim layer only (avoidance), never spawned visually |
+| `spawn_elevators(elevators)` | hand the realized cabins of the world to the human-sim layer through `_set_elevators_impl`, replacing those of the world before. The environment manager calls it before the physics sim's `spawn_elevators`, and `remove_obstacles(purge >= WORLD)` clears them |
+| `elevator_doors_changed(doors)` | cabin name to door open, called by the mechanism shim when a cabin door turns open or stops being open, forwarded to `_set_elevator_doors_impl` |
 | `unuse_obstacles()` | call `_remove_obstacles_impl`, then flip all `INUSE` layers to `UNUSED` |
 | `remove_obstacles(purge)` | remove all obstacles at or below `purge` layer from both layers. `WORLD` survives unless `purge >= WORLD` |
 | `spawn_robot(robots)` | spawn in physics sim, start tracking the robot, then call `_spawn_robot_impl` |
@@ -45,7 +47,8 @@ specialized teleport semantics (e.g. resetting an internal agent list).
 | --- | --- |
 | `pedestrian_discs()` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, reads `_ped_positions_xy`, radius is `PED_RADIUS`) |
 | `pedestrian_clips()` | `() -> Mapping[str, frozenset[str]]` (sync, the gesture clips each ped is playing, from the same `arena_peds` message) |
-| `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`) |
+| `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`, `ArenaHumanSimulator` teleports in the engine instead) |
+| `elevator_doors_changed(doors)` | `(Mapping[str, bool]) -> None` (async) |
 | `configure(params)` | `(Sequence[rcl_interfaces.msg.Parameter]) -> list[Parameter]` (async). It runs at every episode reset with `QueueEpisode.human_params`. It strips the prefix from the names under `PARAM_NAMESPACE`, sorts them, and hands them to `_configure_impl`, also when there are none. It returns the accepted ones. |
 
 ### Abstract `_impl` methods
@@ -62,6 +65,9 @@ Every subclass must implement:
 | `_spawn_robot_impl(robots)` | human-sim side: register robots |
 | `_remove_robot_impl(robots)` | human-sim side: deregister robots |
 | `_move_robot_impl(robots)` | human-sim side: update robot positions |
+
+`_set_elevators_impl(elevators)` and `_set_elevator_doors_impl(doors)` default to no-ops, a backend whose
+pedestrians ride elevators overrides them.
 
 ## GaitGenerator as articulation ground truth
 
@@ -386,6 +392,19 @@ list clears the annotation's). Seats become the cluster slots a sitter is placed
 ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
 the object's origin, not its seat, so an object whose seats sit outside `interaction_radius` needs that radius
 widened to cover the object or the ped never gets close enough to sit.
+
+Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
+realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the
+cabin center facing the door, `doorway` outside the door side at the cabin half-size along the door normal plus
+the 0.3 m doorway depth plus half of `PED_RADIUS`, facing the cabin, `queue` on the same normal a further
+`CABIN_DOOR_THRESHOLD` (0.6 m) plus `PED_RADIUS` out, clear of the reach in which a body reopens a loaded cabin,
+`footprint` the cabin corners, `door_open`
+false, the state the shim spawns its cabin doors in), an empty list when the world goes. Door changes go out as
+one `set_elevator_doors` batch per mechanism tick. A ride ends in `pedestrian_teleport`, which maps the published
+pedestrian names to engine agent ids (the scenario or flow name, else the id itself) and calls `teleport_agents`
+with engine-frame poses and the pedestrian's facing. The engine then moves the agent, the physics sim follows
+from the next engine frame, and the interpolation snaps a teleported agent instead of sliding it from the
+source cabin.
 
 ## HuNavSim default agent template
 

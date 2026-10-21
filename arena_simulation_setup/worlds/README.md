@@ -102,7 +102,7 @@ the result from `Level.all_walls`.
 | `door_side` | inferred | cabin face the door opens on (`+x`, `-x`, `+y`, `-y`), inferred from the nearest wall (<= 1 m) at load when absent, `+x` without one |
 | `material` | elevator default | `MaterialIdentifier` |
 | `destinations` | `[]` | names of the cabins a ride goes to, on any level. The runtime rides to the first |
-| `activation_distance` | `3.0` | metres |
+| `activation_distance` | `3.0` | metres, the reach of an outside call while the cabin is empty; a cabin with a rider aboard reopens only for a body within 0.6 m of its door |
 | `transition_time` | `1.0` | seconds |
 | `hold_time` | `2.0` | seconds |
 | `travel_time` | `3.0` | seconds between levels |

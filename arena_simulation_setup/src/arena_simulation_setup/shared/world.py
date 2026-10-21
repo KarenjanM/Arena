@@ -17,6 +17,7 @@ from .semantics import SemanticCfg, parse_semantics
 
 CABIN_DOOR_INSET = 0.05
 CABIN_DOOR_WIDTH = 0.05
+CABIN_DOOR_THRESHOLD = 0.6
 
 
 def _activation_distance_converter(x: float | typing.Sequence[float]) -> tuple[float, float]:

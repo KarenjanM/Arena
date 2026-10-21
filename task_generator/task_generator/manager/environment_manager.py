@@ -392,8 +392,7 @@ class EnvironmentManager(NodeInterface):
         if lintels:
             futures.append(self._simulator.spawn_walls(lintels, clear_existing=False))
         futures.append(self._human_simulator.spawn_obstacles(statics, layer=ObstacleLayer.WORLD))
-        if elevators:
-            futures.append(self._simulator.spawn_elevators(elevators))
+        futures.append(self._spawn_elevators(elevators))
 
         await asyncio.gather(*futures)
         if lights:
@@ -408,6 +407,12 @@ class EnvironmentManager(NodeInterface):
         for kind, entity, cfgs, polygon in pending:
             self._simulator.attach_semantics(kind, entity, cfgs, polygon=polygon)
             self._attached_semantic_entities.add(entity)
+
+    async def _spawn_elevators(self, elevators: Sequence[Elevator]) -> None:
+        """Hand the cabins to the human simulator, then to the physics sim."""
+        await self._human_simulator.spawn_elevators(elevators)
+        if elevators:
+            await self._simulator.spawn_elevators(elevators)
 
     async def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
         """

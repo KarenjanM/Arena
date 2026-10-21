@@ -35,7 +35,7 @@ from visualization_msgs.msg import MarkerArray
 
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
-from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
@@ -148,6 +148,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._known_doors = KnownObstacles[Door]()
         self._wall_counter = itertools.count()
         self._known_regions: dict[str, Region] = {}
+        self._known_elevators: tuple[Elevator, ...] = ()
         self._robots: dict[str, TrackedRobot] = {}
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
@@ -674,6 +675,17 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._spawn_doors_impl(door_map),
         )
 
+    async def spawn_elevators(self, elevators: Sequence[Elevator]) -> bool:
+        """Hand the realized elevator cabins of the world to the human simulator, replacing those of the world before."""
+        if not elevators and not self._known_elevators:
+            return True
+        self._known_elevators = tuple(elevators)
+        return await self._set_elevators_impl(self._known_elevators)
+
+    async def elevator_doors_changed(self, doors: Mapping[str, bool]) -> None:
+        """Cabin doors by realized cabin name that turned open (True) or stopped being open (False)."""
+        await self._set_elevator_doors_impl(doors)
+
     @staticmethod
     def _door_wall_name(door_name: str) -> str:
         return f"__door_{door_name}"
@@ -867,6 +879,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             await self._simulator.remove_mechanisms()
             await self._simulator.remove_lights()
             futures.append(self._simulator.remove_world())
+            if self._known_elevators:
+                self._known_elevators = ()
+                futures.append(self._set_elevators_impl(()))
 
         if stale_walls:
             futures.append(self._remove_walls_impl(stale_walls))
@@ -1008,6 +1023,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
         pass
+
+    async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
+        return True
+
+    async def _set_elevator_doors_impl(self, doors: Mapping[str, bool]) -> bool:
+        return True
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""

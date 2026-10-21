@@ -25,8 +25,9 @@ def _frame(sec: int, nanosec: int = 0, **columns: list) -> AgentFrame:
     return msg
 
 
-def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0), engine_stamp_ns: int | None = None) -> ArenaHumanSimulator:
+def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0), engine_stamp_ns: int | None = None, teleport_stamps: dict[int, int] | None = None) -> ArenaHumanSimulator:
     adapter = object.__new__(ArenaHumanSimulator)
+    adapter._teleport_stamps = dict(teleport_stamps or {})
     adapter._prev_agent_states = prev
     adapter._curr_agent_states = curr
     adapter._engine_stamp_ns = engine_stamp_ns
@@ -91,6 +92,26 @@ def test_lerp_aligns_by_id_and_passes_new_agents_through() -> None:
     assert list(lerped.vx) == pytest.approx([1.25, 5.0, 3.25])
     assert list(lerped.vy) == pytest.approx([0.25, 6.0, 0.5])
     assert list(lerped.theta) == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_lerp_snaps_an_agent_teleported_after_the_prev_frame() -> None:
+    prev = _frame(0, agent_id=[1, 2], x=[10.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    curr = _frame(1, agent_id=[1, 2], x=[40.0, 2.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    adapter = _adapter(prev, curr, teleport_stamps={1: int(0.5e9)})
+    lerped = adapter._interpolate_agent_states(int(0.5e9))
+
+    assert list(lerped.x) == pytest.approx([40.0, 1.0])
+    assert adapter._teleport_stamps == {1: int(0.5e9)}
+
+
+def test_lerp_forgets_a_teleport_once_the_prev_frame_is_past_it() -> None:
+    prev = _frame(1, agent_id=[1], x=[40.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    curr = _frame(2, agent_id=[1], x=[42.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    adapter = _adapter(prev, curr, teleport_stamps={1: int(0.5e9)})
+    lerped = adapter._interpolate_agent_states(int(1.5e9))
+
+    assert list(lerped.x) == pytest.approx([41.0])
+    assert adapter._teleport_stamps == {}
 
 
 def test_lerp_takes_the_short_way_across_pi() -> None:
