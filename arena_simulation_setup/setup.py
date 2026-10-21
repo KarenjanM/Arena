@@ -80,6 +80,9 @@ setup(
         'numpy',
         'pyyaml',
         'scipy',
+        'google-genai',
+        'openai',
+        'httpx',
     ],
     extras_require={
         'test': ['pytest>=7', 'hypothesis>=6'],
