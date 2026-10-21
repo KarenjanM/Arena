@@ -91,9 +91,9 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            f'generate_world = {package_name}.utils.generative.world_generator:main',
+            f'generate_world = {package_name}.generative.world.world_generator:main',
             f'nav_at_r = {package_name}.metrics.nav_at_r:main',
-            f'world_generator = {package_name}.utils.generative.world_generator_ros:main',
+            f'world_generator = {package_name}.generative.world.world_generator_ros:main',
         ],
     },
 )
