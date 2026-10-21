@@ -425,15 +425,41 @@ class WorldContext:
             return "within 1.5 m of the robot's route"
         return None
 
+    def _candidates(self, pt: Point, *, radius: float, on_route: bool, within: float) -> list[Point]:
+        """Cell centres within `within` of `pt` clear by `ROBOT_CLEAR` at least that pass the checks of `valid`, nearest first."""
+        import numpy as np
+
+        grid = self.grid
+        if grid is None:
+            return []
+        r0, c0 = grid.cell(pt)
+        k = int(math.ceil(within / grid.res))
+        rows, cols = grid.shape
+        rs, re = max(0, r0 - k), min(rows, r0 + k + 1)
+        cs, ce = max(0, c0 - k), min(cols, c0 + k + 1)
+        if rs >= re or cs >= ce:
+            return []
+        labels = grid.labels_at(min(radius, ROBOT_CLEAR))[rs:re, cs:ce]
+        ok = (grid.dist[rs:re, cs:ce] >= max(radius, ROBOT_CLEAR)) & (labels == grid.component(self.start, radius))
+        rr, cc = np.nonzero(ok)
+        rr, cc = rr + rs, cc + cs
+        xs = (cc + 0.5) * grid.res + grid.ox
+        ys = (rows - 1 - rr + 0.5) * grid.res + grid.oy
+        d = np.hypot(xs - pt[0], ys - pt[1])
+        keep = (d <= within) & (np.hypot(xs - self.start[0], ys - self.start[1]) >= 1.5) & (np.hypot(xs - self.goal[0], ys - self.goal[1]) >= 1.0)
+        if not on_route:
+            keep &= _route_clearance(xs, ys, self.route) >= 1.5
+        order = np.argsort(d[keep], kind="stable")
+        return [(float(x), float(y)) for x, y in zip(xs[keep][order], ys[keep][order], strict=True)]
+
     def resolve(self, pt: Point, *, radius: float = 0.4, on_route: bool = False, within: float = 1.5) -> tuple[Point, str]:
         """`pt` if valid, else the nearest valid point within `within`. Raises when none."""
         why = self.valid(pt, radius=radius, on_route=on_route)
         if why is None:
             return pt, ""
         if self.grid is not None:
-            for r in (0.5, 1.0, within):
-                near = self.grid.nearest_free(pt, max(radius, ROBOT_CLEAR), within=r)
-                if near is not None and self.valid(near, radius=radius, on_route=on_route) is None:
+            for near in self._candidates(pt, radius=radius, on_route=on_route, within=within):
+                if self.valid(near, radius=radius, on_route=on_route) is None:
                     return near, f"moved {math.dist(pt, near):.2f} m ({why})"
         raise WorldError(f"no valid point within {within} m of ({pt[0]:.2f}, {pt[1]:.2f}): {why}")
 

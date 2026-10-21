@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 import pytest
@@ -42,3 +43,13 @@ def test_homes_are_screened_against_the_planned_route(tmp_path: Path) -> None:
     assert max(x for x, _y in world.route) > 7.0
     assert "east" not in world.homes
     assert "middle" in world.homes
+
+
+def test_resolve_searches_outward_for_a_valid_point(tmp_path: Path) -> None:
+    root = tmp_path / "worlds" / "open"
+    _write_world(root, {"room": _box(0, 0, 10, 10)}, [(0.3, 0.3, 9.7, 9.7)], (10.0, 10.0))
+    world = WorldContext.load(root, _robot((1.0, 1.0), (9.0, 9.0)))
+    assert world.valid((5.0, 5.0)) is not None
+    pt, why = world.resolve((5.0, 5.0), within=2.0)
+    assert world.valid(pt) is None and why.startswith("moved")
+    assert 1.5 <= math.dist(pt, (5.0, 5.0)) <= 1.65
