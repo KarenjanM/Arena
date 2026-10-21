@@ -43,13 +43,13 @@ def _num(value: float) -> str:
     return f"{round(float(value), 2):g}"
 
 
-def point_literal(pt: Point) -> str:
-    """`x,y` as a condition atom names a point of the level frame."""
-    return f"{_num(pt[0])},{_num(pt[1])}"
+def point_literal(pt: Point, origin: Point = (0.0, 0.0)) -> str:
+    """`x,y` as a condition atom names a point of the map frame: the level-frame `pt` shifted by the level's `origin`."""
+    return f"{_num(pt[0] + origin[0])},{_num(pt[1] + origin[1])}"
 
 
-def within(radius: float, pt: Point) -> str:
-    return f"robot within {_num(radius)} of {point_literal(pt)}"
+def within(radius: float, pt: Point, origin: Point = (0.0, 0.0)) -> str:
+    return f"robot within {_num(radius)} of {point_literal(pt, origin)}"
 
 
 def _position(agent: Mapping[str, Any], world: WorldContext) -> Point | None:
@@ -67,11 +67,11 @@ def _centroid(points: Sequence[Point]) -> Point | None:
     return (sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points))
 
 
-def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | None = None) -> dict[str, Any]:
-    """The timeline trigger of an onset: `at` seconds, or a `when` condition on the robot's distance to a point; `reference` stands in for a missing `of`."""
+def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | None = None, origin: Point = (0.0, 0.0)) -> dict[str, Any]:
+    """The timeline trigger of an onset: `at` seconds, or the robot's distance to a level-frame point written shifted by `origin`."""
     if when.get("route_fraction") is not None:
         pt, _heading = world.point_at(float(when["route_fraction"]))
-        return {"when": within(ROUTE_TRIGGER_M, pt)}
+        return {"when": within(ROUTE_TRIGGER_M, pt, origin)}
     for key, negate in (("robot_within", False), ("robot_beyond", True)):
         if when.get(key) is None:
             continue
@@ -79,7 +79,7 @@ def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | 
         pt = (float(of[0]), float(of[1])) if of is not None else reference
         if pt is None:
             raise StepError(f"a proximity onset {dict(when)} has no point to measure the robot against")
-        atom = within(float(when[key]), pt)
+        atom = within(float(when[key]), pt, origin)
         return {"when": f"not {atom}" if negate else atom}
     return {"at": float(when.get("at") or 0.0)}
 
@@ -126,7 +126,7 @@ def _stand(effect: Mapping[str, Any], name: str, world: WorldContext, files: Typ
     if duration > 0:
         steps = {"hold": {"duration": {"mean": duration}, "patience": {"mean": duration + STAND_STEP["patience"]["mean"]}}, "release": _go_to(release, theta=_heading(spot, release)), "stay": dict(STAND_STEP)}
         ref = files.switching(ref, need=GO, to="go", steps=steps)
-        entries.append(_entry({"when": within(STAND_TRIGGER_M, spot)}, [name], GO))
+        entries.append(_entry({"when": within(STAND_TRIGGER_M, spot, world.origin)}, [name], GO))
     human = _human(name, effect, ref, spot, math.atan2(-heading[1], -heading[0]))
     note = f"{effect.get('label')}: {name} stands on the route at fraction {fraction:.2f} ({spot[0]:.1f}, {spot[1]:.1f})" + (f", steps on {duration:g} s after the robot comes within {STAND_TRIGGER_M:g} m" if duration > 0 else "")
     return human, entries, note, spot
@@ -187,7 +187,7 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
         f"{effect.get('label')}: {name} waits at ({enc.spawn[0]:.1f}, {enc.spawn[1]:.1f}) and walks when the robot is {release:.1f} m from the encounter ({enc.encounter[0]:.1f}, {enc.encounter[1]:.1f}), "
         f"angle {enc.angle_achieved:g} (asked {enc.angle_requested:g}), fraction {enc.encounter_at_achieved:g} (asked {enc.encounter_at_requested:g}), then {after}"
     )
-    return human, [_entry({"when": within(release, enc.encounter)}, [name], GO)], note, enc.encounter
+    return human, [_entry({"when": within(release, enc.encounter, world.origin)}, [name], GO)], note, enc.encounter
 
 
 def _switch(doc: dict[str, Any], names: Sequence[str], files: TypeFiles, world: WorldContext, made: set[str], *, need: str, to: str, steps_of: Mapping[str, dict[str, Any]]) -> None:
@@ -260,7 +260,7 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
         return
     scope = [str(n) for n in effect["scope"]]
     placed = [p for a in doc["humans"] if str(a["name"]) in scope and (p := _position(a, world)) is not None]
-    trig = trigger(effect["when"], world, reference=_centroid(placed))
+    trig = trigger(effect["when"], world, reference=_centroid(placed), origin=world.origin)
     if kind == "stimulus":
         out.timeline.append(_entry(trig, scope, str(effect["need"])))
         return

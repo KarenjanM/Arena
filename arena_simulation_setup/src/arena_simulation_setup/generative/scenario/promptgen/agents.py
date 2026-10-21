@@ -11,6 +11,7 @@ from typing import Any
 import attrs
 import yaml
 
+from .frames import shift_targets
 from .profiles import PROFILES, Profile, ProfileError, derive, derived_name, profile
 
 Point = tuple[float, float]
@@ -63,6 +64,8 @@ def entry(name: str, prof: Profile, pose: Point | str, waypoints: Sequence[Point
 @attrs.define
 class TypeFiles:
     base_dir: Path
+    #: The working level's shift into the map frame; a scenario-local file's targets are read back into the level frame.
+    origin: Point = (0.0, 0.0)
     docs: dict[str, dict[str, Any]] = attrs.Factory(dict)
     #: Files copied verbatim from the base scenario directory (a `./talker.yaml`).
     copies: dict[str, Path] = attrs.Factory(dict)
@@ -78,7 +81,9 @@ class TypeFiles:
             if not path.is_file():
                 raise ProfileError(f"{ref}: not found beside the base scenario ({path})")
             self.copies.setdefault(ref, path)
-            return yaml.safe_load(path.read_text()) or {}
+            doc = yaml.safe_load(path.read_text()) or {}
+            shift_targets(doc, -self.origin[0], -self.origin[1])
+            return doc
         return {"extends": ref}
 
     def derived(self, ref: str, params: Mapping[str, str], *, prof: Profile | None = None) -> str:
@@ -157,6 +162,11 @@ class TypeFiles:
             doc.setdefault("tunes", []).append({"when": {need: {"above": 50.0}}, "tune": dict(tune)})
             self.docs[out] = doc
         return out
+
+    def to_map(self) -> None:
+        """Move every derived document's `go_to` targets from the level frame into the map frame."""
+        for doc in self.docs.values():
+            shift_targets(doc, *self.origin)
 
     def write(self, scenario_dir: Path) -> list[Path]:
         written = []

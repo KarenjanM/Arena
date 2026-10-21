@@ -17,6 +17,7 @@ from ..formats import scenario_text
 from ..materialize import GENERATED_MARKER
 from ..route import ROBOT_SPEED_MPS
 from .agents import TypeFiles, agent_type_of
+from .frames import shift_humans
 from .lexicon import match as lexicon_match
 from .llm import Oracle, Unavailable
 from .prompts import Prompt
@@ -114,7 +115,7 @@ def pin_robot_route(doc: dict[str, Any], world: WorldContext, record: Record, pl
     nx, ny = world.route[1]
     yaw = math.atan2(ny - sy, nx - sx)
     start = [round(sx, 2), round(sy, 2), round(yaw, 3)]
-    robots[0] = {**robots[0], "start": start, "level": world.level, "phases": plan.phases(start, [round(gx, 2), round(gy, 2)])}
+    robots[0] = {**robots[0], "start": start, "level": world.level, "goal_level": world.level, "phases": plan.phases(start, [round(gx, 2), round(gy, 2)])}
     doc["robots"] = robots
     record.warnings.append(f"robot route pinned to the planned one: ({sx:.1f}, {sy:.1f}) -> ({gx:.1f}, {gy:.1f})")
 
@@ -134,7 +135,7 @@ def generate(
 ) -> Result:
     robot = RobotPlan() if robot is None else robot
     doc = copy.deepcopy(dict(base_doc))
-    files = TypeFiles(base_dir=Path(base_dir))
+    files = TypeFiles(base_dir=Path(base_dir), origin=world.origin)
     record = Record(prompt_id=prompt.id, prompt=prompt.text, world=world.name, base=base_id, targets=tuple(prompt.targets))
     pin_robot_route(doc, world, record, robot)
     effects: list[dict[str, Any]] = []
@@ -147,6 +148,7 @@ def generate(
     if not populated and denied and len(denied) == len(prompt.targets):
         record.failures.append(Failure(step="base", kind="denied", reason=f"empty base: {', '.join(denied)} need a crowd and nothing else is targeted"))
         return Result(record=record, doc=doc, files=files, effects=[], scenario_id=f"{base_id}__{prompt.id}", prompt=prompt)
+    shift_humans(doc, -world.origin[0], -world.origin[1])
 
     a = lexicon_match(prompt.text)
     who = ""
@@ -274,6 +276,8 @@ def _realized(result: Result, world: WorldContext, *, seed: int, robot_speed: fl
     if record.formation and record.formation.get("at") is not None:
         record.formation["at"] = trigger(record.formation["at"], world)
     record.warnings.extend(done.notes)
+    shift_humans(doc, *world.origin)
+    files.to_map()
     result.doc, result.files, result.timeline, result.injected, result.encounters = doc, files, done.timeline, done.injected, done.encounters
     return result
 

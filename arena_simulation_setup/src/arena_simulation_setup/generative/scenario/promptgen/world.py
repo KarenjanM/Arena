@@ -164,9 +164,12 @@ class LoadedWorld:
     doc: dict[str, Any]
     overrides: dict[str, Role]
     grid: Grid | None
+    origin: Point = (0.0, 0.0)
 
     @classmethod
     def read(cls, root: str | Path) -> LoadedWorld:
+        from arena_simulation_setup.tree.World.view import WorldView
+
         root = Path(root)
         world = load_world(root)
         doc = first_level(root, world)
@@ -174,7 +177,8 @@ class LoadedWorld:
             raise WorldError(f"{root.name}: no world.yaml")
         loaded = level_grid(root, world_statics(root, world), world)
         grid = None if loaded is None else Grid(occupied=loaded[0], res=loaded[1], ox=loaded[2], oy=loaded[3])
-        return cls(doc=doc, overrides=world_roles(root, world), grid=grid)
+        origins = WorldView(root.resolve()).level_origins() or {}
+        return cls(doc=doc, overrides=world_roles(root, world), grid=grid, origin=origins.get(str(doc["id"]), (0.0, 0.0)))
 
 
 @attrs.define
@@ -191,6 +195,7 @@ class WorldContext:
     homes: frozenset[str]
     kind: str
     level: str = ""
+    origin: Point = (0.0, 0.0)
 
     @classmethod
     def load(cls, root: str | Path, base_doc: Mapping[str, Any], parts: LoadedWorld | None = None) -> WorldContext:
@@ -235,7 +240,7 @@ class WorldContext:
         if grid is not None:
             clearance_map = (grid.dist, grid.res, grid.ox, grid.oy)
             homes = ref_safe_zones(screen_zones(zones, world_root=root, route=route, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot), clearance_map=clearance_map))
-        return cls(name=world, root=root, zones=zones, roles=roles, robot=robot, grid=grid, start=start, goal=goal, route=route, homes=homes, kind=world_kind(zones, overrides), level=str(doc["id"]))
+        return cls(name=world, root=root, zones=zones, roles=roles, robot=robot, grid=grid, start=start, goal=goal, route=route, homes=homes, kind=world_kind(zones, overrides), level=str(doc["id"]), origin=parts.origin)
 
     @cached_property
     def polygons(self) -> dict[str, list[Point]]:

@@ -58,7 +58,7 @@ A prompt scenario directory holds:
 | `provenance.yaml` | `id`, `prompt_id`, `steps`, `note`, `decisions`, `owned` (`C`, `D`, `injected`), `formation` (`center`, `radius`, `variant`, `at`), `encounters` (`agent`, `point` per interception), `provenance` (prompt and answer hashes, generator version, status, dedup key). The runtime never reads it, the arena_evaluation metrics scope by it |
 | `record.json` | the full decision record with warnings and failures |
 
-Points in the timeline and in `provenance.yaml` are in the frame of the level the robot starts on, `robots[0].level`, which the generator always writes.
+The generator works in the frame of its level, the first one with zones. In `scenario.yaml` every coordinate without a `level` key, a pedestrian's `pose` and `waypoints`, the `go_to` targets of its type and the `x,y` points of the timeline, is in the flattened map frame, as a scenario pose without `level` is: the level-frame point shifted by the level's origin from `WorldView.level_origins()`, none on a single-level world. A base's own coordinates are read the same way. The robot's `start` and `goto` poses stay in the level frame and carry `level` and `goal_level`. The points of `provenance.yaml` (`encounters`, `formation.center`) are in the level frame.
 
 The robot's start and goal are pinned to the route the generator planned, and its `phases` are an optional hold phase, then the traversal legs, with `tolerance_radius` when `--tolerance` is set:
 
@@ -68,6 +68,7 @@ robots:
   phases:
   - {goto: [9.99, 17.0]}
   level: '0'
+  goal_level: '0'
 ```
 
 ## Timeline
@@ -84,7 +85,7 @@ timeline:
   - {agents: [edge_0], need: go}
 ```
 
-An onset `{at: s}` stays `at: s`. A proximity onset becomes `when: robot within <m> of <x>,<y>`, a point literal in the level frame. Without a point of its own it is measured to the centroid of the agents it scopes, a route fraction is measured to that point of the planned route within 1.5 m, and a `robot_beyond` onset is `not robot within`.
+An onset `{at: s}` stays `at: s`. A proximity onset becomes `when: robot within <m> of <x>,<y>`, a point literal in the map frame. Without a point of its own it is measured to the centroid of the agents it scopes, a route fraction is measured to that point of the planned route within 1.5 m, and a `robot_beyond` onset is `not robot within`.
 
 | Case | Agents | Need |
 |---|---|---|
