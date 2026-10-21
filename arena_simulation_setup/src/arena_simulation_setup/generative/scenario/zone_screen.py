@@ -48,7 +48,7 @@ def _cell_centers(mask: np.ndarray, res: float, ox: float, oy: float) -> tuple[n
 
     rows, cols = np.nonzero(mask)
     height = mask.shape[0]
-    return cols * res + ox, (height - 1 - rows) * res + oy
+    return (cols + 0.5) * res + ox, (height - 1 - rows + 0.5) * res + oy
 
 
 def route_clearance(xs: np.ndarray, ys: np.ndarray, route: Sequence[tuple[float, float]]) -> np.ndarray:
