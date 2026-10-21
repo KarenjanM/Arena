@@ -86,7 +86,7 @@ def screen_zones(
 ) -> dict[str, Verdict]:
     """A verdict per zone on whether every point the resolver could return there clears the route; `robot_zones` are refused whole."""
     verdicts: dict[str, Verdict] = {}
-    names = [str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name")]
+    names = [str(z["name"]) for z in zones if z.get("name")]
 
     if clearance_map is None:
         grid = level_grid(world_root, statics, world)
@@ -101,10 +101,10 @@ def screen_zones(
         dist, res, ox, oy = clearance_map
 
     for zone in zones:
-        if not isinstance(zone, Mapping) or not zone.get("name"):
+        if not zone.get("name"):
             continue
         name = str(zone["name"])
-        poly = [(float(c["x"]), float(c["y"])) for c in zone.get("corners", []) if isinstance(c, Mapping)]
+        poly = [(float(c["x"]), float(c["y"])) for c in zone.get("corners", [])]
         if len(poly) < 3:
             verdicts[name] = Verdict(zone=name, ref_safe=False, reason="fewer than three corners")
             continue

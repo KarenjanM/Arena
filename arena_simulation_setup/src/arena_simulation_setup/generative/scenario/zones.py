@@ -138,7 +138,7 @@ def classify_all(names: Sequence[str], overrides: Mapping[str, str] | None = Non
 
 
 def zones_by_role(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] | None = None) -> dict[Role, list[str]]:
-    names = [str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name")]
+    names = [str(z["name"]) for z in zones if z.get("name")]
     out: dict[Role, list[str]] = {r: [] for r in Role}
     for name, role in classify_all(names, overrides).items():
         out[role].append(name)

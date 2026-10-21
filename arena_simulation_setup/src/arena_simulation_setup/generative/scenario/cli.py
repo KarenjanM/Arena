@@ -229,7 +229,7 @@ def _all_zones(root: Path, world: World) -> list[dict[str, Any]]:
     seen: set[str] = set()
     for doc in levels(root, world):
         for zone in doc.get("zones") or []:
-            if isinstance(zone, dict) and zone.get("name") and str(zone["name"]) not in seen:
+            if zone.get("name") and str(zone["name"]) not in seen:
                 seen.add(str(zone["name"]))
                 zones.append(zone)
     return zones
@@ -311,7 +311,7 @@ def _cmd_classify(args: argparse.Namespace) -> int:
 
 def _endpoint_arg(flag: str, value: str, zones: list[dict[str, Any]]) -> str | list[float]:
     """A `--robot-start`/`--robot-goal` value as a zone name or an `[x, y]`/`[x, y, yaw]` pose."""
-    names = sorted(str(z["name"]) for z in zones if isinstance(z, dict) and z.get("name"))
+    names = sorted(str(z["name"]) for z in zones if z.get("name"))
     forms = f"a zone name ({', '.join(names) or 'this level has none'}) or 'x,y[,yaw]' in meters and radians, e.g. '1.5,2,0'"
     if "," not in value:
         if value in names:

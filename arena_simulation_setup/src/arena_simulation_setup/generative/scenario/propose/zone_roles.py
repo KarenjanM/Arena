@@ -48,14 +48,14 @@ class Proposal:
 def unknown_names(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] | None = None) -> list[str]:
     """Zone names no rule and no stated role accounts for, sorted and deduplicated."""
     reviewed = set(overrides or {})
-    return sorted({str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name") and str(z["name"]) not in reviewed and classify(str(z["name"])) is Role.UNKNOWN})
+    return sorted({str(z["name"]) for z in zones if z.get("name") and str(z["name"]) not in reviewed and classify(str(z["name"])) is Role.UNKNOWN})
 
 
 def _evidence(zone: Mapping[str, Any]) -> dict[str, Any]:
     """Extent and contents of one zone."""
-    corners = [(float(c["x"]), float(c["y"])) for c in zone.get("corners", []) if isinstance(c, Mapping)]
+    corners = [(float(c["x"]), float(c["y"])) for c in zone.get("corners", [])]
     statics = (zone.get("entities") or {}).get("static") or []
-    contents = sorted({str(e.get("model", "")).split("/")[-1] for e in statics if isinstance(e, Mapping) and e.get("model")})
+    contents = sorted({str(e.get("model", "")).split("/")[-1] for e in statics if e.get("model")})
     out: dict[str, Any] = {"contents": contents or "nothing"}
     if corners:
         width = max(x for x, _ in corners) - min(x for x, _ in corners)
@@ -68,7 +68,7 @@ def _evidence(zone: Mapping[str, Any]) -> dict[str, Any]:
 
 def build_prompt(zones: Sequence[Mapping[str, Any]], names: Sequence[str], *, world: str) -> str:
     """The user half of the request: the world's whole vocabulary, then the zones in question."""
-    by_name = {str(z["name"]): z for z in zones if isinstance(z, Mapping) and z.get("name")}
+    by_name = {str(z["name"]): z for z in zones if z.get("name")}
     vocabulary = {name: classify(name).value for name in sorted(by_name)}
     asked = {name: _evidence(by_name[name]) for name in names if name in by_name}
     return f"World: {world}\n\nEvery zone this world declares, with the role already known where a rule covers it:\n{json.dumps(vocabulary, indent=2)}\n\nClassify only these, using what they contain and what the rest of the world suggests:\n{json.dumps(asked, indent=2)}\n"

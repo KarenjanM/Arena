@@ -75,7 +75,7 @@ MODELS: tuple[str, ...] = (
 
 
 def polygon(zone: Mapping[str, Any]) -> list[tuple[float, float]]:
-    return [(float(c["x"]), float(c["y"])) for c in zone.get("corners", []) if isinstance(c, Mapping)]
+    return [(float(c["x"]), float(c["y"])) for c in zone.get("corners", [])]
 
 
 def centroid(poly: Sequence[tuple[float, float]]) -> tuple[float, float]:
@@ -294,7 +294,7 @@ def work_zones(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] 
 
 
 def world_kind(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] | None = None) -> str:
-    names = [str(z["name"]).lower() for z in zones if isinstance(z, Mapping) and z.get("name")]
+    names = [str(z["name"]).lower() for z in zones if z.get("name")]
     if any(hint in n for n in names for hint in _HOSPITAL_HINTS):
         return "hospital"
     if basis_for(zones, overrides) == "residential":
