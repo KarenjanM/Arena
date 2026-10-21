@@ -17,6 +17,7 @@ from arena_simulation_setup.shared.pathing import OccupancyGrid, PathError, plan
 
 if typing.TYPE_CHECKING:
     import numpy as np
+    import shapely
 
 from ..formats import first_level, world_roles
 from ..occupancy import level_grid, load_world, world_statics
@@ -88,19 +89,6 @@ def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, radiu
 
 class WorldError(RuntimeError):
     pass
-
-
-def _area(poly: Sequence[Point]) -> float:
-    return abs(sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))) / 2.0
-
-
-def point_in_polygon(pt: Point, poly: Sequence[Point]) -> bool:
-    x, y = pt
-    inside = False
-    for (ax, ay), (bx, by) in zip(poly, [*poly[1:], poly[0]], strict=False):
-        if (ay > y) != (by > y) and x < (bx - ax) * (y - ay) / ((by - ay) or 1e-12) + ax:
-            inside = not inside
-    return inside
 
 
 @attrs.define
@@ -229,6 +217,12 @@ class WorldContext:
         return {str(z["name"]): polygon(z) for z in self.zones if len(polygon(z)) >= 3}
 
     @cached_property
+    def shapes(self) -> dict[str, shapely.Polygon]:
+        import shapely
+
+        return {name: shapely.Polygon(poly) for name, poly in self.polygons.items()}
+
+    @cached_property
     def centroids(self) -> dict[str, Point]:
         return {name: centroid(poly) for name, poly in self.polygons.items()}
 
@@ -236,10 +230,10 @@ class WorldContext:
         return sorted(self.polygons)
 
     def zone_of(self, pt: Point) -> str | None:
-        for name, poly in self.polygons.items():
-            if point_in_polygon(pt, poly):
-                return name
-        return None
+        import shapely
+
+        here = shapely.Point(pt)
+        return next((name for name, shape in self.shapes.items() if shape.covers(here)), None)
 
     def zone_point(self, name: str, *, need: float = 0.4) -> Point:
         """The reachable point nearest the zone's centroid clear of walls by `need` and away from the robot's endpoints; the centroid without a grid."""
@@ -296,11 +290,11 @@ class WorldContext:
             matched = sorted(n for n in self.polygons if hint in n.lower())
             if matched:
                 return matched[0]
-        return max(self.polygons, key=lambda n: (_area(self.polygons[n]), n)) if self.polygons else None
+        return max(self.shapes, key=lambda n: (self.shapes[n].area, n)) if self.shapes else None
 
     def work_zone(self) -> str | None:
         wanted = [n for n in work_zones(self.zones, self.roles) if n in self.polygons]
-        return max(wanted, key=lambda n: (round(_area(self.polygons[n]), 1), "work" in n.lower(), n)) if wanted else None
+        return max(wanted, key=lambda n: (round(self.shapes[n].area, 1), "work" in n.lower(), n)) if wanted else None
 
     def other_zones(self, exclude: Sequence[str] = ()) -> list[str]:
         """Zones a walker may head for: not private, not the robot's own."""
@@ -318,18 +312,12 @@ class WorldContext:
         return point_at_arc(self.route, max(0.0, min(1.0, fraction)) * self.route_length)
 
     def fraction_of(self, pt: Point) -> float:
-        """Arc-length fraction of the route point nearest `pt`."""
-        best, best_d, acc = 0.0, math.inf, 0.0
-        for a, b in zip(self.route, self.route[1:], strict=False):
-            seg = math.dist(a, b)
-            if seg <= 1e-9:
-                continue
-            t = max(0.0, min(1.0, ((pt[0] - a[0]) * (b[0] - a[0]) + (pt[1] - a[1]) * (b[1] - a[1])) / (seg * seg)))
-            d = math.dist(pt, (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])))
-            if d < best_d:
-                best, best_d = (acc + t * seg) / max(self.route_length, 1e-9), d
-            acc += seg
-        return best
+        """Arc-length fraction of the route point nearest `pt`, 0 on a degenerate route."""
+        import shapely
+
+        if self.route_length <= 1e-9:
+            return 0.0
+        return float(shapely.LineString(self.route).project(shapely.Point(pt))) / self.route_length
 
     def route_clearance(self, pt: Point) -> float:
         return clearance(pt, self.route)
