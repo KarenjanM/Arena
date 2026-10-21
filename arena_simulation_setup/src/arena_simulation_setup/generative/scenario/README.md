@@ -45,7 +45,7 @@ facts:
   params: {by: llm, model: gemini-3.5-flash, prompt_sha: 12a42fdc3c28fdd0, why: A study or home office is used for working.}
 ```
 
-`classify --write` asks a model about the zones neither covers and writes each confident answer into that world's `kg.yaml` as a fact with `params: {by: llm, model, prompt_sha, why}`, adding `space@1` to `uses` and creating the file when the world has none. A fact without `by: llm` is a human's: `classify` never replaces it, and it wins over a model's fact for the same zone. To accept or correct a proposal, set the role and drop `by: llm`. A stated `purpose:unknown` keeps a zone out of the model's queue. A zone with two human roles, or a purpose that is no role, is an error. Linked levels bring their source world's facts along under their prefix.
+`classify --write` asks a model about the zones neither covers and writes each confident answer into that world's `kg.yaml` as a fact with `params: {by: llm, model, prompt_sha, why}`, adding `space@1` to `uses` and creating the file when the world has none. A fact without `by: llm` is a human's: `classify` never replaces it, and it wins over a model's fact for the same zone. To accept or correct a proposal, set the role and drop `by: llm`. A stated `purpose:unknown` keeps a zone out of the model's queue. A zone with two human roles, or two model roles and no human one, is an error. A purpose that is no role (`purpose:storage`) is a valid KG fact for other consumers, and the generator reads it as no role. Linked levels bring their source world's facts along under their prefix.
 
 ## Outputs
 

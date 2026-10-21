@@ -188,10 +188,35 @@ def test_two_human_roles_for_one_zone_are_refused(kg) -> None:
         stated_roles(load(kg))
 
 
-def test_a_purpose_that_is_no_role_is_refused(kg) -> None:
-    _write_kg(kg, [_fact("a", "storage_cupboard")])
-    with pytest.raises(ValueError, match=r"expected purpose:<work\|break"):
+def test_two_model_roles_for_a_zone_without_a_human_fact_are_refused(kg) -> None:
+    _write_kg(kg, [_fact("a", "work", by="llm"), _fact("a", "break", by="llm")])
+    with pytest.raises(ValueError, match=r"room:a: has_purpose states the roles \['break', 'work'\]"):
         stated_roles(load(kg))
+
+
+def test_a_purpose_that_is_no_role_states_no_role(kg) -> None:
+    _write_kg(kg, [_fact("a", "storage"), _fact("b", "work")])
+    assert load(kg).validate() == []
+    assert stated_roles(load(kg)) == {"b": Role.WORK}
+
+
+def test_a_model_role_joins_a_human_purpose_that_is_no_role(kg) -> None:
+    _write_kg(kg, [_fact("a", "storage")])
+    assert merge([Proposal(zone="a", role=Role.WORK, model="m")], kg)[0] == 1
+    assert sorted(_purposes(kg)) == [("room:a", "purpose:storage", {}), ("room:a", "purpose:work", {"by": "llm", "model": "m"})]
+    assert stated_roles(load(kg)) == {"a": Role.WORK}
+
+
+def test_the_zones_verb_reads_a_world_whose_kg_states_other_purposes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from arena_simulation_setup.generative.scenario.cli import main
+
+    root = tmp_path / "worlds" / "w"
+    root.mkdir(parents=True)
+    zones = [{"name": n, "polygon": [[10.0 * i, 0.0], [10.0 * i + 4, 0.0], [10.0 * i + 4, 4.0], [10.0 * i, 4.0]], "floor": False} for i, n in enumerate(("top_room_0", "main_hallway"))]
+    (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones}]}))
+    _write_kg(root / "kg.yaml", [_fact("top_room_0", "storage")])
+    assert main(["zones", "w", "--worlds", str(tmp_path / "worlds")]) == 0
+    assert "unclassified: top_room_0" in capsys.readouterr().out
 
 
 def test_a_stated_role_reaches_the_role_split(kg) -> None:

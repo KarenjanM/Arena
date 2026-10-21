@@ -103,17 +103,22 @@ def proposed(fact: Fact) -> bool:
     return fact.params.get("by") == "llm"
 
 
+def fact_role(fact: Fact) -> Role | None:
+    """The role a `has_purpose` fact states, None for any other fact or a purpose that is no role."""
+    kind, _, name = str(fact.object).partition(":")
+    if fact.verb != VERB or kind != KIND or name not in {r.value for r in Role}:
+        return None
+    return Role(name)
+
+
 def stated_roles(scene: Scene | None) -> dict[str, Role]:
     """Zone name to role from the `has_purpose` facts of `scene`, a human's fact winning over a model's."""
     ranked: dict[str, tuple[set[Role], set[Role]]] = {}
     for fact in scene.facts if scene is not None else ():
-        if fact.verb != VERB:
+        if (role := fact_role(fact)) is None:
             continue
-        kind, _, name = str(fact.object).partition(":")
-        if kind != KIND or name not in [r.value for r in Role]:
-            raise ValueError(f"{fact.subject} {VERB} {fact.object!r}: expected {KIND}:<{'|'.join(r.value for r in Role)}>")
         human, model = ranked.setdefault(fact.subject.partition(":")[2], (set(), set()))
-        (model if proposed(fact) else human).add(Role(name))
+        (model if proposed(fact) else human).add(role)
     roles: dict[str, Role] = {}
     for zone, (human, model) in ranked.items():
         chosen = human or model

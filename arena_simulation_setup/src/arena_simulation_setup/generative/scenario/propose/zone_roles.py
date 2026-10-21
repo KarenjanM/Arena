@@ -9,7 +9,7 @@ from typing import Any
 
 import attrs
 
-from ..zones import KIND, PACKAGE, VERB, Role, classify, proposed
+from ..zones import KIND, PACKAGE, VERB, Role, classify, fact_role, proposed
 from .client import DEFAULT_MODEL, Unavailable, ask, prompt_sha256, strip_fence
 
 SYSTEM = """\
@@ -137,7 +137,7 @@ def merge(proposals: Sequence[Proposal], kg: Path) -> tuple[int, list[str]]:
             kept.append(f"{proposal.zone}: model returned `unknown` - left for a human")
             continue
         room = f"room:{proposal.zone}"
-        facts = [f for f in scene.facts if f.verb == VERB and f.subject == room]
+        facts = [f for f in scene.facts if f.subject == room and fact_role(f) is not None]
         human = [str(f.object).partition(":")[2] for f in facts if not proposed(f)]
         if human:
             kept.append(f"{proposal.zone}: reviewed by a human as {', '.join(human)!r}")
