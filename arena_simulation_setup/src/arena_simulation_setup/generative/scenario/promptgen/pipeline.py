@@ -184,7 +184,9 @@ def generate(
         a = None
     if a is not None:
         try:
-            new, names, notes = apply_a(doc, a, world, files, seed=seed)
+            work, work_files = copy.deepcopy(doc), copy.deepcopy(files)
+            new, names, notes = apply_a(work, a, world, work_files, seed=seed)
+            doc, files = work, work_files
             effects.extend(new)
             owned.update(names)
             record.owned["A"] = list(names)
@@ -200,7 +202,9 @@ def generate(
         d = None
     if d is not None:
         try:
-            new, names, notes, info = apply_d(doc, d, world, files, seed=seed, owned=owned, intercept_index=intercepts)
+            work, work_files = copy.deepcopy(doc), copy.deepcopy(files)
+            new, names, notes, info = apply_d(work, d, world, work_files, seed=seed, owned=owned, intercept_index=intercepts)
+            doc, files = work, work_files
             intercepts += sum(1 for e in new if e["type"] == "intercept")
             effects.extend(new)
             owned.update(names)
@@ -227,7 +231,9 @@ def generate(
             record.failures.append(Failure(step="B", kind="applicability", reason="no unowned pedestrian to tune"))
         else:
             try:
-                new, names, notes = apply_b(doc, b, world, files, owned=owned)
+                work, work_files = copy.deepcopy(doc), copy.deepcopy(files)
+                new, names, notes = apply_b(work, b, world, work_files, owned=owned)
+                doc, files = work, work_files
                 effects.extend(new)
                 owned.update(names)
                 record.owned["B"] = list(names)
@@ -237,7 +243,9 @@ def generate(
                 _fail(record, "B", exc)
     if c is not None:
         try:
-            new, names, notes = apply_c(c, world, files, seed=seed, intercept_index=intercepts, taken_fractions=taken_fractions)
+            work_files = copy.deepcopy(files)
+            new, names, notes = apply_c(c, world, work_files, seed=seed, intercept_index=intercepts, taken_fractions=taken_fractions)
+            files = work_files
             intercepts += 1
             effects.extend(new)
             owned.update(names)
