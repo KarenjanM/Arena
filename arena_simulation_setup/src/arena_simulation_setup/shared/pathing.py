@@ -57,10 +57,33 @@ class OccupancyGrid:
         rows = self.shape[0]
         return rows - 1 - int((pt[1] - self.oy) / self.res), int((pt[0] - self.ox) / self.res)
 
-    def xy(self, cell: Cell) -> Point:
-        """The center of a cell; `cell(xy(c)) == c`."""
+    @typing.overload
+    def xy(self, cell: Cell) -> Point: ...
+
+    @typing.overload
+    def xy(self, cell: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray]: ...
+
+    def xy(self, cell: Cell | tuple[np.ndarray, np.ndarray]) -> Point | tuple[np.ndarray, np.ndarray]:
+        """The center of a cell, or of arrays of rows and columns elementwise; `cell(xy(c)) == c`."""
         rows = self.shape[0]
         return ((cell[1] + 0.5) * self.res + self.ox, (rows - 1 - cell[0] + 0.5) * self.res + self.oy)
+
+    def nearest(self, cell: Cell, limit: float, ok: Callable[[slice, slice], np.ndarray]) -> Cell | None:
+        """The cell nearest `cell` within `limit` cells where `ok(rows, cols)`, a mask of that window, holds; None when none does."""
+        import numpy as np
+
+        r0, c0 = cell
+        k = int(math.ceil(limit))
+        rs, re = max(0, r0 - k), min(self.shape[0], r0 + k + 1)
+        cs, ce = max(0, c0 - k), min(self.shape[1], c0 + k + 1)
+        if rs >= re or cs >= ce:
+            return None
+        rr, cc = np.nonzero(ok(slice(rs, re), slice(cs, ce)))
+        if rr.size == 0:
+            return None
+        d = np.hypot(rr + rs - r0, cc + cs - c0)
+        i = int(np.argmin(d))
+        return None if d[i] > limit else (int(rr[i] + rs), int(cc[i] + cs))
 
     def inside(self, cell: Cell) -> bool:
         return 0 <= cell[0] < self.shape[0] and 0 <= cell[1] < self.shape[1]
@@ -117,22 +140,11 @@ class _Planner:
         return cached
 
     def nearest_free(self, cell: Cell, *, limit: int = _ENDPOINT_SEARCH_CELLS) -> Cell | None:
+        import numpy as np
+
         if self.free(cell):
             return cell
-        for radius in range(1, limit + 1):
-            best: Cell | None = None
-            best_d = math.inf
-            for dr in range(-radius, radius + 1):
-                for dc in (-radius, radius) if abs(dr) != radius else range(-radius, radius + 1):
-                    candidate = (cell[0] + dr, cell[1] + dc)
-                    if not self.free(candidate):
-                        continue
-                    d = math.dist(candidate, cell)
-                    if d < best_d:
-                        best, best_d = candidate, d
-            if best is not None:
-                return best
-        return None
+        return self._grid.nearest(cell, limit, lambda rows, cols: np.array([[self.free((r, c)) for c in range(cols.start, cols.stop)] for r in range(rows.start, rows.stop)], dtype=bool))
 
 
 def _reconstruct(came_from: dict[Cell, Cell], cell: Cell) -> list[Cell]:

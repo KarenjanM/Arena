@@ -134,3 +134,24 @@ def test_iter_points_covers_the_whole_route() -> None:
     assert pts[0] == pytest.approx((0.0, 0.0))
     assert pts[-1] == pytest.approx((10.0, 10.0))
     assert len(pts) >= 20
+
+
+def test_cell_centers_convert_elementwise_for_arrays() -> None:
+    grid = OccupancyGrid(occupied=np.zeros((40, 60), dtype=bool), res=0.05, ox=-1.0, oy=2.0)
+    rows, cols = np.array([0, 39, 12]), np.array([0, 59, 31])
+    xs, ys = grid.xy((rows, cols))
+    assert [(float(x), float(y)) for x, y in zip(xs, ys, strict=True)] == [grid.xy((int(r), int(c))) for r, c in zip(rows, cols, strict=True)]
+
+
+def test_nearest_finds_the_closest_cell_the_mask_allows_within_the_limit() -> None:
+    blocked = np.ones((21, 21), dtype=bool)
+    blocked[10, 16] = False
+    blocked[16, 16] = False
+    grid = OccupancyGrid(occupied=blocked, res=1.0, ox=0.0, oy=0.0)
+
+    def free(rows: slice, cols: slice) -> np.ndarray:
+        return ~grid.occupied[rows, cols]
+
+    assert grid.nearest((10, 10), 8, free) == (10, 16)
+    assert grid.nearest((10, 10), 5.5, free) is None
+    assert grid.nearest((16, 10), 6, free) == (16, 16)

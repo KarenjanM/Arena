@@ -133,24 +133,8 @@ class Grid(OccupancyGrid):
         return int(self.labels_at(min(radius, ROBOT_CLEAR))[cell]) if self.inside(cell) else 0
 
     def nearest_free(self, pt: Point, radius: float, within: float) -> Point | None:
-        import numpy as np
-
-        r0, c0 = self.cell(pt)
-        k = int(math.ceil(within / self.res))
-        rows, cols = self.shape
-        rs, re = max(0, r0 - k), min(rows, r0 + k + 1)
-        cs, ce = max(0, c0 - k), min(cols, c0 + k + 1)
-        if rs >= re or cs >= ce:
-            return None
-        window = self.dist[rs:re, cs:ce] >= radius
-        if not window.any():
-            return None
-        rr, cc = np.nonzero(window)
-        d = np.hypot(rr + rs - r0, cc + cs - c0)
-        i = int(np.argmin(d))
-        if d[i] * self.res > within:
-            return None
-        return self.xy((int(rr[i] + rs), int(cc[i] + cs)))
+        found = self.nearest(self.cell(pt), within / self.res, lambda rows, cols: self.dist[rows, cols] >= radius)
+        return None if found is None else self.xy(found)
 
 
 @attrs.frozen
@@ -274,8 +258,7 @@ class WorldContext:
             rows, cols = np.nonzero(ok)
             if rows.size == 0:
                 continue
-            xs = (cols + 0.5) * grid.res + grid.ox
-            ys = (grid.shape[0] - 1 - rows + 0.5) * grid.res + grid.oy
+            xs, ys = grid.xy((rows, cols))
             far = (np.hypot(xs - self.start[0], ys - self.start[1]) >= 1.8 + need) & (np.hypot(xs - self.goal[0], ys - self.goal[1]) >= 1.3 + need)
             keep = far & (route_clearance(xs, ys, self.route) >= 1.5 + need)
             if not keep.any():
@@ -303,7 +286,7 @@ class WorldContext:
         if rows.size == 0:
             return self.centroids[name]
         i = rng.randrange(rows.size)
-        return (float((cols[i] + 0.5) * grid.res + grid.ox), float((grid.shape[0] - 1 - rows[i] + 0.5) * grid.res + grid.oy))
+        return grid.xy((int(rows[i]), int(cols[i])))
 
     def exit_zone(self) -> str | None:
         transit = sorted(n for n, r in self.roles.items() if r is Role.TRANSIT and n in self.polygons)
@@ -440,9 +423,7 @@ class WorldContext:
         labels = grid.labels_at(min(radius, ROBOT_CLEAR))[rs:re, cs:ce]
         ok = (grid.dist[rs:re, cs:ce] >= max(radius, ROBOT_CLEAR)) & (labels == grid.component(self.start, radius))
         rr, cc = np.nonzero(ok)
-        rr, cc = rr + rs, cc + cs
-        xs = (cc + 0.5) * grid.res + grid.ox
-        ys = (rows - 1 - rr + 0.5) * grid.res + grid.oy
+        xs, ys = grid.xy((rr + rs, cc + cs))
         d = np.hypot(xs - pt[0], ys - pt[1])
         keep = (d <= within) & (np.hypot(xs - self.start[0], ys - self.start[1]) >= 1.5) & (np.hypot(xs - self.goal[0], ys - self.goal[1]) >= 1.0)
         if not on_route:
