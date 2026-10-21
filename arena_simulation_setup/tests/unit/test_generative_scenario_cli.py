@@ -185,3 +185,11 @@ def test_writes_into_an_install_prefix_or_the_asset_cache_are_refused(tmp_path: 
     done = _run("suite", "sbend", "--worlds", str(assets / "worlds"), "--out", str(assets / "s.yaml"), ARENA_ASSETS_DIR=str(assets))
     assert done.returncode == 1
     assert "asset cache" in done.stderr
+
+
+@pytest.mark.parametrize("level", [0, "0", "2"])
+def test_the_base_route_keeps_the_robots_levels(level: int | str) -> None:
+    from arena_simulation_setup.generative.scenario.route import robot_for
+
+    spec = robot_for({"start": [0.0, 0.0, 0.0], "goal": [20.0, 0.0], "level": level, "goal_level": level}, [])
+    assert spec["level"] == level and spec["goal_level"] == level

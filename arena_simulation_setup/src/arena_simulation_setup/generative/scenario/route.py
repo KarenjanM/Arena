@@ -91,7 +91,7 @@ def robot_for(
 
     spec: dict[str, Any] = {"start": seq[0], "phases": [{"goto": p} for p in seq[1:]]}
     for key in ("level", "goal_level"):
-        if robot.get(key):
+        if robot.get(key) not in (None, ""):
             spec[key] = robot[key]
     return spec
 
