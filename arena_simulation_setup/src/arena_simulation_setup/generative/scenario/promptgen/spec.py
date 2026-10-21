@@ -148,6 +148,17 @@ def _profile_name(raw: object, *, where: str) -> str:
         raise SchemaError(f"{where}: {exc}") from None
 
 
+def _names(raw: object, *, where: str) -> tuple[str, ...]:
+    """A list of names, a single string as one name."""
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        return (raw,) if raw else ()
+    if not isinstance(raw, Sequence):
+        raise SchemaError(f"{where}: expected a list of names, got {type(raw).__name__}")
+    return tuple(str(n) for n in raw)
+
+
 def _reject_unknown(raw: Mapping[str, Any], allowed: Sequence[str], *, where: str) -> None:
     unknown = sorted(set(raw) - set(allowed))
     if unknown:
@@ -193,7 +204,7 @@ def parse_selection(raw: object, *, where: str) -> Selection:
         amount=_choice(raw["amount"], ("half", "all_but_one", "all"), where=f"{where}.amount") if raw.get("amount") else "",
         n=int(_num(raw["n"], where=f"{where}.n")) if raw.get("n") is not None else 0,
         zone=str(raw.get("zone") or ""),
-        names=tuple(str(n) for n in (raw.get("names") or ())),
+        names=_names(raw.get("names"), where=f"{where}.names"),
     )
     if not sel.as_dict():
         raise SchemaError(f"{where}: a selection needs one of profile / amount / n / zone / names")
@@ -365,7 +376,7 @@ def parse_d(raw: object) -> DDecision | None:
         profile=_profile_name(raw.get("profile"), where="D.profile"),
         speed=_tier(raw.get("speed", "mid"), where="D.speed"),
         route_fraction=fraction,
-        reuse=tuple(str(n) for n in (raw.get("reuse") or ())),
+        reuse=_names(raw.get("reuse"), where="D.reuse"),
         reason=str(raw.get("reason") or ""),
     )
 

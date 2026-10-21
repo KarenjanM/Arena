@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match, score, when_in
+from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_d, parse_selection
 
 
 @pytest.mark.parametrize(
@@ -40,3 +41,17 @@ def test_busy_multiplier_words_match_whole_words_outside_time_phrases() -> None:
 
 def test_a_word_containing_a_case_phrase_does_not_own_its_sentence() -> None:
     assert when_in("A surgeon walks by after ten seconds.", exclude_cases=("stampede",)).as_dict() == {"at": 10.0}
+
+
+@pytest.mark.parametrize("raw, names", [("ped_1", ("ped_1",)), (["ped_1", "ped_2"], ("ped_1", "ped_2"))])
+def test_names_and_reuse_take_a_list_or_one_string(raw, names) -> None:
+    assert parse_selection({"names": raw}, where="B.select").names == names
+    assert parse_d({"case": "stubborn", "reuse": raw}).reuse == names
+
+
+@pytest.mark.parametrize("raw", [5, {"ped_1": 1}])
+def test_names_and_reuse_reject_a_non_list(raw) -> None:
+    with pytest.raises(SchemaError, match=r"B\.select\.names"):
+        parse_selection({"names": raw}, where="B.select")
+    with pytest.raises(SchemaError, match=r"D\.reuse"):
+        parse_d({"case": "stubborn", "reuse": raw})
