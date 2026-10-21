@@ -266,3 +266,21 @@ def test_the_route_checks_of_a_world_share_one_grid(tmp_path: Path) -> None:
 def test_without_a_reachable_pair_the_farthest_zones_are_the_endpoints(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _, robot = _world_parts(_sealed_rooms(tmp_path))
     assert robot == {"start": "room_0", "goal": "room_3"}
+
+
+def test_a_rejected_base_leaves_nothing_behind(tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.materialize import write_base
+
+    world = _worlds(tmp_path) / "sbend"
+    doc = {"humans": [{"name": "a", "pose": "corridor_south", "agent": {"agent_type": "./talker.yaml"}}], "knobs": {"speed": "high"}}
+    with pytest.raises(ValueError, match="knobs"):
+        write_base(doc, world_root=world, profile="normal")
+    assert not (world / "scenarios").exists()
+
+
+def test_a_written_base_carries_its_talker_type(tmp_path: Path) -> None:
+    worlds = _worlds(tmp_path)
+    assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0
+    normal = worlds / "sbend" / "scenarios" / "normal"
+    assert "./talker.yaml" in (normal / "scenario.yaml").read_text()
+    assert (normal / "talker.yaml").is_file()
