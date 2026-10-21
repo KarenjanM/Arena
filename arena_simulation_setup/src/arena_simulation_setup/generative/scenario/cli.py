@@ -15,13 +15,15 @@ from typing import Any
 
 import yaml
 
+from arena_simulation_setup.shared.pathing import PathError, plan_route
+
 from .formats import first_level, is_world, levels, read_scenario, world_roles
 from .materialize import WouldOverwrite, prune_generated, write_base
 from .occupancy import UNKNOWN_FOOTPRINT_RADIUS, level_grid, load_world, world_statics
 from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points
 from .populate import build as build_base
 from .promptgen import prompts as P
-from .promptgen.world import Grid, WorldError, endpoint, plan
+from .promptgen.world import ROBOT_CLEAR, Grid, WorldError, endpoint
 from .propose import DEFAULT_MODEL, Unavailable, build_prompt, classify_tail, merge, unknown_names
 from .route import MIN_EPISODE_S, ROBOT_SPEED_MPS, robot_for, route_seconds
 from .zone_screen import ref_safe_zones, screen_zones
@@ -33,6 +35,37 @@ PROFILE_NOTES = {
     "night": "night: half the crowd, slower",
     "empty": "nobody - the no-population control",
 }
+
+
+def _finite(value: str, parse: Callable[[str], float]) -> float:
+    try:
+        number = parse(value)
+    except ValueError:
+        number = math.nan
+    if not math.isfinite(number):
+        raise argparse.ArgumentTypeError(f"{value!r} is not a number")
+    return number
+
+
+def _positive_float(value: str) -> float:
+    """An argparse type: a finite number above 0."""
+    if (number := _finite(value, float)) <= 0:
+        raise argparse.ArgumentTypeError(f"{value!r}: expected a number above 0, e.g. 0.5")
+    return number
+
+
+def _non_negative_float(value: str) -> float:
+    """An argparse type: a finite number of at least 0."""
+    if (number := _finite(value, float)) < 0:
+        raise argparse.ArgumentTypeError(f"{value!r}: expected a number of at least 0, e.g. 0 or 1.5")
+    return number
+
+
+def _positive_int(value: str) -> int:
+    """An argparse type: a whole number of at least 1."""
+    if (number := int(_finite(value, int))) < 1:
+        raise argparse.ArgumentTypeError(f"{value!r}: expected a whole number of at least 1, e.g. 1 or 3")
+    return number
 
 
 def _arena_world_path() -> list[Path]:
@@ -142,21 +175,21 @@ def _grid_loader(root: Path) -> Callable[[], Grid | None]:
     return grid
 
 
-def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]], robot: dict[str, Any]) -> bool:
-    """Whether the planner finds a route along the robot's legs from snapped endpoints."""
+def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]], robot: dict[str, Any], radius: float = ROBOT_CLEAR) -> bool:
+    """Whether the planner finds a route clear by `radius` along the robot's legs from snapped endpoints."""
+    pts = route_points(robot, zones)
+    held = grid() if len(pts) >= 2 else None
+    if held is None:
+        return True
     try:
-        pts = route_points(robot, zones)
-        held = grid() if len(pts) >= 2 else None
-        if held is None:
-            return True
         for a, b in itertools.pairwise(pts):
-            plan(held, endpoint(held, a), endpoint(held, b))
-    except WorldError:
+            plan_route(held, endpoint(held, a), endpoint(held, b), is_valid=held.clear_of(radius))
+    except PathError:
         return False
     return True
 
 
-def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _world_parts(root: Path, radius: float = ROBOT_CLEAR) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """A world's zones and a robot copied from one of its scenarios, else the two most separated reachable zones."""
     world = root.name
     doc = first_level(root)
@@ -169,7 +202,7 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         robots = read_scenario(cand).get("robots") or []
         if robots and isinstance(robots[0], dict) and robots[0].get("start"):
             robot = dict(robots[0])
-            if _route_reachable(grid, zones, robot):
+            if _route_reachable(grid, zones, robot, radius):
                 return zones, robot
             print(f"  ! {world}: {cand.parent.name}'s robot route is not plannable on this map; ignoring it")
 
@@ -184,7 +217,7 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     pairs = sorted(((math.dist(centroid(a), centroid(b)), a["name"], b["name"]) for i, a in enumerate(named) for b in named[i + 1 :]), reverse=True)
     _, start, goal = pairs[0]
     for _d, a_name, b_name in pairs:
-        if _route_reachable(grid, named, {"start": a_name, "goal": b_name}):
+        if _route_reachable(grid, named, {"start": a_name, "goal": b_name}, radius):
             start, goal = a_name, b_name
             break
     print(f"  ! {world}: no scenario declares a robot; using the two most separated reachable zones as endpoints - start={start!r} goal={goal!r}")
@@ -309,7 +342,7 @@ def _cmd_populate(args: argparse.Namespace) -> int:
     root = world_root(args.worlds, args.world, write=args.write)
     if args.write:
         _writable(root)
-    zones, robot = _world_parts(root)
+    zones, robot = _world_parts(root, args.robot_radius)
     if args.robot_start is not None or args.robot_goal is not None:
         robot = _override_robot(robot, zones, start=args.robot_start, goal=args.robot_goal)
         print(f"  robot endpoints overridden: start={robot['start']!r} goal={robot.get('goal')!r}")
@@ -507,6 +540,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--robot-goal", default=None, help="robot goal: a zone name of its level or 'x,y[,yaw]'; replaces the route's legs with the single leg to it")
     p.add_argument("--prune", action="store_true", help="with --write, remove generated bases this run did not write (never hand-authored ones)")
     p.add_argument("--force", action="store_true", help="replace scenarios this tool did not generate (they may be hand-authored)")
+    p.add_argument("--robot-radius", type=_positive_float, default=ROBOT_CLEAR, help=f"meters the robot's route keeps clear of walls and furniture when the base route is picked, above 0 (default {ROBOT_CLEAR})")
 
     p = verb("promptgen", _cmd_promptgen, "realize prompt x base scenarios for a world as scenarios with a timeline")
     p.add_argument("world", nargs="?", help="the world whose bases to realize the prompts on; bare, the verb lists the worlds")
@@ -531,7 +565,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--out", default=None, help="write here instead of $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites/<name>.yaml")
     p.add_argument("--match", nargs="*", default=[], help="scenario globs (default: every scenario the generator wrote)")
     p.add_argument("--robot", default="jackal", help="the chassis; a contest compares planners on one drive family")
-    p.add_argument("--episodes", type=int, default=1, help="episodes per stage, seeded seed..seed+episodes-1")
+    p.add_argument("--episodes", type=_positive_int, default=1, help="episodes per stage, seeded seed..seed+episodes-1, at least 1 (default 1)")
     p.add_argument("--seed", type=int, default=1000, help="first episode seed; keep screening and dataset seed blocks disjoint")
     p.add_argument("--timeout", default="240s", help="sim-time budget per episode")
     return parser

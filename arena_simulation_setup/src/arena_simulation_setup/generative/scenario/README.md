@@ -14,7 +14,7 @@ world + zone roles --populate--> bases --promptgen--> <base>__<prompt_id> --suit
 |---|---|---|
 | `zones <world>` | - | each zone's role (work, break, transit, private, unknown) |
 | `classify [world...]` | `kg.yaml` of each world | ask a model for the roles no KG fact and no substring rule covers |
-| `populate <world>` | `scenarios/{normal,break,night,empty}/` | the four base scenarios |
+| `populate <world>` | `scenarios/{normal,break,night,empty}/` | the four base scenarios, on a base route the planner finds clear by `--robot-radius` (default 0.35 m) |
 | `promptgen <world>` | `scenarios/<base>__<prompt_id>/` | realize every prompt on every base (`--ids` picks prompts, `--oracle` needs no model) |
 | `suite <world...>` | `<name>.yaml` under `$ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites`, the source tree the benchmark runner reads after the installed share (an installed suite of the same name wins until arena_evaluation is rebuilt, and `suite` says so), or `--out` | one stage per (world, scenario) |
 

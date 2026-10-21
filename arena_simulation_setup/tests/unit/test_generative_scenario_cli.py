@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from arena_simulation_setup.generative.scenario.cli import _grid_loader, _override_robot, _parser, _route_reachable, _world_parts, main
+from arena_simulation_setup.generative.scenario.cli import _grid_loader, _non_negative_float, _override_robot, _parser, _positive_float, _positive_int, _route_reachable, _world_parts, main
 
 SHIPPED = Path(__file__).resolve().parents[2] / "worlds"
 
@@ -335,3 +335,51 @@ def test_a_written_base_carries_its_talker_type(tmp_path: Path) -> None:
     normal = worlds / "sbend" / "scenarios" / "normal"
     assert "./talker.yaml" in (normal / "scenario.yaml").read_text()
     assert (normal / "talker.yaml").is_file()
+
+
+@pytest.mark.parametrize(
+    ("check", "value", "expected"),
+    [
+        (_positive_float, "0", "expected a number above 0"),
+        (_positive_float, "-0.2", "expected a number above 0"),
+        (_positive_float, "nan", "is not a number"),
+        (_positive_float, "fast", "is not a number"),
+        (_non_negative_float, "-1", "expected a number of at least 0"),
+        (_non_negative_float, "inf", "is not a number"),
+        (_positive_int, "0", "expected a whole number of at least 1"),
+        (_positive_int, "1.5", "is not a number"),
+    ],
+)
+def test_a_value_out_of_range_names_the_valid_range(check, value: str, expected: str) -> None:
+    with pytest.raises(argparse.ArgumentTypeError, match=expected):
+        check(value)
+
+
+def test_a_value_in_range_is_parsed() -> None:
+    assert (_positive_float("0.35"), _non_negative_float("0"), _positive_int("3")) == (0.35, 0.0, 3)
+
+
+@pytest.mark.parametrize("argv", [["populate", "sbend", "--robot-radius", "0"], ["suite", "sbend", "--episodes", "0"]])
+def test_the_verbs_refuse_a_value_out_of_range(capsys: pytest.CaptureFixture[str], argv: list[str]) -> None:
+    with pytest.raises(SystemExit) as exited:
+        main(argv)
+    assert exited.value.code == 2
+    assert "expected a" in capsys.readouterr().err
+
+
+def _doorway(tmp_path: Path) -> Path:
+    root = tmp_path / "doorway"
+    root.mkdir()
+    walls = [{"path": [[0.0, 0.0], [10.0, 0.0], [10.0, 4.0], [0.0, 4.0], [0.0, 0.0]]}, {"path": [[5.0, 0.0], [5.0, 2.8]]}]
+    zones = [{"name": "west", "polygon": [[0.0, 0.0], [5.0, 0.0], [5.0, 4.0], [0.0, 4.0]]}, {"name": "east", "polygon": [[5.0, 0.0], [10.0, 0.0], [10.0, 4.0], [5.0, 4.0]]}]
+    (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones, "walls": walls}]}))
+    return root
+
+
+def test_the_robot_radius_decides_whether_the_base_route_passes_a_doorway(tmp_path: Path) -> None:
+    root = _doorway(tmp_path)
+    grid = _grid_loader(root)
+    robot = {"start": [2.0, 2.0, 0.0], "goal": [8.0, 2.0]}
+    zones: list = []
+    assert _route_reachable(grid, zones, robot, 0.35)
+    assert not _route_reachable(grid, zones, robot, 0.8)
