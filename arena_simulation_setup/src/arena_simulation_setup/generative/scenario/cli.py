@@ -157,7 +157,7 @@ def _shadowing_suite(out: Path) -> Path | None:
         installed = get_package_share_path("arena_evaluation") / "configs" / "benchmark" / "suites" / out.name
     except (ImportError, LookupError):
         return None
-    return installed if installed.is_file() and not installed.samefile(out) else None
+    return installed if installed.is_file() and not (out.exists() and installed.samefile(out)) else None
 
 
 def _grid_loader(root: Path) -> Callable[[], Grid | None]:
@@ -504,8 +504,13 @@ def _cmd_suite(args: argparse.Namespace) -> int:
         print("no scenarios matched" + ("" if args.match else ": none of these worlds has generated scenarios (pass --match for hand-authored ones)"))
         return 1
     doc = build(worlds, robot=args.robot, episodes=args.episodes, seed=args.seed, timeout=args.timeout)
-    out.write_text(yaml.safe_dump(doc, sort_keys=False))
-    print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s). Run with `arena evaluation benchmark --suite {out.stem} --contest <contest>`")
+    text = yaml.safe_dump(doc, sort_keys=False)
+    if args.write:
+        out.write_text(text)
+        print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s). Run with `arena evaluation benchmark --suite {out.stem} --contest <contest>`")
+    else:
+        print(text, end="")
+        print(f"(dry run - pass --write to write these {len(doc['stages'])} stage(s) to {out})")
     if (shadow := _shadowing_suite(out)) is not None:
         print(f"  ! the runner reads the installed {shadow} first: rebuild arena_evaluation for it to read this one")
     return 0
@@ -517,7 +522,7 @@ def _parser() -> argparse.ArgumentParser:
         description=(
             "Generate scenarios for an Arena world. Verbs: zones (print each zone's role), classify (ask a model for the roles no rule covers), "
             "populate (write the four base scenarios), promptgen (realize prompts on the bases as timeline scenarios), suite (write a benchmark suite over them). "
-            "Writing verbs are dry runs without --write; `generate_scenario <verb> --help` lists a verb's options."
+            "Writing verbs are dry runs without --write. `generate_scenario <verb> --help` lists a verb's options."
         ),
     )
     verbs = parser.add_subparsers(dest="verb", required=True, metavar="{zones,classify,populate,promptgen,suite}")
@@ -573,6 +578,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--episodes", type=_positive_int, default=1, help="episodes per stage, seeded seed..seed+episodes-1, at least 1 (default 1)")
     p.add_argument("--seed", type=int, default=1000, help="first episode seed; keep screening and dataset seed blocks disjoint")
     p.add_argument("--timeout", default="240s", help="sim-time budget per episode")
+    p.add_argument("--write", action="store_true", help="write the suite file (default: a dry run that prints it)")
     return parser
 
 

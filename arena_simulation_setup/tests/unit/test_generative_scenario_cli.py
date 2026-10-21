@@ -186,7 +186,7 @@ def test_writes_default_to_the_source_tree(tmp_path: Path) -> None:
     done = _run("populate", "sbend", "--write", ARENA_DIR=str(arena))
     assert done.returncode == 0, done.stdout + done.stderr
     assert (arena / "arena_simulation_setup" / "worlds" / "sbend" / "scenarios" / "normal" / "scenario.yaml").is_file()
-    done = _run("suite", "sbend", ARENA_DIR=str(arena))
+    done = _run("suite", "sbend", "--write", ARENA_DIR=str(arena))
     assert done.returncode == 0, done.stdout + done.stderr
     assert (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites" / "edge_case.yaml").is_file()
 
@@ -222,7 +222,7 @@ def test_writes_into_an_install_prefix_or_the_asset_cache_are_refused(tmp_path: 
     assert not (prefix / "share" / "worlds" / "sbend" / "scenarios").exists()
     assets = tmp_path / "assets"
     shutil.copytree(src, assets / "worlds")
-    done = _run("suite", "sbend", "--worlds", str(assets / "worlds"), "--out", str(assets / "s.yaml"), ARENA_ASSETS_DIR=str(assets))
+    done = _run("suite", "sbend", "--worlds", str(assets / "worlds"), "--out", str(assets / "s.yaml"), "--write", ARENA_ASSETS_DIR=str(assets))
     assert done.returncode == 1
     assert "asset cache" in done.stderr
 

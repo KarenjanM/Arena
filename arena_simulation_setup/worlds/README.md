@@ -240,6 +240,8 @@ Resolved by `World.scenario` property which returns a per-world
 `ScenarioIdentifier` class
 ([tree/World/view.py](../src/arena_simulation_setup/tree/World/view.py)).
 `ScenarioView.load()` tries `scenario.yaml` first, then `scenario.json`.
+A scenario `generate_scenario` wrote carries its `GENERATED_MARKER` header, see
+[generative/scenario](../src/arena_simulation_setup/generative/scenario/README.md).
 
 ```yaml
 format: arena-scenario/2

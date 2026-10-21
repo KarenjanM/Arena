@@ -24,7 +24,7 @@ Its prompts are the sets in [`promptgen/prompts/`](promptgen/prompts/), every `u
 ```bash
 generate_scenario populate hospital_1 --write --prune
 generate_scenario promptgen hospital_1 --write -v
-generate_scenario suite hospital_1 office_1 --robot jackal --episodes 3 --name edge_case_core
+generate_scenario suite hospital_1 office_1 --robot jackal --episodes 3 --name edge_case_core --write
 arena evaluation benchmark --suite edge_case_core --contest edge_case_differential
 ```
 

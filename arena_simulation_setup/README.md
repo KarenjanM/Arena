@@ -19,11 +19,15 @@ pedestrian agents, and environment templates through the types defined here.
 - [Generative worlds](src/arena_simulation_setup/generative/world/README.md):
   the generator registry, the layout IR they compile to, the sketch and letter
   grammars, and the ROS surface the rviz panel drives.
+- [Generative scenarios](src/arena_simulation_setup/generative/scenario/README.md):
+  the `generate_scenario` verbs, zone roles from the world's KG, the base
+  populations, the prompt-driven timeline cases and the benchmark suites over them.
 
 ## CLI
 
 | Script | Usage | Effect |
 |---|---|---|
+| `generate_scenario` | `generate_scenario {zones,classify,populate,promptgen,suite} <world> [--write] ...` | Prints a world's zone roles, asks a model for the missing ones, writes the four base scenarios, realizes prompts on them as timeline cases and writes a benchmark suite over the result. Writing verbs are dry runs without `--write`. See the [generator README](src/arena_simulation_setup/generative/scenario/README.md). |
 | `generate_world` | `generate_world "<prompt>" [-e endpoint] [-o outdir]` | Posts a natural-language prompt to a generation server; extracts the returned zip into `worlds/<outdir>/` |
 | `model_staging` | `model_staging <install_dir>` | Creates symlinks in `<install_dir>` for all known robot models and writes a `deps` file |
 | `nav_at_r` | `nav_at_r <world name or dir> [--robot NAME\|DIR \| --radius M] [--walls-only] [--start X,Y] [--image PNG] [--json]` | Prints the NAV@r reachability of a world per level for a footprint radius: value, traversable components, largest share and cut-off zones. See [AUTHORING.md](AUTHORING.md#reachability-navr). |
