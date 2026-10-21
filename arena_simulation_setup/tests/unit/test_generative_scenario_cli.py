@@ -278,6 +278,17 @@ def test_a_rejected_base_leaves_nothing_behind(tmp_path: Path) -> None:
     assert not (world / "scenarios").exists()
 
 
+def test_populate_names_the_assets_stamped_as_the_runtime_box(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    worlds = _worlds(tmp_path)
+    world = worlds / "sbend"
+    doc = yaml.safe_load((world / "world.yaml").read_text())
+    doc["levels"][0]["objects"] = [{"name": "bare", "pose": [1.0, 1.5, 0.0], "model": "Pytest_BarePlant"}]
+    (world / "world.yaml").write_text(yaml.safe_dump(doc))
+    (world / "assets" / "Common" / "Object" / "Pytest_BarePlant").mkdir(parents=True)
+    assert main(["populate", "sbend", "--worlds", str(worlds)]) == 0
+    assert "1 asset(s) with no annotated footprint, stamped as the runtime's 2 m box: Pytest_BarePlant" in capsys.readouterr().out
+
+
 def test_a_written_base_carries_its_talker_type(tmp_path: Path) -> None:
     worlds = _worlds(tmp_path)
     assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0

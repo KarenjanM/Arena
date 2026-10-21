@@ -26,34 +26,15 @@ def level_of(world: World) -> Level | None:
     return next((level for level in world.levels.values() if level.zones), next(iter(world.levels.values()), None))
 
 
-def _placed(corners: list[tuple[float, float]], obj: Obstacle) -> shapely.Polygon:
-    """`corners` in the object's frame placed at its pose, as `Obstacle.footprint` places them."""
-    import shapely
-    import shapely.affinity
-
-    poly = shapely.affinity.rotate(shapely.Polygon(corners), obj.pose.orientation.to_yaw(), origin=(0, 0), use_radians=True)
-    return shapely.affinity.translate(poly, xoff=obj.pose.position.x, yoff=obj.pose.position.y)
-
-
 def _footprints(view: WorldView, world: World, objects: list[Obstacle]) -> list[shapely.Polygon | None]:
-    """Each object's footprint with the world's own and linked assets resolvable, each asset read once."""
+    """Each object's `Obstacle.footprint()` with the world's own and linked assets resolvable, as the runtime stamps it."""
+    import asyncio
+
     from arena_simulation_setup.tree import Identifier
     from arena_simulation_setup.tree.World.view import world_assets
 
     async def collect() -> list[shapely.Polygon | None]:
-        bounds: dict[Path, list[tuple[float, float]] | None] = {}
-        out: list[shapely.Polygon | None] = []
-        for obj in objects:
-            try:
-                path = await obj.model.resolve_path()
-                if path not in bounds:
-                    bounds[path] = obj.model.load(path).bounds
-            except FileNotFoundError:
-                out.append(None)
-                continue
-            corners = bounds[path]
-            out.append(None if corners is None else _placed(corners, obj))
-        return out
+        return list(await asyncio.gather(*(obj.footprint() for obj in objects)))
 
     with world_assets(view, world):
         return Identifier._run_sync(collect())
@@ -67,7 +48,7 @@ def load_world(world_root: str | Path) -> World:
 
 
 def world_statics(world_root: str | Path, world: World | None = None) -> list[dict[str, Any]]:
-    """Every object of the world's level, with its footprint `polygon` and a covering `radius`; `world` is the loaded world at `world_root` when given."""
+    """Every object of the level with its footprint `polygon`, a covering `radius` and whether its asset gave the footprint."""
     import shapely
 
     from arena_simulation_setup.tree.World.view import WorldView
@@ -81,11 +62,12 @@ def world_statics(world_root: str | Path, world: World | None = None) -> list[di
     out: list[dict[str, Any]] = []
     for obj, footprint in zip(level.objects, _footprints(view, world, level.objects), strict=True):
         x, y = obj.pose.position.x, obj.pose.position.y
+        resolved = footprint is not None
         if footprint is None:
             r = UNKNOWN_FOOTPRINT_RADIUS
             footprint = shapely.box(x - r, y - r, x + r, y + r)
         polygon = list(footprint.exterior.coords)[:-1]
-        out.append({"name": obj.name, "model": obj.model.name, "pose": [x, y], "polygon": polygon, "radius": max(math.hypot(px - x, py - y) for px, py in polygon)})
+        out.append({"name": obj.name, "model": obj.model.name, "pose": [x, y], "polygon": polygon, "radius": max(math.hypot(px - x, py - y) for px, py in polygon), "resolved": resolved})
     return out
 
 

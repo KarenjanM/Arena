@@ -86,7 +86,7 @@ def furnished(tmp_path: Path) -> Path:
     DynamicPaths.ARENA.path = previous
 
 
-def test_statics_read_each_asset_once_and_keep_each_object_footprint(furnished: Path) -> None:
+def test_statics_are_the_runtime_footprint_of_each_object(furnished: Path) -> None:
     from arena_simulation_setup.tree import Identifier
     from arena_simulation_setup.tree.World.view import WorldView, world_assets
 

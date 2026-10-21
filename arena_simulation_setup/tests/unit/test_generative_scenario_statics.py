@@ -56,6 +56,11 @@ def test_an_unannotated_object_is_the_runtime_box(world: Path) -> None:
     plant = next(s for s in world_statics(world) if s["name"] == "plant")
     xs, ys = zip(*plant["polygon"], strict=True)
     assert (min(xs), max(xs), min(ys), max(ys)) == (7.0, 9.0, 4.0, 6.0)
+    assert not plant["resolved"]
+
+
+def test_an_annotated_object_is_marked_resolved(world: Path) -> None:
+    assert {s["name"]: s["resolved"] for s in world_statics(world)} == {"counter": True, "plant": False, "kiosk": True}
 
 
 def test_an_asset_shipped_with_the_world_resolves(world: Path) -> None:

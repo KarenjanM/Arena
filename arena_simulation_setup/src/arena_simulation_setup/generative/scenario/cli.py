@@ -17,7 +17,7 @@ import yaml
 
 from .formats import first_level, is_world, levels, read_scenario, world_roles
 from .materialize import WouldOverwrite, prune_generated, write_base
-from .occupancy import level_grid, load_world, world_statics
+from .occupancy import UNKNOWN_FOOTPRINT_RADIUS, level_grid, load_world, world_statics
 from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points
 from .populate import build as build_base
 from .promptgen import prompts as P
@@ -309,7 +309,10 @@ def _cmd_populate(args: argparse.Namespace) -> int:
         print("  !   distinction is drawn between living areas and private rooms instead")
 
     spec = robot_for(robot, zones)
-    verdicts = screen_zones(zones, world_root=root, route=route_points(spec, zones), statics=world_statics(root), min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
+    statics = world_statics(root)
+    if unresolved := sorted({str(s["model"]) for s in statics if not s["resolved"]}):
+        print(f"  ! {len(unresolved)} asset(s) with no annotated footprint, stamped as the runtime's {2 * UNKNOWN_FOOTPRINT_RADIUS:g} m box: {', '.join(unresolved)}")
+    verdicts = screen_zones(zones, world_root=root, route=route_points(spec, zones), statics=statics, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
     homes = ref_safe_zones(verdicts)
     print(f"  homes: {len(homes)}/{len(verdicts)} zone(s) entirely clear of the route" + ("" if homes else " - falling back to every target zone but the robot's own"))
     for name, verdict in sorted(verdicts.items()):
