@@ -34,3 +34,13 @@ def test_agent_id_resolves_a_sim_path_directly() -> None:
 
 def test_agent_id_of_an_unknown_agent_is_none() -> None:
     assert _adapter()._agent_id("edge_1") is None
+
+
+def test_agent_id_reads_a_given_id_table_instead_of_the_spawned_agents() -> None:
+    adapter = _adapter()
+    ids = adapter._agent_ids()
+    assert ids == {"env_0/edge_0": 4, "env_0/flow_9": 9}
+    assert adapter._agent_id("edge_0", ids) == 4
+    assert adapter._agent_id("env_0/flow_9", ids) == 9
+    assert adapter._agent_id("edge_0", {"env_0/edge_0": 7}) == 7
+    assert adapter._agent_id("edge_1", ids) is None

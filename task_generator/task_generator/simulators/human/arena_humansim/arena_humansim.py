@@ -784,9 +784,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.velocity.x, a.velocity.y = tracked.velocity
             a.radius = 0.3
             msg.agents.append(a)
+        ids = self._agent_ids()
         for name, ped in possessed.items():
             a = AgentStateMsg()
-            aid = self._agent_id(name)
+            aid = self._agent_id(name, ids)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
             a.name = name
             a.pose = self._engine_pose(Pose.from_msg(ped.pose))
@@ -1127,11 +1128,15 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         finally:
             self._spawns_in_flight -= 1
 
-    def _agent_id(self, agent: str) -> int | None:
-        """Engine id of a spawned agent by name or ``sim_path``."""
+    def _agent_ids(self) -> dict[str, int]:
+        """Engine id of every spawned agent by ``sim_path``."""
+        return {name: aid for aid, name in self._agent_names.items()}
+
+    def _agent_id(self, agent: str, ids: Mapping[str, int] | None = None) -> int | None:
+        """Engine id of a spawned agent by name or ``sim_path``, looked up in `ids` (an `_agent_ids()` result) when given."""
         known = self._known_obstacles.get(agent)
         sim_path = known.obstacle.sim_path if known is not None else agent
-        return next((aid for aid, name in self._agent_names.items() if name == sim_path), None)
+        return (self._agent_ids() if ids is None else ids).get(sim_path)
 
     async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
         if isinstance(agent, str):
