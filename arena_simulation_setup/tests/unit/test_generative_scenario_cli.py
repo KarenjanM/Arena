@@ -129,7 +129,7 @@ def test_every_verb_and_option_has_help() -> None:
     assert missing == []
 
 
-@pytest.mark.parametrize("verb", ["zones", "populate", "promptgen", "suite"])
+@pytest.mark.parametrize("verb", ["zones", "classify", "populate", "promptgen", "suite"])
 def test_a_bare_verb_prints_its_help_and_the_worlds(tmp_path: Path, capsys: pytest.CaptureFixture[str], verb: str) -> None:
     assert main([verb, "--worlds", str(_worlds(tmp_path))]) == 2
     out = capsys.readouterr().out

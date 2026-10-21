@@ -21,10 +21,7 @@ NAME = "pytest_room_centric"
 
 @pytest.fixture
 def world(tmp_path: Path) -> Path:
-    try:
-        source = Path(WorldIdentifier(WORLD).resolve_sync().path)
-    except FileNotFoundError:
-        pytest.skip(f"{WORLD} is not installed here")
+    source = Path(WorldIdentifier(WORLD).resolve_sync().path)
     root = tmp_path / WORLD
     root.mkdir()
     for name in ("world.yaml", "kg.yaml"):
@@ -65,8 +62,7 @@ def test_every_generated_agent_survives_the_load(loaded: Scenario, written: dict
 
 def test_a_zone_reference_resolves_to_a_point_inside_that_zone(loaded: Scenario, written: dict, world: Path) -> None:
     referenced = {a["name"]: a["pose"] for a in written["humans"] if isinstance(a["pose"], str)}
-    if not referenced:
-        pytest.skip("no zone screened clean in this world")
+    assert referenced, "no agent starts in a zone"
     polygons = _polygons(world)
     for agent in loaded.humans:
         zone = referenced.get(agent.name)

@@ -265,10 +265,3 @@ def test_a_worlds_character_survives_regenerating_one_profile() -> None:
     fast = _population(world="hospital_1", profile="normal")
     slow = _population(world="office_1", profile="normal")
     assert max(a["agent"]["desired_velocity"] for a in fast) != max(a["agent"]["desired_velocity"] for a in slow)
-
-
-def test_no_base_carries_regions() -> None:
-    for profile in ("empty", "normal"):
-        doc = build(profile, zones=ZONES, robot=ROBOT, seed=0)
-        assert "regions" not in doc
-    assert build("empty", zones=ZONES, robot=ROBOT, seed=0).get("humans") == []

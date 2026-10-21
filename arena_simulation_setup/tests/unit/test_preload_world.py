@@ -39,3 +39,29 @@ def test_world_local_and_linked_assets_resolve_from_their_worlds(tmp_path: Path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f'-> {own}' in result.stdout
     assert f'-> {linked}' in result.stdout
+
+
+def _preload(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, 'ARENA_WORLD_PATH': str(tmp_path), 'ASSET_BUCKETS': ',', 'WORLD_BUCKETS': ','}
+    return subprocess.run([sys.executable, str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=300, check=False)
+
+
+def test_a_dry_run_probes_world_local_assets_and_names_the_missing(tmp_path: Path) -> None:
+    house = _world(tmp_path / 'preload_dry', {'id': '0', 'zones': [], 'objects': [{'name': 'desk', 'model': 'Preload_Dry_Desk', 'pose': [2.0, 2.0]}, {'name': 'lamp', 'model': 'Preload_Dry_Missing', 'pose': [1.0, 1.0]}]})
+    own = _model(house, 'Preload_Dry_Desk')
+    result = _preload(tmp_path, 'preload_dry', '--no-scenarios', '--dry-run')
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f'OK   Common/Object/Preload_Dry_Desk -> {own}' in result.stdout
+    assert 'MISS Common/Object/Preload_Dry_Missing' in result.stdout
+    assert 'resolved 1/2' in result.stdout
+
+
+def test_sounds_adds_the_default_sound_of_every_kind(tmp_path: Path) -> None:
+    from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
+    from arena_simulation_setup.tree.assets.sound_catalog import SoundLibrary
+
+    defaults = {SoundIdentifier.parse(kind.default_asset).shortname for kind in SoundLibrary.default().kinds().values() if kind.default_asset}
+    assert defaults
+    result = _preload(tmp_path, '--sounds', '--dry-run')
+    assert f'world (none): {len(defaults)} unique asset(s)' in result.stdout, result.stdout + result.stderr
+    assert {line.split()[2] for line in result.stdout.splitlines() if ' MISS ' in line or ' OK ' in line} == defaults

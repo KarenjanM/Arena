@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -58,8 +59,8 @@ def test_the_prompt_carries_the_whole_vocabulary_but_asks_only_the_tail() -> Non
 
 def test_a_zones_size_and_contents_reach_the_prompt() -> None:
     prompt = build_prompt(ZONES, ["top_room_0"], world="w")
-    assert "size_m" in prompt
-    assert "contents" in prompt
+    asked = json.loads(prompt.split("what the rest of the world suggests:\n", 1)[1])
+    assert asked == {"top_room_0": {"contents": ["desk"], "size_m": [4.0, 4.0]}}
 
 
 GOOD = '{"top_room_0": {"role": "work", "why": "holds a desk"}}'
@@ -252,8 +253,8 @@ def test_no_configured_model_is_a_clear_refusal_not_a_guess(tmp_path: Path) -> N
     assert done.stdout.startswith("no LLM configured")
 
 
-def test_the_prompt_hash_changes_with_the_prompt() -> None:
-    assert client.prompt_sha256("a", "b") == client.prompt_sha256("a", "b")
+def test_the_prompt_hash_is_stable_and_changes_with_the_prompt() -> None:
+    assert client.prompt_sha256("a", "b") == "8fb20ef63ced4145"
     assert client.prompt_sha256("a", "b") != client.prompt_sha256("ab", "")
 
 

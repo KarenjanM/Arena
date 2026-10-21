@@ -53,11 +53,19 @@ def test_the_shipped_route_is_kept_and_made_long_enough() -> None:
     assert route_seconds(spec, ZONES) >= MIN_EPISODE_S
     short = {"start": [2.0, 16.0, 0.0], "goal": [6.0, 16.0, 0.0]}
     spec = robot_for(short, ZONES)
-    assert MIN_EPISODE_S <= route_seconds(spec, ZONES) or len(spec["phases"]) == MAX_LEGS
+    assert route_seconds(spec, ZONES) >= MIN_EPISODE_S
+    assert len(spec["phases"]) < MAX_LEGS
 
 
-def test_the_floor_holds_for_the_faster_controller() -> None:
-    assert ROBOT_SPEED_MPS == 0.5
+def test_a_route_too_short_to_shuttle_stops_at_the_leg_cap() -> None:
+    spec = robot_for({"start": [2.0, 16.0, 0.0], "goal": [2.5, 16.0, 0.0]}, ZONES)
+    assert len(spec["phases"]) == MAX_LEGS
+    assert route_seconds(spec, ZONES) < MIN_EPISODE_S
+
+
+def test_route_seconds_is_the_route_length_at_the_design_speed() -> None:
+    robot = {"start": [0.0, 0.0, 0.0], "phases": [{"goto": [3.0, 4.0]}, {"goto": [3.0, 0.0]}]}
+    assert math.isclose(route_seconds(robot, ZONES), 9.0 / ROBOT_SPEED_MPS)
 
 
 def test_cast_split_keeps_walkers_and_whole_pairs() -> None:

@@ -251,13 +251,17 @@ def _cmd_zones(args: argparse.Namespace) -> int:
         print("\n* stated in the world's kg.yaml, not a substring rule")
     if unresolved := unknown_names(zones, overrides):
         print(f"\nunclassified: {', '.join(unresolved)}")
-        print("  run `generate_scenario classify` to have a model propose roles for these")
+        print(f"  run `generate_scenario classify {args.world}` to have a model propose roles for these")
     return 0
 
 
 def _cmd_classify(args: argparse.Namespace) -> int:
     from arena_simulation_setup.tree.World.view import KG_FILE
 
+    if args.world and args.all:
+        raise ValueError("pass world names or --all, not both")
+    if not args.world and not args.all:
+        return _bare(args)
     names = sorted(args.world) if args.world else _all_worlds(args.worlds)
     pending: dict[str, tuple[Path, list[dict[str, Any]], list[str]]] = {}
     for world in dict.fromkeys(names):
@@ -350,7 +354,7 @@ def _cmd_populate(args: argparse.Namespace) -> int:
     overrides = world_roles(root)
     if unresolved := unknown_names(zones, overrides):
         print(f"  ! {len(unresolved)} zone(s) no rule classifies: {', '.join(unresolved)}")
-        print("  !   they are populated as neither work nor break; `generate_scenario classify` proposes roles")
+        print(f"  !   they are populated as neither work nor break, `generate_scenario classify {args.world}` proposes roles")
     if (basis := basis_for(zones, overrides)) != "workplace":
         print(f"  ! zone mapping: {basis} - this world has no work zones, so the active/retreat")
         print("  !   distinction is drawn between living areas and private rooms instead")
@@ -528,7 +532,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("world", nargs="?", help="the world whose zones to print; bare, the verb lists the worlds")
 
     p = verb("classify", _cmd_classify, "ask a model for the zone roles no rule or KG fact covers and write them as has_purpose facts into each world's kg.yaml")
-    p.add_argument("world", nargs="*", help="worlds to classify; default every world")
+    p.add_argument("world", nargs="*", help="worlds to classify; bare, the verb lists the worlds")
+    p.add_argument("--all", action="store_true", help="classify every world of the source roots")
     p.add_argument("--model", default=None, help=f"override the model (default {DEFAULT_MODEL})")
     p.add_argument("--write", action="store_true", help="call the model and write what it returns into the world's kg.yaml")
 

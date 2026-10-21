@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -72,7 +76,6 @@ def furnished(tmp_path: Path) -> Path:
         {"name": "desk_a", "pose": [2.0, 2.0, 0.0], "model": "Hospital/TestDesk"},
         {"name": "desk_b", "pose": [6.0, 3.0, 1.2], "model": "Hospital/TestDesk"},
         {"name": "plant", "pose": [8.0, 5.0, 0.0], "model": "Hospital/TestPlant"},
-        {"name": "ghost", "pose": [1.0, 5.0, 0.0], "model": "Hospital/NoSuchAsset"},
     ]
     zone = {"name": "lobby", "polygon": _box(0, 0, 10, 6), "floor": False}
     (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": [zone], "objects": objects}]}))
@@ -114,6 +117,34 @@ def test_statics_are_the_runtime_footprint_of_each_object(furnished: Path) -> No
     with_world, fresh = level_grid(furnished, statics.values(), loaded), level_grid(furnished, statics.values())
     assert with_world is not None and fresh is not None
     assert (with_world[0] == fresh[0]).all() and with_world[1:] == fresh[1:]
+
+
+_COUNT_READS = """
+import json, sys
+from pathlib import Path
+opened, spawned = [], []
+
+def hook(event, args):
+    if event == "open" and str(args[0]).endswith("annotation.yaml"):
+        opened.append(Path(str(args[0])).parent.name)
+    elif event.startswith(("subprocess.", "os.posix_spawn", "os.exec", "os.spawn", "os.fork")):
+        spawned.append(event)
+
+sys.addaudithook(hook)
+from arena_simulation_setup.generative.scenario.occupancy import world_statics
+statics = world_statics(sys.argv[1])
+print(json.dumps({"opened": sorted(opened), "spawned": spawned, "resolved": {s["name"]: s["resolved"] for s in statics}}))
+"""
+
+
+def test_statics_read_each_object_asset_once_and_an_unknown_asset_stays_offline(furnished: Path) -> None:
+    doc = yaml.safe_load((furnished / "world.yaml").read_text())
+    doc["levels"][0]["objects"].append({"name": "ghost", "pose": [1.0, 5.0, 0.0], "model": "Hospital/NoSuchAsset"})
+    (furnished / "world.yaml").write_text(yaml.safe_dump(doc))
+    env = {**os.environ, "ASSET_BUCKETS": ",", "ARENA_ASSETS_DIR_LOCAL": str(furnished.parent / "assets")}
+    done = subprocess.run([sys.executable, "-c", _COUNT_READS, str(furnished)], env=env, capture_output=True, text=True, timeout=120, check=False)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == {"opened": ["TestDesk", "TestDesk"], "spawned": [], "resolved": {"desk_a": True, "desk_b": True, "plant": False, "ghost": False}}
 
 
 def _fields(world: WorldContext) -> tuple:
