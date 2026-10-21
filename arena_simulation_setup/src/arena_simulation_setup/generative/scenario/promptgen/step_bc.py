@@ -16,7 +16,7 @@ from .agents import TypeFiles, agent_type_of, mesh_for, profile_of_agent
 from .lexicon import when_in
 from .llm import AnswerError, Oracle, call
 from .profiles import BT_ONLY, TUNABLE, ProfileError, is_behavior_tree, profile, scaled_speed, tier_value
-from .spec import A_CASES, BDecision, CDecision, Record, SchemaError, Selection, conflict_m, parse_b, parse_c
+from .spec import A_CASES, BDecision, CDecision, ConflictError, FailureKind, Record, SchemaError, Selection, conflict_m, parse_b, parse_c
 from .step_a import StepError, bake, set_type, tune_trees, walk_as_tree, walks
 from .step_d import population_summary
 from .world import WorldContext, WorldError
@@ -52,6 +52,7 @@ def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Rec
     system = system_prompt()
     user = user_prompt(prompt, doc, world, record, taken_fractions=taken_fractions, who=who)
     complaint = ""
+    kind: FailureKind = "schema"
     for attempt in range(2):
         answer = call(system, user + (f"\n\nYour previous answer was rejected: {complaint}. Answer again." if complaint else ""), cache_dir=cache_dir, model=model, oracle=oracle)
         record.provenance.setdefault("BC", []).append({"model": answer.model, "response_sha256": answer.sha256, "cached": answer.cached, "attempt": attempt})
@@ -69,7 +70,7 @@ def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Rec
                 for f in taken_fractions:
                     if abs(f - c.route_fraction) * world.route_length < gap:
                         if oracle is None:
-                            raise SchemaError(f"conflict: C.route_fraction {c.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
+                            raise ConflictError(f"conflict: C.route_fraction {c.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
                         shift = (gap + 0.3) / max(world.route_length, 1e-9)
                         nudged = f + shift if c.route_fraction >= f else f - shift
                         if not 0.1 <= nudged <= 0.9:
@@ -79,7 +80,8 @@ def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Rec
             return b, c
         except (AnswerError, SchemaError) as exc:
             complaint = str(exc)
-    raise StepError(f"schema: {complaint}")
+            kind = "conflict" if isinstance(exc, ConflictError) else "schema"
+    raise StepError(kind, complaint)
 
 
 def _agents(doc: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -102,7 +104,7 @@ def select(doc: Mapping[str, Any], sel: Selection, world: WorldContext, owned: s
         by_name = {str(a.get("name")): a for a in pool}
         missing = [n for n in sel.names if n not in by_name]
         if missing:
-            raise StepError(f"applicability: {missing} are not unowned {'walking ' if walking_only else ''}agents of this scenario")
+            raise StepError("applicability", f"{missing} are not unowned {'walking ' if walking_only else ''}agents of this scenario")
         return [by_name[n] for n in sel.names]
     if sel.profile:
         pool = [a for a in pool if (p := profile_of_agent(a)) is not None and p.name == sel.profile]
@@ -115,7 +117,7 @@ def select(doc: Mapping[str, Any], sel: Selection, world: WorldContext, owned: s
     if sel.n:
         pool = pool[: sel.n]
     if not pool:
-        raise StepError(f"applicability: selection {sel.as_dict()} matched nobody among the unowned {'walking ' if walking_only else ''}agents")
+        raise StepError("applicability", f"selection {sel.as_dict()} matched nobody among the unowned {'walking ' if walking_only else ''}agents")
     return pool
 
 
@@ -175,7 +177,7 @@ def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, na
                 continue
             steps[f"to_{len(steps) + 1}"] = {"kind": "go_to", "target_pose": {"x": round(x, 2), "y": round(y, 2), "theta": 0.0}, "patience": {"mean": period}}
         if len(steps) < 2:
-            raise StepError(f"{label}: no room around {agent['name']}'s start for an erratic route")
+            raise StepError("placement", f"{label}: no room around {agent['name']}'s start for an erratic route")
         ref = agent_type_of(agent)
         shared = ref not in files.transient
         set_type(agent, files.switching(ref, need=ERRATIC, to=ERRATIC, steps=steps, tag=str(agent["name"]) if shared else "", advance=True))
@@ -199,7 +201,7 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
             names += added
             notes.append(f"erratic_route: {near} selected agent(s) start near the route, added {len(added)} beside it")
         if not names:
-            raise StepError(f"applicability: selection {decision.select.as_dict()} matched nobody and no wanderer fits beside the route")
+            raise StepError("applicability", f"selection {decision.select.as_dict()} matched nobody and no wanderer fits beside the route")
         effects.extend(erratic_trees(doc, files, world, names, period=decision.period, radius=decision.radius, around=decision.around, label=label, when=decision.when.as_effect(), seed=seed))
         notes.append(f"erratic_route: {len(names)} agent(s) switch to a new point around the {decision.around} every {decision.period:g} s")
         return effects, names, notes
@@ -224,7 +226,7 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
         try:
             base = files.base_doc(ref)
         except ProfileError as exc:
-            raise StepError(f"intrinsic: {exc}") from None
+            raise StepError("applicability", f"intrinsic: {exc}") from None
         usable = {k: v for k, v in params.items() if k not in BT_ONLY or is_behavior_tree(base)}
         dropped = sorted(set(params) - set(usable))
         if dropped:
@@ -238,7 +240,7 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
             try:
                 bake(doc, fixed, files, names=members)
             except StepError as exc:
-                raise StepError(f"intrinsic: {exc}") from None
+                raise StepError(exc.kind, f"intrinsic: {exc}") from None
             notes.append(f"intrinsic: {fixed} on {members} from the start")
         tunable = {k: v for k, v in usable.items() if k in TUNABLE}
         if tunable:
@@ -256,7 +258,7 @@ def apply_c(decision: CDecision, world: WorldContext, files: TypeFiles, *, seed:
     gap = conflict_m(world.route_length)
     for f in taken_fractions:
         if abs(f - decision.route_fraction) * world.route_length < gap:
-            raise StepError(f"conflict: route fraction {decision.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
+            raise StepError("conflict", f"route fraction {decision.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
     prof = profile(decision.profile)
     ref = files.derived(prof.base, {}, prof=prof)
     label = f"C:{decision.case}"
@@ -272,9 +274,9 @@ def apply_c(decision: CDecision, world: WorldContext, files: TypeFiles, *, seed:
         effect.update({"angle": decision.angle, "speed": scaled_speed(prof, decision.speed), "after": decision.after, "duration": decision.duration, "offset": decision.offset, "waypoint_mode": "once"})
         if decision.after == "veer":
             if decision.veer_to not in world.polygons:
-                raise StepError(f"approach/veer: {decision.veer_to!r} is not a zone of this world")
+                raise StepError("placement", f"approach/veer: {decision.veer_to!r} is not a zone of this world")
             if not for_people([decision.veer_to]):
-                raise StepError(f"approach/veer: {decision.veer_to!r} is a room nobody walks into (wc/storage)")
+                raise StepError("placement", f"approach/veer: {decision.veer_to!r} is a room nobody walks into (wc/storage)")
             effect["veer_to"] = decision.veer_to
         note = f"approach: a {prof.name} at {decision.angle:g} deg, fraction {decision.route_fraction:g}, then {decision.after}"
     return [effect], [], [note]

@@ -22,7 +22,7 @@ from .lexicon import match as lexicon_match
 from .llm import Oracle, Unavailable
 from .prompts import Prompt
 from .realize import realize, trigger
-from .spec import Failure, Record, SchemaError
+from .spec import Failure, FailureKind, Record, SchemaError
 from .step_a import StepError
 from .step_a import apply as apply_a
 from .step_bc import apply_b, apply_c
@@ -99,11 +99,8 @@ class Result:
 
 
 def _fail(record: Record, step: str, exc: Exception) -> None:
-    text = str(exc)
-    kind = (
-        text.split(":", 1)[0] if ":" in text and text.split(":", 1)[0] in ("schema", "placement", "conflict", "applicability", "infeasible", "unavailable") else "schema" if isinstance(exc, SchemaError) else "placement" if isinstance(exc, WorldError) else "unavailable" if isinstance(exc, Unavailable) else "infeasible"
-    )
-    record.failures.append(Failure(step=step, kind=kind, reason=text))
+    kind: FailureKind = exc.kind if isinstance(exc, StepError) else "schema" if isinstance(exc, SchemaError) else "placement" if isinstance(exc, WorldError) else "unavailable" if isinstance(exc, Unavailable) else "infeasible"
+    record.failures.append(Failure(step=step, kind=kind, reason=str(exc)))
 
 
 def _oracle_for(prompt: Prompt, key: str) -> Oracle:
@@ -267,11 +264,11 @@ def _realized(result: Result, world: WorldContext, *, seed: int) -> Result:
         doc, files = copy.deepcopy(result.doc), copy.deepcopy(result.files)
         try:
             done = realize(doc, result.effects, world, files, seed=seed, robot_speed=robot.speed, hold=robot.hold)
-        except (StepError, WorldError) as exc:
-            step = str(exc.args[1]) if len(exc.args) > 1 else ""
+        except StepError as exc:
+            step = exc.step
             if step not in _STEP_OF:
                 raise
-            _fail(record, step, StepError(str(exc.args[0])))
+            _fail(record, step, exc)
             setattr(record, _STEP_OF[step], None)
             record.owned.pop(step, None)
             if step == "D":

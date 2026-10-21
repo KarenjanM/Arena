@@ -91,7 +91,7 @@ def test_a_failed_stampede_leaves_no_injected_pedestrians(tmp_path: Path) -> Non
 
     result = _run(world, doc, base, "The break is over and the whole crowd rushes back to work all at once.", ["A:stampede"])
 
-    assert any(f.step == "A" and "without waypoints" in f.reason for f in result.record.failures), result.record.failures
+    assert any(f.step == "A" and f.kind == "applicability" and "without waypoints" in f.reason for f in result.record.failures), result.record.failures
     assert result.doc["humans"] == doc["humans"] and not result.files.docs
 
 
@@ -116,7 +116,7 @@ def test_a_failed_intrinsic_group_keeps_earlier_groups_types(tmp_path: Path) -> 
     decision = {"case": "intrinsic", "select": {"amount": "all"}, "params": {"radius": "high", "need_decay": "high"}}
     result = _run(world, doc, base, "Everyone here is wide and restless.", ["B:intrinsic"], B=decision)
 
-    assert any(f.step == "B" and "decay_rate" in f.reason for f in result.record.failures), result.record.failures
+    assert any(f.step == "B" and f.kind == "applicability" and "decay_rate" in f.reason for f in result.record.failures), result.record.failures
     assert [h["agent"]["agent_type"] for h in result.doc["humans"]] == ["adult", "./needless.yaml"]
     assert not [ref for ref in result.files.docs if "radius" in ref]
 

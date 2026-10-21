@@ -81,7 +81,7 @@ def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Rec
             return parse_d(raw)
         except (AnswerError, SchemaError) as exc:
             complaint = str(exc)
-    raise StepError(f"schema: {complaint}")
+    raise StepError("schema", complaint)
 
 
 def _place(decision: DDecision, world: WorldContext) -> tuple[Point, Point, bool]:
@@ -90,7 +90,7 @@ def _place(decision: DDecision, world: WorldContext) -> tuple[Point, Point, bool
         return pt, heading, True
     zone = str(decision.place["zone"])
     if not for_people([zone]):
-        raise StepError(f"placement: {zone!r} is a room nobody is placed in (wc/storage; sealed in the inflated grid)")
+        raise StepError("placement", f"{zone!r} is a room nobody is placed in (wc/storage; sealed in the inflated grid)")
     pt = world.zone_point(zone, need=circle_radius(len(decision.members)))
     _rp, heading = world.point_at(world.fraction_of(pt))
     return pt, heading, world.route_clearance(pt) < 1.5
@@ -117,7 +117,7 @@ def _break_after_form(when: dict[str, Any], world: WorldContext, center: Point, 
         if float(when["robot_within"]) <= latest:
             return []
         if latest < floor:
-            raise StepError(f"placement: the robot can come within {floor:.1f} m of the formation at ({center[0]:.1f}, {center[1]:.1f}) before it forms ({FORM_AT_S + BREAK_AFTER_FORM_S:g} s at {robot_speed:g} m/s)")
+            raise StepError("placement", f"the robot can come within {floor:.1f} m of the formation at ({center[0]:.1f}, {center[1]:.1f}) before it forms ({FORM_AT_S + BREAK_AFTER_FORM_S:g} s at {robot_speed:g} m/s)")
         when["robot_within"] = round(latest, 2)
         return [f"break trigger narrowed to {when['robot_within']} m so the members form before the robot is near"]
     fraction = float(when["route_fraction"])
@@ -125,7 +125,7 @@ def _break_after_form(when: dict[str, Any], world: WorldContext, center: Point, 
     while math.dist(world.start, world.point_at(fraction)[0]) - ROUTE_TRIGGER_M < lead:
         fraction += ROUTE_FRACTION_STEP
         if fraction > 0.95:
-            raise StepError(f"placement: no point of the route is far enough from the start to break the formation after it forms ({FORM_AT_S + BREAK_AFTER_FORM_S:g} s at {robot_speed:g} m/s)")
+            raise StepError("placement", f"no point of the route is far enough from the start to break the formation after it forms ({FORM_AT_S + BREAK_AFTER_FORM_S:g} s at {robot_speed:g} m/s)")
     if fraction == asked:
         return []
     when["route_fraction"] = round(fraction, 3)
@@ -167,11 +167,11 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         return [effect], [], notes, info
 
     if decision.place.get("route_fraction") is not None and world.route_length < MIN_ROUTE_FOR_FORMATION_M:
-        raise StepError(f"applicability: the robot's first leg is {world.route_length:.1f} m, too short to place a formation on (needs {MIN_ROUTE_FOR_FORMATION_M:g} m)")
+        raise StepError("applicability", f"the robot's first leg is {world.route_length:.1f} m, too short to place a formation on (needs {MIN_ROUTE_FOR_FORMATION_M:g} m)")
     try:
         center, heading, on_route = _place(decision, world)
     except WorldError as exc:
-        raise StepError(f"placement: {exc}") from None
+        raise StepError("placement", f"{exc}") from None
     if on_route and decision.variant != "blocking":
         need = circle_radius(len(decision.members)) if decision.variant != "line" else QUEUE_SPACING * len(decision.members) / 2
         fit = world.fit_along_route(world.fraction_of(center), need) or world.fit_along_route(world.fraction_of(center), HUDDLE_RADIUS_M)
@@ -183,11 +183,11 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         else:
             room = world.zone_of(center) or world.exit_zone()
             if room is None:
-                raise StepError("placement: no room to stand the formation in")
+                raise StepError("placement", "no room to stand the formation in")
             try:
                 center = world.zone_point(room, need=need)
             except WorldError as exc:
-                raise StepError(f"placement: {exc}") from None
+                raise StepError("placement", f"{exc}") from None
             on_route = world.route_clearance(center) < 1.5
             notes.append(f"no stretch of the {world.route_length:.1f} m route fits the formation; placed {'on' if on_route else 'beside'} it in {room}")
 
@@ -228,7 +228,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         kept_profiles.append(prof_i)
         kept_slots.append(slot)
     if len(resolved) < 2:
-        raise StepError(f"placement: fewer than two members could stand at ({center[0]:.2f}, {center[1]:.2f})")
+        raise StepError("placement", f"fewer than two members could stand at ({center[0]:.2f}, {center[1]:.2f})")
     profiles = kept_profiles
 
     doc["humans"] = [*doc.get("humans", []), *(a for a in reused if all(a is not s for s in kept_slots))]
@@ -238,7 +238,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
     elsewhere = world.other_zones(exclude=[here])
     homes = [z for z in elsewhere if z in world.homes] or elsewhere or world.other_zones()
     if not homes:
-        raise StepError("placement: no zone for the members to walk in from")
+        raise StepError("placement", "no zone for the members to walk in from")
     members: list[dict[str, Any]] = []
     meet = decision.case == "interaction_unbroken" and variant == "meet"
     for i, prof in enumerate(profiles):
@@ -299,7 +299,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         else:
             away_zones = [z for z in world.other_zones(exclude=[world.zone_of(center) or ""])][: len(names)] or [z for z in (world.exit_zone(),) if z]
             if not away_zones:
-                raise StepError("formation_break: no zone to disperse to")
+                raise StepError("placement", "formation_break: no zone to disperse to")
             effects.append({"type": "rally", "label": label, "scope": ordered, "targets": away_zones, "when": when})
         notes.append(f"formation_break: {len(names)} walk, form a {variant} at {form_when}, then {decision.break_kind} {when}")
     else:

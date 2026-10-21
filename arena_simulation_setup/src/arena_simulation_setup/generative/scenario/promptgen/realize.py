@@ -82,7 +82,7 @@ def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | 
         of = when.get("of")
         pt = (float(of[0]), float(of[1])) if of is not None else reference
         if pt is None:
-            raise StepError(f"a proximity onset {dict(when)} has no point to measure the robot against")
+            raise StepError("placement", f"a proximity onset {dict(when)} has no point to measure the robot against")
         atom = within(float(when[key]), pt, origin)
         return {"when": f"not {atom}" if negate else atom}
     return {"at": float(when.get("at") or 0.0) + hold}
@@ -148,7 +148,7 @@ def _stand(effect: Mapping[str, Any], name: str, world: WorldContext, files: Typ
         if world.valid(spot, radius=RUNTIME_SAFE_DIST, on_route=True) is None and not (duration > 0 and holds_at_start(world, spot, STAND_TRIGGER_M)):
             break
     else:
-        raise StepError(f"placement: {name} has no free point on the robot's route to stand on {STAND_TRIGGER_M:g} m past its start")
+        raise StepError("placement", f"{name} has no free point on the robot's route to stand on {STAND_TRIGGER_M:g} m past its start")
     release = point_at_arc(route, min(total, fraction * total + float(effect.get("lead_out", LEAD_OUT_M))))[0]
     ref = files.standing(str(effect["profile"]), name)
     entries: list[dict[str, Any]] = []
@@ -183,7 +183,7 @@ def _solved(effect: Mapping[str, Any], name: str, world: WorldContext, *, robot_
                 max_lead_in=LEAD_IN_M,
             )
         except GeometryError as exc:
-            raise StepError(f"placement: {exc}") from None
+            raise StepError("placement", f"{exc}") from None
         release = robot_speed * max(math.dist(enc.spawn, enc.encounter) / speed - offset, MIN_RELEASE_S)
         at = max(0.0, enc.encounter_at_achieved * total - release)
         point, radius = release_point(world.route, at)
@@ -194,7 +194,7 @@ def _solved(effect: Mapping[str, Any], name: str, world: WorldContext, *, robot_
             why = f"{name}'s release at {at:.1f} m along the route is within {radius:g} m of the route {at - entered:.1f} m earlier"
         else:
             return enc, release, point, radius
-    raise StepError(f"placement: {why}")
+    raise StepError("placement", f"{why}")
 
 
 def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files: TypeFiles, *, robot_speed: float, seed: int) -> tuple[dict[str, Any], list[dict[str, Any]], str, Point]:
@@ -223,7 +223,7 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
         try:
             veer = world.zone_sample(target, random.Random(f"{world.name}:{seed}:{name}:veer:{target}"))
         except WorldError as exc:
-            raise StepError(f"placement: {exc}") from None
+            raise StepError("placement", f"{exc}") from None
         steps = {"meet": _go_to(enc.encounter), "veer": _go_to(veer, theta=_heading(enc.encounter, veer))}
     else:
         steps = {"cross": leave}
@@ -290,7 +290,7 @@ def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: Wo
         try:
             _one(doc, effect, world, files, out, made, spots, seed=seed, robot_speed=robot_speed, hold=hold)
         except (StepError, WorldError) as exc:
-            raise StepError(str(exc), str(effect.get("label", "")).split(":", 1)[0]) from None
+            raise StepError(exc.kind if isinstance(exc, StepError) else "placement", str(exc), step=str(effect.get("label", "")).split(":", 1)[0]) from None
     return out
 
 

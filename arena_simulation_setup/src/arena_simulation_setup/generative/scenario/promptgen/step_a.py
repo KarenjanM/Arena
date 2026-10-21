@@ -10,7 +10,7 @@ from typing import Any
 from ..populate import BUSY_MIX, extra_agents
 from .agents import TypeFiles, agent_type_of, profile_of_agent
 from .profiles import TIERS, ProfileError, is_behavior_tree, tune_block
-from .spec import ADecision
+from .spec import ADecision, FailureKind
 from .world import WorldContext
 
 STAMPEDE_FLOOR = 6
@@ -24,7 +24,12 @@ SWITCH_TO = {"evacuation": "evacuate", "stampede": "rush"}
 
 
 class StepError(RuntimeError):
-    pass
+    """A step that cannot apply, the failure `kind` it is recorded as and, raised from a realization, the `step` of the effect."""
+
+    def __init__(self, kind: FailureKind, reason: str, *, step: str = "") -> None:
+        super().__init__(reason)
+        self.kind: FailureKind = kind
+        self.step = step
 
 
 def _agents(doc: dict[str, Any]) -> list[dict[str, Any]]:
@@ -43,7 +48,7 @@ def bake(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, na
             try:
                 derived_for[ref] = files.derived(ref, params, prof=profile_of_agent(agent))
             except ProfileError as exc:
-                raise StepError(f"cannot derive {ref}: {exc}") from None
+                raise StepError("applicability", f"cannot derive {ref}: {exc}") from None
         set_type(agent, derived_for[ref])
         if "radius" in params:
             agent["agent"].pop("radius", None)
@@ -64,7 +69,7 @@ def walk_route(agent: Mapping[str, Any], world: WorldContext, *, seed: int) -> l
     """The walker's waypoints as points, zones drawn once from an RNG keyed on world, agent and seed."""
     stops = list(agent.get("waypoints") or [])
     if not stops:
-        raise StepError(f"{agent['name']}: a walker without waypoints has no route to bake")
+        raise StepError("applicability", f"{agent['name']}: a walker without waypoints has no route to bake")
     rng = random.Random(f"{world.name}:{seed}:{agent['name']}:{stops}")
     mode = str(agent.get("waypoint_mode") or "repeat")
     if mode == "random" and len(stops) > 2:
@@ -126,7 +131,7 @@ def inject_busy(doc: dict[str, Any], world: WorldContext, k: float, *, seed: int
     n = max(2, round(present * (k - 1.0))) if present else max(2, round(k * 3))
     added = extra_agents(n, zones=world.zones, robot=world.robot, homes=world.homes, seed=seed, world=world.name, mix=BUSY_MIX, overrides=world.roles, existing=doc)
     if not added:
-        raise StepError("busy: no zone to inject pedestrians into")
+        raise StepError("placement", "busy: no zone to inject pedestrians into")
     doc["humans"] = [*doc.get("humans", []), *added]
     return [str(a["name"]) for a in added]
 
@@ -143,7 +148,7 @@ def apply(doc: dict[str, Any], decision: ADecision, world: WorldContext, files: 
         return effects, owned, notes
 
     if not _agents(doc):
-        raise StepError(f"{case}: the base population is empty - nothing to apply to")
+        raise StepError("applicability", f"{case}: the base population is empty - nothing to apply to")
 
     if case == "stampede" and len(_agents(doc)) < STAMPEDE_FLOOR:
         owned = inject_busy(doc, world, max(decision.k, 2.0), seed=seed)
@@ -161,7 +166,7 @@ def apply(doc: dict[str, Any], decision: ADecision, world: WorldContext, files: 
 
     target = world.exit_zone() if case == "evacuation" else world.work_zone()
     if target is None:
-        raise StepError(f"{case}: this world declares no {'exit' if case == 'evacuation' else 'work'} zone to rally on")
+        raise StepError("applicability", f"{case}: this world declares no {'exit' if case == 'evacuation' else 'work'} zone to rally on")
     params = {**_RUN, "repulsion": "low"} if case == "stampede" else dict(_RUN)
     walk_as_tree(doc, files, world, names, seed=seed)
     for agent in _agents(doc):

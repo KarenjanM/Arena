@@ -80,4 +80,4 @@ def decide(prompt: str, record: Record, *, cache_dir: Path | None, model: str | 
             return _parse(answer.json())
         except (AnswerError, SchemaError) as exc:
             complaint = str(exc)
-    raise StepError(f"schema: {complaint}")
+    raise StepError("schema", complaint)

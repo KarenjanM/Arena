@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
 import attrs
 
@@ -35,8 +35,15 @@ def conflict_m(route_length: float) -> float:
     return min(CONFLICT_M, max(0.5, route_length / 4.0))
 
 
+FailureKind = Literal["schema", "placement", "applicability", "conflict", "infeasible", "unavailable", "denied"]
+
+
 class SchemaError(ValueError):
     pass
+
+
+class ConflictError(SchemaError):
+    """An answer placing a step on a stretch of the route another step holds."""
 
 
 @attrs.frozen
@@ -392,7 +399,7 @@ def parse_d(raw: object) -> DDecision | None:
 @attrs.define
 class Failure:
     step: str
-    kind: str  # schema | placement | applicability | conflict | infeasible | unavailable | denied
+    kind: FailureKind
     reason: str
 
     def as_dict(self) -> dict[str, str]:
@@ -491,7 +498,9 @@ __all__ = [
     "BDecision",
     "CDecision",
     "DDecision",
+    "ConflictError",
     "Failure",
+    "FailureKind",
     "Record",
     "SchemaError",
     "Selection",

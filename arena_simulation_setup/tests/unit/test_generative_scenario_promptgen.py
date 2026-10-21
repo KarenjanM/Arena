@@ -1079,3 +1079,38 @@ def test_a_rewrite_removes_the_type_files_the_case_no_longer_has(toy) -> None:
     again = generate(_prompt("The lights go out.", ["A:blackout"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     assert write_result(again, worlds / "toy") == out
     assert not stale.exists() and {p.name for p in (out / "types").iterdir()} == before
+
+
+@pytest.mark.parametrize(
+    ("text", "targets", "oracle", "step", "kind", "reason"),
+    [
+        ("An adult walks up to the robot and veers off.", ["C:approach"], {"C": {"case": "approach", "after": "veer", "veer_to": "nowhere"}}, "C", "placement", "approach/veer"),
+        ("Nobody named ghost wanders.", ["B:erratic_route"], {"B": {"case": "erratic_route", "select": {"names": ["ghost"]}}}, "B", "applicability", "ghost"),
+        ("Two nurses talk in the washroom.", ["D:interaction_unbroken"], {"D": {"case": "interaction_unbroken", "variant": "standing", "members": ["nurse", "nurse"], "place": {"zone": "wc_west"}}}, "D", "placement", "nobody is placed"),
+    ],
+)
+def test_a_failure_is_recorded_with_the_kind_its_step_raised(toy, text: str, targets: list[str], oracle: dict, step: str, kind: str, reason: str) -> None:
+    worlds, doc, base, world = toy
+    result = generate(_prompt(text, targets, **oracle), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    (failure,) = result.record.failures
+    assert (failure.step, failure.kind) == (step, kind) and reason in failure.reason and not failure.reason.startswith(f"{kind}:")
+
+
+def test_a_model_answer_conflicting_twice_with_d_is_a_conflict(toy, tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen import step_bc
+    from arena_simulation_setup.generative.scenario.promptgen.spec import Record, conflict_m
+    from arena_simulation_setup.generative.scenario.promptgen.step_a import StepError
+    from arena_simulation_setup.generative.scenario.propose.client import DEFAULT_MODEL, prompt_sha256
+
+    _worlds, doc, _base, world = toy
+    text = "A visitor stands still right in the robot's way."
+    record = Record(prompt_id="t_001", prompt=text, world=world.name, base="normal_a")
+    user = step_bc.user_prompt(text, doc, world, record, taken_fractions=[0.5])
+    complaint = f"conflict: C.route_fraction 0.5 is within {conflict_m(world.route_length):g} m of a Type D placement at 0.50"
+    cache = tmp_path / "llm_cache"
+    cache.mkdir()
+    for asked in (user, f"{user}\n\nYour previous answer was rejected: {complaint}. Answer again."):
+        (cache / f"{prompt_sha256(DEFAULT_MODEL, step_bc.system_prompt(), asked)}.json").write_text(json.dumps({"answer": json.dumps({"B": "none", "C": {"case": "blocking", "route_fraction": 0.5}})}))
+    with pytest.raises(StepError, match="Type D placement") as caught:
+        step_bc.decide(text, doc, world, record, taken_fractions=[0.5], cache_dir=cache, model=None, oracle=None)
+    assert caught.value.kind == "conflict"
