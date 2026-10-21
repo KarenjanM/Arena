@@ -20,7 +20,7 @@ if typing.TYPE_CHECKING:
     import numpy as np
 
 from ..formats import first_level, world_roles
-from ..occupancy import level_grid, world_statics
+from ..occupancy import level_grid, load_world, world_statics
 from ..populate import MIN_ROUTE_CLEARANCE, _centroid, _polygon, clearance, robot_zones, route_points, work_zones, world_kind
 from ..route import MAX_ROUTE_M, MIN_EPISODE_S, ROBOT_SPEED_MPS
 from ..zone_screen import RUNTIME_SAFE_DIST, _rasterize, _route_clearance, ref_safe_zones, screen_zones
@@ -193,8 +193,9 @@ class WorldContext:
             raise WorldError(f"{world}: the robot's route has fewer than two resolvable endpoints")
         start, goal = pts[0], pts[1]
 
-        statics = world_statics(root)
-        loaded = level_grid(root, statics)
+        loaded_world = load_world(root)
+        statics = world_statics(root, loaded_world)
+        loaded = level_grid(root, statics, loaded_world)
         grid: Grid | None = None
         if loaded is not None:
             occupied, res, ox, oy = loaded
@@ -221,8 +222,10 @@ class WorldContext:
         for role, names in zones_by_role(zones, overrides).items():
             for n in names:
                 roles[n] = role
-        verdicts = screen_zones(zones, world_root=root, route=route, statics=statics, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
-        homes = ref_safe_zones(verdicts)
+        homes: frozenset[str] = frozenset()
+        if grid is not None:
+            clearance_map = (grid.dist, grid.res, grid.ox, grid.oy)
+            homes = ref_safe_zones(screen_zones(zones, world_root=root, route=route, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot), clearance_map=clearance_map))
         return cls(name=world, root=root, zones=zones, roles=roles, robot=robot, grid=grid, start=start, goal=goal, route=route, homes=homes, kind=world_kind(zones, overrides), level=str(doc["id"]))
 
     @cached_property

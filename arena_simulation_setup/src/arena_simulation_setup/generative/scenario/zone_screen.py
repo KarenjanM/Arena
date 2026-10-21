@@ -80,19 +80,23 @@ def screen_zones(
     min_route_clearance: float,
     safe_dist: float = RUNTIME_SAFE_DIST,
     robot_zones: frozenset[str] = frozenset(),
+    clearance_map: tuple[np.ndarray, float, float, float] | None = None,
 ) -> dict[str, Verdict]:
-    """A verdict per zone; an unscreenable world gets verdicts that all refuse, and `robot_zones` are refused whole."""
+    """A verdict per zone, screened on `clearance_map` (metres to the nearest occupied cell, resolution, origin x, origin y) or else on `world_root` rendered with `statics`; an unscreenable world gets verdicts that all refuse, and `robot_zones` are refused whole."""
     verdicts: dict[str, Verdict] = {}
     names = [str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name")]
 
-    grid = level_grid(world_root, statics)
-    if grid is None:
-        return {n: Verdict(zone=n, ref_safe=False, reason="no occupancy grid to screen against") for n in names}
-    occupied, res, ox, oy = grid
+    if clearance_map is None:
+        grid = level_grid(world_root, statics)
+        if grid is None:
+            return {n: Verdict(zone=n, ref_safe=False, reason="no occupancy grid to screen against") for n in names}
+        occupied, res, ox, oy = grid
 
-    import scipy.ndimage
+        import scipy.ndimage
 
-    dist = scipy.ndimage.distance_transform_edt(~occupied) * res
+        dist = scipy.ndimage.distance_transform_edt(~occupied) * res
+    else:
+        dist, res, ox, oy = clearance_map
 
     for zone in zones:
         if not isinstance(zone, Mapping) or not zone.get("name"):
