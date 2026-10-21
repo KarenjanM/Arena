@@ -4,6 +4,7 @@ Route and placements use the level occupancy grid (`occupancy.level_grid`) at th
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 import typing
@@ -161,6 +162,26 @@ class Grid(OccupancyGrid):
         return self.xy((int(rr[i] + rs), int(cc[i] + cs)))
 
 
+@attrs.frozen
+class LoadedWorld:
+    """The parts of a world every base shares: its working level, KG roles and occupancy grid with furniture stamped."""
+
+    doc: dict[str, Any]
+    overrides: dict[str, Role]
+    grid: Grid | None
+
+    @classmethod
+    def read(cls, root: str | Path) -> LoadedWorld:
+        root = Path(root)
+        world = load_world(root)
+        doc = first_level(root, world)
+        if doc is None:
+            raise WorldError(f"{root.name}: no world.yaml")
+        loaded = level_grid(root, world_statics(root, world), world)
+        grid = None if loaded is None else Grid(occupied=loaded[0], res=loaded[1], ox=loaded[2], oy=loaded[3])
+        return cls(doc=doc, overrides=world_roles(root, world), grid=grid)
+
+
 @attrs.define
 class WorldContext:
     name: str
@@ -177,12 +198,13 @@ class WorldContext:
     level: str = ""
 
     @classmethod
-    def load(cls, root: str | Path, base_doc: Mapping[str, Any]) -> WorldContext:
+    def load(cls, root: str | Path, base_doc: Mapping[str, Any], parts: LoadedWorld | None = None) -> WorldContext:
+        """The world at `root` around the base's robot; `parts` is `LoadedWorld.read(root)` when already read."""
         root = Path(root)
         world = root.name
-        doc = first_level(root)
-        if doc is None:
-            raise WorldError(f"{world}: no world.yaml")
+        if parts is None:
+            parts = LoadedWorld.read(root)
+        doc = copy.deepcopy(parts.doc)
         zones = [z for z in doc.get("zones") or [] if isinstance(z, dict) and z.get("name")]
         robots = base_doc.get("robots") or []
         if not robots or not isinstance(robots[0], dict) or robots[0].get("start") is None:
@@ -193,13 +215,7 @@ class WorldContext:
             raise WorldError(f"{world}: the robot's route has fewer than two resolvable endpoints")
         start, goal = pts[0], pts[1]
 
-        loaded_world = load_world(root)
-        statics = world_statics(root, loaded_world)
-        loaded = level_grid(root, statics, loaded_world)
-        grid: Grid | None = None
-        if loaded is not None:
-            occupied, res, ox, oy = loaded
-            grid = Grid(occupied=occupied, res=res, ox=ox, oy=oy)
+        grid = parts.grid
         route = [start, goal]
         if grid is not None:
             # a zone centroid may sit in a table; snap so the route and the reachability reference are real
@@ -217,7 +233,7 @@ class WorldContext:
                 if longer is not None:
                     goal, route = longer
 
-        overrides = world_roles(root)
+        overrides = parts.overrides
         roles = {}
         for role, names in zones_by_role(zones, overrides).items():
             for n in names:

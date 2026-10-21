@@ -357,7 +357,7 @@ def _cmd_populate(args: argparse.Namespace) -> int:
 
 def _cmd_promptgen(args: argparse.Namespace) -> int:
     from .promptgen import RobotPlan, generate, write_result
-    from .promptgen.world import WorldContext
+    from .promptgen.world import LoadedWorld, WorldContext
 
     if args.world is None:
         return _bare(args)
@@ -385,6 +385,7 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
     counts: dict[str, int] = {}
     written = 0
     loaded = 0
+    parts: LoadedWorld | None = None
     for base_id in bases:
         base_path = root / "scenarios" / base_id / "scenario.yaml"
         if not base_path.is_file():
@@ -392,7 +393,9 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
             continue
         base_doc = read_scenario(base_path)
         try:
-            world = WorldContext.load(root, base_doc)
+            if parts is None:
+                parts = LoadedWorld.read(root)
+            world = WorldContext.load(root, base_doc, parts)
         except WorldError as exc:
             print(f"  ! {base_id}: {exc}")
             continue

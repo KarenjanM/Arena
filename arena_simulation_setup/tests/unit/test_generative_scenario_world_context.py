@@ -5,9 +5,10 @@ from pathlib import Path
 
 import pytest
 import yaml
+from arena_simulation_setup.generative.scenario.formats import first_level, world_roles
 from arena_simulation_setup.generative.scenario.occupancy import level_grid, level_of, load_world, world_statics
 from arena_simulation_setup.generative.scenario.populate import MIN_ROUTE_CLEARANCE
-from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
+from arena_simulation_setup.generative.scenario.promptgen.world import LoadedWorld, WorldContext
 from arena_simulation_setup.generative.scenario.zone_screen import screen_zones
 
 np = pytest.importorskip("numpy")
@@ -124,3 +125,25 @@ def test_statics_read_each_asset_once_and_keep_each_object_footprint(furnished: 
     with_world, fresh = level_grid(furnished, statics.values(), loaded), level_grid(furnished, statics.values())
     assert with_world is not None and fresh is not None
     assert (with_world[0] == fresh[0]).all() and with_world[1:] == fresh[1:]
+
+
+def _fields(world: WorldContext) -> tuple:
+    assert world.grid is not None
+    return (world.name, world.zones, world.roles, world.robot, world.start, world.goal, world.route, world.homes, world.kind, world.level, world.grid.occupied.tobytes(), world.grid.res, world.grid.ox, world.grid.oy)
+
+
+def test_one_read_world_serves_every_base(tmp_path: Path) -> None:
+    root = _detour(tmp_path)
+    parts = LoadedWorld.read(root)
+    bases = [_robot((1.5, 1.5), (1.5, 11.5)), _robot((8.5, 4.0), (2.0, 11.5))]
+    shared = [WorldContext.load(root, doc, parts) for doc in bases]
+    assert [_fields(w) for w in shared] == [_fields(WorldContext.load(root, doc)) for doc in bases]
+    assert shared[0].grid is shared[1].grid
+    shared[0].zones[0]["name"] = "renamed"
+    assert parts.doc["zones"][0]["name"] != "renamed" and shared[1].zones[0]["name"] != "renamed"
+
+
+def test_formats_read_the_loaded_world_as_they_read_the_root(furnished: Path) -> None:
+    loaded = load_world(furnished)
+    assert first_level(furnished, loaded) == first_level(furnished)
+    assert world_roles(furnished, loaded) == world_roles(furnished)

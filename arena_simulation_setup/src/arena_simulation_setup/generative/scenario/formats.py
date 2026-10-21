@@ -121,17 +121,18 @@ def _working_level(level: Level) -> dict[str, Any]:
     return {"id": level.id, "zones": zones}
 
 
-def levels(root: Path) -> list[dict[str, Any]]:
-    return [_working_level(level) for level in _world(root).levels.values() if level.zones]
+def levels(root: Path, world: World | None = None) -> list[dict[str, Any]]:
+    """The world's levels with zones as working dicts; `world` is the loaded world at `root` when given."""
+    return [_working_level(level) for level in (world if world is not None else _world(root)).levels.values() if level.zones]
 
 
-def first_level(root: Path) -> dict[str, Any] | None:
-    return next(iter(levels(root)), None)
+def first_level(root: Path, world: World | None = None) -> dict[str, Any] | None:
+    return next(iter(levels(root, world)), None)
 
 
-def world_roles(root: Path) -> dict[str, Role]:
-    """Zone name to role as the world's KG states it, linked worlds' facts included."""
-    return stated_roles(_world(root).kg)
+def world_roles(root: Path, world: World | None = None) -> dict[str, Role]:
+    """Zone name to role as the world's KG states it, linked worlds' facts included; `world` is the loaded world at `root` when given."""
+    return stated_roles((world if world is not None else _world(root)).kg)
 
 
 def is_world(root: Path) -> bool:
