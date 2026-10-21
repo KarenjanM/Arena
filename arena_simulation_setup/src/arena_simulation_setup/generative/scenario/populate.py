@@ -82,15 +82,6 @@ def centroid(poly: Sequence[tuple[float, float]]) -> tuple[float, float]:
     return (sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly))
 
 
-def _dist_to_segment(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
-    ax, ay, bx, by = *a, *b
-    dx, dy = bx - ax, by - ay
-    if dx == 0 and dy == 0:
-        return math.dist(p, a)
-    t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy)))
-    return math.dist(p, (ax + t * dx, ay + t * dy))
-
-
 def zone_centroids(zones: Sequence[Mapping[str, Any]]) -> dict[str, tuple[float, float]]:
     """Zone name to the centroid of its corners, for every named zone with at least three."""
     return {str(z["name"]): centroid(polygon(z)) for z in zones if z.get("name") and len(polygon(z)) >= 3}
@@ -131,9 +122,11 @@ def route_points(
 
 
 def clearance(pt: tuple[float, float], route: Sequence[tuple[float, float]]) -> float:
+    import shapely
+
     if len(route) < 2:
         return math.dist(pt, route[0]) if route else float("inf")
-    return min(_dist_to_segment(pt, route[i], route[i + 1]) for i in range(len(route) - 1))
+    return float(shapely.LineString(route).distance(shapely.Point(pt)))
 
 
 def nominal_count(zones_of_role: Sequence[str]) -> int:
