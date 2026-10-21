@@ -10,7 +10,7 @@ from typing import Any
 
 from ..populate import BUSY_MIX, extra_agents
 from .agents import TypeFiles, agent_type_of, profile_of_agent
-from .profiles import TIERS, is_behaviour_tree, tune_block
+from .profiles import TIERS, ProfileError, is_behaviour_tree, tune_block
 from .spec import ADecision
 from .world import WorldContext
 
@@ -44,7 +44,7 @@ def bake(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, na
         if ref not in derived_for:
             try:
                 derived_for[ref] = files.derived(ref, params, prof=profile_of_agent(agent))
-            except Exception as exc:
+            except ProfileError as exc:
                 raise StepError(f"cannot derive {ref}: {exc}") from None
         set_type(agent, derived_for[ref])
         if "radius" in params:

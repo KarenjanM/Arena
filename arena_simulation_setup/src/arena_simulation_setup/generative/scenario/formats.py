@@ -36,11 +36,10 @@ def _agent_type(ref: str, out: Path) -> AgentType | None:
     from arena_humansim.core.agents.loader import load_agent_type_from_file
 
     candidate = out / ref[2:] if ref.startswith("./") else Path(ref)
-    if candidate.suffix == ".yaml" or candidate.is_file():
-        try:
-            return load_agent_type_from_file(candidate)
-        except Exception:
-            return None
+    if candidate.is_file():
+        return load_agent_type_from_file(candidate)
+    if candidate.suffix == ".yaml":
+        return None
     return BUILTIN_AGENTS.get(ref)
 
 

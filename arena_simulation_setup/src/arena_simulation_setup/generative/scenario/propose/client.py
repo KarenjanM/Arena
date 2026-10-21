@@ -33,7 +33,7 @@ def _client() -> object:
         raise Unavailable("no LLM configured: set GEMINI_API_KEY (or GOOGLE_API_KEY) for the hosted API, or LLM_API_ENDPOINT to point at a local one")
     try:
         from arena_simulation_setup.utils.llm import genai
-    except Exception as exc:
+    except ImportError as exc:
         raise Unavailable(f"the genai client is not importable: {exc}") from exc
     return genai
 
@@ -51,6 +51,8 @@ LAST_USAGE: dict[str, int | None] | None = None
 def ask(system: str, user: str, *, model: str | None = None, temperature: float = 0.0) -> str:
     """One completion as raw text; raises `Unavailable` rather than returning a guess."""
     global _CLIENT
+    import httpx
+
     genai = _client()
     response = None
     for attempt in range(2):
@@ -67,7 +69,7 @@ def ask(system: str, user: str, *, model: str | None = None, temperature: float 
                 ),
             )
             break
-        except Exception as exc:
+        except (genai.errors.APIError, genai.errors.UnknownApiResponseError, httpx.HTTPError) as exc:
             _CLIENT = None
             if attempt:
                 raise Unavailable(f"the model call failed: {type(exc).__name__}: {exc}") from exc

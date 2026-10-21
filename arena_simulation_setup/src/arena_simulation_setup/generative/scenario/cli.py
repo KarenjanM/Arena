@@ -111,15 +111,12 @@ def default_suites_dir() -> Path:
 
 
 def _grid_loader(root: Path) -> Callable[[], Grid | None]:
-    """The world's planning grid with its furniture stamped, built on the first call and kept; None when it cannot be built."""
+    """The world's planning grid with its furniture stamped, built on the first call and kept; None when the root has no level."""
 
     @functools.cache
     def grid() -> Grid | None:
-        try:
-            world = load_world(root)
-            loaded = level_grid(root, world_statics(root, world), world)
-        except Exception:
-            return None
+        world = load_world(root)
+        loaded = level_grid(root, world_statics(root, world), world)
         if loaded is None:
             return None
         occupied, res, ox, oy = loaded
@@ -139,8 +136,6 @@ def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]
             plan(held, endpoint(held, a), endpoint(held, b))
     except WorldError:
         return False
-    except Exception:  # a hint only: populate and promptgen validate the route again
-        return True
     return True
 
 
