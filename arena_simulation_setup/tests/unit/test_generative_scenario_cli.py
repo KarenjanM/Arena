@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -130,3 +133,55 @@ def test_unknown_bases_and_ids_name_the_valid_ones(tmp_path: Path, capsys: pytes
     rc, _, err = _promptgen(worlds, capsys, "--ids", "u_002,nope")
     assert rc == 1
     assert "nope" in err and "u_001" in err
+
+
+def _run(*argv: str, **env: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, "-m", "arena_simulation_setup.generative.scenario.cli", *argv], env={**os.environ, "ARENA_WORLD_PATH": "", **env}, capture_output=True, text=True, timeout=300, check=False)
+
+
+def _checkout(tmp_path: Path) -> Path:
+    arena = tmp_path / "arena"
+    shutil.copytree(_worlds(tmp_path), arena / "arena_simulation_setup" / "worlds")
+    (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites").mkdir(parents=True)
+    return arena
+
+
+def test_listing_honors_arena_world_path(tmp_path: Path) -> None:
+    arena = _checkout(tmp_path)
+    extra = tmp_path / "extra"
+    shutil.copytree(arena / "arena_simulation_setup" / "worlds" / "sbend", extra / "mine")
+    done = _run("zones", ARENA_DIR=str(arena), ARENA_WORLD_PATH=str(extra))
+    assert done.returncode == 2
+    assert "mine, sbend" in done.stdout
+
+
+def test_writes_default_to_the_source_tree(tmp_path: Path) -> None:
+    arena = _checkout(tmp_path)
+    done = _run("populate", "sbend", "--write", ARENA_DIR=str(arena))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (arena / "arena_simulation_setup" / "worlds" / "sbend" / "scenarios" / "normal" / "scenario.yaml").is_file()
+    done = _run("suite", "sbend", ARENA_DIR=str(arena))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (arena / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites" / "edge_case.yaml").is_file()
+
+
+def test_without_a_root_the_verb_asks_for_one(tmp_path: Path) -> None:
+    env = {k: v for k, v in os.environ.items() if k != "ARENA_DIR"}
+    done = subprocess.run([sys.executable, "-m", "arena_simulation_setup.generative.scenario.cli", "populate", "sbend"], env={**env, "ARENA_WORLD_PATH": ""}, capture_output=True, text=True, timeout=300, check=False)
+    assert done.returncode == 1
+    assert "--worlds" in done.stderr and "ARENA_DIR" in done.stderr
+
+
+def test_writes_into_an_install_prefix_or_the_asset_cache_are_refused(tmp_path: Path) -> None:
+    src = _worlds(tmp_path)
+    prefix = tmp_path / "install" / "pkg"
+    shutil.copytree(src, prefix / "share" / "worlds")
+    done = _run("populate", "sbend", "--write", "--worlds", str(prefix / "share" / "worlds"), AMENT_PREFIX_PATH=f"{os.environ.get('AMENT_PREFIX_PATH', '')}:{prefix}")
+    assert done.returncode == 1
+    assert "install prefix" in done.stderr
+    assert not (prefix / "share" / "worlds" / "sbend" / "scenarios").exists()
+    assets = tmp_path / "assets"
+    shutil.copytree(src, assets / "worlds")
+    done = _run("suite", "sbend", "--worlds", str(assets / "worlds"), "--out", str(assets / "s.yaml"), ARENA_ASSETS_DIR=str(assets))
+    assert done.returncode == 1
+    assert "asset cache" in done.stderr

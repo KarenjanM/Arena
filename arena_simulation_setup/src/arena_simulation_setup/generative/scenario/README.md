@@ -8,7 +8,7 @@ world + zone roles --populate--> bases --promptgen--> <base>__<prompt_id> --suit
 
 ## CLI
 
-`generate_scenario <verb>`, or `python3 -m arena_simulation_setup.generative.scenario.cli <verb>`. A world is found the way the runtime finds it, `WorldIdentifier(<world>)` (`ARENA_WORLD_PATH` first, then the installed worlds), and scenarios are written beside it. `--worlds DIR` reads and writes `DIR/<world>` instead. Writing verbs are dry runs without `--write`.
+`generate_scenario <verb>`, or `python3 -m arena_simulation_setup.generative.scenario.cli <verb>`. A world is read and written in the first root that has it: the `ARENA_WORLD_PATH` roots, then the source tree's `$ARENA_DIR/arena_simulation_setup/worlds`, as `touch_world` finds a world. `--worlds DIR` reads and writes `DIR/<world>` instead. Installed and bucket-cached worlds are never read, and a write under an install prefix (`AMENT_PREFIX_PATH`, `COLCON_PREFIX_PATH`) or `$ARENA_ASSETS_DIR` is refused. A world written outside the `ARENA_WORLD_PATH` roots reaches the runtime after a rebuild of arena_simulation_setup. Writing verbs are dry runs without `--write`.
 
 | Verb | Writes | Purpose |
 |---|---|---|
@@ -16,7 +16,7 @@ world + zone roles --populate--> bases --promptgen--> <base>__<prompt_id> --suit
 | `classify [world...]` | `kg.yaml` of each world | ask a model for the roles no KG fact and no substring rule covers |
 | `populate <world>` | `scenarios/{normal,break,night,empty}/` | the four base scenarios |
 | `promptgen <world>` | `scenarios/<base>__<prompt_id>/` | realize every prompt on every base (`--ids` picks prompts, `--oracle` needs no model) |
-| `suite <world...>` | `<name>.yaml` under arena_evaluation's `configs/benchmark/suites`, or `--out` | one stage per (world, scenario) |
+| `suite <world...>` | `<name>.yaml` under `$ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites`, where the benchmark runner finds a suite the installed share lacks, or `--out` | one stage per (world, scenario) |
 
 `promptgen` also takes the robot's drive: `--robot-speed` (the speed every interception release is designed at, default 0.5 m/s), `--traversals` (N round trips are 2N-1 legs, default 1), `--hold` (seconds at the start before the first leg, default none) and `--tolerance` (goal radius of every leg, default the runtime's goal tolerance).
 It exits 1 when a prompt crashed or no case came out `ok` or `partial`, a missing or unloadable base included.

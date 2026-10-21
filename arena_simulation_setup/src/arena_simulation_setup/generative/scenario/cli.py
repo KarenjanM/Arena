@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import math
+import os
 import sys
 import traceback
 from collections.abc import Callable, Sequence
@@ -33,34 +34,62 @@ PROFILE_NOTES = {
 }
 
 
-def world_root(worlds: Path | None, world: str) -> Path:
-    """`worlds/<world>` under an explicit root, else wherever arena_simulation_setup resolves the name, as the runtime does
-    (`ARENA_WORLD_PATH` first, then the installed worlds)."""
-    if worlds is not None:
-        if not (worlds / world).is_dir():
-            raise FileNotFoundError(f"no world {world!r} under {worlds}. Worlds there: {_world_names(worlds)}")
-        return worlds / world
-    from arena_simulation_setup.tree.World import WorldIdentifier
+def _arena_world_path() -> list[Path]:
+    return [Path(p) for p in os.environ.get("ARENA_WORLD_PATH", "").split(":") if p]
 
-    try:
-        return Path(WorldIdentifier(world).resolve_sync().path)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"no world {world!r} where the runtime resolves worlds. Worlds in the tree: {_world_names(None)}, or pass --worlds DIR") from None
+
+def world_roots(worlds: Path | None) -> list[Path]:
+    """`--worlds`, else the `ARENA_WORLD_PATH` roots and then the source tree's worlds under `$ARENA_DIR`, as `touch_world` finds a world."""
+    if worlds is not None:
+        return [worlds]
+    roots = _arena_world_path()
+    if arena := os.environ.get("ARENA_DIR"):
+        roots.append(Path(arena) / "arena_simulation_setup" / "worlds")
+    if not roots:
+        raise FileNotFoundError("no worlds root: set ARENA_DIR to the Arena checkout or ARENA_WORLD_PATH to world roots, or pass --worlds DIR")
+    return roots
+
+
+def world_root(worlds: Path | None, world: str) -> Path:
+    """`<root>/<world>` under the first of `world_roots` that has it."""
+    roots = world_roots(worlds)
+    for root in roots:
+        if (root / world).is_dir():
+            return root / world
+    raise FileNotFoundError(f"no world {world!r} under {', '.join(map(str, roots))}. Worlds there: {_world_names(worlds)}")
 
 
 def _all_worlds(worlds: Path | None) -> list[str]:
-    from arena_simulation_setup import ASS_DIR
-
-    root = worlds if worlds is not None else ASS_DIR / "worlds"
-    # a dotted directory (`.generated`) is scratch beside the worlds, not a world
-    return sorted(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".") and is_world(p))
+    names: set[str] = set()
+    for root in world_roots(worlds):
+        if root.is_dir():
+            # a dotted directory (`.generated`) is scratch beside the worlds, not a world
+            names.update(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".") and is_world(p))
+    return sorted(names)
 
 
 def _world_names(worlds: Path | None) -> str:
     try:
         return ", ".join(_all_worlds(worlds)) or "none"
-    except OSError:
-        return f"none, {worlds} is no directory"
+    except FileNotFoundError as exc:
+        return f"none ({exc})"
+
+
+def _writable(path: Path) -> Path:
+    """`path`, unless it lies in an install prefix or the asset cache, which a rebuild or a pull overwrites."""
+    from arena_simulation_setup import ARENA_ASSETS_DIR
+
+    real = path.resolve()
+    prefixes = [Path(p) for var in ("AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH") for p in os.environ.get(var, "").split(":") if p]
+    for root, what in [*((p, "an install prefix") for p in prefixes), (ARENA_ASSETS_DIR, "the asset cache")]:
+        if real.is_relative_to(root.resolve()):
+            raise ValueError(f"refusing to write {path}: it is under {root}, {what} that a rebuild or a pull overwrites. Pass --worlds DIR or --out FILE in the source tree or an ARENA_WORLD_PATH root")
+    return path
+
+
+def _runtime_note(root: Path) -> None:
+    if root.parent.resolve() not in {p.resolve() for p in _arena_world_path()}:
+        print(f"rebuild arena_simulation_setup before launching, or add {root.parent} to ARENA_WORLD_PATH, for the runtime to find what was written")
 
 
 def _bare(args: argparse.Namespace) -> int:
@@ -71,15 +100,13 @@ def _bare(args: argparse.Namespace) -> int:
 
 
 def default_suites_dir() -> Path:
-    """`configs/benchmark/suites` of the installed arena_evaluation share, the first place the benchmark runner looks a suite up."""
-    try:
-        from ament_index_python.packages import PackageNotFoundError, get_package_share_path
-    except ImportError:
-        raise FileNotFoundError("the ament index is not importable: source the workspace, or pass --out to name the suite file") from None
-    try:
-        return get_package_share_path("arena_evaluation") / "configs" / "benchmark" / "suites"
-    except PackageNotFoundError:
-        raise FileNotFoundError("arena_evaluation is not installed in the sourced workspace: pass --out to name the suite file") from None
+    """`configs/benchmark/suites` of arena_evaluation in the source tree under `$ARENA_DIR`, where the benchmark runner finds a suite the installed share lacks."""
+    if not (arena := os.environ.get("ARENA_DIR")):
+        raise FileNotFoundError("ARENA_DIR is unset: set it to the Arena checkout, or pass --out to name the suite file")
+    out = Path(arena) / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites"
+    if not out.is_dir():
+        raise FileNotFoundError(f"{out} does not exist: pass --out to name the suite file")
+    return out
 
 
 def _route_reachable(root: Path, zones: list[dict[str, Any]], robot: dict[str, Any]) -> bool:
@@ -196,6 +223,8 @@ def _cmd_classify(args: argparse.Namespace) -> int:
         print("(dry run - this is the prompt that would be sent; pass --write to ask and store)")
         return 0
 
+    for root, _, _ in pending.values():
+        _writable(root / KG_FILE)
     written = 0
     for world, (root, zones, todo) in pending.items():
         print(f"\n### {world}")
@@ -254,6 +283,8 @@ def _cmd_populate(args: argparse.Namespace) -> int:
     if args.prune and not args.write:
         raise ValueError("--prune removes stale generated bases, which only a writing run does: add --write")
     root = world_root(args.worlds, args.world)
+    if args.write:
+        _writable(root)
     zones, robot = _world_parts(root)
     if args.robot_start is not None or args.robot_goal is not None:
         robot = _override_robot(robot, zones, start=args.robot_start, goal=args.robot_goal)
@@ -299,6 +330,8 @@ def _cmd_populate(args: argparse.Namespace) -> int:
         keep = [*written, *(d.name for d in (root / "scenarios").glob("*__*"))]
         for gone in prune_generated(root, keep):
             print(f"  - pruned stale generated base {gone}")
+    if written:
+        _runtime_note(root)
     if not args.write:
         print("(dry run - pass --write to write them)")
     return 0
@@ -311,6 +344,8 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
     if args.world is None:
         return _bare(args)
     root = world_root(args.worlds, args.world)
+    if args.write:
+        _writable(root)
     prompts = P.load_sets(args.world, extra=[Path(p) for p in args.prompts or []])
     if args.ids:
         wanted = [i.strip() for i in args.ids.split(",") if i.strip()]
@@ -373,8 +408,8 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
             if args.write and write_result(result, root, keep_partial=not args.strict) is not None:
                 written += 1
     print(f"{sum(counts.values())} prompt run(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) + (f"; wrote {written}" if args.write else " (dry run - pass --write)"))
-    if args.write and args.worlds is not None:
-        print("rebuild arena_simulation_setup before launching unless the runtime resolves worlds under --worlds (ARENA_WORLD_PATH)")
+    if written:
+        _runtime_note(root)
     crashed = counts.get("crashed", 0)
     if crashed:
         print(f"generate_scenario: {crashed} prompt(s) crashed" + ("" if args.verbose else ", rerun with -v for the tracebacks"), file=sys.stderr)
@@ -390,6 +425,7 @@ def _cmd_suite(args: argparse.Namespace) -> int:
 
     if not args.world:
         return _bare(args)
+    out = _writable(Path(args.out) if args.out else default_suites_dir() / f"{args.name}.yaml")
     worlds = {world: scenarios(world_root(args.worlds, world), args.match) for world in args.world}
     for world, names in worlds.items():
         print(f"  {world:28s} {len(names):4d} scenario(s)")
@@ -397,7 +433,6 @@ def _cmd_suite(args: argparse.Namespace) -> int:
         print("no scenarios matched" + ("" if args.match else ": none of these worlds has generated scenarios (pass --match for hand-authored ones)"))
         return 1
     doc = build(worlds, robot=args.robot, episodes=args.episodes, seed=args.seed, timeout=args.timeout)
-    out = Path(args.out) if args.out else default_suites_dir() / f"{args.name}.yaml"
     out.write_text(yaml.safe_dump(doc, sort_keys=False))
     print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s); run with `arena evaluation benchmark --suite {out.stem} --contest <contest>`")
     return 0
@@ -416,7 +451,7 @@ def _parser() -> argparse.ArgumentParser:
 
     def verb(name: str, fn: Callable[[argparse.Namespace], int], text: str) -> argparse.ArgumentParser:
         p = verbs.add_parser(name, help=text, description=text)
-        p.add_argument("--worlds", type=Path, default=None, help="worlds root (default: each world where arena_simulation_setup resolves its name)")
+        p.add_argument("--worlds", type=Path, default=None, help="worlds root to read and write (default: the ARENA_WORLD_PATH roots, then $ARENA_DIR/arena_simulation_setup/worlds)")
         p.set_defaults(fn=fn, help_text=p.format_help)
         return p
 
@@ -456,8 +491,8 @@ def _parser() -> argparse.ArgumentParser:
 
     p = verb("suite", _cmd_suite, "write a benchmark suite with one scenario stage per (world, scenario)")
     p.add_argument("world", nargs="*", help="the worlds whose scenarios become stages; bare, the verb lists the worlds")
-    p.add_argument("--name", default="edge_case", help="suite name, the file stem under arena_evaluation's configs/benchmark/suites (default edge_case)")
-    p.add_argument("--out", default=None, help="write here instead of arena_evaluation's configs/benchmark/suites/<name>.yaml")
+    p.add_argument("--name", default="edge_case", help="suite name, the file stem under $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites (default edge_case)")
+    p.add_argument("--out", default=None, help="write here instead of $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites/<name>.yaml")
     p.add_argument("--match", nargs="*", default=[], help="scenario globs (default: every scenario the generator wrote)")
     p.add_argument("--robot", default="jackal", help="the chassis; a contest compares planners on one drive family")
     p.add_argument("--episodes", type=int, default=1, help="episodes per stage, seeded seed..seed+episodes-1")
