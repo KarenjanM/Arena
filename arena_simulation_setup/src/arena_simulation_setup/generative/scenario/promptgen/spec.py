@@ -120,6 +120,12 @@ def parse_when(raw: object, *, default: When, where: str) -> When:
     return When(**out) if out else default
 
 
+def _get(raw: Mapping[str, Any], key: str, default: object) -> object:
+    """`raw[key]`, or `default` when it is absent or null."""
+    value = raw.get(key)
+    return default if value is None else value
+
+
 def _num(raw: object, *, where: str) -> float:
     try:
         return float(raw)
@@ -247,9 +253,9 @@ def parse_b(raw: object) -> BDecision | None:
         case=case,
         select=parse_selection(raw.get("select"), where="B.select"),
         params=params,
-        period=max(1.0, _num(raw.get("period", 4.0), where="B.period")),
-        radius=max(0.5, _num(raw.get("radius", 3.0), where="B.radius")),
-        around=_choice(raw.get("around", "route"), ERRATIC_AROUND, where="B.around"),
+        period=max(1.0, _num(_get(raw, "period", 4.0), where="B.period")),
+        radius=max(0.5, _num(_get(raw, "radius", 3.0), where="B.radius")),
+        around=_choice(_get(raw, "around", "route"), ERRATIC_AROUND, where="B.around"),
         when=parse_when(raw.get("when"), default=When(at=5.0), where="B"),
         reason=str(raw.get("reason") or ""),
     )
@@ -280,23 +286,23 @@ def parse_c(raw: object) -> CDecision | None:
     raw = _mapping(raw, where="C")
     _reject_unknown(raw, ("case", "profile", "mode", "angle", "route_fraction", "speed", "after", "duration", "offset", "veer_to", "reason"), where="C")
     case = _choice(raw.get("case"), C_CASES, where="C.case")
-    fraction = _num(raw.get("route_fraction", 0.5), where="C.route_fraction")
+    fraction = _num(_get(raw, "route_fraction", 0.5), where="C.route_fraction")
     if not 0.0 < fraction < 1.0:
         raise SchemaError("C.route_fraction: must be strictly between 0 and 1")
-    after = _choice(raw.get("after", "continue"), C_AFTER, where="C.after")
+    after = _choice(_get(raw, "after", "continue"), C_AFTER, where="C.after")
     veer_to = str(raw.get("veer_to") or "")
     if after == "veer" and not veer_to:
         raise SchemaError("C.after 'veer' needs a 'veer_to' zone")
     return CDecision(
         case=case,
         profile=_profile_name(raw.get("profile"), where="C.profile"),
-        mode=_choice(raw.get("mode", "stand"), ("stand", "lead"), where="C.mode"),
-        angle=_num(raw.get("angle", 180.0), where="C.angle") % 360.0,
+        mode=_choice(_get(raw, "mode", "stand"), ("stand", "lead"), where="C.mode"),
+        angle=_num(_get(raw, "angle", 180.0), where="C.angle") % 360.0,
         route_fraction=fraction,
-        speed=_tier(raw.get("speed", "mid"), where="C.speed"),
+        speed=_tier(_get(raw, "speed", "mid"), where="C.speed"),
         after=after,
-        duration=max(0.0, _num(raw.get("duration", 10.0), where="C.duration")),
-        offset=_num(raw.get("offset", 0.0), where="C.offset"),
+        duration=max(0.0, _num(_get(raw, "duration", 10.0), where="C.duration")),
+        offset=_num(_get(raw, "offset", 0.0), where="C.offset"),
         veer_to=veer_to,
         reason=str(raw.get("reason") or ""),
     )
@@ -342,7 +348,7 @@ def parse_d(raw: object) -> DDecision | None:
     _reject_unknown(raw, ("case", "variant", "members", "place", "when", "duration", "break", "radius", "profile", "speed", "route_fraction", "reuse", "reason"), where="D")
     case = _choice(raw.get("case"), D_CASES, where="D.case")
     variants = D_VARIANTS[case]
-    variant = _choice(raw.get("variant", variants[0]), variants, where="D.variant")
+    variant = _choice(_get(raw, "variant", variants[0]), variants, where="D.variant")
     members = tuple(_profile_name(m, where=f"D.members[{i}]") for i, m in enumerate(raw.get("members") or ("adult", "adult")))
     limit = 8 if variant == "blocking" else 4
     if case != "stubborn" and not 2 <= len(members) <= limit:
@@ -361,7 +367,7 @@ def parse_d(raw: object) -> DDecision | None:
     if not place:
         raise SchemaError("D.place: needs a route_fraction or a zone")
     default_when = When(robot_within=FORMATION_TRIGGER_M) if case == "formation_break" else When(at=0.0)
-    fraction = _num(raw.get("route_fraction", 0.5), where="D.route_fraction")
+    fraction = _num(_get(raw, "route_fraction", 0.5), where="D.route_fraction")
     if not 0.0 < fraction < 1.0:
         raise SchemaError("D.route_fraction: must be strictly between 0 and 1")
     return DDecision(
@@ -370,11 +376,11 @@ def parse_d(raw: object) -> DDecision | None:
         members=members,
         place=place,
         when=parse_when(raw.get("when"), default=default_when, where="D"),
-        duration=_tier(raw.get("duration", "high"), where="D.duration"),
-        break_kind=_choice(raw.get("break", "scatter"), D_BREAKS, where="D.break"),
-        radius=max(0.5, _num(raw.get("radius", 2.0), where="D.radius")),
+        duration=_tier(_get(raw, "duration", "high"), where="D.duration"),
+        break_kind=_choice(_get(raw, "break", "scatter"), D_BREAKS, where="D.break"),
+        radius=max(0.5, _num(_get(raw, "radius", 2.0), where="D.radius")),
         profile=_profile_name(raw.get("profile"), where="D.profile"),
-        speed=_tier(raw.get("speed", "mid"), where="D.speed"),
+        speed=_tier(_get(raw, "speed", "mid"), where="D.speed"),
         route_fraction=fraction,
         reuse=_names(raw.get("reuse"), where="D.reuse"),
         reason=str(raw.get("reason") or ""),

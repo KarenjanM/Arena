@@ -42,7 +42,7 @@ def _parse(raw: dict[str, Any]) -> tuple[ADecision | None, list[dict[str, Any]],
             warnings.append(f"who: dropped malformed entry {entry!r}")
             continue
         try:
-            prof = profile(str(entry.get("profile", "adult"))).name
+            prof = profile(str(entry.get("profile") or "adult")).name
         except ProfileError:
             warnings.append(f"who: dropped {entry.get('mention')!r} (unknown profile {entry.get('profile')!r})")
             continue
@@ -56,8 +56,9 @@ def _parse(raw: dict[str, Any]) -> tuple[ADecision | None, list[dict[str, Any]],
         return None, who, warnings
     if case not in A_CASES:
         raise SchemaError(f"A.case: {case!r} is not one of {list(A_CASES)} or 'none'")
+    k_raw = raw.get("k")
     try:
-        k = min(3.0, max(1.0, float(raw.get("k", 2.0))))
+        k = 2.0 if k_raw is None else min(3.0, max(1.0, float(k_raw)))
     except (TypeError, ValueError):
         raise SchemaError(f"A.k: {raw.get('k')!r} is not a number") from None
     when = parse_when(raw.get("when"), default=ONSETS[case], where="A")

@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match, score, when_in
-from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_d, parse_selection
+from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_selection
+from arena_simulation_setup.generative.scenario.promptgen.step_a_llm import _parse as parse_a_llm
 
 
 @pytest.mark.parametrize(
@@ -55,3 +56,22 @@ def test_names_and_reuse_reject_a_non_list(raw) -> None:
         parse_selection({"names": raw}, where="B.select")
     with pytest.raises(SchemaError, match=r"D\.reuse"):
         parse_d({"case": "stubborn", "reuse": raw})
+
+
+@pytest.mark.parametrize(
+    "parse, base, keys",
+    [
+        (parse_b, {"case": "erratic_route", "select": {"amount": "all"}}, ("period", "radius", "around", "when", "params", "reason")),
+        (parse_c, {"case": "approach"}, ("profile", "mode", "angle", "route_fraction", "speed", "after", "duration", "offset", "veer_to", "reason")),
+        (parse_d, {"case": "formation_break"}, ("variant", "members", "place", "when", "duration", "break", "radius", "profile", "speed", "route_fraction", "reuse", "reason")),
+    ],
+)
+def test_null_fields_read_as_absent(parse, base, keys) -> None:
+    for key in keys:
+        assert parse({**base, key: None}) == parse(base), key
+
+
+def test_null_k_and_who_profile_read_as_absent_in_the_model_answer() -> None:
+    decision, who, warnings = parse_a_llm({"case": "busy", "k": None, "who": [{"mention": "a nurse", "profile": None, "count": None}]})
+    assert decision is not None and decision.k == 2.0
+    assert who == [{"mention": "a nurse", "profile": "adult", "count": 0}] and warnings == []
