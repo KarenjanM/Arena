@@ -1116,3 +1116,18 @@ def test_a_model_answer_conflicting_twice_with_d_is_a_conflict(toy, tmp_path: Pa
     with pytest.raises(StepError, match="Type D placement") as caught:
         step_bc.decide(text, doc, world, record, taken_fractions=[0.5], cache_dir=cache, model=None, oracle=None)
     assert caught.value.kind == "conflict"
+
+
+def test_provenance_hashes_each_prompt_and_answer(toy) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.ask import system_prompt
+    from arena_simulation_setup.generative.scenario.promptgen.spec import Record
+    from arena_simulation_setup.generative.scenario.promptgen.step_d import user_prompt
+    from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
+
+    worlds, doc, base, world = toy
+    prompt = _prompt("Two nurses stand talking right in the robot's way.", ["D:interaction_unbroken"], D={"case": "interaction_unbroken", "variant": "standing", "members": ["nurse", "nurse"], "place": {"route_fraction": 0.5}})
+    result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    (asked,) = result.provenance["provenance"]["D"]
+    user = user_prompt(prompt.text, doc, world, Record(prompt_id="t_001", prompt=prompt.text, world=world.name, base="normal_a"))
+    assert asked["prompt_sha256"] == prompt_sha256(system_prompt("d"), user)
+    assert set(asked) == {"model", "prompt_sha256", "response_sha256", "cached", "attempt"}
