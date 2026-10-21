@@ -5,11 +5,17 @@ from __future__ import annotations
 import hashlib
 import os
 
+import attrs
+
 from arena_simulation_setup.utils.llm import DEFAULT_MODEL
 
 
 class Unavailable(RuntimeError):
     pass
+
+
+def text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
 def prompt_sha256(*parts: str) -> str:
@@ -30,17 +36,19 @@ def _client() -> object:
     return genai
 
 
-# a `Client()` that goes out of scope closes its httpx pool under the in-flight request
 _CLIENT: object | None = None
 
 TIMEOUT_MS = 120_000
 
 
-LAST_USAGE: dict[str, int | None] | None = None
+@attrs.frozen
+class Reply:
+    text: str
+    usage: dict[str, int | None] | None = None
 
 
-def ask(system: str, user: str, *, model: str | None = None, temperature: float = 0.0) -> str:
-    """One completion as raw text; raises `Unavailable` when the model gives none."""
+def ask(system: str, user: str, *, model: str | None = None, temperature: float = 0.0) -> Reply:
+    """One completion as raw text with its token usage; raises `Unavailable` when the model gives none."""
     global _CLIENT
     import httpx
 
@@ -64,9 +72,10 @@ def ask(system: str, user: str, *, model: str | None = None, temperature: float 
             if attempt:
                 raise Unavailable(f"the model call failed: {type(exc).__name__}: {exc}") from exc
     text = response.text
-    global LAST_USAGE
+    if not text:
+        raise Unavailable("the model returned an empty response")
     meta = response.usage_metadata
-    LAST_USAGE = (
+    usage = (
         {
             "input_tokens": meta.prompt_token_count,
             "output_tokens": meta.candidates_token_count,
@@ -77,9 +86,7 @@ def ask(system: str, user: str, *, model: str | None = None, temperature: float 
         if meta is not None
         else None
     )
-    if not text:
-        raise Unavailable("the model returned an empty response")
-    return text.strip()
+    return Reply(text=text.strip(), usage=usage)
 
 
 def strip_fence(text: str) -> str:

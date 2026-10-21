@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any
 
 import attrs
 
-from ..propose import client as _client
-from ..propose.client import DEFAULT_MODEL, Unavailable, ask, prompt_sha256
+from ..propose.client import DEFAULT_MODEL, Unavailable, ask, prompt_sha256, strip_fence, text_sha256
 
 DEFAULT_CACHE = Path(os.environ.get("ARENA_DATA_DIR") or Path(os.environ.get("ARENA_WS_DIR", "/opt/arena_ws")) / "data") / "promptgen" / "llm_cache"
-
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 
 class AnswerError(ValueError):
@@ -31,7 +26,7 @@ class Answer:
     cached: bool
 
     def json(self) -> dict[str, Any]:
-        text = _FENCE.sub("", self.text.strip()).strip()
+        text = strip_fence(self.text)
         start, end = text.find("{"), text.rfind("}")
         if start < 0 or end < start:
             raise AnswerError(f"no JSON object in the answer: {text[:200]!r}")
@@ -63,7 +58,7 @@ def _read_cached(path: Path, name: str) -> Answer | None:
         model = str(doc.get("model", name))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
         return None
-    return Answer(text=text, sha256=hashlib.sha256(text.encode()).hexdigest()[:16], model=model, cached=True)
+    return Answer(text=text, sha256=text_sha256(text), model=model, cached=True)
 
 
 def _write_cached(path: Path, doc: dict[str, Any]) -> None:
@@ -83,10 +78,10 @@ def call(system: str, user: str, *, cache_dir: Path | None = None, model: str | 
         return cached
     if oracle is not None:
         text = oracle(system, user)
-        return Answer(text=text, sha256=hashlib.sha256(text.encode()).hexdigest()[:16], model="oracle", cached=False)
-    text = ask(system, user, model=name, temperature=0.0)
-    _write_cached(path, {"model": name, "system_sha256": prompt_sha256(system), "user": user, "answer": text, "usage": _client.LAST_USAGE})
-    return Answer(text=text, sha256=hashlib.sha256(text.encode()).hexdigest()[:16], model=name, cached=False)
+        return Answer(text=text, sha256=text_sha256(text), model="oracle", cached=False)
+    reply = ask(system, user, model=name, temperature=0.0)
+    _write_cached(path, {"model": name, "system_sha256": prompt_sha256(system), "user": user, "answer": reply.text, "usage": reply.usage})
+    return Answer(text=reply.text, sha256=text_sha256(reply.text), model=name, cached=False)
 
 
 __all__ = ["DEFAULT_CACHE", "Answer", "AnswerError", "Oracle", "Unavailable", "call"]

@@ -106,10 +106,11 @@ def _build_genai_shim() -> object:
             return getattr(self._real, name)
 
     class _LocalClient(_genai.Client):
-        def __init__(self, *_a: object, **_kw: object) -> None:
+        def __init__(self, *, http_options: _types.HttpOptions | dict | None = None, **_kw: object) -> None:
+            options = http_options if isinstance(http_options, _types.HttpOptions) else _types.HttpOptions.model_validate(http_options or {})
             super().__init__(
                 api_key="sk-local",
-                http_options={"base_url": _ENDPOINT, "api_version": "v1beta"},
+                http_options=options.model_copy(update={"base_url": _ENDPOINT, "api_version": "v1beta"}),
             )
             self.__dict__["_caches"] = _LocalCaches()
             self.__dict__["_models"] = _LocalModels(super().__getattribute__("models"))
@@ -140,12 +141,12 @@ def _build_openai_shim() -> object:
     import openai as _openai
 
     class _LocalOpenAI(_openai.OpenAI):
-        def __init__(self, *_a: object, **_kw: object) -> None:
-            super().__init__(base_url=f"{_ENDPOINT}/v1", api_key="sk-local")
+        def __init__(self, **kw: object) -> None:
+            super().__init__(**{**kw, "base_url": f"{_ENDPOINT}/v1", "api_key": "sk-local"})
 
     class _LocalAsyncOpenAI(_openai.AsyncOpenAI):
-        def __init__(self, *_a: object, **_kw: object) -> None:
-            super().__init__(base_url=f"{_ENDPOINT}/v1", api_key="sk-local")
+        def __init__(self, **kw: object) -> None:
+            super().__init__(**{**kw, "base_url": f"{_ENDPOINT}/v1", "api_key": "sk-local"})
 
     class _OpenAIShim:
         OpenAI: type[_openai.OpenAI] = _LocalOpenAI if _ENDPOINT else _openai.OpenAI

@@ -117,7 +117,7 @@ def classify_tail(
         return [], []
     user = build_prompt(zones, asked, world=world)
     sha = prompt_sha256(SYSTEM, user)
-    return parse(ask(SYSTEM, user, model=model), asked, model=model or DEFAULT_MODEL, sha=sha)
+    return parse(ask(SYSTEM, user, model=model).text, asked, model=model or DEFAULT_MODEL, sha=sha)
 
 
 def merge(proposals: Sequence[Proposal], kg: Path) -> tuple[int, list[str]]:

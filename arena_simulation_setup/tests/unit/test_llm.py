@@ -7,6 +7,7 @@ import subprocess
 import sys
 import textwrap
 import threading
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -98,3 +99,51 @@ def test_with_an_endpoint_a_local_cache_is_expanded_into_the_request(endpoint: t
     assert [part['text'] for content in body['contents'] for part in content['parts']] == ['context line', 'ping']
     assert body['systemInstruction']['parts'] == [{'text': 'be brief'}]
     assert 'cachedContent' not in body
+
+
+class _Slow(http.server.BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        self.rfile.read(int(self.headers['Content-Length']))
+        time.sleep(3.0)
+        self.send_response(500)
+        self.end_headers()
+
+    def log_message(self, *args: object) -> None:
+        del args
+
+
+def test_with_an_endpoint_the_genai_client_keeps_its_timeout() -> None:
+    pytest.importorskip('google.genai')
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), _Slow)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        out = _run(
+            """
+            import time
+            from arena_simulation_setup.utils.llm import genai
+            client = genai.Client(http_options=genai.types.HttpOptions(timeout=300))
+            began = time.monotonic()
+            try:
+                client.models.generate_content(model='m', contents='ping')
+            except Exception as exc:
+                print(type(exc).__name__, time.monotonic() - began < 2.0)
+            """,
+            LLM_API_ENDPOINT=f'http://127.0.0.1:{server.server_address[1]}',
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert out.endswith('True'), out
+
+
+def test_with_an_endpoint_the_openai_clients_keep_their_options() -> None:
+    pytest.importorskip('openai')
+    out = _run(
+        """
+        from arena_simulation_setup.utils import llm
+        for client in (llm.openai.OpenAI(timeout=7.5, max_retries=4), llm.openai.AsyncOpenAI(timeout=7.5, max_retries=4)):
+            print(client.timeout, client.max_retries, client.base_url, client.api_key)
+        """,
+        LLM_API_ENDPOINT='http://127.0.0.1:9',
+    )
+    assert out.splitlines() == ['7.5 4 http://127.0.0.1:9/v1/ sk-local'] * 2
