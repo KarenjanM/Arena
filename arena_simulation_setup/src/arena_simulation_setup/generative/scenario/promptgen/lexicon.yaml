@@ -1,8 +1,8 @@
-# Substrings of the lower-cased prompt; the highest total wins if it reaches 1.0, ties to the earliest phrase.
+# Whole-word phrases of the lower-cased prompt, a trailing * lets the last word run on. The highest total wins if it reaches 1.0, ties to the earliest phrase.
 
 evacuation:
   phrases:
-    evacuat: 1.0
+    evacuat*: 1.0
     fire alarm: 1.0
     fire drill: 1.0
     alarm goes off: 1.0
@@ -21,22 +21,33 @@ evacuation:
     smoke: 0.5
 stampede:
   phrases:
-    stampede: 1.0
+    stampede*: 1.0
+    stampeding: 1.0
     surge: 1.0
+    surges: 1.0
+    surged: 1.0
+    surging: 1.0
     rush back: 1.0
     rushes back: 1.0
     rushing back: 1.0
+    rushed back: 1.0
     shift change: 1.0
     all at once: 0.8
     crowd pushes: 1.0
     pushing through: 0.8
     push past: 0.8
     shove: 0.8
+    shoves: 0.8
+    shoved: 0.8
+    shoving: 0.8
     nobody yields: 0.6
     no one gives way: 0.6
     break is over: 0.8
     back to work: 0.6
     crush: 0.6
+    crushes: 0.6
+    crushed: 0.6
+    crushing: 0.6
 blackout:
   phrases:
     blackout: 1.0
