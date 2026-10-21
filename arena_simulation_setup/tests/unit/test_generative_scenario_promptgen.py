@@ -201,10 +201,10 @@ def test_walk_route_bakes_the_waypoint_mode(toy) -> None:
 
     worlds, doc, base, world = toy
     walker = {"name": "w", "waypoints": ["reception", "open_work_area", [20.0, 4.0, 0.0]], "waypoint_mode": "reverse"}
-    there_and_back = walk_route(walker, world)
+    there_and_back = walk_route(walker, world, seed=0)
     assert [world.zone_of(p) for p in there_and_back] == ["reception", "open_work_area", "central_hallway", "open_work_area"]
-    assert there_and_back[2] == (20.0, 4.0) and walk_route(walker, world) == there_and_back
-    shuffled = walk_route({**walker, "waypoint_mode": "random"}, world)
+    assert there_and_back[2] == (20.0, 4.0) and walk_route(walker, world, seed=0) == there_and_back
+    shuffled = walk_route({**walker, "waypoint_mode": "random"}, world, seed=0)
     stops = [world.zone_of(p) for p in shuffled]
     assert len(stops) == 6 and all(a != b for a, b in zip(stops, stops[1:]))
 
@@ -439,9 +439,9 @@ def test_an_untunable_parameter_holds_from_the_start(toy) -> None:
     assert tuned["agent_radius"]["mean"] == 0.4 and tuned["tunes"][0]["tune"] == {"local_planner_params": {"relaxation_time": 1.0}}
 
 
-def _erratic(crowd: list[dict], world, base, **b) -> object:
+def _erratic(crowd: list[dict], world, base, *, seed: int = 0, **b) -> object:
     prompt = _prompt("Some people wander about with no settled destination.", ["B:erratic_route"], B={"case": "erratic_route", "select": {"amount": "all"}, **b})
-    return generate(prompt, world=world, base_id="normal_a", base_doc={"robots": [ROBOT], "humans": crowd}, base_dir=base, oracle=True)
+    return generate(prompt, world=world, base_id="normal_a", base_doc={"robots": [ROBOT], "humans": crowd}, base_dir=base, oracle=True, seed=seed)
 
 
 def test_erratic_points_lie_beside_the_middle_of_the_route(toy) -> None:
@@ -1023,3 +1023,34 @@ def test_the_robot_radius_is_the_clearance_of_its_planned_route(toy) -> None:
         generate(_prompt("The lights go out.", ["A:blackout"]), world=wide, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     result = generate(_prompt("The lights go out.", ["A:blackout"]), world=wide, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True, robot=RobotPlan(radius=0.8))
     assert result.provenance["robot"]["radius_m"] == 0.8
+
+
+def _targets(result) -> list:
+    return sorted((ref, seq, key, step["target_pose"]["x"], step["target_pose"]["y"]) for ref, doc in result.files.docs.items() for seq, body in doc["sequences"].items() for key, step in body["steps"].items() if "target_pose" in step)
+
+
+@pytest.mark.parametrize(
+    ("text", "targets", "oracle"),
+    [
+        ("The fire alarm goes off and everyone heads for the exit.", ["A:evacuation"], {}),
+        ("An adult walks up to the robot, then veers off to the work area.", ["C:approach"], {"C": {"case": "approach", "profile": "adult", "angle": 180, "route_fraction": 0.5, "after": "veer", "veer_to": "open_work_area"}}),
+        ("Everyone wanders about.", ["B:erratic_route"], {"B": {"case": "erratic_route", "select": {"amount": "all"}, "around": "home"}}),
+        ("Three colleagues gather in the work area, then disperse.", ["D:formation_break"], {"D": {"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "open_work_area"}, "when": {"at": 10.0}, "break": "disperse"}}),
+    ],
+)
+def test_the_seed_reaches_every_draw(toy, text: str, targets: list[str], oracle: dict) -> None:
+    worlds, doc, base, world = toy
+
+    def run(seed: int) -> object:
+        return generate(_prompt(text, targets, **oracle), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True, seed=seed)
+
+    first, again, other = run(1), run(1), run(2)
+    assert first.record.status == "ok", first.record.failures
+    assert _targets(first) == _targets(again) and _targets(first) != _targets(other)
+
+
+def test_the_seed_reaches_the_wanderers_beside_the_route(toy) -> None:
+    worlds, doc, base, world = toy
+    walker = [_one_stop("walker", [4.0, 6.0, 0.0], [6.0, 6.0, 0.0])]
+    speeds = {seed: [a["agent"]["desired_velocity"] for a in _erratic(walker, world, base, seed=seed).doc["humans"] if a["name"].startswith("wander_")] for seed in (1, 2, 3)}
+    assert speeds[1] and len({tuple(v) for v in speeds.values()}) > 1

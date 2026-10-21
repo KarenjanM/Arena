@@ -269,7 +269,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
     if decision.case == "interaction_unbroken":
         ends = decision.duration != "high"
         stand = {**STAND_STEP, "duration": {"mean": tier_value("duration", decision.duration)}, "satisfies": {FORM: -100.0}} if ends else dict(STAND_STEP)
-        walk_as_tree(doc, files, world, ordered)
+        walk_as_tree(doc, files, world, ordered, seed=seed)
         for member, prof in zip(members, profiles, strict=True):
             x, y = spot[str(member["name"])]
             face = (-heading[0], -heading[1]) if variant == "blocking" else (center[0] - x, center[1] - y)

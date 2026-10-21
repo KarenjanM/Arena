@@ -119,9 +119,9 @@ def select(doc: Mapping[str, Any], sel: Selection, world: WorldContext, owned: s
     return pool
 
 
-def _home(agent: Mapping[str, Any], world: WorldContext) -> tuple[float, float]:
+def _home(agent: Mapping[str, Any], world: WorldContext, *, seed: int) -> tuple[float, float]:
     pose = agent.get("pose")
-    return world.zone_sample(pose, random.Random(f"{world.name}:{agent['name']}:{ERRATIC}")) if isinstance(pose, str) else (float(pose[0]), float(pose[1]))
+    return world.zone_sample(pose, random.Random(f"{world.name}:{seed}:{agent['name']}:{ERRATIC}")) if isinstance(pose, str) else (float(pose[0]), float(pose[1]))
 
 
 def _beside_route(world: WorldContext, fraction: float, side: float) -> tuple[float, float]:
@@ -129,9 +129,9 @@ def _beside_route(world: WorldContext, fraction: float, side: float) -> tuple[fl
     return cx - hy * side, cy + hx * side
 
 
-def wanderers_beside_route(doc: dict[str, Any], world: WorldContext, n: int) -> list[str]:
+def wanderers_beside_route(doc: dict[str, Any], world: WorldContext, n: int, *, seed: int) -> list[str]:
     """Up to `n` pedestrians standing beside the middle of the route."""
-    rng = random.Random(f"{world.name}:wander")
+    rng = random.Random(f"{world.name}:{seed}:wander")
     taken = {str(a.get("name")) for a in doc.get("humans") or [] if isinstance(a, Mapping)}
     added: list[dict[str, Any]] = []
     for i in range(4 * n):
@@ -156,12 +156,12 @@ def _resolved(world: WorldContext, pt: tuple[float, float]) -> tuple[tuple[float
         return None
 
 
-def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, names: Sequence[str], *, period: float, radius: float, around: str, label: str, when: dict[str, Any]) -> list[dict[str, Any]]:
+def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, names: Sequence[str], *, period: float, radius: float, around: str, label: str, when: dict[str, Any], seed: int) -> list[dict[str, Any]]:
     """Each agent switched on a stimulus to its own loop of `erratic` points, each given up after `period`."""
-    walk_as_tree(doc, files, world, names)
+    walk_as_tree(doc, files, world, names, seed=seed)
     agents = [a for a in doc.get("humans") or [] if isinstance(a, dict) and str(a["name"]) in names]
     for i, agent in enumerate(agents):
-        home = _home(agent, world)
+        home = _home(agent, world, seed=seed)
         steps: dict[str, Any] = {}
         for k in range(ERRATIC_STOPS):
             angle = (k + i) * _GOLDEN_ANGLE
@@ -182,7 +182,7 @@ def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, na
     return [{"type": "stimulus", "label": label, "scope": list(names), "need": ERRATIC, "when": dict(when)}]
 
 
-def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files: TypeFiles, *, owned: set[str]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files: TypeFiles, *, owned: set[str], seed: int) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     tops_up = decision.case == "erratic_route" and decision.around == "route"
     if tops_up and all(str(a.get("name")) in owned for a in _agents(doc)):
         chosen = []
@@ -194,13 +194,13 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
     label = f"B:{decision.case}"
 
     if decision.case == "erratic_route":
-        if tops_up and (near := sum(world.route_clearance(_home(a, world)) <= ERRATIC_NEAR_M for a in chosen)) < ERRATIC_NEAR_MIN:
-            added = wanderers_beside_route(doc, world, ERRATIC_NEAR_MIN - near)
+        if tops_up and (near := sum(world.route_clearance(_home(a, world, seed=seed)) <= ERRATIC_NEAR_M for a in chosen)) < ERRATIC_NEAR_MIN:
+            added = wanderers_beside_route(doc, world, ERRATIC_NEAR_MIN - near, seed=seed)
             names += added
             notes.append(f"erratic_route: {near} selected agent(s) start near the route, added {len(added)} beside it")
         if not names:
             raise StepError(f"applicability: selection {decision.select.as_dict()} matched nobody and no wanderer fits beside the route")
-        effects.extend(erratic_trees(doc, files, world, names, period=decision.period, radius=decision.radius, around=decision.around, label=label, when=decision.when.as_effect()))
+        effects.extend(erratic_trees(doc, files, world, names, period=decision.period, radius=decision.radius, around=decision.around, label=label, when=decision.when.as_effect(), seed=seed))
         notes.append(f"erratic_route: {len(names)} agent(s) switch to a new point around the {decision.around} every {decision.period:g} s")
         return effects, names, notes
 
@@ -211,7 +211,7 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
         if bt:
             bake(doc, {"need_decay": "high"}, files, names=[str(a["name"]) for a in bt])
         if plain:
-            effects.extend(erratic_trees(doc, files, world, [str(a["name"]) for a in plain], period=decision.period, radius=decision.radius, around=decision.around, label=label, when=decision.when.as_effect()))
+            effects.extend(erratic_trees(doc, files, world, [str(a["name"]) for a in plain], period=decision.period, radius=decision.radius, around=decision.around, label=label, when=decision.when.as_effect(), seed=seed))
             notes.append(f"erratic_behavior: {len(plain)} plain walker(s) fell back to erratic_route")
         if bt:
             notes.append(f"erratic_behavior: {len(bt)} behavior-tree agent(s) with need_decay high from the start")
@@ -242,7 +242,7 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
             notes.append(f"intrinsic: {fixed} on {members} from the start")
         tunable = {k: v for k, v in usable.items() if k in TUNABLE}
         if tunable:
-            walk_as_tree(doc, files, world, members)
+            walk_as_tree(doc, files, world, members, seed=seed)
             if tunable.get("speed") == "high":
                 tunable["max_speed"] = "high"
             effects.extend(tune_trees(doc, tunable, files, need=decision.case, label=label, when=decision.when.as_effect(), names=members))

@@ -235,7 +235,7 @@ def generate(
         else:
             try:
                 work, work_files = copy.deepcopy(doc), copy.deepcopy(files)
-                new, names, notes = apply_b(work, b, world, work_files, owned=owned)
+                new, names, notes = apply_b(work, b, world, work_files, owned=owned, seed=seed)
                 doc, files = work, work_files
                 effects.extend(new)
                 owned.update(names)

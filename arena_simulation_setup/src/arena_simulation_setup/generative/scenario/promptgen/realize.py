@@ -197,7 +197,7 @@ def _solved(effect: Mapping[str, Any], name: str, world: WorldContext, *, robot_
     raise StepError(f"placement: {why}")
 
 
-def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files: TypeFiles, *, robot_speed: float) -> tuple[dict[str, Any], list[dict[str, Any]], str, Point]:
+def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files: TypeFiles, *, robot_speed: float, seed: int) -> tuple[dict[str, Any], list[dict[str, Any]], str, Point]:
     """The pedestrian `name`, the timeline entry that releases it, a note, and the designed encounter point."""
     if effect.get("after") == "stand":
         return _stand(effect, name, world, files)
@@ -221,7 +221,7 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
     elif after == "veer":
         target = str(effect["veer_to"])
         try:
-            veer = world.zone_sample(target, random.Random(f"{world.name}:{name}:veer:{target}"))
+            veer = world.zone_sample(target, random.Random(f"{world.name}:{seed}:{name}:veer:{target}"))
         except WorldError as exc:
             raise StepError(f"placement: {exc}") from None
         steps = {"meet": _go_to(enc.encounter), "veer": _go_to(veer, theta=_heading(enc.encounter, veer))}
@@ -237,9 +237,9 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
     return human, [_entry({"when": within(radius, point, world.origin)}, [name], GO)], note, enc.encounter
 
 
-def _switch(doc: dict[str, Any], names: Sequence[str], files: TypeFiles, world: WorldContext, made: set[str], *, need: str, to: str, steps_of: Mapping[str, dict[str, Any]]) -> None:
+def _switch(doc: dict[str, Any], names: Sequence[str], files: TypeFiles, world: WorldContext, made: set[str], *, need: str, to: str, steps_of: Mapping[str, dict[str, Any]], seed: int) -> None:
     """Every named agent switched to its own `to` sequence on `need`, a plain walker baked into a walking tree first."""
-    walk_as_tree(doc, files, world, [n for n in names if not is_tree(files, next(a for a in doc["humans"] if str(a["name"]) == n))])
+    walk_as_tree(doc, files, world, [n for n in names if not is_tree(files, next(a for a in doc["humans"] if str(a["name"]) == n))], seed=seed)
     for agent in doc["humans"]:
         name = str(agent["name"])
         if name not in names:
@@ -253,13 +253,13 @@ def _switch(doc: dict[str, Any], names: Sequence[str], files: TypeFiles, world: 
         set_type(agent, out)
 
 
-def _rally_steps(names: Sequence[str], targets: Sequence[Any], world: WorldContext) -> dict[str, Point]:
+def _rally_steps(names: Sequence[str], targets: Sequence[Any], world: WorldContext, *, seed: int) -> dict[str, Point]:
     """Targets dealt to the agents in sorted-name order, a zone drawn once to a point clear of furniture."""
     out: dict[str, Point] = {}
     for i, name in enumerate(sorted(names)):
         target = targets[i % len(targets)]
         if isinstance(target, str):
-            out[name] = world.zone_sample(target, random.Random(f"{world.name}:{name}:{target}"))
+            out[name] = world.zone_sample(target, random.Random(f"{world.name}:{seed}:{name}:{target}"))
         else:
             out[name] = (float(target[0]), float(target[1]))
     return out
@@ -298,7 +298,7 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
     kind = effect["type"]
     if kind == "intercept":
         name = f"{INJECT_PREFIX}_{len(out.injected)}"
-        human, entries, note, point = _intercept(effect, name, world, files, robot_speed=robot_speed)
+        human, entries, note, point = _intercept(effect, name, world, files, robot_speed=robot_speed, seed=seed)
         doc["humans"].append(human)
         out.injected.append(name)
         out.owned.setdefault(str(effect.get("label", "")).split(":", 1)[0], []).append(name)
@@ -316,7 +316,7 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
         return
     forming = str(effect.get("label", "")).endswith(":form")
     if kind == "rally":
-        targets = _rally_steps(scope, effect["targets"], world)
+        targets = _rally_steps(scope, effect["targets"], world, seed=seed)
         if forming:
             spots.update(targets)
         to = FORM if forming else "disperse"
@@ -326,5 +326,5 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
         out.notes.extend(notes)
         to = "scatter"
     need = FORM if forming else BREAK
-    _switch(doc, scope, files, world, made, need=need, to=to, steps_of={n: {"go": _go_to(pt), "stay": dict(STAND_STEP)} for n, pt in targets.items()})
+    _switch(doc, scope, files, world, made, need=need, to=to, steps_of={n: {"go": _go_to(pt), "stay": dict(STAND_STEP)} for n, pt in targets.items()}, seed=seed)
     out.timeline.append(_entry(trig, scope, need))

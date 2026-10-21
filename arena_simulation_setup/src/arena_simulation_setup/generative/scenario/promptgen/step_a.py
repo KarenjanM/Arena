@@ -60,12 +60,12 @@ def set_type(agent: dict[str, Any], ref: str) -> None:
         agent["agent"] = {"agent_type": ref}
 
 
-def walk_route(agent: Mapping[str, Any], world: WorldContext) -> list[tuple[float, float]]:
-    """The walker's waypoints as points, zones drawn once from a seeded RNG."""
+def walk_route(agent: Mapping[str, Any], world: WorldContext, *, seed: int) -> list[tuple[float, float]]:
+    """The walker's waypoints as points, zones drawn once from an RNG keyed on world, agent and seed."""
     stops = list(agent.get("waypoints") or [])
     if not stops:
         raise StepError(f"{agent['name']}: a walker without waypoints has no route to bake")
-    rng = random.Random(f"{world.name}:{agent['name']}:{stops}")
+    rng = random.Random(f"{world.name}:{seed}:{agent['name']}:{stops}")
     mode = str(agent.get("waypoint_mode") or "repeat")
     if mode == "random" and len(stops) > 2:
         order = [rng.randrange(len(stops))]
@@ -100,10 +100,10 @@ def walks(agent: Mapping[str, Any], files: TypeFiles) -> bool:
     return walks_from(agent)
 
 
-def walk_as_tree(doc: dict[str, Any], files: TypeFiles, world: WorldContext, names: Sequence[str]) -> None:
+def walk_as_tree(doc: dict[str, Any], files: TypeFiles, world: WorldContext, names: Sequence[str], *, seed: int) -> None:
     for agent in _agents(doc):
         if str(agent["name"]) in names and not is_tree(files, agent):
-            set_type(agent, files.walking(agent, walk_route(agent, world)))
+            set_type(agent, files.walking(agent, walk_route(agent, world, seed=seed)))
 
 
 def tune_trees(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, need: str, label: str, when: dict[str, Any], names: Sequence[str], speed_scale: float = 1.0) -> list[dict[str, Any]]:
@@ -153,7 +153,7 @@ def apply(doc: dict[str, Any], decision: ADecision, world: WorldContext, files: 
 
     when = decision.when.as_effect()
     if case == "blackout":
-        walk_as_tree(doc, files, world, names)
+        walk_as_tree(doc, files, world, names, seed=seed)
         params, scale = {"vision_range": "low"}, _SPEED["low"]
         effects.extend(tune_trees(doc, params, files, need=case, label="A:blackout", when=when, names=names, speed_scale=scale))
         notes.append(f"blackout: {len(names)} agent(s) slow down and go short-sighted at {decision.when.as_dict()}")
@@ -163,10 +163,10 @@ def apply(doc: dict[str, Any], decision: ADecision, world: WorldContext, files: 
     if target is None:
         raise StepError(f"{case}: this world declares no {'exit' if case == 'evacuation' else 'work'} zone to rally on")
     params = {**_RUN, "repulsion": "low"} if case == "stampede" else dict(_RUN)
-    walk_as_tree(doc, files, world, names)
+    walk_as_tree(doc, files, world, names, seed=seed)
     for agent in _agents(doc):
         ref = agent_type_of(agent)
-        x, y = world.zone_sample(target, random.Random(f"{world.name}:{agent['name']}:{case}:{target}"))
+        x, y = world.zone_sample(target, random.Random(f"{world.name}:{seed}:{agent['name']}:{case}:{target}"))
         steps = {"leave": {"kind": "go_to", "target_pose": {"x": round(x, 2), "y": round(y, 2), "theta": 0.0}, "patience": {"mean": 300.0}}, "stay": {"duration": {"mean": 600.0}, "patience": {"mean": 900.0}}}
         tune = tune_block(params, prof=profile_of_agent(agent), speed_scale=_SPEED["high"])
         shared = ref not in files.transient
