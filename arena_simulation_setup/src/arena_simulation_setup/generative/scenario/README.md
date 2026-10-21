@@ -96,6 +96,8 @@ An onset `{at: s}` stays `at: s`. A proximity onset becomes `when: robot within 
 | D formation break | `form` at 4 s, then `scatter` (a point `radius` from its spot, drawn from the seed) or `disperse` (a point of another zone) | `form`, `break` |
 | C approach and blocking, D stubborn | `edge_<n>` waits at its spawn, then walks | `go` |
 
+A formation break never precedes its form: an `at` break is at least 7 s (the form at 4 s plus 3 s), a proximity break is narrowed and a route-fraction break moved along the route until the robot, driving straight at the designed speed, cannot reach it sooner, and a formation too close to the start for that is a placement failure.
+
 A plain walker a change reaches first becomes its own walking tree (`types/<type>__walk_<agent>`), its waypoints drawn once in each room where the runtime would draw them per episode, with the waypoint mode baked into the order.
 
 ## Interceptions

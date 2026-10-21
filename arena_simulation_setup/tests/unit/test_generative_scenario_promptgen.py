@@ -340,16 +340,47 @@ def test_a_talking_pair_stands_in_the_corridor_too_close_to_drive_between(toy) -
 
 def test_formation_break_scatters_on_approach(toy) -> None:
     worlds, doc, base, world = toy
-    prompt = _prompt("Three colleagues stand in a circle in the reception; they scatter as the robot arrives.", ["D:formation_break"], D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "reception"}, "when": {"robot_within": 3.0}, "break": "scatter"})
+    prompt = _prompt("Three colleagues stand in a circle in the work area; they scatter as the robot arrives.", ["D:formation_break"], D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "open_work_area"}, "when": {"robot_within": 3.0}, "break": "scatter"})
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     assert result.record.status == "ok", result.record.failures
     form, scatter = result.effects
     assert form["type"] == "rally" and form["when"] == {"at": 4.0} and len(form["targets"]) == 3
     assert scatter["type"] == "scatter" and scatter["when"]["robot_within"] >= 3.0 and len(scatter["scope"]) == 3
     center = tuple(scatter["when"]["of"])
-    assert center == tuple(result.record.formation["center"]) and world.zone_of(center) == "reception"
+    assert center == tuple(result.record.formation["center"]) and world.zone_of(center) == "open_work_area"
     members = [a for a in result.doc["humans"] if a["name"] in scatter["scope"]]
-    assert all(isinstance(a["pose"], str) and a["pose"] != "reception" for a in members)
+    assert all(isinstance(a["pose"], str) and a["pose"] != "open_work_area" for a in members)
+
+
+def _formation_break(toy, place: dict, when: dict) -> object:
+    _worlds, doc, base, world = toy
+    prompt = _prompt("Three colleagues stand in a circle; they scatter as the robot arrives.", ["D:formation_break"], D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": place, "when": when, "break": "scatter"})
+    return generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+
+
+def test_a_break_the_robot_reaches_before_the_formation_forms_is_rejected(toy) -> None:
+    result = _formation_break(toy, {"zone": "reception"}, {"robot_within": 3.0})
+    assert result.record.d is None and not result.timeline
+    assert [f.step for f in result.record.failures] == ["D"] and "before it forms" in result.record.failures[0].reason
+
+
+def test_a_break_near_the_start_is_narrowed_until_the_formation_forms_first(toy) -> None:
+    world = toy[3]
+    result = _formation_break(toy, {"route_fraction": 0.3}, {"robot_within": 3.0})
+    assert result.record.status == "ok", result.record.failures
+    _form, scatter = result.effects
+    reach = math.dist(world.start, tuple(scatter["when"]["of"])) - scatter["when"]["robot_within"]
+    assert scatter["when"]["robot_within"] < 3.0 and reach / ROBOT_SPEED_MPS >= 7.0 - 0.05
+    assert any("narrowed" in w for w in result.record.warnings)
+
+
+def test_a_route_fraction_break_moves_past_the_time_the_formation_forms(toy) -> None:
+    world = toy[3]
+    result = _formation_break(toy, {"zone": "open_work_area"}, {"route_fraction": 0.1})
+    assert result.record.status == "ok", result.record.failures
+    _form, scatter = result.effects
+    fraction = scatter["when"]["route_fraction"]
+    assert fraction > 0.1 and (math.dist(world.start, world.point_at(fraction)[0]) - ROUTE_TRIGGER_M) / ROBOT_SPEED_MPS >= 7.0
 
 
 def test_stubborn_is_a_head_on_intercept_that_does_not_yield(toy) -> None:
@@ -780,7 +811,7 @@ def test_a_blocker_stands_on_the_route_and_steps_on_when_the_robot_is_near(toy) 
 def test_a_formation_forms_and_scatters_on_needs_from_the_timeline(toy) -> None:
     worlds, doc, base, world = toy
     prompt = _prompt(
-        "Three colleagues stand in a circle in the reception; they scatter as the robot arrives.", ["D:formation_break"], D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "reception"}, "when": {"robot_within": 3.0}, "break": "scatter", "radius": 2.0}
+        "Three colleagues stand in a circle in the work area; they scatter as the robot arrives.", ["D:formation_break"], D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "open_work_area"}, "when": {"robot_within": 3.0}, "break": "scatter", "radius": 2.0}
     )
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     assert result.record.status == "ok", result.record.failures
@@ -826,9 +857,9 @@ def test_onsets_become_timeline_triggers(toy) -> None:
 def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> None:
     worlds, doc, base, world = toy
     prompt = _prompt(
-        "Three colleagues stand in a circle in the reception; they scatter as the robot arrives. An adult walks straight at the robot.",
+        "Three colleagues stand in a circle in the work area; they scatter as the robot arrives. An adult walks straight at the robot.",
         ["D:formation_break", "C:approach"],
-        D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "reception"}, "when": {"robot_within": 3.0}, "break": "scatter"},
+        D={"case": "formation_break", "variant": "circle", "members": ["adult", "adult", "adult"], "place": {"zone": "open_work_area"}, "when": {"robot_within": 3.0}, "break": "scatter"},
         C={"case": "approach", "profile": "adult", "angle": 180, "route_fraction": 0.6},
     )
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
@@ -868,7 +899,7 @@ def test_owned_names_follow_the_realized_intercepts_when_d_is_dropped(toy) -> No
     d = parse_d({"case": "stubborn", "profile": "elder", "route_fraction": 0.3})
     c = parse_c({"case": "approach", "profile": "adult", "angle": 90, "route_fraction": 0.7})
     work = dict(doc)
-    (stubborn,), _names, _notes, _info = apply_d(work, d, world, files, seed=0, owned=set())
+    (stubborn,), _names, _notes, _info = apply_d(work, d, world, files, seed=0, owned=set(), robot_speed=ROBOT_SPEED_MPS)
     (approach,), _names, _notes = apply_c(c, world, files, seed=0, taken_fractions=[0.3])
     unrealizable = {**stubborn, "after": "veer", "veer_to": "nowhere"}
     record = Record(prompt_id="t_001", prompt="", world=world.name, base="normal_a", d=d, c=c, owned={"D": [], "C": []})

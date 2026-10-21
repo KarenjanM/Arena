@@ -199,7 +199,7 @@ def generate(
     if d is not None:
         try:
             work, work_files = copy.deepcopy(doc), copy.deepcopy(files)
-            new, names, notes, info = apply_d(work, d, world, work_files, seed=seed, owned=owned)
+            new, names, notes, info = apply_d(work, d, world, work_files, seed=seed, owned=owned, robot_speed=robot.speed)
             doc, files = work, work_files
             effects.extend(new)
             owned.update(names)

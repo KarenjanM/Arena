@@ -12,6 +12,7 @@ from ..populate import for_people
 from .agents import STAND_STEP, TypeFiles, agent_type_of, clone, entry, mesh_for, unique_names
 from .llm import AnswerError, Oracle, call
 from .profiles import profile, scaled_speed, tier_value, tune_block
+from .realize import ROUTE_TRIGGER_M
 from .spec import DDecision, Record, SchemaError, parse_d
 from .step_a import StepError, set_type, walk_as_tree
 from .world import WorldContext, WorldError
@@ -23,6 +24,8 @@ LINE_SPACING = 0.6
 QUEUE_SPACING = 0.7
 MIN_ROUTE_FOR_FORMATION_M = 4.0
 FORM_AT_S = 4.0
+BREAK_AFTER_FORM_S = 3.0
+ROUTE_FRACTION_STEP = 0.05
 FORMATION_RADIUS_M = 1.8
 CIRCLE_SPACING_M = 0.9
 HUDDLE_RADIUS_M = 0.35
@@ -106,6 +109,29 @@ def _circle_radius(world: WorldContext, center: Point, heading: Point, n: int) -
     return max(HUDDLE_RADIUS_M, min(want, width / 2 - 0.35))
 
 
+def _break_after_form(when: dict[str, Any], world: WorldContext, center: Point, robot_speed: float, *, floor: float = 0.0) -> list[str]:
+    """Narrow a proximity break, or move a route-fraction one along, until the robot cannot reach it before the members form."""
+    lead = robot_speed * (FORM_AT_S + BREAK_AFTER_FORM_S)
+    if "robot_within" in when:
+        latest = math.dist(world.start, center) - lead
+        if float(when["robot_within"]) <= latest:
+            return []
+        if latest < floor:
+            raise StepError(f"placement: the robot can come within {floor:.1f} m of the formation at ({center[0]:.1f}, {center[1]:.1f}) before it forms ({FORM_AT_S + BREAK_AFTER_FORM_S:g} s at {robot_speed:g} m/s)")
+        when["robot_within"] = round(latest, 2)
+        return [f"break trigger narrowed to {when['robot_within']} m so the members form before the robot is near"]
+    fraction = float(when["route_fraction"])
+    asked = fraction
+    while math.dist(world.start, world.point_at(fraction)[0]) - ROUTE_TRIGGER_M < lead:
+        fraction += ROUTE_FRACTION_STEP
+        if fraction > 0.95:
+            raise StepError(f"placement: no point of the route is far enough from the start to break the formation after it forms ({FORM_AT_S + BREAK_AFTER_FORM_S:g} s at {robot_speed:g} m/s)")
+    if fraction == asked:
+        return []
+    when["route_fraction"] = round(fraction, 3)
+    return [f"break moved from route fraction {asked:g} to {when['route_fraction']:g} so the members form before the robot is near"]
+
+
 def _take_reuse(doc: dict[str, Any], names: Sequence[str], owned: set[str]) -> list[dict[str, Any]]:
     wanted = [n for n in names if n not in owned]
     kept, taken = [], []
@@ -115,7 +141,7 @@ def _take_reuse(doc: dict[str, Any], names: Sequence[str], owned: set[str]) -> l
     return [clone(a) for a in taken]
 
 
-def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: TypeFiles, *, seed: int, owned: set[str]) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any]]:
+def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: TypeFiles, *, seed: int, owned: set[str], robot_speed: float) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any]]:
     """Realize a Type D decision in place, a stubborn walker named when realized, `info` holding the formation."""
     rng = random.Random(f"{world.name}:D:{seed}")
     notes: list[str] = []
@@ -262,8 +288,12 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
                 if offset + 1.0 > float(when["robot_within"]):
                     when["robot_within"] = round(offset + 1.0, 2)
                     notes.append(f"trigger widened to {when['robot_within']} m: the formation stands {offset:.1f} m off the route")
+            ring = max(math.dist(center, p) for p in resolved)
+            notes.extend(_break_after_form(when, world, center, robot_speed, floor=max(world.route_clearance(center), ring) + 1.0))
+        elif "route_fraction" in when:
+            notes.extend(_break_after_form(when, world, center, robot_speed))
         elif "at" in when:
-            when["at"] = max(float(when["at"]), FORM_AT_S + 3.0)
+            when["at"] = max(float(when["at"]), FORM_AT_S + BREAK_AFTER_FORM_S)
         if decision.break_kind == "scatter":
             effects.append({"type": "scatter", "label": label, "scope": ordered, "radius": decision.radius, "when": when})
         else:
