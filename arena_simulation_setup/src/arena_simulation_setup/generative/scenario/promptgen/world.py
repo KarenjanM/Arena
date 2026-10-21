@@ -221,11 +221,8 @@ class WorldContext:
         for role, names in zones_by_role(zones, overrides).items():
             for n in names:
                 roles[n] = role
-        try:
-            verdicts = screen_zones(zones, world_root=root, route=pts, statics=statics, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
-            homes = ref_safe_zones(verdicts)
-        except Exception:  # screening is an optimisation; placement is still validated
-            homes = frozenset()
+        verdicts = screen_zones(zones, world_root=root, route=route, statics=statics, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
+        homes = ref_safe_zones(verdicts)
         return cls(name=world, root=root, zones=zones, roles=roles, robot=robot, grid=grid, start=start, goal=goal, route=route, homes=homes, kind=world_kind(zones, overrides), level=str(doc["id"]))
 
     @cached_property
