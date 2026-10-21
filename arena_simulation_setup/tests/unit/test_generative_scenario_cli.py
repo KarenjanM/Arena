@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from arena_simulation_setup.generative.scenario.formats import load_world
 from arena_simulation_setup.generative.scenario.cli import _grid_loader, _non_negative_float, _override_robot, _parser, _positive_float, _positive_int, _route_reachable, _world_parts, main
 
 SHIPPED = Path(__file__).resolve().parents[2] / "worlds"
@@ -296,7 +297,7 @@ def _sealed_rooms(tmp_path: Path, n: int = 4) -> Path:
 
 def test_the_route_checks_of_a_world_share_one_grid(tmp_path: Path) -> None:
     root = _sealed_rooms(tmp_path)
-    grid = _grid_loader(root)
+    grid = _grid_loader(root, load_world(root))
     zones = [{"name": f"room_{i}", "corners": [{"x": 10 * i + dx, "y": dy} for dx, dy in ((0, 0), (4, 0), (4, 4), (0, 4))]} for i in range(4)]
     assert [_route_reachable(grid, zones, {"start": f"room_{i}", "goal": f"room_{j}"}) for i in range(4) for j in range(i + 1, 4)] == [False] * 6
     assert _route_reachable(grid, zones, {"start": [1.0, 2.0, 0.0], "goal": [3.0, 2.0]})
@@ -304,7 +305,9 @@ def test_the_route_checks_of_a_world_share_one_grid(tmp_path: Path) -> None:
 
 
 def test_without_a_reachable_pair_the_farthest_zones_are_the_endpoints(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _, robot = _world_parts(_sealed_rooms(tmp_path))
+    root = _sealed_rooms(tmp_path)
+    world = load_world(root)
+    _, robot = _world_parts(root, world, _grid_loader(root, world))
     assert robot == {"start": "room_0", "goal": "room_3"}
 
 
@@ -378,8 +381,32 @@ def _doorway(tmp_path: Path) -> Path:
 
 def test_the_robot_radius_decides_whether_the_base_route_passes_a_doorway(tmp_path: Path) -> None:
     root = _doorway(tmp_path)
-    grid = _grid_loader(root)
+    grid = _grid_loader(root, load_world(root))
     robot = {"start": [2.0, 2.0, 0.0], "goal": [8.0, 2.0]}
     zones: list = []
     assert _route_reachable(grid, zones, robot, 0.35)
     assert not _route_reachable(grid, zones, robot, 0.8)
+
+
+_COUNT_WORLD_READS = """
+import sys
+from pathlib import Path
+reads = []
+target = str(Path(sys.argv[1]) / "world.yaml")
+sys.addaudithook(lambda event, args: reads.append(1) if event == "open" and str(args[0]) == target else None)
+from arena_simulation_setup.generative.scenario.cli import main
+from arena_simulation_setup.generative.scenario.formats import load_world
+load_world(sys.argv[1])
+once = len(reads)
+for verb in ("zones", "classify", "populate"):
+    reads.clear()
+    assert main([verb, Path(sys.argv[1]).name, "--worlds", str(Path(sys.argv[1]).parent)]) == 0
+    print(verb, len(reads) // once if once else -1, len(reads) % once if once else -1)
+"""
+
+
+def test_each_verb_reads_the_world_once(tmp_path: Path) -> None:
+    world = _worlds(tmp_path) / "sbend"
+    done = subprocess.run([sys.executable, "-c", _COUNT_WORLD_READS, str(world)], env={**os.environ, "ARENA_WORLD_PATH": ""}, capture_output=True, text=True, timeout=300, check=False)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert [line.split()[1:] for line in done.stdout.splitlines() if line.split()[0] in ("zones", "classify", "populate")] == [["1", "0"]] * 3

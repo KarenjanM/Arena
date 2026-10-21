@@ -48,7 +48,7 @@ def world_statics(world_root: str | Path, world: World | None = None) -> list[di
 
     view = WorldView(Path(world_root).resolve())
     if world is None:
-        world = view.load()
+        world = load_world(world_root)
     level = level_of(world)
     if level is None:
         return []

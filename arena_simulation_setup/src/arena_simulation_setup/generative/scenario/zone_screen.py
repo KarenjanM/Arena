@@ -12,6 +12,8 @@ import attrs
 if typing.TYPE_CHECKING:
     import numpy as np
 
+    from arena_simulation_setup.tree.World.model import World
+
 from .occupancy import level_grid
 
 # mirrors the runtime `task.episode.spawn.obstacle_clearance`
@@ -80,13 +82,14 @@ def screen_zones(
     min_route_clearance: float,
     robot_zones: frozenset[str] = frozenset(),
     clearance_map: tuple[np.ndarray, float, float, float] | None = None,
+    world: World | None = None,
 ) -> dict[str, Verdict]:
     """A verdict per zone on whether every point the resolver could return there clears the route; `robot_zones` are refused whole."""
     verdicts: dict[str, Verdict] = {}
     names = [str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name")]
 
     if clearance_map is None:
-        grid = level_grid(world_root, statics)
+        grid = level_grid(world_root, statics, world)
         if grid is None:
             return {n: Verdict(zone=n, ref_safe=False, reason="no occupancy grid to screen against") for n in names}
         occupied, res, ox, oy = grid

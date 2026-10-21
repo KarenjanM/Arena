@@ -9,17 +9,17 @@ import math
 import os
 import sys
 import traceback
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from arena_simulation_setup.shared.pathing import PathError, plan_route
 
-from .formats import first_level, is_world, levels, read_scenario, world_roles
+from .formats import first_level, is_world, levels, load_world, read_scenario, world_roles
 from .materialize import WouldOverwrite, prune_generated, write_base
-from .occupancy import UNKNOWN_FOOTPRINT_RADIUS, level_grid, load_world, world_statics
+from .occupancy import UNKNOWN_FOOTPRINT_RADIUS, level_grid, world_statics
 from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points, zone_centroids
 from .populate import build as build_base
 from .promptgen import prompts as P
@@ -28,6 +28,9 @@ from .propose import DEFAULT_MODEL, Unavailable, build_prompt, classify_tail, me
 from .route import MIN_EPISODE_S, ROBOT_SPEED_MPS, robot_for, route_seconds
 from .zone_screen import ref_safe_zones, screen_zones
 from .zones import zones_by_role
+
+if TYPE_CHECKING:
+    from arena_simulation_setup.tree.World.model import World
 
 PROFILE_NOTES = {
     "normal": "working hours: the building's dwellers walk between rooms, pairs talk in rooms",
@@ -160,13 +163,12 @@ def _shadowing_suite(out: Path) -> Path | None:
     return installed if installed.is_file() and not (out.exists() and installed.samefile(out)) else None
 
 
-def _grid_loader(root: Path) -> Callable[[], Grid | None]:
-    """The world's planning grid with its furniture stamped, built on the first call and kept; None when the root has no level."""
+def _grid_loader(root: Path, world: World, statics: Sequence[Mapping[str, Any]] | None = None) -> Callable[[], Grid | None]:
+    """The planning grid of `world` (loaded from `root`) with `statics`, else its own furniture, stamped, built once on the first call."""
 
     @functools.cache
     def grid() -> Grid | None:
-        world = load_world(root)
-        loaded = level_grid(root, world_statics(root, world), world)
+        loaded = level_grid(root, world_statics(root, world) if statics is None else statics, world)
         if loaded is None:
             return None
         occupied, res, ox, oy = loaded
@@ -189,14 +191,13 @@ def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]
     return True
 
 
-def _world_parts(root: Path, radius: float = ROBOT_CLEAR) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _world_parts(root: Path, loaded: World, grid: Callable[[], Grid | None], radius: float = ROBOT_CLEAR) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """A world's zones and a robot copied from one of its scenarios, else the two most separated reachable zones."""
     world = root.name
-    doc = first_level(root)
+    doc = first_level(root, loaded)
     if doc is None:
         raise FileNotFoundError(f"{world}: no world.yaml")
     zones = doc.get("zones") or []
-    grid = _grid_loader(root)
 
     for cand in sorted((root / "scenarios").glob("*/scenario.yaml")):
         robots = read_scenario(cand).get("robots") or []
@@ -222,11 +223,11 @@ def _world_parts(root: Path, radius: float = ROBOT_CLEAR) -> tuple[list[dict[str
     return zones, {"start": start, "goal": goal}
 
 
-def _all_zones(root: Path) -> list[dict[str, Any]]:
+def _all_zones(root: Path, world: World) -> list[dict[str, Any]]:
     """Every named zone across all levels, the first of each name kept."""
     zones: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for doc in levels(root):
+    for doc in levels(root, world):
         for zone in doc.get("zones") or []:
             if isinstance(zone, dict) and zone.get("name") and str(zone["name"]) not in seen:
                 seen.add(str(zone["name"]))
@@ -238,8 +239,9 @@ def _cmd_zones(args: argparse.Namespace) -> int:
     if args.world is None:
         return _bare(args)
     root = world_root(args.worlds, args.world)
-    zones, _ = _world_parts(root)
-    overrides = world_roles(root)
+    world = load_world(root)
+    zones, _ = _world_parts(root, world, _grid_loader(root, world))
+    overrides = world_roles(root, world)
     by_role = zones_by_role(zones, overrides)
     for role, names in by_role.items():
         if names:
@@ -263,11 +265,12 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     pending: dict[str, tuple[Path, list[dict[str, Any]], list[str]]] = {}
     for world in dict.fromkeys(names):
         root = world_root(args.worlds, world, write=args.write)
-        zones = _all_zones(root)
+        loaded = load_world(root)
+        zones = _all_zones(root, loaded)
         if not zones:
             print(f"  ! {world}: no zones declared on any level")
             continue
-        if todo := unknown_names(zones, world_roles(root)):
+        if todo := unknown_names(zones, world_roles(root, loaded)):
             pending[world] = (root, zones, todo)
 
     if not pending:
@@ -343,12 +346,15 @@ def _cmd_populate(args: argparse.Namespace) -> int:
     root = world_root(args.worlds, args.world, write=args.write)
     if args.write:
         _writable(root)
-    zones, robot = _world_parts(root, args.robot_radius)
+    world = load_world(root)
+    statics = world_statics(root, world)
+    grid = _grid_loader(root, world, statics)
+    zones, robot = _world_parts(root, world, grid, args.robot_radius)
     if args.robot_start is not None or args.robot_goal is not None:
         robot = _override_robot(robot, zones, start=args.robot_start, goal=args.robot_goal)
         print(f"  robot endpoints overridden: start={robot['start']!r} goal={robot.get('goal')!r}")
 
-    overrides = world_roles(root)
+    overrides = world_roles(root, world)
     if unresolved := unknown_names(zones, overrides):
         print(f"  ! {len(unresolved)} zone(s) no rule classifies: {', '.join(unresolved)}")
         print(f"  !   they are populated as neither work nor break, `generate_scenario classify {args.world}` proposes roles")
@@ -357,10 +363,11 @@ def _cmd_populate(args: argparse.Namespace) -> int:
         print("  !   distinction is drawn between living areas and private rooms instead")
 
     spec = robot_for(robot, zones)
-    statics = world_statics(root)
     if unresolved := sorted({str(s["model"]) for s in statics if not s["resolved"]}):
         print(f"  ! {len(unresolved)} asset(s) with no annotated footprint, stamped as the runtime's {2 * UNKNOWN_FOOTPRINT_RADIUS:g} m box: {', '.join(unresolved)}")
-    verdicts = screen_zones(zones, world_root=root, route=route_points(spec, zones), statics=statics, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
+    held = grid()
+    clearance_map = None if held is None else (held.dist, held.res, held.ox, held.oy)
+    verdicts = screen_zones(zones, world_root=root, route=route_points(spec, zones), statics=statics, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot), clearance_map=clearance_map, world=world)
     homes = ref_safe_zones(verdicts)
     print(f"  homes: {len(homes)}/{len(verdicts)} zone(s) entirely clear of the route" + ("" if homes else " - falling back to every target zone but the robot's own"))
     for name, verdict in sorted(verdicts.items()):
