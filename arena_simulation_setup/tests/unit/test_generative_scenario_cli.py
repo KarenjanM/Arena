@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 from arena_simulation_setup.generative.scenario.cli import _override_robot, main
 
 SHIPPED = Path(__file__).resolve().parents[2] / "worlds"
@@ -55,3 +56,38 @@ def test_a_new_start_keeps_the_route_and_a_new_goal_replaces_it() -> None:
     assert moved == {**robot, "start": [0.0, 0.0]}
     retargeted = _override_robot(robot, zones, start=None, goal="b")
     assert retargeted == {"start": "a", "goal": "b", "level": "1"}
+
+
+def _promptgen(worlds: Path, capsys: pytest.CaptureFixture[str], *extra: str) -> tuple[int, str, str]:
+    rc = main(["promptgen", "sbend", "--worlds", str(worlds), "--oracle", *extra])
+    out = capsys.readouterr()
+    return rc, out.out, out.err
+
+
+def test_promptgen_without_any_base_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rc, _, err = _promptgen(_worlds(tmp_path), capsys)
+    assert rc == 1
+    assert "nothing generated: none of the bases normal, break, night, empty could be loaded" in err
+
+
+def test_promptgen_fails_when_a_prompt_crashes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    worlds = _worlds(tmp_path)
+    assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0
+    scenarios = worlds / "sbend" / "scenarios"
+    doc = yaml.safe_load((scenarios / "normal" / "scenario.yaml").read_text())
+    (scenarios / "broken").mkdir()
+    (scenarios / "broken" / "scenario.yaml").write_text(yaml.safe_dump({**doc, "humans": [{"name": "x", "pose": ["a", "b"]}]}))
+    capsys.readouterr()
+    rc, out, err = _promptgen(worlds, capsys, "--bases", "broken,normal", "--ids", "u_002")
+    assert "crashed=1" in out and "ok=1" in out, out
+    assert rc == 1
+    assert "1 prompt(s) crashed" in err
+
+
+def test_promptgen_succeeds_when_a_case_is_realized(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    worlds = _worlds(tmp_path)
+    assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0
+    capsys.readouterr()
+    rc, out, err = _promptgen(worlds, capsys, "--bases", "normal", "--ids", "u_002")
+    assert rc == 0, out + err
+    assert "ok=1" in out or "partial=1" in out

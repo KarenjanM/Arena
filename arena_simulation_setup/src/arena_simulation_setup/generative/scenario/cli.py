@@ -297,6 +297,7 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
     seen: dict[str, str] = {}
     counts: dict[str, int] = {}
     written = 0
+    loaded = 0
     for base_id in bases:
         base_path = root / "scenarios" / base_id / "scenario.yaml"
         if not base_path.is_file():
@@ -308,6 +309,7 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
         except WorldError as exc:
             print(f"  ! {base_id}: {exc}")
             continue
+        loaded += 1
         for prompt in prompts:
             try:
                 result = generate(prompt, world=world, base_id=base_id, base_doc=base_doc, base_dir=base_path.parent, seed=args.seed, cache_dir=cache, model=args.model, oracle=args.oracle, robot=robot)
@@ -336,10 +338,17 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
                 continue
             if args.write and write_result(result, root, keep_partial=not args.strict) is not None:
                 written += 1
-    print(f"{sum(counts.values())} generated: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) + (f"; wrote {written}" if args.write else " (dry run - pass --write)"))
+    print(f"{sum(counts.values())} prompt run(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) + (f"; wrote {written}" if args.write else " (dry run - pass --write)"))
     if args.write and args.worlds is not None:
         print("rebuild arena_simulation_setup before launching unless the runtime resolves worlds under --worlds (ARENA_WORLD_PATH)")
-    return 0
+    crashed = counts.get("crashed", 0)
+    if crashed:
+        print(f"generate_scenario: {crashed} prompt(s) crashed" + ("" if args.verbose else ", rerun with -v for the tracebacks"), file=sys.stderr)
+    if not counts.get("ok", 0) + counts.get("partial", 0):
+        why = "no prompt was realized as ok or partial on any base" if loaded else f"none of the bases {', '.join(bases)} could be loaded, see the ! lines above"
+        print(f"generate_scenario: nothing generated: {why}", file=sys.stderr)
+        return 1
+    return 1 if crashed else 0
 
 
 def _cmd_suite(args: argparse.Namespace) -> int:
