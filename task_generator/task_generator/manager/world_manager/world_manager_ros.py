@@ -27,9 +27,9 @@ from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
 from arena_simulation_setup.shared import Position
-from arena_simulation_setup.tree import DynamicPaths
 from arena_simulation_setup.tree.World import Level, World, WorldIdentifier, WorldView
 from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
+from arena_simulation_setup.tree.World.view import point_world_assets
 
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.realizer import Realizer
@@ -245,8 +245,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         self._logger.warn(f'Loading World {world_name}')
 
-        DynamicPaths.WORLD.path = world_view.path
-        DynamicPaths.LINKED.paths = list(world.sources)
+        point_world_assets(world_view.path, world.sources)
         static_footprints = await asyncio.gather(*(o.footprint() for o in world.all_static_entities))
         self.update_world(world_map=world_map, world_description=world, multi_level_map=multi_level_map, static_footprints=static_footprints)
 

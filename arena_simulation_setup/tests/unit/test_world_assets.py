@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 import yaml
 from arena_simulation_setup.tree import DynamicPaths
+from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
+from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
 from arena_simulation_setup.tree.World import WorldView, world_assets
+from arena_simulation_setup.tree.World.view import point_world_assets
 
 
 def _world(directory: Path, *levels: dict) -> WorldView:
@@ -88,3 +92,25 @@ def test_a_world_that_fails_to_load_leaves_the_paths_untouched(tmp_path: Path, r
     with pytest.raises(Exception, match='missing_floor_world'), world_assets(broken):
         pass
     assert (DynamicPaths.WORLD.path, DynamicPaths.LINKED.paths) == restore_paths
+
+
+@pytest.mark.parametrize('kind', [SoundIdentifier, HumanIdentifier, ObjectIdentifier])
+def test_every_asset_kind_resolves_the_world_it_is_pointed_at_after_a_switch(tmp_path: Path, restore_paths: tuple[Path, list[Path]], kind: type) -> None:
+    label = kind.label()
+    first = _world(tmp_path / 'first', _floor('0'))
+    second = _world(tmp_path / 'second', _floor('0'))
+    for world in (first, second):
+        (world.path / 'assets' / 'Common' / label / f'World_Assets_Switch_{label}').mkdir(parents=True)
+    ident = kind.parse(f'Common/World_Assets_Switch_{label}')
+    with world_assets(first):
+        assert asyncio.run(ident.resolve_path()) == first.path / 'assets' / 'Common' / label / f'World_Assets_Switch_{label}'
+    with world_assets(second):
+        assert asyncio.run(ident.resolve_path()) == second.path / 'assets' / 'Common' / label / f'World_Assets_Switch_{label}'
+
+
+def test_pointing_at_no_world_points_at_dev_null(tmp_path: Path, restore_paths: tuple[Path, list[Path]]) -> None:
+    house = _world(tmp_path / 'house', _floor('0'))
+    point_world_assets(house.path, [tmp_path])
+    assert (DynamicPaths.WORLD.path, DynamicPaths.LINKED.paths) == (house.path, [tmp_path])
+    point_world_assets(None, [])
+    assert (DynamicPaths.WORLD.path, DynamicPaths.LINKED.paths) == (Path('/dev/null'), [])
