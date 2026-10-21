@@ -273,6 +273,7 @@ class Light(Named):
     lit: bool | None = None
     dim: float = attrs.field(converter=float, default=1.0)
     dead_fraction: float = attrs.field(converter=float, default=0.0)
+    level: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     intrinsic: bool = False
     owner: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     glow: str = attrs.field(converter=lambda value: str(value).strip(), default='')

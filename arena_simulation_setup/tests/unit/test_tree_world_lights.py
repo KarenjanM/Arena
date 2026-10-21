@@ -11,7 +11,7 @@ import yaml
 from arena_simulation_setup.shared import CeilingLights, Light, Obstacle
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldFormatError, WorldView, Zone, ZoneCeiling, parse_world, write_world
-from arena_simulation_setup.tree.World.model import AUTO_CEILING_LIGHTS
+from arena_simulation_setup.tree.World.model import AUTO_CEILING_LIGHTS, anchor_light
 from arena_simulation_setup.tree.World.write import dump_level
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
@@ -714,3 +714,17 @@ def test_auto_lighting_skips_a_zone_holding_an_anchored_level_light() -> None:
     lamp = Light(name='lamp', fixture='downlight', attach='crate', lumens=400.0)
     level = Level(zones=[_zone('held', _rect(4.0, 4.0))], lights=[lamp], objects=[_desk('crate', x=2.0)])
     assert level.with_lighting('auto').zones[0].ceiling.lights is None
+
+
+def test_light_names_its_floor_apart_from_its_dim():
+    raw = {'name': 'lobby', 'fixture': 'panel', 'pose': {'x': 4.0, 'y': 2.5, 'z': 2.6}, 'lumens': 3600, 'level': '1', 'dim': 0.6}
+    light = converter.structure(raw, Light)
+    assert (light.level, light.dim) == ('1', 0.6)
+
+
+def test_light_attached_to_an_entity_sits_on_its_level_and_zone():
+    lamp = Light(name='desk_lamp', fixture='bulb', attach='desk', offset=Pose(position=Position(0.0, 0.0, 1.0)), lumens=400.0)
+    desk = Obstacle(name='desk', pose=Pose(Position(4.0, 2.0, 0.0), Orientation.from_yaw(0.0)), model=ObjectIdentifier('test_model'), level='1')
+    assert anchor_light(lamp, [desk]).level == '1'
+    zoned = Obstacle(name='desk', pose=Pose(Position(4.0, 2.0, 0.0), Orientation.from_yaw(0.0)), model=ObjectIdentifier('test_model'), extra={'placement_zone': 'office'})
+    assert anchor_light(lamp, [zoned]).placement_zone == 'office'

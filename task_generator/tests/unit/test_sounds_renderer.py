@@ -17,9 +17,11 @@ def sounds():
     return impl
 
 
-def _entity(name: str, x: float, y: float, z: float, yaw: float) -> SimpleNamespace:
+def _entity(name: str, x: float, y: float, z: float, yaw: float, level: str = "", placement_zone: str = "") -> SimpleNamespace:
     return SimpleNamespace(
         name=name,
+        level=level,
+        placement_zone=placement_zone,
         pose=SimpleNamespace(
             position=SimpleNamespace(x=x, y=y, z=z),
             orientation=SimpleNamespace(to_yaw=lambda: yaw),
@@ -33,6 +35,14 @@ def _level(static: list) -> SimpleNamespace:
 
 def _world(**levels: SimpleNamespace) -> SimpleNamespace:
     return SimpleNamespace(levels=levels)
+
+
+def _realizer(*levels: str):
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(level_origins=dict.fromkeys(levels, (0.0, 0.0)))
+    realizer.reset_levels(levels)
+    return realizer
 
 
 # ---------------------------------------------------------------------------
@@ -49,10 +59,8 @@ def test_index_static_entities_indexes_by_level(sounds) -> None:
 
 def test_index_static_entities_includes_scenario_objects(sounds) -> None:
     desk = _entity("desk", 1.0, 2.0, 0.0, 0.0)
-    crate = _entity("crate", 3.0, 3.0, 0.0, 0.0)
-    crate.level = "a"
+    crate = _entity("crate", 3.0, 3.0, 0.0, 0.0, level="a")
     loose = _entity("loose", 0.0, 0.0, 0.0, 0.0)
-    loose.level = ""
     indexed = sounds._index_static_entities(_world(a=_level([desk])), [crate, loose])
     assert indexed == {"desk": [("a", desk)], "crate": [("a", crate)], "loose": [("", loose)]}
 
@@ -74,9 +82,8 @@ def test_resolve_sound_placement_attach_rotates_offset_by_entity_yaw(sounds) -> 
     desk = _entity("desk", 1.0, 2.0, 0.5, math.pi / 2)
     indexed = {"desk": [("a", desk)]}
     sound = Sound(name="chime", asset_id="radio_loop", attach="desk", offset=Position(1.0, 0.0, 0.25))
-    world = _world(a=_level([desk]))
 
-    position, yaw, level_id = sounds._resolve_sound_placement(sound, world, indexed, "a")
+    position, yaw, level_id = sounds._resolve_sound_placement(sound, _realizer("a"), indexed, "a")
 
     assert level_id == "a"
     assert yaw == pytest.approx(math.pi / 2)
@@ -87,9 +94,8 @@ def test_resolve_sound_placement_attach_rotates_offset_by_entity_yaw(sounds) -> 
 
 def test_resolve_sound_placement_attach_unknown_raises(sounds) -> None:
     sound = Sound(name="chime", asset_id="radio_loop", attach="missing")
-    world = _world(a=_level([]))
     with pytest.raises(ValueError, match="unknown static entity"):
-        sounds._resolve_sound_placement(sound, world, {}, "a")
+        sounds._resolve_sound_placement(sound, _realizer("a"), {}, "a")
 
 
 def test_resolve_sound_placement_attach_ambiguous_raises(sounds) -> None:
@@ -97,16 +103,24 @@ def test_resolve_sound_placement_attach_ambiguous_raises(sounds) -> None:
     desk_b = _entity("desk", 5.0, 5.0, 0.0, 0.0)
     indexed = {"desk": [("a", desk_a), ("b", desk_b)]}
     sound = Sound(name="chime", asset_id="radio_loop", attach="desk")
-    world = _world(a=_level([desk_a]), b=_level([desk_b]))
     with pytest.raises(ValueError, match="ambiguous static entity"):
-        sounds._resolve_sound_placement(sound, world, indexed, "a")
+        sounds._resolve_sound_placement(sound, _realizer("a", "b"), indexed, "a")
+
+
+def test_resolve_sound_placement_attach_to_a_zone_placed_object_stays_in_the_map_frame(sounds) -> None:
+    crate = _entity("crate", 32.0, 3.0, 0.0, 0.0, level="b", placement_zone="lobby_1")
+    sound = Sound(name="chime", asset_id="radio_loop", attach="crate")
+
+    position, _, level_id = sounds._resolve_sound_placement(sound, _realizer("a", "b"), {"crate": [("b", crate)]}, "")
+
+    assert level_id == ""
+    assert (position.x, position.y) == pytest.approx((32.0, 3.0))
 
 
 def test_resolve_sound_placement_position_uses_context_level(sounds) -> None:
     sound = Sound(name="alarm", asset_id="alarm_loop", position=Position(2.0, 3.0, 0.0), offset=Position(0.0, 0.0, 1.0))
-    world = _world(a=_level([]), b=_level([]))
 
-    position, yaw, level_id = sounds._resolve_sound_placement(sound, world, {}, "b")
+    position, yaw, level_id = sounds._resolve_sound_placement(sound, _realizer("a", "b"), {}, "b")
 
     assert level_id == "b"
     assert yaw == 0.0
@@ -123,9 +137,8 @@ def test_resolve_sound_placement_zone_position_stays_in_the_map_frame(sounds) ->
     c = converter.copy()
     c.set_resolver(PointResolver(lookup={"lobby_1": [Position(32.0, 3.0)]}.get, rng=np.random.default_rng(0)))
     sound = c.structure({"name": "alarm", "asset_id": "alarm_loop", "position": "lobby_1", "level": "b"}, Sound)
-    world = _world(a=_level([]), b=_level([]))
 
-    position, _, level_id = sounds._resolve_sound_placement(sound, world, {}, None)
+    position, _, level_id = sounds._resolve_sound_placement(sound, _realizer("a", "b"), {}, "")
 
     assert level_id == ""
     assert (position.x, position.y) == pytest.approx((32.0, 3.0))
@@ -133,25 +146,24 @@ def test_resolve_sound_placement_zone_position_stays_in_the_map_frame(sounds) ->
 
 def test_resolve_sound_placement_position_infers_sole_level(sounds) -> None:
     sound = Sound(name="alarm", asset_id="alarm_loop", position=Position(0.0, 0.0, 0.0))
-    world = _world(only=_level([]))
 
-    _, _, level_id = sounds._resolve_sound_placement(sound, world, {}, None)
+    _, _, level_id = sounds._resolve_sound_placement(sound, _realizer("only"), {}, "")
 
     assert level_id == "only"
 
 
-def test_resolve_sound_placement_position_requires_level_in_multi_level_world(sounds) -> None:
+def test_resolve_sound_placement_position_without_a_level_in_a_multi_level_world_is_in_the_map_frame(sounds) -> None:
     sound = Sound(name="alarm", asset_id="alarm_loop", position=Position(0.0, 0.0, 0.0))
-    world = _world(a=_level([]), b=_level([]))
-    with pytest.raises(ValueError, match="requires level in a multi-level world"):
-        sounds._resolve_sound_placement(sound, world, {}, None)
+
+    _, _, level_id = sounds._resolve_sound_placement(sound, _realizer("a", "b"), {}, "")
+
+    assert level_id == ""
 
 
 def test_resolve_sound_placement_position_honors_sound_level_without_context(sounds) -> None:
     sound = Sound(name="alarm", asset_id="alarm_loop", position=Position(0.0, 0.0, 0.0), level="b")
-    world = _world(a=_level([]), b=_level([]))
 
-    _, _, level_id = sounds._resolve_sound_placement(sound, world, {}, None)
+    _, _, level_id = sounds._resolve_sound_placement(sound, _realizer("a", "b"), {}, "")
 
     assert level_id == "b"
 

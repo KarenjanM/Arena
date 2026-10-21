@@ -323,6 +323,36 @@ def test_realize_level_object_placed_by_zone_name_stands_at_the_zone():
     assert (result.pose.position.x, result.pose.position.y) == (33.0, 5.0)
 
 
+def test_placement_level_is_none_for_a_zone_else_its_own_the_listing_then_the_sole_one():
+    from task_generator.manager.realizer import Realizer
+
+    realizer = Realizer(level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    realizer.reset_levels(["0", "1"])
+    assert realizer.placement_level("lobby_1", "1", "1") == ""
+    assert realizer.placement_level("", "1", "0") == "1"
+    assert realizer.placement_level("", "", "0") == "0"
+    assert realizer.placement_level("", "", "") == ""
+    realizer.reset_levels(["1"])
+    assert realizer.placement_level("", "", "") == "1"
+
+
+def test_realize_light_stands_on_its_own_level_or_at_its_zone():
+    import numpy as np
+    from arena_simulation_setup.shared import Light
+    from arena_simulation_setup.utils.cattrs import converter
+    from arena_simulation_setup.utils.geometry import PointResolver, Position
+
+    from task_generator.manager.realizer import Realizer
+
+    c = converter.copy()
+    c.set_resolver(PointResolver(lookup={"lobby_1": [Position(32.0, 3.0)]}.get, rng=np.random.default_rng(0)))
+    realizer = Realizer(Realizer._Configuration(x=1.0, y=2.0), level_origins={"0": (0.0, 0.0), "1": (30.0, 0.0)})
+    literal = realizer.realize(c.structure({"name": "lamp", "fixture": "bulb", "lumens": 400.0, "level": "1", "pose": {"x": 2.0, "y": 3.0, "z": 2.0}}, Light))
+    zoned = realizer.realize(c.structure({"name": "lamp", "fixture": "bulb", "lumens": 400.0, "level": "1", "pose": "lobby_1"}, Light))
+    assert (literal.position.x, literal.position.y) == (33.0, 5.0)
+    assert (zoned.position.x, zoned.position.y) == (33.0, 5.0)
+
+
 def test_realize_dynamic_obstacle_translates_pose_and_waypoints(realizer):
     from arena_simulation_setup.shared import DynamicObstacle
     from arena_simulation_setup.utils.geometry import Position, Pose

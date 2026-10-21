@@ -305,9 +305,7 @@ humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`), `waypoint_mode` (`repeat`, `reverse`, `once`,
 `random`), `level`, the humansim `agent:` block and a `hunav:` block for the
 HuNav backend. Any other key fails the load. A waypoint is `[x, y[, z]]`,
-`{x, y[, z][, level]}` or a zone name. One without `level` stands on its
-human's level. A zone name as a waypoint, a `pose` or a sound `position`
-samples the zone wherever it lies, whatever the entry's `level`.
+`{x, y[, z][, level]}` or a zone name.
 
 `sounds` is a list of `Sound` entries, same schema as a world level's
 `sounds:` but episode-scoped (attached at reset, gone at the next one).
@@ -315,6 +313,14 @@ samples the zone wherever it lies, whatever the entry's `level`.
 `lights` is a list of local `Light` fixtures, same schema as a world level's
 `lights:` but episode-scoped, with `attach` naming one of the scenario's
 own `objects`. `dome` and `sun` stay in the world.
+
+Every placed entry (object, human, waypoint, sound, light, robot `start`)
+sits on one floor by the same rule. A zone name as its `pose`, `position` or
+waypoint samples the zone wherever it lies, whatever the entry's `level`.
+Otherwise its point is local to its own `level`, else to the level of what
+holds it (a waypoint's human, an attached sound's or light's object), else to
+the sole level the env runs. Entries a world level lists sit on that level
+and take no `level`.
 
 `timeline` is a list of scripted `set` actions fired on `at`/`every`/`when`
 triggers. See [AUTHORING.md, Scenario timelines](../AUTHORING.md#scenario-timelines).

@@ -350,7 +350,7 @@ adds its light on top of the default lighting.
 | level `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `pose`, `attach` or `frame`, the latter two with an `offset` |
 | zone `ceiling: {lights: ...}` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
 | object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `pose` in the object frame, moved, turned and scaled with every placement |
-| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:` |
+| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:`, `level` the floor of a literal `pose` |
 | robot `model_params.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `frame` of the robot plus `offset`, see [robots/README.md](../arena_robots/arena_robots/robots/README.md#model_paramsyaml) |
 
 `Light` fields: `name`, `fixture`, `lumens` (local fixtures, per fixture for a

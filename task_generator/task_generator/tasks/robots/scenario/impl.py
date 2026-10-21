@@ -1,11 +1,12 @@
 import asyncio
 import typing
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.World import WorldIdentifier
 
+from task_generator.manager.realizer import Realizer
 from task_generator.shared import Pose, Position, PositionRadius
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.registry import default_scenario
@@ -13,23 +14,21 @@ from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 
 
-def to_map_frame(pose: Pose, level: str, level_origins: Mapping[str, tuple[float, float]]) -> Pose:
-    """A level-local pose shifted into the flattened map frame, unchanged without a level."""
-    if not level:
-        return pose
-    ox, oy = level_origins.get(level, (0.0, 0.0))
+def to_map_frame(pose: Pose, zone: str, level: str, realizer: Realizer) -> Pose:
+    """A pose shifted from the level it is placed on into the flattened map frame."""
+    ox, oy = realizer.get_level_origin(realizer.placement_level(zone, level))
     return Pose(
         position=Position(pose.position.x + ox, pose.position.y + oy, pose.position.z),
         orientation=pose.orientation,
     )
 
 
-def localize_phase(phase: TaskPhase, goal_level: str, level_origins: Mapping[str, tuple[float, float]]) -> TaskPhase:
-    """A scenario phase with its goto poses in the map frame, a zone-sampled dispatch pose already is."""
+def localize_phase(phase: TaskPhase, goal_level: str, realizer: Realizer) -> TaskPhase:
+    """A scenario phase with its goto poses in the map frame."""
     if isinstance(phase, LoopPhase):
-        return attrs.evolve(phase, phases=[localize_phase(inner, goal_level, level_origins) for inner in phase.phases])
+        return attrs.evolve(phase, phases=[localize_phase(inner, goal_level, realizer) for inner in phase.phases])
     if isinstance(phase, GoToPhase) and phase.pose is not None:
-        return attrs.evolve(phase, pose=to_map_frame(phase.pose, "" if phase.pose_zone else goal_level, level_origins))
+        return attrs.evolve(phase, pose=to_map_frame(phase.pose, phase.pose_zone, goal_level, realizer))
     return phase
 
 
@@ -71,14 +70,13 @@ class TM_Scenario(TM_Robots):
             SCENARIO_ROBOTS = SCENARIO_ROBOTS[:setup_robot_length]
             self._logger.warn("Scenario file contains more robots than setup.", once=True)
 
-        # Shift level-tagged poses from level-local to the flattened map frame.
-        level_origins = self._ctx.world_manager.map.level_origins
+        realizer = self.node._realizer
 
         for robot, config in zip(managed_robots, SCENARIO_ROBOTS, strict=False):
-            start_pose = to_map_frame(config.start, "" if config.start_zone else config.level, level_origins)
+            start_pose = to_map_frame(config.start, config.start_zone, config.level, realizer)
             self._start_poses[robot.name] = start_pose
 
-            phases = [localize_phase(phase, config.goal_level, level_origins) for phase in config.phases]
+            phases = [localize_phase(phase, config.goal_level, realizer) for phase in config.phases]
             forbidden: list[PositionRadius] = [PositionRadius(x=pose.position.x, y=pose.position.y, radius=robot.safe_distance) for pose in (start_pose, *(goto for phase in phases for goto in goto_poses(phase)))]
 
             # An empty phase list intentionally describes a stationary robot.

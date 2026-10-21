@@ -154,7 +154,6 @@ class EnvironmentManager(NodeInterface):
         self._static_polygons = {}
         self._attached_semantic_entities: set[str] = set()
         self._world_light_names: set[str] = set()
-        self._world_level_ids: list[str] = []
         self._episode_lights: dict[str, dict[str, str]] = {}
         self._episode_light_owners: set[str] | None = None
         self._robot_lights: dict[str, list[Light]] = {}
@@ -294,7 +293,7 @@ class EnvironmentManager(NodeInterface):
         self._carried_lights.clear()
         self._episode_lights.clear()
         self._world_light_names.clear()
-        self._world_level_ids = [str(fid) for fid in _world.levels if _match_level_id(fid)]
+        self._realizer.reset_levels([str(fid) for fid in _world.levels if _match_level_id(fid)])
         self.node._clear_semantic_entities()
         # (kind, realized entity, cfgs, polygon) attaches deferred until geometry exists.
         pending: list[tuple[str, str, list[SemanticCfg], list[tuple[float, float]] | None]] = []
@@ -438,9 +437,9 @@ class EnvironmentManager(NodeInterface):
 
     async def spawn_mode_lights(self, lights: Sequence[Light]) -> None:
         """Spawn the lights the obstacle mode declares for this episode, replacing those of the episode before."""
-        await self._spawn_owned_lights([(MODE_LIGHT_OWNER, list(lights), None)])
+        await self._spawn_owned_lights([(MODE_LIGHT_OWNER, list(lights), "")])
 
-    async def _spawn_owned_lights(self, owned: Sequence[tuple[str, list[Light], str | None]]) -> None:
+    async def _spawn_owned_lights(self, owned: Sequence[tuple[str, list[Light], str]]) -> None:
         await self._remove_episode_lights([owner for owner, _, _ in owned if owner in self._episode_lights])
         lights: list[Light] = []
         for owner, owner_lights, level_id in owned:
@@ -448,7 +447,7 @@ class EnvironmentManager(NodeInterface):
                 self._episode_light_owners.add(owner)
             names: dict[str, str] = {}
             for light in self._admit(owner_lights, f'obstacle {owner!r}' if owner else 'the obstacle mode'):
-                realized = self._realizer.realize(light, level_id or (self._world_level_ids[0] if len(self._world_level_ids) == 1 else ""))
+                realized = self._realizer.realize(light, level_id)
                 self.node._register_semantic_entity(light.name, realized.name)
                 lights.append(realized)
                 names[light.name] = realized.name

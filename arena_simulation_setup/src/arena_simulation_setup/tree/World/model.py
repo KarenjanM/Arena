@@ -156,7 +156,7 @@ def _open_ring(points: list[Position]) -> list[Position]:
 
 
 def _place_on(light: Light, entity: Obstacle) -> Light:
-    """Place a light at its offset on a static entity, the offset scaled and carried by the entity pose."""
+    """Place a light at its offset on a static entity, the offset scaled and carried by the entity pose, on the entity's level or zone."""
     offset = light.offset
     scale = entity.scale
     if scale is not None:
@@ -168,6 +168,8 @@ def _place_on(light: Light, entity: Obstacle) -> Light:
         owner=entity.name,
         pose=placed if light.spec.directed else Pose(position=placed.position),
         offset=Pose(),
+        level=entity.level,
+        extra={**light.extra, 'placement_zone': entity.placement_zone} if entity.placement_zone else dict(light.extra),
     )
 
 
@@ -624,6 +626,11 @@ class Level:
             if placement == 'ceiling' and height is not None and not math.isclose(microphone.position.z, height, abs_tol=MICROPHONE_PLACEMENT_TOLERANCE_M):
                 raise ValueError(f'microphone {listener_id!r} z={microphone.position.z} does not match ceiling height {height}')
 
+    def validate_levels(self) -> None:
+        for entity in (*self.objects, *self.humans, *self.lights, *self.sounds):
+            if entity.level:
+                raise ValueError(f'{entity.name!r} sits on the level that lists it and takes no level')
+
     def validate_lights(self) -> None:
         names: set[str] = set()
         for light in self.lights:
@@ -905,6 +912,7 @@ class World:
         microphone_ids: set[str] = set()
         for level in self.all_levels:
             level.validate_microphones()
+            level.validate_levels()
             level.validate_lights()
             zone_names = {zone.name for zone in level.zones}
             for zone in level.zones:
