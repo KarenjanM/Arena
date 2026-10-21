@@ -126,10 +126,10 @@ class TypeFiles:
             self.docs.pop(ref)
         return doc
 
-    def switching(self, ref: str, *, need: str, to: str, steps: Mapping[str, Any], tune: Mapping[str, Any] | None = None, tag: str = "", retry: bool = False) -> str:
+    def switching(self, ref: str, *, need: str, to: str, steps: Mapping[str, Any], tune: Mapping[str, Any] | None = None, tag: str = "", retry: bool = False, resume: bool = False) -> str:
         """`ref` with a `to` sequence of `steps` (holding `tune`) that every other sequence preempts into once `need`
         (declared, latched at 0) rises above 50. `tag` names one agent's own copy of a type others share; `retry` restarts
-        the sequence when a step fails instead of failing the tree."""
+        the sequence when a step fails instead of failing the tree; `resume` returns to the initial sequence once `steps` end."""
         name = f"{derived_name(ref, {})}__{to}" + (f"_{tag}" if tag else "")
         out = f"./{TYPES_DIR}/{name}.yaml"
         if out not in self.docs:
@@ -139,7 +139,7 @@ class TypeFiles:
             for sequence in doc["sequences"].values():
                 sequence.setdefault("transitions", []).append({"when": {need: {"above": 50.0}}, "goto": to})
             # `then: to` holds the agent in the switched sequence without restarting the tree
-            doc["sequences"][to] = {"steps": dict(steps), "then": to, **({"on_failure": to} if retry else {}), **({"tune": dict(tune)} if tune else {})}
+            doc["sequences"][to] = {"steps": dict(steps), "then": doc["initial_sequence"] if resume else to, **({"on_failure": to} if retry else {}), **({"tune": dict(tune)} if tune else {})}
             self.docs[out] = doc
         return out
 

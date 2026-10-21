@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from ..populate import for_people
-from .agents import TypeFiles, agent_type_of, clone, entry, mesh_for, unique_names
+from .agents import STAND_STEP, TypeFiles, agent_type_of, clone, entry, mesh_for, unique_names
 from .llm import AnswerError, Oracle, call
-from .profiles import profile, scaled_speed, tune_block
+from .profiles import profile, scaled_speed, tier_value, tune_block
 from .spec import DDecision, Record, SchemaError, parse_d
 from .step_a import StepError, set_type, walk_as_tree
 from .world import WorldContext, WorldError
@@ -218,10 +218,11 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
     if not homes:
         raise StepError("placement: no zone for the members to walk in from")
     members: list[dict[str, Any]] = []
-    for i, (prof, pt) in enumerate(zip(profiles, resolved, strict=True)):
+    meet = decision.case == "interaction_unbroken" and variant == "meet"
+    for i, prof in enumerate(profiles):
         home = homes[i % len(homes)]
-        if decision.case == "interaction_unbroken" and variant == "meet":
-            member = entry(names[i], prof, home, [home, pt], speed=scaled_speed(prof, "mid"), mode="once", agent_type=prof.base, rng=rng)
+        if meet:
+            member = entry(names[i], prof, home, [home], speed=scaled_speed(prof, "mid"), mode="once", agent_type=prof.base, rng=rng)
         else:
             away = [z for z in world.other_zones(exclude=[home]) if z != here] or [home]
             member = entry(names[i], prof, home, [home, away[(i + 1) % len(away)]], speed=scaled_speed(prof, "mid"), mode="reverse", agent_type=prof.base, rng=rng)
@@ -236,25 +237,26 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
     targets = [[round(spot[n][0], 2), round(spot[n][1], 2)] for n in ordered]
     info["formation"] = {"centre": [round(centre[0], 2), round(centre[1], 2)], "radius": FORMATION_RADIUS_M, "variant": variant}
     effects: list[dict[str, Any]] = []
-    if not (decision.case == "interaction_unbroken" and variant == "meet"):
-        gated = decision.when.robot_within is not None or decision.when.route_fraction is not None
-        if decision.case == "formation_break" or not gated:
-            form_when: dict[str, Any] = {"at": FORM_AT_S if decision.case == "formation_break" else max(FORM_AT_S, decision.when.at or 0.0)}
-        else:
-            form_when = decision.when.as_effect()
-            if "robot_within" in form_when:
-                form_when["of"] = info["formation"]["centre"]
-        if decision.case == "interaction_unbroken":
-            walk_as_tree(doc, files, world, ordered)
-            for member, prof in zip(members, profiles, strict=True):
-                x, y = spot[str(member["name"])]
-                face = (-heading[0], -heading[1]) if variant == "blocking" else (centre[0] - x, centre[1] - y)
-                steps = {"form": {"kind": "go_to", "target_pose": {"x": round(x, 2), "y": round(y, 2), "theta": round(math.atan2(face[1], face[0]), 3)}, "patience": {"mean": 300.0}}, "stand": {"duration": {"mean": 600.0}, "patience": {"mean": 900.0}}}
-                set_type(member, files.switching(agent_type_of(member), need=FORM, to="form", steps=steps, tune=tune_block({"repulsion": "low"}, prof=prof)))
-            effects.append({"type": "stimulus", "label": f"{label}:form", "scope": ordered, "need": FORM, "when": form_when})
-        else:
-            effects.append({"type": "rally", "label": f"{label}:form", "scope": ordered, "targets": targets, "when": form_when})
-        info["formation"]["at"] = form_when
+    gated = decision.when.robot_within is not None or decision.when.route_fraction is not None
+    if meet or (decision.case == "interaction_unbroken" and gated):
+        form_when: dict[str, Any] = decision.when.as_effect()
+        if "robot_within" in form_when:
+            form_when["of"] = info["formation"]["centre"]
+    else:
+        form_when = {"at": FORM_AT_S if decision.case == "formation_break" else max(FORM_AT_S, decision.when.at or 0.0)}
+    if decision.case == "interaction_unbroken":
+        ends = decision.duration != "high"
+        stand = {**STAND_STEP, "duration": {"mean": tier_value("duration", decision.duration)}, "satisfies": {FORM: -100.0}} if ends else dict(STAND_STEP)
+        walk_as_tree(doc, files, world, ordered)
+        for member, prof in zip(members, profiles, strict=True):
+            x, y = spot[str(member["name"])]
+            face = (-heading[0], -heading[1]) if variant == "blocking" else (centre[0] - x, centre[1] - y)
+            steps = {"form": {"kind": "go_to", "target_pose": {"x": round(x, 2), "y": round(y, 2), "theta": round(math.atan2(face[1], face[0]), 3)}, "patience": {"mean": 300.0}}, "stand": dict(stand)}
+            set_type(member, files.switching(agent_type_of(member), need=FORM, to="form", steps=steps, tune=tune_block({"repulsion": "low"}, prof=prof), resume=ends))
+        effects.append({"type": "stimulus", "label": f"{label}:form", "scope": ordered, "need": FORM, "when": form_when})
+    else:
+        effects.append({"type": "rally", "label": f"{label}:form", "scope": ordered, "targets": targets, "when": form_when})
+    info["formation"]["at"] = form_when
     if decision.case == "formation_break":
         when = decision.when.as_effect()
         if "robot_within" in when:

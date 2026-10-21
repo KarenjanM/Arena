@@ -121,3 +121,73 @@ def test_a_failed_intrinsic_group_keeps_earlier_groups_types(tmp_path: Path) -> 
     assert any(f.step == "B" and "decay_rate" in f.reason for f in result.record.failures), result.record.failures
     assert [h["agent"]["agent_type"] for h in result.doc["humans"]] == ["adult", "./needless.yaml"]
     assert not [ref for ref in result.files.docs if "radius" in ref]
+
+
+_TOY = {"west": "reception", "hall": "central_hallway", "east": "open_work_area"}
+
+
+def _toy(tmp_path: Path) -> tuple[WorldContext, dict, Path]:
+    crowd = [_walker("p_1", "reception", "open_work_area"), _walker("p_2", "open_work_area", "reception")]
+    return _corridor_world(tmp_path, _TOY, {"start": _START, "phases": [{"goto": _GOAL}]}, crowd)
+
+
+def _form_sequences(result: Result) -> list[dict]:
+    return [result.files.docs[a["agent"]["agent_type"]]["sequences"] for a in result.doc["humans"] if a["name"].startswith("d_")]
+
+
+@pytest.mark.parametrize(("duration", "seconds"), [("low", 10.0), ("mid", 30.0)])
+def test_an_interaction_with_a_duration_ends_and_walks_on(tmp_path: Path, duration: str, seconds: float) -> None:
+    world, doc, base = _toy(tmp_path)
+    decision = {"case": "interaction_unbroken", "variant": "standing", "members": ["nurse", "nurse"], "place": {"route_fraction": 0.5}, "duration": duration}
+    result = _run(world, doc, base, "Two nurses stand talking in the robot's way for a while.", ["D:interaction_unbroken"], D=decision)
+
+    assert result.record.status == "ok", result.record.failures
+    sequences = _form_sequences(result)
+    assert len(sequences) == 2
+    for seq in sequences:
+        assert seq["form"]["steps"]["stand"]["duration"] == {"mean": seconds}
+        assert seq["form"]["steps"]["stand"]["satisfies"] == {"form": -100.0} and seq["form"]["then"] == "walk"
+
+
+def test_an_interaction_of_high_duration_holds_its_formation(tmp_path: Path) -> None:
+    world, doc, base = _toy(tmp_path)
+    decision = {"case": "interaction_unbroken", "variant": "standing", "members": ["nurse", "nurse"], "place": {"route_fraction": 0.5}, "duration": "high"}
+    result = _run(world, doc, base, "Two nurses stand talking in the robot's way and will not stop.", ["D:interaction_unbroken"], D=decision)
+
+    for seq in _form_sequences(result):
+        assert "satisfies" not in seq["form"]["steps"]["stand"] and seq["form"]["then"] == "form"
+
+
+@pytest.mark.parametrize(("when", "entry"), [({"at": 20.0}, {"at": 20.0}), ({"robot_within": 4.0}, None)])
+def test_a_meeting_starts_when_the_prompt_says(tmp_path: Path, when: dict, entry: dict | None) -> None:
+    world, doc, base = _toy(tmp_path)
+    decision = {"case": "interaction_unbroken", "variant": "meet", "members": ["nurse", "nurse"], "place": {"zone": "open_work_area"}, "when": when, "duration": "mid"}
+    result = _run(world, doc, base, "Two nurses meet and chat for half a minute.", ["D:interaction_unbroken"], D=decision)
+
+    assert result.record.status == "ok", result.record.failures
+    members = [a for a in result.doc["humans"] if a["name"].startswith("d_")]
+    assert all(len(a["waypoints"]) == 1 for a in members)
+    (stimulus,) = result.timeline
+    assert stimulus["stimulus"] == [{"agents": sorted(a["name"] for a in members), "need": "form"}]
+    if entry is not None:
+        assert {k: v for k, v in stimulus.items() if k != "stimulus"} == entry
+    else:
+        assert "within" in stimulus["when"] and "robot" in stimulus["when"]
+    for seq in _form_sequences(result):
+        assert seq["form"]["steps"]["stand"]["duration"] == {"mean": 30.0} and seq["form"]["then"] == "walk"
+
+    loader = pytest.importorskip("arena_humansim.core.agents.loader")
+    out = result.files
+    out.write(tmp_path / "out")
+    loaded = loader.load_agent_type_from_file(tmp_path / "out" / members[0]["agent"]["agent_type"][2:])
+    assert loaded.mode == "behavior_tree" and set(loaded.sequences) == {"walk", "form"}
+
+
+def test_the_shipped_shift_change_prompt_applies_every_step(tmp_path: Path) -> None:
+    world, doc, base = _toy(tmp_path)
+    prompt = next(p for p in P.read(P.shipped_dir() / "universal.yaml") if p.id == "v_017")
+
+    result = generate(prompt, world=world, base_id="base", base_doc=doc, base_dir=base, oracle=True)
+
+    assert result.record.status == "ok", result.record.failures
+    assert sorted(result.record.steps) == sorted(prompt.targets)
