@@ -34,9 +34,10 @@ def shipped_dir() -> Path:
     return Path(__file__).with_name("prompts")
 
 
-def load_sets(world: str, *, extra: Sequence[Path] = ()) -> list[Prompt]:
-    """The frozen universal set plus this world's own, plus any files given."""
-    paths = [*sorted(shipped_dir().glob("universal*.yaml")), *(sorted(shipped_dir().glob(f"{world}*.yaml")) if world else []), *extra]
+def load_sets(world: str, *, extra: Sequence[Path] = (), directory: Path | None = None) -> list[Prompt]:
+    """The frozen `universal*.yaml` sets plus this world's own `<world>.yaml`, plus any files given."""
+    root = shipped_dir() if directory is None else directory
+    paths = [*sorted(root.glob("universal*.yaml")), *([root / f"{world}.yaml"] if world else []), *extra]
     out: list[Prompt] = []
     for p in paths:
         if p.is_file():

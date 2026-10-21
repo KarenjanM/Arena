@@ -193,3 +193,12 @@ def test_the_base_route_keeps_the_robots_levels(level: int | str) -> None:
 
     spec = robot_for({"start": [0.0, 0.0, 0.0], "goal": [20.0, 0.0], "level": level, "goal_level": level}, [])
     assert spec["level"] == level and spec["goal_level"] == level
+
+
+def test_a_world_loads_only_its_own_prompt_set(tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.prompts import load_sets
+
+    for name in ("universal", "hospital_1", "hospital_1_bare"):
+        (tmp_path / f"{name}.yaml").write_text(f"- {{id: {name}, text: t}}\n")
+    assert [p.id for p in load_sets("hospital_1", directory=tmp_path)] == ["universal", "hospital_1"]
+    assert [p.id for p in load_sets("hospital_1_bare", directory=tmp_path)] == ["universal", "hospital_1_bare"]
