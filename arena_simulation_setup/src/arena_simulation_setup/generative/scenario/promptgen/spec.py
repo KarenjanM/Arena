@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -108,7 +109,7 @@ def parse_when(raw: object, *, default: When, where: str) -> When:
     out: dict[str, float] = {}
     for key in ("at", "robot_within", "route_fraction"):
         if raw.get(key) is not None:
-            out[key] = _num(raw[key], where=f"{where}.when.{key}")
+            out[key] = _num(raw[key], where=f"{where}.when.{key}", low=0.0)
     if len(out) > 1:
         raise SchemaError(f"{where}.when: set exactly one of at / robot_within / route_fraction, got {sorted(out)}")
     if "route_fraction" in out and not 0.0 < out["route_fraction"] < 1.0:
@@ -124,11 +125,17 @@ def _get(raw: Mapping[str, Any], key: str, default: object) -> object:
     return default if value is None else value
 
 
-def _num(raw: object, *, where: str) -> float:
+def _num(raw: object, *, where: str, low: float | None = None) -> float:
+    """`raw` as a finite float, at least `low` when given."""
     try:
-        return float(raw)
+        value = float(raw)
     except (TypeError, ValueError):
         raise SchemaError(f"{where}: {raw!r} is not a number") from None
+    if not math.isfinite(value):
+        raise SchemaError(f"{where}: {raw!r} is not a finite number")
+    if low is not None and value < low:
+        raise SchemaError(f"{where}: {raw!r} must not be below {low:g}")
+    return value
 
 
 def _tier(raw: object, *, where: str) -> str:
@@ -205,14 +212,12 @@ def parse_selection(raw: object, *, where: str) -> Selection:
     sel = Selection(
         profile=_profile_name(raw["profile"], where=f"{where}.profile") if raw.get("profile") else "",
         amount=_choice(raw["amount"], ("half", "all_but_one", "all"), where=f"{where}.amount") if raw.get("amount") else "",
-        n=int(_num(raw["n"], where=f"{where}.n")) if raw.get("n") is not None else 0,
+        n=int(_num(raw["n"], where=f"{where}.n", low=0.0)) if raw.get("n") is not None else 0,
         zone=str(raw.get("zone") or ""),
         names=_names(raw.get("names"), where=f"{where}.names"),
     )
     if not sel.as_dict():
         raise SchemaError(f"{where}: a selection needs one of profile / amount / n / zone / names")
-    if sel.n < 0:
-        raise SchemaError(f"{where}.n: must not be negative")
     return sel
 
 
@@ -250,8 +255,8 @@ def parse_b(raw: object) -> BDecision | None:
         case=case,
         select=parse_selection(raw.get("select"), where="B.select"),
         params=params,
-        period=max(1.0, _num(_get(raw, "period", 4.0), where="B.period")),
-        radius=max(0.5, _num(_get(raw, "radius", 3.0), where="B.radius")),
+        period=max(1.0, _num(_get(raw, "period", 4.0), where="B.period", low=0.0)),
+        radius=max(0.5, _num(_get(raw, "radius", 3.0), where="B.radius", low=0.0)),
         around=_choice(_get(raw, "around", "route"), ERRATIC_AROUND, where="B.around"),
         when=parse_when(raw.get("when"), default=When(at=5.0), where="B"),
         reason=str(raw.get("reason") or ""),
@@ -298,7 +303,7 @@ def parse_c(raw: object) -> CDecision | None:
         route_fraction=fraction,
         speed=_tier(_get(raw, "speed", "mid"), where="C.speed"),
         after=after,
-        duration=max(0.0, _num(_get(raw, "duration", 10.0), where="C.duration")),
+        duration=_num(_get(raw, "duration", 10.0), where="C.duration", low=0.0),
         offset=_num(_get(raw, "offset", 0.0), where="C.offset"),
         veer_to=veer_to,
         reason=str(raw.get("reason") or ""),
@@ -375,7 +380,7 @@ def parse_d(raw: object) -> DDecision | None:
         when=parse_when(raw.get("when"), default=default_when, where="D"),
         duration=_tier(_get(raw, "duration", "high"), where="D.duration"),
         break_kind=_choice(_get(raw, "break", "scatter"), D_BREAKS, where="D.break"),
-        radius=max(0.5, _num(_get(raw, "radius", 2.0), where="D.radius")),
+        radius=max(0.5, _num(_get(raw, "radius", 2.0), where="D.radius", low=0.0)),
         profile=_profile_name(raw.get("profile"), where="D.profile"),
         speed=_tier(_get(raw, "speed", "mid"), where="D.speed"),
         route_fraction=fraction,

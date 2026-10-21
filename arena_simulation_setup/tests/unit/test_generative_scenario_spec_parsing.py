@@ -93,3 +93,39 @@ def test_when_takes_one_trigger(raw) -> None:
 def test_when_round_trips_through_its_effect(raw) -> None:
     when = parse_when(raw, default=When(at=0.0), where="B")
     assert when.as_effect() == {k: float(v) for k, v in raw.items() if v is not None}
+
+
+@pytest.mark.parametrize("value", ["inf", "nan", float("inf"), -5])
+def test_when_rejects_a_time_that_is_not_a_finite_non_negative_number(value) -> None:
+    with pytest.raises(SchemaError, match=r"B\.when\.at"):
+        parse_when({"at": value}, default=When(at=0.0), where="B")
+
+
+@pytest.mark.parametrize(
+    ("parse", "raw", "where"),
+    [
+        (parse_c, {"case": "approach", "offset": "nan"}, r"C\.offset"),
+        (parse_c, {"case": "approach", "angle": "inf"}, r"C\.angle"),
+        (parse_c, {"case": "approach", "duration": -3}, r"C\.duration"),
+        (parse_c, {"case": "approach", "route_fraction": "nan"}, r"C\.route_fraction"),
+        (parse_b, {"case": "erratic_route", "select": {"amount": "all"}, "period": "inf"}, r"B\.period"),
+        (parse_b, {"case": "erratic_route", "select": {"amount": "all"}, "radius": -1}, r"B\.radius"),
+        (parse_b, {"case": "erratic_route", "select": {"n": "nan"}}, r"B\.select\.n"),
+        (parse_d, {"case": "formation_break", "radius": "nan"}, r"D\.radius"),
+        (parse_d, {"case": "formation_break", "when": {"robot_within": "inf"}}, r"D\.when\.robot_within"),
+    ],
+)
+def test_model_numbers_must_be_finite_and_in_range(parse, raw, where) -> None:
+    with pytest.raises(SchemaError, match=where):
+        parse(raw)
+
+
+def test_a_non_finite_busy_multiplier_is_rejected(tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.step_a import StepError
+
+    text = "The place is packed."
+    retry = f"{step_a_llm.user_prompt(text)}\n\nYour previous answer was rejected: A.k: 'inf' is not a finite number. Answer again."
+    for user in (step_a_llm.user_prompt(text), retry):
+        (tmp_path / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), user)}.json").write_text(json.dumps({"answer": json.dumps({"case": "busy", "k": "inf"})}))
+    with pytest.raises(StepError, match=r"A\.k: 'inf' is not a finite number"):
+        step_a_llm.decide(text, Record(prompt_id="t", prompt=text, world="w", base="b"), cache_dir=tmp_path)

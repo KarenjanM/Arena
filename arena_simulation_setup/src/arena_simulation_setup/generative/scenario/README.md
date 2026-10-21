@@ -138,5 +138,6 @@ An interception is solved offline against the planned route ([`promptgen/encount
 - **Normal until the onset.** A case changes the crowd only through its timeline, except a parameter HumanSim has no `tune:` for (radius, need decay, step duration), which is pinned into the agent's type from the start.
 - **Every agent block carries its type's radius.** HumanSim's adapter overrides an undeclared `radius` with 0.35 m, so `scenario_text` writes the type's mean.
 - **The model runs at temperature 0**, every answer cached by content hash under `$ARENA_DATA_DIR/promptgen/llm_cache` (`$ARENA_WS_DIR/data`, else `/opt/arena_ws/data`, when `ARENA_DATA_DIR` is unset), so regeneration is byte-identical and free. An entry is written to a temporary file and renamed into place, and an unreadable one is asked again.
+- **Model numbers are finite.** A number that is not, or a negative time, duration, radius, period or count, is a schema error the model is asked once to correct.
 - **Generated files carry `GENERATED_MARKER`.** `populate --write` refuses to replace a scenario without it unless `--force`, and `--prune` removes only marked bases this run did not write.
 - **Same world and seed reproduce byte-identically.** World variance, scatter points and waypoint draws come from RNGs keyed on world, agent, profile and seed.

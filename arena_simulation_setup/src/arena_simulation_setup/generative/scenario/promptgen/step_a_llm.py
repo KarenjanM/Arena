@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -57,9 +58,12 @@ def _parse(raw: dict[str, Any]) -> tuple[ADecision | None, list[dict[str, Any]],
         raise SchemaError(f"A.case: {case!r} is not one of {list(A_CASES)} or 'none'")
     k_raw = raw.get("k")
     try:
-        k = 2.0 if k_raw is None else min(3.0, max(1.0, float(k_raw)))
+        k = 2.0 if k_raw is None else float(k_raw)
     except (TypeError, ValueError):
         raise SchemaError(f"A.k: {raw.get('k')!r} is not a number") from None
+    if not math.isfinite(k):
+        raise SchemaError(f"A.k: {raw.get('k')!r} is not a finite number")
+    k = min(3.0, max(1.0, k))
     when = parse_when(raw.get("when"), default=ONSETS[case], where="A")
     return ADecision(case=case, k=k, when=when if isinstance(when, When) else ONSETS[case]), who, warnings
 
