@@ -1,5 +1,4 @@
-"""Step 1 - Type A, the whole crowd: `blackout`, `evacuation` and `stampede` change it at the onset; `busy` injects pedestrians.
-HumanSim cannot change a running agent from outside, so every agent the change reaches becomes a behavior tree a `stimulus` retunes."""
+"""Step 1, Type A: `blackout`, `evacuation` and `stampede` switch the crowd at the onset, `busy` injects pedestrians."""
 
 from __future__ import annotations
 
@@ -34,7 +33,7 @@ def _agents(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def bake(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, names: Sequence[str]) -> None:
-    """Pin `params` into each named agent's type from the start, a pinned radius replacing the agent's own: HumanSim cannot change them on a running agent."""
+    """Pin `params` into each named agent's type from the start, a pinned radius replacing the agent's own."""
     derived_for: dict[str, str] = {}
     for agent in _agents(doc):
         if str(agent["name"]) not in names:
@@ -62,7 +61,7 @@ def set_type(agent: dict[str, Any], ref: str) -> None:
 
 
 def walk_route(agent: Mapping[str, Any], world: WorldContext) -> list[tuple[float, float]]:
-    """The walker's waypoints as points, drawn once where the runtime would draw them per episode; seeded so a scenario regenerates identically."""
+    """The walker's waypoints as points, zones drawn once from a seeded RNG."""
     stops = list(agent.get("waypoints") or [])
     if not stops:
         raise StepError(f"{agent['name']}: a walker without waypoints has no route to bake")

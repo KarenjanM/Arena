@@ -1,6 +1,4 @@
-"""The decision record: what each step decided, as typed data.
-
-A model's JSON answer is validated against these parsers; the record is also the dedup key and the provenance."""
+"""The decision record: each step's decision as typed data parsed from a model's JSON answer."""
 
 from __future__ import annotations
 
@@ -443,7 +441,7 @@ class Record:
         }
 
     def dedup_key(self) -> str:
-        """Hash of the decisions with reasons dropped and numbers rounded, so a reworded prompt keeps its key."""
+        """Hash of the decisions with reasons dropped and numbers rounded."""
         doc = json.loads(json.dumps(self.decisions(), sort_keys=True, default=str))
 
         def rnd(o: object) -> object:

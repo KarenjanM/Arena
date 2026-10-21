@@ -1,4 +1,4 @@
-"""The steps' design realized offline: intercepting pedestrians solved against the planned route, behavior trees that switch on a need, and the timeline entries that raise it."""
+"""The steps' design realized offline into intercepting pedestrians, behavior-tree switches and the timeline that raises them."""
 
 from __future__ import annotations
 

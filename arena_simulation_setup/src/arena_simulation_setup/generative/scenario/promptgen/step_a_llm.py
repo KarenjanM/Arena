@@ -1,5 +1,4 @@
-"""Step 1b - Type A by a small model from the prompt text alone (the lexicon misses a misspelled "evacation"), plus the `who` block of actors shared with Steps D and B+C.
-The lexicon stays the oracle for tests and `--oracle` runs; `pipeline.generate` arbitrates between the two and records every disagreement."""
+"""Step 1b: Type A and the shared `who` cast read by a model from the prompt text."""
 
 from __future__ import annotations
 

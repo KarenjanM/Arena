@@ -1,6 +1,4 @@
-"""The frozen prompt sets, and the place and duration phrases the system prompts document.
-
-Each prompt carries its `targets` (the steps it exercises) and an `oracle` (the decisions its slots encode), which `--oracle` runs realize without a model."""
+"""The frozen prompt sets and the place and duration phrases the system prompts document."""
 
 from __future__ import annotations
 

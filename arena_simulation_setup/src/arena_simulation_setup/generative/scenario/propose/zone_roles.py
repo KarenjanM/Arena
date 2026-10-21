@@ -1,5 +1,4 @@
-"""Ask a model about the zone names `zones.classify` leaves `UNKNOWN`, with the world's vocabulary and each zone's size and contents as evidence.
-Answers are merged into the world's `kg.yaml` as `has_purpose` facts marked `by: llm`; no model is called at generation time and a fact a human set is never overwritten."""
+"""Model-proposed roles for the zone names `zones.classify` leaves `UNKNOWN`, merged into `kg.yaml` as `by: llm` facts."""
 
 from __future__ import annotations
 
@@ -53,7 +52,7 @@ def unknown_names(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, st
 
 
 def _evidence(zone: Mapping[str, Any]) -> dict[str, Any]:
-    """Extent and contents of one zone; an extent rather than corners, since a long thin zone reads as a corridor."""
+    """Extent and contents of one zone."""
     corners = [(float(c["x"]), float(c["y"])) for c in zone.get("corners", []) if isinstance(c, Mapping)]
     statics = (zone.get("entities") or {}).get("static") or []
     contents = sorted({str(e.get("model", "")).split("/")[-1] for e in statics if isinstance(e, Mapping) and e.get("model")})
@@ -68,7 +67,7 @@ def _evidence(zone: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def build_prompt(zones: Sequence[Mapping[str, Any]], names: Sequence[str], *, world: str) -> str:
-    """The user half of the request: the world's whole vocabulary (the neighbors are the evidence), then the zones in question."""
+    """The user half of the request: the world's whole vocabulary, then the zones in question."""
     by_name = {str(z["name"]): z for z in zones if isinstance(z, Mapping) and z.get("name")}
     vocabulary = {name: classify(name).value for name in sorted(by_name)}
     asked = {name: _evidence(by_name[name]) for name in names if name in by_name}
@@ -122,8 +121,7 @@ def classify_tail(
 
 
 def merge(proposals: Sequence[Proposal], kg: Path) -> tuple[int, list[str]]:
-    """Write confident proposals into the `kg.yaml` at `kg`; returns (written, notes on what was kept).
-    Facts a human set and facts already holding the role are left alone, so an unchanged re-run writes nothing."""
+    """Write confident proposals into the `kg.yaml` at `kg`, never over a human's fact; returns (written, notes)."""
     from arena_simulation_setup.kg import Scene, dump, load
     from arena_simulation_setup.kg.scene import DEFAULT_USES
     from arena_simulation_setup.tree.World.write import to_yaml

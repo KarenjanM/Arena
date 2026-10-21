@@ -94,8 +94,7 @@ class TypeFiles:
         return out
 
     def walking(self, agent: Mapping[str, Any], route: Sequence[Point]) -> str:
-        """`agent`'s own type as a behavior tree whose `walk` sequence is `route`, one go_to per point, looped: a walker that can
-        switch sequence or hold a tune on a need. Named after the base type and the agent, one per walker."""
+        """`agent`'s own type as a behavior tree looping a `walk` sequence over `route`, one per walker."""
         base = agent_type_of(agent)
         stem = base.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
         name = f"{stem}__walk_{agent['name']}"
@@ -108,7 +107,7 @@ class TypeFiles:
         return out
 
     def standing(self, ref: str, name: str) -> str:
-        """`ref` as a behavior tree whose `wait` sequence stands where the agent spawned, one per agent `name`, for a switch to start from."""
+        """`ref` as a behavior tree whose `wait` sequence stands where the agent spawned, one per agent `name`."""
         stem = ref.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
         type_name = f"{stem}__wait_{name}"
         out = f"./{TYPES_DIR}/{type_name}.yaml"
@@ -127,10 +126,7 @@ class TypeFiles:
         return doc
 
     def switching(self, ref: str, *, need: str, to: str, steps: Mapping[str, Any], tune: Mapping[str, Any] | None = None, tag: str = "", advance: bool = False, resume: bool = False) -> str:
-        """`ref` with a `to` sequence of `steps` (holding `tune`) that every other sequence preempts into once `need`
-        (declared, latched at 0) rises above 50. `tag` names one agent's own copy of a type others share; `advance` gives each
-        step its own sequence that moves on to the next step whether it succeeds or fails, the last back to the first;
-        `resume` returns to the initial sequence once `steps` end."""
+        """`ref` with a `to` sequence of `steps` that every other sequence preempts into once `need` rises above 50."""
         name = f"{derived_name(ref, {})}__{to}" + (f"_{tag}" if tag else "")
         out = f"./{TYPES_DIR}/{name}.yaml"
         if out not in self.docs:
@@ -151,8 +147,7 @@ class TypeFiles:
         return out
 
     def tuned(self, ref: str, *, need: str, tune: Mapping[str, Any], params: Mapping[str, str]) -> str:
-        """`ref` holding `tune` (`params` name it) once `need` (declared, latched at 0) rises above 50, through a type-level
-        `tunes:` entry, so the agent keeps doing what it did on the new parameters."""
+        """`ref` holding `tune` through a type-level `tunes:` entry once `need` rises above 50."""
         name = f"{derived_name(ref, params)}__{need}"
         out = f"./{TYPES_DIR}/{name}.yaml"
         if out not in self.docs:
@@ -180,8 +175,7 @@ class TypeFiles:
 
 
 def profile_of_agent(agent: Mapping[str, Any]) -> Profile | None:
-    """Which library profile an existing agent most resembles: its agent type, refined by its
-    mesh - an adult in a medical uniform is a nurse."""
+    """The library profile an existing agent most resembles, by agent type refined by mesh."""
     ref = agent_type_of(agent)
     stem = ref.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
     try:

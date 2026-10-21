@@ -1,5 +1,4 @@
-"""Render `system_{a,bc,d}.md` from the hand-written `.tmpl.md` notes, the constants the parser and realizer judge answers by, and `kb_ranges.yaml`.
-The built files are committed, so a KB change is a reviewed diff and a cache invalidation: `python3 -m arena_simulation_setup.generative.scenario.promptgen.build_kb [--check]`."""
+"""Render the committed `system_{a,bc,d}.md` from the `.tmpl.md` notes, the parser constants and `kb_ranges.yaml`."""
 
 from __future__ import annotations
 
@@ -56,8 +55,7 @@ def _default(cls: type, field: str) -> object:
 
 
 def _ranges() -> dict[str, Any]:
-    """Observed answer ranges mined from the installed runs (`tools/kb_ranges.py`), committed
-    beside this module so the build stays deterministic between dataset regenerations."""
+    """The observed answer ranges committed in `kb_ranges.yaml`."""
     return yaml.safe_load((_DIR / "kb_ranges.yaml").read_text())
 
 

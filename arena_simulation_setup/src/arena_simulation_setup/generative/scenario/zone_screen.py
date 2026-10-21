@@ -81,7 +81,7 @@ def screen_zones(
     robot_zones: frozenset[str] = frozenset(),
     clearance_map: tuple[np.ndarray, float, float, float] | None = None,
 ) -> dict[str, Verdict]:
-    """A verdict per zone, screened on `clearance_map` (meters to the nearest occupied cell, resolution, origin x, origin y) or else on `world_root` rendered with `statics`; an unscreenable world gets verdicts that all refuse, and `robot_zones` are refused whole."""
+    """A verdict per zone on whether every point the resolver could return there clears the route; `robot_zones` are refused whole."""
     verdicts: dict[str, Verdict] = {}
     names = [str(z["name"]) for z in zones if isinstance(z, Mapping) and z.get("name")]
 

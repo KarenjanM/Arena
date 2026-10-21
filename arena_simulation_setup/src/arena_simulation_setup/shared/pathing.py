@@ -58,7 +58,7 @@ class OccupancyGrid:
         return rows - 1 - int((pt[1] - self.oy) / self.res), int((pt[0] - self.ox) / self.res)
 
     def xy(self, cell: Cell) -> Point:
-        """The center of a cell, so `cell(xy(c)) == c` regardless of float rounding."""
+        """The center of a cell; `cell(xy(c)) == c`."""
         rows = self.shape[0]
         return ((cell[1] + 0.5) * self.res + self.ox, (rows - 1 - cell[0] + 0.5) * self.res + self.oy)
 
@@ -90,7 +90,7 @@ class OccupancyGrid:
 
 
 class _Planner:
-    """Memoised: A* revisits cells constantly."""
+    """A* over an occupancy grid with memoized cell validity."""
 
     def __init__(self, grid: OccupancyGrid, is_valid: IsValid | None) -> None:
         self._grid = grid
@@ -227,7 +227,7 @@ def plan_route(
     *,
     is_valid: IsValid | None,
 ) -> list[Point]:
-    """Returns ``[start, goal]`` unchanged when the straight line is clear; raises PathError when no free route joins them."""
+    """A free-space route from `start` to `goal`, `[start, goal]` when the line is clear; raises PathError when none exists."""
     if line_of_sight(start, goal, is_valid):
         return [start, goal]
 

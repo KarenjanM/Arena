@@ -1,4 +1,4 @@
-"""Step 1 - Type A by lexicon. Deterministic, offline, and round-trip tested by the prompt sets."""
+"""Step 1, Type A by lexicon: deterministic and offline."""
 
 from __future__ import annotations
 
@@ -82,8 +82,7 @@ def score(prompt: str, lexicon: dict[str, Any] | None = None) -> dict[str, tuple
 
 
 def _onset(prompt: str, default: When, case: str, lexicon: dict[str, Any]) -> When:
-    """An onset phrase counts only in the sentence that names the case: "halfway" in a later
-    sentence about a crossing pedestrian is that pedestrian's, not the evacuation's."""
+    """The first time phrase in a sentence that names `case`, else `default`."""
     phrases = [str(p) for p in (lexicon.get(case, {}).get("phrases") or {})]
     for sentence in re.split(r"(?<=[.!?])\s+", prompt.lower()):
         if not _has(phrases, sentence):
@@ -95,8 +94,7 @@ def _onset(prompt: str, default: When, case: str, lexicon: dict[str, Any]) -> Wh
 
 
 def when_in(text: str, *, exclude_cases: Sequence[str] = (), lexicon: dict[str, Any] | None = None) -> When | None:
-    """The first time phrase in a sentence of `text` that does not name one of `exclude_cases`
-    (their sentences own their phrases). Longest phrase first. None when there is none."""
+    """The first time phrase in a sentence of `text` that names none of `exclude_cases`; None without one."""
     lex = lexicon or load()
     owned = [str(p) for case in exclude_cases for p in (lex.get(case, {}).get("phrases") or {})]
     for sentence in re.split(r"(?<=[.!?])\s+", text.lower()):

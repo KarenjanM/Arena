@@ -40,7 +40,7 @@ def _arena_world_path() -> list[Path]:
 
 
 def world_roots(worlds: Path | None) -> list[Path]:
-    """`--worlds`, else the `ARENA_WORLD_PATH` roots and then the source tree's worlds under `$ARENA_DIR`, as `touch_world` finds a world."""
+    """`--worlds`, else the `ARENA_WORLD_PATH` roots, then `$ARENA_DIR/arena_simulation_setup/worlds`."""
     if worlds is not None:
         return [worlds]
     roots = _arena_world_path()
@@ -76,7 +76,7 @@ def _world_names(worlds: Path | None) -> str:
 
 
 def _writable(path: Path) -> Path:
-    """`path`, unless it lies in an install prefix or the asset cache, which a rebuild or a pull overwrites."""
+    """`path`, refused under an install prefix or the asset cache."""
     from arena_simulation_setup import ARENA_ASSETS_DIR
 
     real = path.resolve()
@@ -100,7 +100,7 @@ def _bare(args: argparse.Namespace) -> int:
 
 
 def default_suites_dir() -> Path:
-    """`configs/benchmark/suites` of arena_evaluation in the source tree under `$ARENA_DIR`, where the benchmark runner finds a suite the installed share lacks."""
+    """The source tree's arena_evaluation `configs/benchmark/suites` under `$ARENA_DIR`."""
     if not (arena := os.environ.get("ARENA_DIR")):
         raise FileNotFoundError("ARENA_DIR is unset: set it to the Arena checkout, or pass --out to name the suite file")
     out = Path(arena) / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites"
@@ -125,7 +125,7 @@ def _grid_loader(root: Path) -> Callable[[], Grid | None]:
 
 
 def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]], robot: dict[str, Any]) -> bool:
-    """Whether the runtime's planner finds a route along the robot's legs, from endpoints snapped clear of walls and furniture."""
+    """Whether the planner finds a route along the robot's legs from snapped endpoints."""
     try:
         pts = route_points(robot, zones)
         held = grid() if len(pts) >= 2 else None
@@ -175,7 +175,7 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
 
 
 def _all_zones(root: Path) -> list[dict[str, Any]]:
-    """Every zone across all levels: a name only on floor 3 (`three_storied_residential`'s `3_study`) still needs a role."""
+    """Every named zone across all levels, the first of each name kept."""
     zones: list[dict[str, Any]] = []
     seen: set[str] = set()
     try:

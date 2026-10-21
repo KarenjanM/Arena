@@ -1,7 +1,4 @@
-"""prompt + world + base scenario -> `scenarios/<base>__<prompt_id>/`.
-
-Steps A, D and B+C run in that order over one decision record, so no step re-reads a sentence another realized; an agent belongs to at most one step.
-Their design is then realized offline (`realize`) into injected pedestrians, behavior-tree switches and the scenario timeline."""
+"""Prompt, world and base scenario to `scenarios/<base>__<prompt_id>/`: steps A, D and B+C, then the offline realization."""
 
 from __future__ import annotations
 
@@ -59,7 +56,7 @@ class RobotPlan:
 
 
 def denied_on_empty(targets: tuple[str, ...]) -> list[str]:
-    """Targets that cannot apply to an empty base: Type B and every Type A but `busy` act on the crowd; C and D generate their own pedestrians."""
+    """Targets that cannot apply to an empty base: Type B and every Type A but `busy`."""
     return [t for t in targets if t.startswith("B:") or (t.startswith("A:") and t.split(":", 1)[1] not in A_ON_EMPTY)]
 
 
@@ -109,8 +106,7 @@ def _oracle_for(prompt: Prompt, key: str) -> Oracle:
 
 
 def pin_robot_route(doc: dict[str, Any], world: WorldContext, record: Record, plan: RobotPlan) -> None:
-    """Pin the robot's start and goal to the planned route's endpoints, the start facing along it, and drive them as `plan` says.
-    Zone endpoints resolve to random wall-checked points at run time and would move the route every placement here was made against."""
+    """Pin the robot's start and goal to the planned route's endpoints and drive them as `plan` says."""
     robots = doc.get("robots") or []
     if not robots or not isinstance(robots[0], dict) or world.grid is None or len(world.route) < 2:
         return
@@ -257,7 +253,7 @@ def generate(
 
 
 def _realized(result: Result, world: WorldContext, *, seed: int, robot_speed: float) -> Result:
-    """The steps' design realized offline; a step whose realization fails is recorded as failed and dropped, the rest realized again without it."""
+    """The steps' design realized offline, a step whose realization fails recorded as failed and dropped."""
     record = result.record
     while True:
         doc, files = copy.deepcopy(result.doc), copy.deepcopy(result.files)

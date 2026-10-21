@@ -1,6 +1,4 @@
-"""What a world looks like to the generator: zones, furniture, the grid, the robot's planned route.
-
-Route and placements use the level occupancy grid (`occupancy.level_grid`) at the runtime map's resolution with furniture stamped in the way `WorldManager` does; the route is planned on it by `shared.pathing.plan_route`."""
+"""A world as the generator sees it: zones, furniture, the occupancy grid and the robot's planned route."""
 
 from __future__ import annotations
 
@@ -31,8 +29,7 @@ Point = tuple[float, float]
 
 #: Meters the robot needs on either side to drive a cell; also the pedestrian body clearance.
 ROBOT_CLEAR = 0.35
-#: Clearance the robot's start and goal get: nav2 will not plan into the inscribed radius plus inflation (mpo700: 0.48 m + 0.35 m).
-#: Falls back to `ROBOT_CLEAR` when no such cell is within 3 m.
+#: Clearance of the robot's start and goal past nav2's inscribed radius plus inflation; `ROBOT_CLEAR` when no such cell is within 3 m.
 ENDPOINT_CLEAR = 0.7
 #: A planned leg shorter than this is replaced by the longest leg the zones offer: the base scenarios' own floor.
 MIN_LEG_M = MIN_EPISODE_S * ROBOT_SPEED_MPS
@@ -75,8 +72,7 @@ def _truncate(route: Sequence[Point], cap_m: float) -> list[Point]:
 
 
 def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, beat: float = 0.0) -> tuple[Point, list[Point]] | None:
-    """The candidate goal (snapped into free space) with the longest drivable route from `start` up to `MAX_LEG_M`;
-    None when none beats `beat` by a meter. A small world may never reach `MIN_LEG_M`; its longest leg is still the right one."""
+    """The snapped candidate goal with the longest drivable route from `start` up to `MAX_LEG_M`; None when none beats `beat` by a meter."""
     best: tuple[float, Point, list[Point]] | None = None
     for pt in candidates:
         goal = endpoint(grid, pt)
@@ -259,8 +255,7 @@ class WorldContext:
         return None
 
     def zone_point(self, name: str, *, need: float = 0.4) -> Point:
-        """A point in the zone where something of radius `need` may stand: nearest the centroid among reachable cells clear of walls
-        and away from the robot's endpoints, preferring cells clear of its route. The bare centroid when the world has no grid."""
+        """The reachable point nearest the zone's centroid clear of walls by `need` and away from the robot's endpoints; the centroid without a grid."""
         if name not in self.centroids:
             raise WorldError(f"{name!r} is not a zone of {self.name}; known: {self.zone_names()}")
         c = self.centroids[name]
@@ -291,8 +286,7 @@ class WorldContext:
         raise WorldError(f"zone {name!r} has no room for a formation of radius {need:.1f} m away from the robot's endpoints")
 
     def zone_sample(self, name: str, rng: random.Random, *, need: float = 0.4) -> Point:
-        """A random point in the zone clear of walls and furniture by `need`, reachable from the robot's start where the zone allows,
-        as the runtime draws a waypoint in a room. The centroid when the world has no grid or the zone no clear cell."""
+        """A random reachable point in the zone clear of walls and furniture by `need`; the centroid without a grid or a clear cell."""
         if name not in self.centroids:
             raise WorldError(f"{name!r} is not a zone of {self.name}; known: {self.zone_names()}")
         grid = self.grid
@@ -377,8 +371,7 @@ class WorldContext:
         return math.dist(ends[0], ends[1]), ends[0], ends[1]
 
     def narrowest_passage(self, fraction: float, span: float = 3.0, step: float = 0.25) -> tuple[Point, Point, float]:
-        """The narrowest cross-section of the route within `span` meters of `fraction`.
-        Returns (point, heading, width)."""
+        """(point, heading, width) of the route's narrowest cross-section within `span` meters of `fraction`."""
         total = max(self.route_length, 1e-9)
         samples: list[tuple[float, Point, Point, float]] = []
         n = int(span / step)
@@ -399,9 +392,7 @@ class WorldContext:
         return pt, heading, width
 
     def fit_along_route(self, fraction: float, need: float, *, span: float = 0.3, step: float = 0.25) -> tuple[Point, Point, float] | None:
-        """The nearest point to `fraction` on the route where a formation of radius `need` fits:
-        the passage is wide enough, the point is clear of walls, and it keeps the start/goal
-        distances. Returns (point, heading, fraction), or None when nothing on the route fits."""
+        """(point, heading, fraction) nearest `fraction` where a formation of radius `need` fits on the route; None when none does."""
         total = max(self.route_length, 1e-9)
         n = int(span * total / step)
         for i in range(0, n + 1):

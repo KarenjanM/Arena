@@ -1,5 +1,4 @@
-"""The level occupancy grid: the level rendered at the runtime map's resolution with world furniture stamped on.
-An unannotated object is the box `WorldManager` stamps for it."""
+"""The level occupancy grid at the runtime map's resolution with world furniture stamped on."""
 
 from __future__ import annotations
 
@@ -37,7 +36,7 @@ def _placed(corners: list[tuple[float, float]], obj: Obstacle) -> shapely.Polygo
 
 
 def _footprints(view: WorldView, world: World, objects: list[Obstacle]) -> list[shapely.Polygon | None]:
-    """Each object's footprint with the world's own and linked assets resolvable, as the runtime does when it loads a world, reading each asset once."""
+    """Each object's footprint with the world's own and linked assets resolvable, each asset read once."""
     from arena_simulation_setup.tree import Identifier
     from arena_simulation_setup.tree.World.view import world_assets
 

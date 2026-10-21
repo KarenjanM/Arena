@@ -130,7 +130,7 @@ def _beside_route(world: WorldContext, fraction: float, side: float) -> tuple[fl
 
 
 def wanderers_beside_route(doc: dict[str, Any], world: WorldContext, n: int) -> list[str]:
-    """Up to `n` pedestrians standing beside the middle of the route, for an erratic route whose base has too few there."""
+    """Up to `n` pedestrians standing beside the middle of the route."""
     rng = random.Random(f"{world.name}:wander")
     taken = {str(a.get("name")) for a in doc.get("humans") or [] if isinstance(a, Mapping)}
     added: list[dict[str, Any]] = []
@@ -157,9 +157,7 @@ def _resolved(world: WorldContext, pt: tuple[float, float]) -> tuple[tuple[float
 
 
 def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, names: Sequence[str], *, period: float, radius: float, around: str, label: str, when: dict[str, Any]) -> list[dict[str, Any]]:
-    """On a stimulus each agent switches to its own loop of `erratic` sequences, one per point, each given up for the next after `period`, as the
-    runtime `shuffle` reroutes a walker: points up to `radius` either side of the route's middle, or `radius` around where
-    it starts. A reroute from outside would break a tree."""
+    """Each agent switched on a stimulus to its own loop of `erratic` points, each given up after `period`."""
     walk_as_tree(doc, files, world, names)
     agents = [a for a in doc.get("humans") or [] if isinstance(a, dict) and str(a["name"]) in names]
     for i, agent in enumerate(agents):

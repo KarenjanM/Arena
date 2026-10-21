@@ -1,5 +1,4 @@
-"""Step 2 - Type D, pedestrian interactions. An unbroken formation is cast as walking trees a `stimulus` switches to their spots,
-since HumanSim cannot retune a running walker; a breaking one keeps plain walkers rewritten by `rally` and `scatter`."""
+"""Step 2, Type D: placed pedestrian interactions, unbroken or breaking formations."""
 
 from __future__ import annotations
 
@@ -117,7 +116,7 @@ def _take_reuse(doc: dict[str, Any], names: Sequence[str], owned: set[str]) -> l
 
 
 def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: TypeFiles, *, seed: int, owned: set[str], intercept_index: int) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any]]:
-    """Realize a Type D decision in place; `info` carries the formation center and radius for the success criterion."""
+    """Realize a Type D decision in place; `info` carries the formation center and radius."""
     rng = random.Random(f"{world.name}:D:{seed}")
     notes: list[str] = []
     label = f"D:{decision.case}"

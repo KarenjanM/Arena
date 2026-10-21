@@ -1,5 +1,4 @@
-"""One model call per step at temperature 0, cached as one JSON file per `prompt_sha256(model, system, user)`.
-The cache doubles as the audit trail: rejected answers stay beside the accepted one."""
+"""One model call per step at temperature 0, cached as one JSON file per `prompt_sha256(model, system, user)`."""
 
 from __future__ import annotations
 
@@ -46,7 +45,7 @@ class Answer:
 
 
 class Oracle:
-    """Stand-in for the model in tests and `--oracle` runs: a fixed answer or a `(system, user)` callable; non-strings are JSON-encoded. Never cached."""
+    """Stand-in for the model: a fixed answer or a `(system, user)` callable, never cached."""
 
     def __init__(self, answer: object) -> None:
         self._answer = answer

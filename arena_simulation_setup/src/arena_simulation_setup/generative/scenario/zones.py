@@ -1,7 +1,4 @@
-"""Zone roles: `has_purpose` facts of the world's KG first, substring rules for the common names, `UNKNOWN` for the rest.
-
-`UNKNOWN` routes a name to review (`generate_scenario classify`) instead of guessing it.
-"""
+"""Zone roles: the world's KG facts first, substring rules for common names, `UNKNOWN` for the rest."""
 
 from __future__ import annotations
 
@@ -26,8 +23,7 @@ class Role(enum.StrEnum):
     UNKNOWN = "unknown"
 
 
-#: Substring rules, first match wins: `nurse_resting_room` must reach BREAK (`resting`) before
-#: WORK (`nurse`), and `wc_waiting` must reach BREAK before anything else claims it.
+#: Substring rules, first match wins: BREAK comes first so `nurse_resting_room` and `wc_waiting` reach it.
 _RULES: tuple[tuple[Role, tuple[str, ...]], ...] = (
     (
         Role.BREAK,

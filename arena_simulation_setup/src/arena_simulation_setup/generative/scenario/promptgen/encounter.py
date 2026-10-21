@@ -156,9 +156,7 @@ def solve_encounter(
     spawn_valid: IsValid | None = None,
     max_lead_in: float | None = None,
 ) -> Encounter:
-    """`approach_angle` is against the route heading at the encounter (180 head-on, 90 from the robot's right, 0 overtaken).
-    `co_arrival_offset` is applied as distance, not a spawn delay: the human adapter spawns everyone at episode start.
-    Raises GeometryError rather than relocating the case, since a moved spawn is a different experiment."""
+    """A pedestrian meeting the robot at `encounter_at` of the route from `approach_angle` (180 head-on, 90 from its right); raises GeometryError when none fits."""
     if robot_speed <= 0:
         raise GeometryError(f"robot_speed must be positive, got {robot_speed}")
     if ped_speed <= 0:

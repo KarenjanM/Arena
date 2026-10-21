@@ -1,4 +1,4 @@
-"""Synchronous model calls through the genai client of `arena_simulation_setup.utils.llm`, for the generation CLI."""
+"""Synchronous model calls through the genai client of `arena_simulation_setup.utils.llm`."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ LAST_USAGE: dict[str, int | None] | None = None
 
 
 def ask(system: str, user: str, *, model: str | None = None, temperature: float = 0.0) -> str:
-    """One completion as raw text; raises `Unavailable` rather than returning a guess."""
+    """One completion as raw text; raises `Unavailable` when the model gives none."""
     global _CLIENT
     import httpx
 

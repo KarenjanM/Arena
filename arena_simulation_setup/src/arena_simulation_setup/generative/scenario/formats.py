@@ -1,4 +1,4 @@
-"""Scenario and world files: worlds in the generator's working shape, scenarios as format 2 mappings checked by the scenario model before they are written."""
+"""Scenario and world files: worlds in the working shape, scenarios as format 2 mappings checked by the scenario model."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def read_scenario(path: Path) -> dict[str, Any]:
 
 
 def _agent_type(ref: str, out: Path) -> AgentType | None:
-    """The agent type a scenario names, scenario-local files resolved against `out`; None when HumanSim cannot load it either."""
+    """The agent type a scenario names, scenario-local files resolved against `out`; None when it names no file or builtin."""
     from arena_humansim.core.agents import BUILTIN_AGENTS
     from arena_humansim.core.agents.loader import load_agent_type_from_file
 
@@ -44,8 +44,7 @@ def _agent_type(ref: str, out: Path) -> AgentType | None:
 
 
 def _with_radius(agents: list[Any], out: Path) -> list[Any]:
-    """Each agent block with its type's mean radius: the HumanSim adapter overrides an undeclared one with its own default.
-    Scenario-local types resolve against `out`, so they are written first."""
+    """Each agent block with its type's mean radius pinned, scenario-local types resolved against `out`."""
     pinned = []
     for agent in agents:
         block = agent.get("agent") if isinstance(agent, dict) else None
@@ -59,7 +58,7 @@ def _with_radius(agents: list[Any], out: Path) -> list[Any]:
 
 
 def check_scenario(scenario: Mapping[str, Any], world_root: Path) -> None:
-    """Parse a format 2 scenario mapping through the scenario model against the world's zones, as the runtime loads it."""
+    """Parse a format 2 scenario mapping against the world's zones as the runtime loads it."""
     import numpy as np
 
     from arena_simulation_setup.tree.World.Scenario import parse_scenario

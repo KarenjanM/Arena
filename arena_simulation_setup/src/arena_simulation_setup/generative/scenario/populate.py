@@ -188,7 +188,7 @@ def build(
     homes: frozenset[str] = frozenset(),
     world: str = "",
 ) -> dict[str, Any]:
-    """Deterministic in its inputs; empty `homes` means unscreened, and the target zones minus the robot's own serve instead."""
+    """The `profile` base scenario, deterministic in its inputs; empty `homes` means unscreened."""
     if profile not in PROFILES:
         raise ValueError(f"unknown profile {profile!r}; expected one of {sorted(PROFILES)}")
 
