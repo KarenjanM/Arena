@@ -11,10 +11,10 @@ from typing import Any
 import attrs
 import yaml
 
+from arena_simulation_setup.shared.pathing import Point
+
 from .frames import shift_targets
 from .profiles import PROFILES, Profile, ProfileError, derive, derived_name, profile
-
-Point = tuple[float, float]
 
 TYPES_DIR = "types"
 #: Seconds a walking tree may take to reach one of its route points before it starts the route again.
@@ -29,6 +29,11 @@ def agent_type_of(agent: Mapping[str, Any]) -> str:
     if isinstance(block, Mapping):
         return str(block.get("agent_type", "adult"))
     return "adult"
+
+
+def type_stem(ref: str) -> str:
+    """The base type an agent type ref derives from: `./types/adult__walk_x.yaml` is `adult`."""
+    return ref.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
 
 
 def unique_names(doc: Mapping[str, Any], prefix: str, n: int) -> list[str]:
@@ -101,8 +106,7 @@ class TypeFiles:
     def walking(self, agent: Mapping[str, Any], route: Sequence[Point]) -> str:
         """`agent`'s own type as a behavior tree looping a `walk` sequence over `route`, one per walker."""
         base = agent_type_of(agent)
-        stem = base.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
-        name = f"{stem}__walk_{agent['name']}"
+        name = f"{type_stem(base)}__walk_{agent['name']}"
         out = f"./{TYPES_DIR}/{name}.yaml"
         doc = self.base_doc(base)
         steps = {f"to_{i + 1}": {"kind": "go_to", "target_pose": {"x": round(x, 2), "y": round(y, 2), "theta": 0.0}, "patience": {"mean": WALK_PATIENCE_S}} for i, (x, y) in enumerate(route)}
@@ -113,8 +117,7 @@ class TypeFiles:
 
     def standing(self, ref: str, name: str) -> str:
         """`ref` as a behavior tree whose `wait` sequence stands where the agent spawned, one per agent `name`."""
-        stem = ref.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
-        type_name = f"{stem}__wait_{name}"
+        type_name = f"{type_stem(ref)}__wait_{name}"
         out = f"./{TYPES_DIR}/{type_name}.yaml"
         doc = self.base_doc(ref)
         doc.update(name=type_name, mode="behavior_tree", initial_sequence="wait", sequences={"wait": {"steps": {"stand": dict(STAND_STEP)}, "then": "wait"}})
@@ -186,9 +189,8 @@ class TypeFiles:
 def profile_of_agent(agent: Mapping[str, Any]) -> Profile | None:
     """The library profile an existing agent most resembles, by agent type refined by mesh."""
     ref = agent_type_of(agent)
-    stem = ref.rsplit("/", 1)[-1].removesuffix(".yaml").split("__", 1)[0]
     try:
-        base = profile(stem)
+        base = profile(type_stem(ref))
     except ProfileError:
         return None
     mesh = str(agent.get("model") or "")
@@ -197,7 +199,3 @@ def profile_of_agent(agent: Mapping[str, Any]) -> Profile | None:
         if base.name == prof.base and mesh in prof.meshes:
             return prof
     return base
-
-
-def clone(agent: Mapping[str, Any]) -> dict[str, Any]:
-    return copy.deepcopy(dict(agent))

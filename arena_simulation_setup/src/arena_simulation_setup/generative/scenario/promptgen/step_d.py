@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from arena_simulation_setup.shared.pathing import Point
+
 from ..populate import for_people
-from .agents import STAND_STEP, TypeFiles, agent_type_of, clone, entry, mesh_for, unique_names
+from .agents import STAND_STEP, TypeFiles, agent_type_of, entry, mesh_for, unique_names
 from .ask import ask, system_prompt
 from .llm import Oracle
 from .profiles import profile, scaled_speed, tier_value, tune_block
@@ -18,7 +21,6 @@ from .spec import DDecision, Record, parse_d
 from .step_a import StepError, set_type, walk_as_tree
 from .world import WorldContext, WorldError
 
-Point = tuple[float, float]
 FORM = "form"
 
 LINE_SPACING = 0.6
@@ -119,7 +121,7 @@ def _take_reuse(doc: dict[str, Any], names: Sequence[str], owned: set[str]) -> l
     for agent in doc.get("humans") or []:
         (taken if isinstance(agent, dict) and str(agent.get("name")) in wanted else kept).append(agent)
     doc["humans"] = kept
-    return [clone(a) for a in taken]
+    return [copy.deepcopy(a) for a in taken]
 
 
 def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: TypeFiles, *, seed: int, owned: set[str], robot_speed: float) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any]]:

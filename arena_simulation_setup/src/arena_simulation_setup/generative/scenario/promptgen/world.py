@@ -13,7 +13,7 @@ from typing import Any
 
 import attrs
 
-from arena_simulation_setup.shared.pathing import OccupancyGrid, PathError, plan_route, point_at_arc, route_length
+from arena_simulation_setup.shared.pathing import OccupancyGrid, PathError, Point, plan_route, point_at_arc, route_length
 
 if typing.TYPE_CHECKING:
     import numpy as np
@@ -25,8 +25,6 @@ from ..populate import MIN_ROUTE_CLEARANCE, centroid, clearance, polygon, robot_
 from ..route import MAX_ROUTE_M, MIN_EPISODE_S, ROBOT_SPEED_MPS
 from ..zone_screen import RUNTIME_SAFE_DIST, rasterize, ref_safe_zones, route_clearance, screen_zones
 from ..zones import Role, zones_by_role
-
-Point = tuple[float, float]
 
 #: The default robot radius, the clearance its route keeps from walls and furniture, and the pedestrian body clearance.
 ROBOT_CLEAR = 0.35
