@@ -35,7 +35,7 @@ def _agents(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def bake(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, names: Sequence[str]) -> None:
-    """Pin `params` into each named agent's type from the start: HumanSim cannot change them on a running agent."""
+    """Pin `params` into each named agent's type from the start, a pinned radius replacing the agent's own: HumanSim cannot change them on a running agent."""
     derived_for: dict[str, str] = {}
     for agent in _agents(doc):
         if str(agent["name"]) not in names:
@@ -47,6 +47,8 @@ def bake(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles, *, na
             except Exception as exc:
                 raise StepError(f"cannot derive {ref}: {exc}") from None
         set_type(agent, derived_for[ref])
+        if "radius" in params:
+            agent["agent"].pop("radius", None)
 
 
 def is_tree(files: TypeFiles, agent: Mapping[str, Any]) -> bool:

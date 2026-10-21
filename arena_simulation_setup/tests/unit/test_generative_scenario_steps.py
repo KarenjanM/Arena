@@ -6,7 +6,7 @@ import pytest
 import yaml
 from arena_simulation_setup.generative.scenario.formats import read_scenario, write_scenario
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
-from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, generate
+from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, generate, write_result
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 from arena_simulation_setup.tree.World import Scenario as scenario_format
 
@@ -212,3 +212,16 @@ def test_an_unreached_erratic_point_gives_way_to_the_next(tmp_path: Path) -> Non
     result.files.write(tmp_path / "out")
     loaded = loader.load_agent_type_from_file(tmp_path / "out" / agent["agent"]["agent_type"][2:])
     assert all(loaded.sequences[here].on_failure == there for here, there in zip(chain, [*chain[1:], chain[0]], strict=True))
+
+
+def test_a_baked_radius_replaces_the_radius_the_base_pinned(tmp_path: Path) -> None:
+    crowd = [{**_walker(name, home, away), "agent": {"agent_type": "adult", "desired_velocity": 1.1, "radius": 0.25}} for name, home, away in (("p_1", "reception", "open_work_area"), ("p_2", "open_work_area", "reception"))]
+    world, doc, base = _corridor_world(tmp_path, _TOY, {"start": _START, "phases": [{"goto": _GOAL}]}, crowd)
+    decision = {"case": "intrinsic", "select": {"names": ["p_1"]}, "params": {"radius": "high"}}
+    result = _run(world, doc, base, "One of them is unusually wide.", ["B:intrinsic"], B=decision)
+    assert result.record.status == "ok", result.record.failures
+
+    out = write_result(result, world.root)
+
+    radius = {h["name"]: h["agent"]["radius"] for h in read_scenario(out / "scenario.yaml")["humans"]}
+    assert radius == {"p_1": 0.4, "p_2": 0.25}
