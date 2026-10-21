@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from arena_humansim.core.agents import loader
 from arena_simulation_setup.generative.scenario.formats import read_scenario
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match
@@ -181,7 +182,6 @@ def test_blackout_bakes_each_walkers_route_into_a_tree_tuned_at_the_onset(toy) -
     assert _zones_of(world, elder["sequences"]["walk"]["steps"]) == ["reception", "open_work_area"]
     assert elder["tunes"] == [{"when": {"blackout": {"above": 50.0}}, "tune": {"perception": {"vision_range": 2.0}, "desired_velocity": {"mul": pytest.approx(0.6 / 1.1, abs=0.01)}}}]
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     out = write_result(result, worlds / "toy")
     loaded = loader.load_agent_type_from_file(out / agents["normal_1"]["agent"]["agent_type"])
     assert loaded.mode == "behavior_tree" and len(loaded.sequences["walk"].steps) == 2
@@ -252,7 +252,6 @@ def test_evacuation_switches_talkers_and_walkers_by_one_stimulus(toy, tmp_path: 
     walker = result.files.docs[result.doc["humans"][1]["agent"]["agent_type"]]
     assert {"when": {"alarm": {"above": 50.0}}, "goto": "evacuate"} in walker["sequences"]["walk"]["transitions"]
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     out = write_result(result, worlds / "toy")
     assert loader.load_agent_type_from_file(out / ref).sequences["evacuate"].tune.fields["max_velocity"] == (2.6,)
     assert all(loader.load_agent_type_from_file(out / a["agent"]["agent_type"]).mode == "behavior_tree" for a in result.doc["humans"])
@@ -277,7 +276,6 @@ def test_trees_hold_a_tune_while_the_need_is_up(toy, text: str, targets: list[st
     assert tuned["needs"][need] == {"initial": 0.0, "decay_rate": 0.0}
     assert tuned["tunes"] == [{"when": {need: {"above": 50.0}}, "tune": tune}]
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     out = write_result(result, worlds / "toy")
     assert loader.load_agent_type_from_file(out / ref).tunes[0].tune.fields["perception.vision_range"] == (2.0,)
 
@@ -297,6 +295,7 @@ def test_busy_injects_and_stampede_runs_on_a_small_crowd(toy) -> None:
     worlds, doc, base, world = toy
     prompt = _prompt("It is visiting hours and the place is packed.", ["A:busy"])
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert result.record.status == "ok", result.record.failures
     assert len(result.doc["humans"]) > 3 and result.record.owned["A"][0].startswith("busy_")
     prompt = _prompt("The break is over and the whole crowd rushes back to work all at once.", ["A:stampede"])
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
@@ -387,6 +386,7 @@ def test_stubborn_is_a_head_on_intercept_that_does_not_yield(toy) -> None:
     worlds, doc, base, world = toy
     prompt = _prompt("An old man walks towards the robot and refuses to give way.", ["D:stubborn"], D={"case": "stubborn", "profile": "elder", "route_fraction": 0.4})
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert result.record.status == "ok", result.record.failures
     (effect,) = result.effects
     assert effect["type"] == "intercept" and effect["angle"] == 180.0 and "repulsion_low" in effect["profile"]
     assert effect["speed"] < 1.0
@@ -475,7 +475,6 @@ def test_erratic_route_is_a_tree_sequence_for_walkers_and_trees_alike(toy) -> No
         assert len(chain) >= 2 and [sequences[n]["then"] for n in chain] == [sequences[n]["on_failure"] for n in chain] == [*chain[1:], chain[0]]
         assert all(step["patience"] == {"mean": 3.0} for n in chain for step in sequences[n]["steps"].values())
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     out = write_result(result, worlds / "toy")
     written = read_scenario(out / "scenario.yaml")
     for agent in written["humans"]:
@@ -496,7 +495,7 @@ def test_a_reused_agent_without_a_slot_goes_back_unchanged(toy) -> None:
     assert talker == next(a for a in doc["humans"] if a["name"] == "talker_1")
 
 
-def test_c_conflicting_with_d_is_a_recorded_failure(toy) -> None:
+def test_c_conflicting_with_d_moves_clear_of_the_d_placement(toy) -> None:
     worlds, doc, base, world = toy
     prompt = _prompt(
         "Two nurses stand talking right in the robot's way. A visitor stands still right in the robot's way, blocking it.",
@@ -881,7 +880,6 @@ def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> N
     assert [(e.stimulus[0].need, e.stimulus[0].agents) for e in loaded.timeline] == [("form", tuple(sorted(result.record.owned["D"]))), ("break", tuple(sorted(result.record.owned["D"]))), ("go", ("edge_0",))]
     assert {h.name for h in loaded.humans} >= {"edge_0", *result.record.owned["D"]}
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     for agent in raw["humans"]:
         ref = agent["agent"]["agent_type"]
         if ref.startswith("./"):

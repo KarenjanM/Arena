@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from arena_humansim.core.agents import loader
 from arena_simulation_setup.generative.scenario.formats import read_scenario, scenario_text
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, generate, write_result
@@ -174,7 +175,6 @@ def test_a_meeting_starts_when_the_prompt_says(tmp_path: Path, when: dict, entry
     for seq in _form_sequences(result):
         assert seq["form"]["steps"]["stand"]["duration"] == {"mean": 30.0} and seq["form"]["then"] == "walk"
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     out = result.files
     out.write(tmp_path / "out")
     loaded = loader.load_agent_type_from_file(tmp_path / "out" / members[0]["agent"]["agent_type"][2:])
@@ -206,7 +206,6 @@ def test_an_unreached_erratic_point_gives_way_to_the_next(tmp_path: Path) -> Non
         assert sequences[here]["then"] == sequences[here]["on_failure"] == there
     assert all({"when": {"erratic": {"above": 50.0}}, "goto": "erratic"} not in sequences[n].get("transitions", []) for n in chain)
 
-    loader = pytest.importorskip("arena_humansim.core.agents.loader")
     result.files.write(tmp_path / "out")
     loaded = loader.load_agent_type_from_file(tmp_path / "out" / agent["agent"]["agent_type"][2:])
     assert all(loaded.sequences[here].on_failure == there for here, there in zip(chain, [*chain[1:], chain[0]], strict=True))
