@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .populate import centroid, polygon
+from .populate import endpoint_xy, robot_endpoints, zone_centroids
 
 MIN_EPISODE_S = 30.0
 
@@ -25,33 +25,15 @@ MAX_LEGS = 8
 MAX_ROUTE_M = (MAX_EPISODE_S - CASE_RESERVE_S) * ROBOT_SPEED_MPS
 
 
-def _endpoints(robot: Mapping[str, Any]) -> list[Any]:
-    out: list[Any] = [robot["start"]]
-    for phase in robot.get("phases") or []:
-        if isinstance(phase, Mapping) and (goto := phase.get("goto")) is not None:
-            out.append(goto)
-    if (goal := robot.get("goal")) is not None:
-        out.append(goal)
-    return out
-
-
-def _xy(pose: str | Sequence[float], centroids: Mapping[str, tuple[float, float]]) -> tuple[float, float] | None:
-    if isinstance(pose, str):
-        return centroids.get(pose)
-    if isinstance(pose, Sequence) and len(pose) >= 2:
-        return (float(pose[0]), float(pose[1]))
-    return None
-
-
 def route_length(endpoints: Sequence[Any], zones: Sequence[Mapping[str, Any]]) -> float:
-    centroids = {str(z["name"]): centroid(polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
-    pts = [p for p in (_xy(e, centroids) for e in endpoints) if p is not None]
+    centroids = zone_centroids(zones)
+    pts = [p for p in (endpoint_xy(e, centroids) for e in endpoints) if p is not None]
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
 
 
 def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """The shipped route in `phases` form: its shortest prefix that takes `MIN_EPISODE_S` at `ROBOT_SPEED_MPS`, or shuttled until it does."""
-    ends = _endpoints(robot)
+    ends = robot_endpoints(robot)
 
     need = MIN_EPISODE_S * ROBOT_SPEED_MPS * ROUTE_MARGIN
     seq = [ends[0]]
@@ -90,7 +72,7 @@ def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> d
 
 
 def route_seconds(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> float:
-    return route_length(_endpoints(robot), zones) / ROBOT_SPEED_MPS
+    return route_length(robot_endpoints(robot), zones) / ROBOT_SPEED_MPS
 
 
 __all__ = [

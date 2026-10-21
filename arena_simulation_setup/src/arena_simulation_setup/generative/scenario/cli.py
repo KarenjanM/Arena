@@ -20,7 +20,7 @@ from arena_simulation_setup.shared.pathing import PathError, plan_route
 from .formats import first_level, is_world, levels, read_scenario, world_roles
 from .materialize import WouldOverwrite, prune_generated, write_base
 from .occupancy import UNKNOWN_FOOTPRINT_RADIUS, level_grid, load_world, world_statics
-from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points
+from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points, zone_centroids
 from .populate import build as build_base
 from .promptgen import prompts as P
 from .promptgen.world import ROBOT_CLEAR, Grid, WorldError, endpoint
@@ -206,18 +206,15 @@ def _world_parts(root: Path, radius: float = ROBOT_CLEAR) -> tuple[list[dict[str
                 return zones, robot
             print(f"  ! {world}: {cand.parent.name}'s robot route is not plannable on this map; ignoring it")
 
-    named = [z for z in zones if isinstance(z, dict) and z.get("name") and z.get("corners")]
-    if len(named) < 2:
+    centroids = zone_centroids(zones)
+    if len(centroids) < 2:
         raise FileNotFoundError(f"{world}: no scenario with a robot to copy, and fewer than two named zones to fall back on. Author a scenario with a `robots:` block first.")
 
-    def centroid(z: dict[str, Any]) -> tuple[float, float]:
-        cs = z["corners"]
-        return (sum(float(c["x"]) for c in cs) / len(cs), sum(float(c["y"]) for c in cs) / len(cs))
-
-    pairs = sorted(((math.dist(centroid(a), centroid(b)), a["name"], b["name"]) for i, a in enumerate(named) for b in named[i + 1 :]), reverse=True)
+    names = list(centroids)
+    pairs = sorted(((math.dist(centroids[a], centroids[b]), a, b) for i, a in enumerate(names) for b in names[i + 1 :]), reverse=True)
     _, start, goal = pairs[0]
     for _d, a_name, b_name in pairs:
-        if _route_reachable(grid, named, {"start": a_name, "goal": b_name}, radius):
+        if _route_reachable(grid, zones, {"start": a_name, "goal": b_name}, radius):
             start, goal = a_name, b_name
             break
     print(f"  ! {world}: no scenario declares a robot; using the two most separated reachable zones as endpoints - start={start!r} goal={goal!r}")

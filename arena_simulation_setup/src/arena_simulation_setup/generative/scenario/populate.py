@@ -91,7 +91,13 @@ def _dist_to_segment(p: tuple[float, float], a: tuple[float, float], b: tuple[fl
     return math.dist(p, (ax + t * dx, ay + t * dy))
 
 
-def _endpoints(robot: Mapping[str, Any]) -> list[Any]:
+def zone_centroids(zones: Sequence[Mapping[str, Any]]) -> dict[str, tuple[float, float]]:
+    """Zone name to the centroid of its corners, for every named zone with at least three."""
+    return {str(z["name"]): centroid(polygon(z)) for z in zones if z.get("name") and len(polygon(z)) >= 3}
+
+
+def robot_endpoints(robot: Mapping[str, Any]) -> list[Any]:
+    """The robot's start, every phase's `goto` and its goal, in order, each a zone name or a pose."""
     out: list[Any] = []
     if (start := robot.get("start")) is not None:
         out.append(start)
@@ -103,23 +109,25 @@ def _endpoints(robot: Mapping[str, Any]) -> list[Any]:
     return out
 
 
+def endpoint_xy(endpoint: object, centroids: Mapping[str, tuple[float, float]]) -> tuple[float, float] | None:
+    """A zone name as its centroid, a pose as its x and y, None for an unknown zone or no pose."""
+    if isinstance(endpoint, str):
+        return centroids.get(endpoint)
+    if isinstance(endpoint, Sequence) and len(endpoint) >= 2:
+        return (float(endpoint[0]), float(endpoint[1]))
+    return None
+
+
 def robot_zones(robot: Mapping[str, Any]) -> frozenset[str]:
-    return frozenset(e for e in _endpoints(robot) if isinstance(e, str))
+    return frozenset(e for e in robot_endpoints(robot) if isinstance(e, str))
 
 
 def route_points(
     robot: Mapping[str, Any],
     zones: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[tuple[float, float]]:
-    centroids = {str(z["name"]): centroid(polygon(z)) for z in (zones or []) if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
-    pts: list[tuple[float, float]] = []
-    for endpoint in _endpoints(robot):
-        if isinstance(endpoint, str):
-            if (center := centroids.get(endpoint)) is not None:
-                pts.append(center)
-        elif isinstance(endpoint, Sequence):
-            pts.append((float(endpoint[0]), float(endpoint[1])))
-    return pts
+    centroids = zone_centroids(zones or [])
+    return [pt for e in robot_endpoints(robot) if (pt := endpoint_xy(e, centroids)) is not None]
 
 
 def clearance(pt: tuple[float, float], route: Sequence[tuple[float, float]]) -> float:
@@ -202,7 +210,7 @@ def build(
     if not targets:
         return doc
 
-    centroids = {str(z["name"]): centroid(polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
+    centroids = zone_centroids(zones)
     route = route_points(robot, zones)
     forbidden = robot_zones(robot)
 
@@ -317,7 +325,7 @@ def extra_agents(
 ) -> list[dict[str, Any]]:
     by_role = zones_by_role(zones, overrides)
     targets, _basis = _targets("normal", by_role)
-    centroids = {str(z["name"]): centroid(polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
+    centroids = zone_centroids(zones)
     forbidden = robot_zones(robot)
     starts = for_people([z for z in targets if z in homes and z in centroids]) or [z for z in targets if z not in forbidden and z in centroids] or [z for z in targets if z in centroids]
     if not starts or n <= 0:
