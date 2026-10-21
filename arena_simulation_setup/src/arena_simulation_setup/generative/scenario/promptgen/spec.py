@@ -111,8 +111,8 @@ def parse_when(raw: object, *, default: When, where: str) -> When:
     for key in ("at", "robot_within", "route_fraction"):
         if raw.get(key) is not None:
             out[key] = _num(raw[key], where=f"{where}.when.{key}")
-    if len([k for k in out if k != "at"]) > 1:
-        raise SchemaError(f"{where}.when: set at most one of robot_within / route_fraction")
+    if len(out) > 1:
+        raise SchemaError(f"{where}.when: set exactly one of at / robot_within / route_fraction, got {sorted(out)}")
     if "route_fraction" in out and not 0.0 < out["route_fraction"] < 1.0:
         raise SchemaError(f"{where}.when.route_fraction: must be strictly between 0 and 1")
     if "robot_within" in out and out["robot_within"] <= 0:

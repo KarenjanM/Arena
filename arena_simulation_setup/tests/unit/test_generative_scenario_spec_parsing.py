@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match, score, when_in
-from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_selection
+from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, When, parse_b, parse_c, parse_d, parse_selection, parse_when
 from arena_simulation_setup.generative.scenario.promptgen.step_a_llm import _parse as parse_a_llm
 
 
@@ -75,3 +75,15 @@ def test_null_k_and_who_profile_read_as_absent_in_the_model_answer() -> None:
     decision, who, warnings = parse_a_llm({"case": "busy", "k": None, "who": [{"mention": "a nurse", "profile": None, "count": None}]})
     assert decision is not None and decision.k == 2.0
     assert who == [{"mention": "a nurse", "profile": "adult", "count": 0}] and warnings == []
+
+
+@pytest.mark.parametrize("raw", [{"at": 5, "robot_within": 2}, {"at": 5, "route_fraction": 0.5}, {"robot_within": 2, "route_fraction": 0.5}])
+def test_when_takes_one_trigger(raw) -> None:
+    with pytest.raises(SchemaError, match=r"B\.when: set exactly one"):
+        parse_when(raw, default=When(at=0.0), where="B")
+
+
+@pytest.mark.parametrize("raw", [{"at": 5}, {"robot_within": 2}, {"route_fraction": 0.5}, {"at": None, "robot_within": 2}])
+def test_when_round_trips_through_its_effect(raw) -> None:
+    when = parse_when(raw, default=When(at=0.0), where="B")
+    assert when.as_effect() == {k: float(v) for k, v in raw.items() if v is not None}
