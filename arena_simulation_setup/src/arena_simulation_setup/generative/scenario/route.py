@@ -25,7 +25,8 @@ MAX_LEGS = 8
 MAX_ROUTE_M = (MAX_EPISODE_S - CASE_RESERVE_S) * ROBOT_SPEED_MPS
 
 
-def route_length(endpoints: Sequence[Any], zones: Sequence[Mapping[str, Any]]) -> float:
+def straight_length(endpoints: Sequence[Any], zones: Sequence[Mapping[str, Any]]) -> float:
+    """Meters of the straight lines joining `endpoints` in order, a zone name standing for its centroid."""
     centroids = zone_centroids(zones)
     pts = [p for p in (endpoint_xy(e, centroids) for e in endpoints) if p is not None]
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
@@ -39,7 +40,7 @@ def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> d
     seq = [ends[0]]
     for point in ends[1:]:
         seq.append(point)
-        if route_length(seq, zones) >= min(need, MAX_ROUTE_M) or len(seq) - 1 >= MAX_LEGS:
+        if straight_length(seq, zones) >= min(need, MAX_ROUTE_M) or len(seq) - 1 >= MAX_LEGS:
             break
 
     if len(ends) >= 2:
@@ -47,17 +48,17 @@ def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> d
         bounce = [back, forth]
         turn = 0
         capped = False
-        while not capped and route_length(seq, zones) < need and len(seq) - 1 < MAX_LEGS:
+        while not capped and straight_length(seq, zones) < need and len(seq) - 1 < MAX_LEGS:
             added = False
             for point in bounce[turn % 2]:
                 if len(seq) - 1 >= MAX_LEGS:
                     break
-                if route_length([*seq, point], zones) > MAX_ROUTE_M:
+                if straight_length([*seq, point], zones) > MAX_ROUTE_M:
                     capped = True
                     break
                 seq.append(point)
                 added = True
-                if route_length(seq, zones) >= need:
+                if straight_length(seq, zones) >= need:
                     break
             turn += 1
             if not added:
@@ -72,7 +73,7 @@ def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> d
 
 
 def route_seconds(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> float:
-    return route_length(robot_endpoints(robot), zones) / ROBOT_SPEED_MPS
+    return straight_length(robot_endpoints(robot), zones) / ROBOT_SPEED_MPS
 
 
 __all__ = [
@@ -84,6 +85,6 @@ __all__ = [
     "ROBOT_SPEED_MPS",
     "ROUTE_MARGIN",
     "robot_for",
-    "route_length",
     "route_seconds",
+    "straight_length",
 ]

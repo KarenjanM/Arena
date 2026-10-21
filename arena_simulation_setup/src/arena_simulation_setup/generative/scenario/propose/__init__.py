@@ -2,24 +2,14 @@
 
 from __future__ import annotations
 
-from .client import DEFAULT_MODEL, Unavailable, prompt_sha256
-from .zone_roles import (
-    Proposal,
-    build_prompt,
-    classify_tail,
-    merge,
-    parse,
-    unknown_names,
-)
+from .client import DEFAULT_MODEL, Unavailable
+from .zone_roles import build_prompt, classify_tail, merge, unknown_names
 
 __all__ = [
     "DEFAULT_MODEL",
-    "Proposal",
     "Unavailable",
     "build_prompt",
     "classify_tail",
     "merge",
-    "parse",
-    "prompt_sha256",
     "unknown_names",
 ]
