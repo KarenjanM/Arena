@@ -101,6 +101,7 @@ class TrackedRobot:
 
 class BaseHumanSimulator(NodeInterface, abc.ABC):
     PARAM_NAMESPACE: typing.ClassVar[str | None] = None
+    TAKES_STIMULI: typing.ClassVar[bool] = False
 
     _arena_peds_publisher: rclpy.publisher.Publisher
     _marker_publisher: LazyPublisher[MarkerArray]
@@ -1008,14 +1009,16 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         return None
 
     def check_stimuli(self, scenario: str, humans: Sequence[DynamicObstacle], timeline: Sequence[TimelineEntry]) -> None:
-        """Raise ValueError naming `scenario` for a timeline stimulus that the agent type of its target does not act on."""
+        """Raise ValueError naming `scenario` for a timeline stimulus this backend drops or the agent type of its target ignores."""
+        stimuli = [stimulus for entry in timeline for stimulus in entry.stimulus]
+        if stimuli and not self.TAKES_STIMULI:
+            raise ValueError(f"scenario {scenario!r} has timeline stimulus entries, which only the arena human backend acts on, run it with human:=arena")
         by_name = {human.name: human for human in humans}
-        for entry in timeline:
-            for stimulus in entry.stimulus:
-                for agent in stimulus.agents:
-                    taken = self.stimuli_taken(by_name[agent])
-                    if taken is not None and stimulus.need not in taken[1]:
-                        raise ValueError(f"scenario {scenario!r}: stimulus {stimulus.need!r} for {agent!r} is neither a need nor a step `until` event of its agent type {taken[0]!r}, which acts on {sorted(taken[1])}")
+        for stimulus in stimuli:
+            for agent in stimulus.agents:
+                taken = self.stimuli_taken(by_name[agent])
+                if taken is not None and stimulus.need not in taken[1]:
+                    raise ValueError(f"scenario {scenario!r}: stimulus {stimulus.need!r} for {agent!r} is neither a need nor a step `until` event of its agent type {taken[0]!r}, which acts on {sorted(taken[1])}")
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""

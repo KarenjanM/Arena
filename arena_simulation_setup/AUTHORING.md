@@ -529,7 +529,9 @@ any other name. With the `arena` human backend loading also fails when the
 agent type of an agent (its `agent.agent_type`) neither declares the need nor
 waits for it as the `until` event of an autonomous step. A stimulus the human
 simulator does not take at runtime is logged and skipped, the other agents
-still get theirs. Only the `arena` human backend acts on stimuli.
+still get theirs. Only the `arena` human backend acts on stimuli: under any
+other backend a scenario with `stimulus` entries fails to load with an error
+naming `human:=arena`.
 
 Every semantic snapshot of the env carries a `timeline` entity (kind
 `timeline`). Its discrete field `stimulus.<agent>.<need>` holds the sim time

@@ -150,6 +150,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     SERVICE_GET_PROFILE = "get_profile"
     SERVICE_FEEDBACK = "feedback"
     SERVICE_NOTIFY_STIMULUS = "notify_stimulus"
+    TAKES_STIMULI = True
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)

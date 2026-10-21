@@ -69,3 +69,21 @@ def test_check_stimuli_skips_an_agent_without_an_agent_type(tmp_path: Path) -> N
     scenario = _scenario(tmp_path / "sc", [{"at": 1.0, "stimulus": [{"agents": ["bystander"], "need": "run"}]}])
     assert _adapter().stimuli_taken(scenario.humans[1]) is None
     _adapter().check_stimuli("sc", scenario.humans, scenario.timeline)
+
+
+@pytest.mark.parametrize("backend", ["dummy", "noop"])
+def test_a_backend_without_stimuli_rejects_a_scenario_that_sends_them(tmp_path: Path, backend: str) -> None:
+    from task_generator.simulators.human.dummy import DummyHumanSimulator
+    from task_generator.simulators.human.noop import NoopHumanSimulator
+
+    simulator = object.__new__({"dummy": DummyHumanSimulator, "noop": NoopHumanSimulator}[backend])
+    scenario = _scenario(tmp_path / "edge_case_7", [{"at": 1.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]}])
+    with pytest.raises(ValueError, match=r"scenario 'edge_case_7' has timeline stimulus entries, which only the arena human backend acts on, run it with human:=arena"):
+        simulator.check_stimuli("edge_case_7", scenario.humans, scenario.timeline)
+
+
+def test_a_backend_without_stimuli_accepts_a_timeline_of_only_set_actions(tmp_path: Path) -> None:
+    from task_generator.simulators.human.dummy import DummyHumanSimulator
+
+    scenario = _scenario(tmp_path / "sc", [{"at": 1.0, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}]}])
+    object.__new__(DummyHumanSimulator).check_stimuli("sc", scenario.humans, scenario.timeline)

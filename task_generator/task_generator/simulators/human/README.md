@@ -34,7 +34,7 @@ human-sim `_*_impl` methods:
 | `move_robot(robots)` | move in physics sim, set the tracked pose at rest, then call `_move_robot_impl` |
 | `tracked_robots()` | every spawned robot as a `TrackedRobot`: map-frame pose from the `map` to base-frame TF and the velocity between its last two TF stamps |
 | `notify_stimulus(agent, stimulus, intensity)` | stimulus seam, returns False by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) and by scenario timeline `stimulus` actions; `agent` is an engine id or a spawned agent's name or `sim_path` |
-| `check_stimuli(scenario, humans, timeline)` | raise `ValueError` at scenario load for a timeline stimulus whose target's agent type does not act on it, judged by `stimuli_taken(obstacle)` (None by default, arena: the type's needs and autonomous step `until` events) |
+| `check_stimuli(scenario, humans, timeline)` | raise `ValueError` at scenario load for any timeline stimulus on a backend whose `TAKES_STIMULI` is False (only arena sets it), and for one whose target's agent type does not act on it, judged by `stimuli_taken(obstacle)` (None by default, arena: the type's needs and autonomous step `until` events) |
 
 ### `HumanSimulator` Protocol surface
 
