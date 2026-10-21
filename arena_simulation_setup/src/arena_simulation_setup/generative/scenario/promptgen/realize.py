@@ -21,7 +21,6 @@ GO = "go"
 FORM = "form"
 BREAK = "break"
 INJECT_PREFIX = "edge"
-# released open-loop from far away, walkers crossed 8-28 s before the robot
 LEAD_IN_M = 4.0
 STAND_TRIGGER_M = 3.0
 # a `route_fraction` onset fires when the robot comes this close to that point of its route

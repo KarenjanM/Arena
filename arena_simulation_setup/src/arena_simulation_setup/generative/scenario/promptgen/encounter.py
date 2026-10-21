@@ -128,7 +128,6 @@ def _candidates(
     angle_search: float,
     angle_step: float,
 ) -> Iterator[tuple[float, float, float]]:
-    # angle varies fastest: it is recorded per case, while a moved encounter point is silent
     seen: set[tuple[float, float, float]] = set()
     for enc in encounter_fractions(encounter_at):
         for scale in _LEAD_OUT_SCALES:
@@ -201,7 +200,6 @@ def solve_encounter(
             continue
 
         blocked = first_blocked(spawn, goal, is_valid)
-        # spawn_valid also reserves the discs around the robot's start and goal; the walk may cross those
         reserved = spawn_valid is not None and not spawn_valid(spawn)
         if blocked is not None or reserved:
             shorter = _shortest_clear_lead_in(encounter, direction, goal, travel, is_valid, min_lead_in=min_lead_in, spawn_valid=spawn_valid)

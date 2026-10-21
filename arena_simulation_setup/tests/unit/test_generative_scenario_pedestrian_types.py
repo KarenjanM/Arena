@@ -62,7 +62,6 @@ def test_specialised_types_stay_in_their_buildings() -> None:
 
 
 def test_a_hospital_population_has_no_children_and_no_phantom_types() -> None:
-    # Wheelchairs and carts were dropped 2026-08-31: Arena cannot embody them.
     kinds = {a["agent"]["agent_type"] for s in range(30) for p in ("normal", "night") for a in _walkers(HOSPITAL, p, seed=s)}
     assert "child" not in kinds
     assert not kinds & {"cart", "wheelchair"}
@@ -89,7 +88,6 @@ def test_speeds_come_from_the_types_own_range() -> None:
 
 
 def test_night_is_slower_than_normal_for_the_same_type() -> None:
-    # Same draw, different profile scale: the only thing that may differ is the scale.
     for kind in KINEMATICS:
         assert speed_for(kind, random.Random(7), 0.8) <= speed_for(kind, random.Random(7), 1.0)
     assert speed_for("adult", random.Random(7), 0.8) < speed_for("adult", random.Random(7), 1.0)

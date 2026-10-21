@@ -32,7 +32,6 @@ _MAX_EXPANSIONS = 200_000
 
 _LOS_STEP_M = 0.2
 
-# start and goal are forbidden for the crowd, so A* starts from the nearest free cell and the true endpoints are attached after
 _ENDPOINT_SEARCH_CELLS = 40
 
 
@@ -177,7 +176,6 @@ def _astar(grid: _Planner, start: Cell, goal: Cell) -> list[Cell]:
                 continue
             if nxt != goal and not grid.free(nxt):
                 continue
-            # no corner cutting: a diagonal past two blocked orthogonal neighbours clips the wall
             if dr and dc and not (grid.free((cell[0] + dr, cell[1])) and grid.free((cell[0], cell[1] + dc))):
                 continue
             tentative = g + step

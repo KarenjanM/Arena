@@ -40,8 +40,6 @@ ZONES = [
 
 
 def test_only_the_tail_is_asked_about() -> None:
-    # The substring rules cover 99 of the tree's 116 names for free; asking a model to confirm
-    # that `kitchen` is a break zone is the expensive random number generator to avoid.
     assert unknown_names(ZONES) == ["3_study", "top_room_0"]
 
 
@@ -52,8 +50,6 @@ def test_a_stated_name_is_never_asked_again(kg) -> None:
 
 def test_the_prompt_carries_the_whole_vocabulary_but_asks_only_the_tail() -> None:
     prompt = build_prompt(ZONES, ["top_room_0"], world="w")
-    # The rest of the world is the evidence: `top_room_0` beside `main_hallway` reads
-    # differently from `top_room_0` beside `bedroom_1`.
     assert "main_hallway" in prompt
     assert "transit" in prompt
     assert "desk" in prompt

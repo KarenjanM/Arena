@@ -15,7 +15,6 @@ from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
 from arena_simulation_setup.tree.World.Scenario import Scenario
 
 WORLD = "hospital_1"
-# the tracked `normal` scenario's robot; furniture is left out, this checks the written format, not placement
 ROBOT = {"start": [10.0, 0.5, 1.5708], "phases": [{"goto": [15.0, 32.2, 0.0]}]}
 NAME = "pytest_room_centric"
 

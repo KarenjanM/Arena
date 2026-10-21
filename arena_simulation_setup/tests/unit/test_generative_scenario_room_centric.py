@@ -38,7 +38,6 @@ ZONES = [
     zone("main_hallway", 2.0, 14.0, 26.0, 18.0),
 ]
 
-# A building with enough rooms to route through.
 ROOMY = [
     zone("open_work_area", 2.0, 2.0, 12.0, 12.0),
     zone("meeting_room_1", 16.0, 2.0, 22.0, 8.0),
@@ -78,7 +77,6 @@ def test_a_zone_the_route_runs_through_is_not(world) -> None:
 
 
 def test_furniture_the_map_does_not_show_still_counts(world) -> None:
-    # The runtime resolver stamps the world's statics into its grid, so the screen does too.
     bare = screen_zones(
         ZONES,
         world_root=world,
@@ -126,7 +124,6 @@ def test_a_zone_the_robot_is_named_into_is_never_a_home(world) -> None:
     )
     assert "kitchen" not in ref_safe_zones(verdicts)
     assert "endpoint" in verdicts["kitchen"].reason
-    # Still reported as resolvable, so it remains eligible as a flow sink.
     assert verdicts["kitchen"].admissible > 0
 
 
@@ -175,7 +172,6 @@ def test_walkers_go_somewhere_else_and_never_repeat_a_room() -> None:
 
 
 def test_walkers_cross_the_corridor() -> None:
-    # The corridor is never a home but always a destination: that is where the robot is.
     routes = [a["waypoints"] for a in _population(profile="normal", seed=5) if a["agent"]["agent_type"] == "adult"]
     assert any("main_hallway" in r for r in routes)
     assert not any(r[0] == "main_hallway" for r in routes)

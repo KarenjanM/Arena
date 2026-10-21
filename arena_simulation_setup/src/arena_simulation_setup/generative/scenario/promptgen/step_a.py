@@ -19,7 +19,6 @@ STAMPEDE_FLOOR = 6
 WALK_MIN_M = 1.0
 
 _SPEED = {"low": TIERS["speed"][0] / TIERS["speed"][1], "high": TIERS["speed"][2] / TIERS["speed"][1]}
-# without the engine's speed cap lifted, 1.5x is a brisk walk
 _RUN = {"max_speed": "high"}
 ALARM = "alarm"
 SWITCH_TO = {"evacuation": "evacuate", "stampede": "rush"}
@@ -77,7 +76,7 @@ def walk_route(agent: Mapping[str, Any], world: WorldContext) -> list[tuple[floa
     elif mode == "reverse":
         stops = [*stops, *stops[-2:0:-1]]
     elif mode == "repeat" and len(stops) == 1 and walks_from(agent):
-        # HumanSim stops a one-waypoint walker at its waypoint; walking back to the spawn keeps a tuned gait visible
+        # HumanSim stops a one-waypoint walker at its waypoint
         stops = [stops[0], agent["pose"]]
     return [world.zone_sample(s, rng) if isinstance(s, str) else (float(s[0]), float(s[1])) for s in stops]
 
@@ -166,7 +165,6 @@ def apply(doc: dict[str, Any], decision: ADecision, world: WorldContext, files: 
         raise StepError(f"{case}: this world declares no {'exit' if case == 'evacuation' else 'work'} zone to rally on")
     params = {**_RUN, "repulsion": "low"} if case == "stampede" else dict(_RUN)
     walk_as_tree(doc, files, world, names)
-    # a crowd sent to one point jams on it
     for agent in _agents(doc):
         ref = agent_type_of(agent)
         x, y = world.zone_sample(target, random.Random(f"{world.name}:{agent['name']}:{case}:{target}"))

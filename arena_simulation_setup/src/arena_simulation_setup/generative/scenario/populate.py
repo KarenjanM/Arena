@@ -15,7 +15,6 @@ from .zones import Role, zones_by_role
 # the builtin agent types are all `mode: simple`, which a behaviour-tree case cannot act on
 BT_AGENT_TYPE = "talker.yaml"
 
-# a talker with nobody in range waits out its patience and stands there anyway
 TALKERS = 2
 TALKER_SHARE = 0.3
 MIN_WALKERS = 2
@@ -40,12 +39,10 @@ MIX: dict[str, dict[str, int]] = {
 
 BUSY_MIX: dict[str, int] = {"adult": 50, "hurried": 30, "distracted": 15, "elder": 5}
 
-# a child on a hospital ward is the first thing a reviewer flags
 ONLY_IN: dict[str, tuple[str, ...]] = {
     "child": ("residential",),
 }
 
-# walkers spawned in hospital_1's `wc_waiting` never left its inflation-sealed stall doors (2026-08-28)
 NOT_FOR_PEOPLE = ("wc", "toilet", "bath", "restroom", "lavatory", "stall", "storage", "closet", "elevator")
 
 
@@ -55,7 +52,6 @@ def for_people(names: Sequence[str]) -> list[str]:
 
 _HOSPITAL_HINTS = ("patient", "nurse", "ward", "exam", "pharmacy", "operating", "triage", "consult")
 
-# drawn once per world, so two worlds from one seed are not the same crowd in different rooms
 TEMPO_RANGE = (0.92, 1.08)
 CROWD_RANGE = (0.8, 1.3)
 
@@ -68,7 +64,6 @@ PROFILES: dict[str, dict[str, float]] = {
 
 MAX_VELOCITY_DEFAULT = 1.5
 
-# an unresolved model silently falls back to a default
 MODELS: tuple[str, ...] = (
     "female_adult_medical_01",
     "male_adult_medical_01",
@@ -178,7 +173,6 @@ def _route(
 
 
 def _waypoint_mode(legs: int, rng: random.Random) -> str:
-    # never `once`: the agent stops at the last waypoint and is furniture for the rest of the episode
     if legs < 3:
         return "reverse"
     return rng.choices(("repeat", "reverse", "random"), weights=(0.5, 0.3, 0.2))[0]
@@ -212,7 +206,6 @@ def build(
     route = route_points(robot, zones)
     forbidden = robot_zones(robot)
 
-    # fewer than three screened target rooms would stack the crowd, so other screened rooms join (hospital_1: two of six work zones pass)
     starts = for_people([z for z in targets if z in homes and z in centroids])
     if len(starts) < 3 and homes:
         starts += for_people([z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in homes and z in centroids and z not in starts and z not in forbidden])
@@ -268,7 +261,6 @@ def build(
             }
         )
 
-    # a prompt about "the elderly" must match someone: 25 scenarios were dropped as `matched nobody` without this
     walkers = [a for a in agents if not str(a["agent"]["agent_type"]).startswith("./")]
     if walkers and all(a["agent"]["agent_type"] != "elder" for a in walkers):
         last = walkers[-1]
@@ -291,7 +283,6 @@ def work_zones(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] 
 
 
 def world_kind(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] | None = None) -> str:
-    # hospital wins: a care home has wards and bedrooms
     names = [str(z["name"]).lower() for z in zones if isinstance(z, Mapping) and z.get("name")]
     if any(hint in n for n in names for hint in _HOSPITAL_HINTS):
         return "hospital"

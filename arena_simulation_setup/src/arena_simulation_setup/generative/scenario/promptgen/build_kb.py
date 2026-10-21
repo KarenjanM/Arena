@@ -139,7 +139,7 @@ def _tier_table(params: list[str]) -> str:
 
 
 def _bc_contract() -> str:
-    params = [p for p in TIERS if p != "max_speed"]  # max_speed is pinned automatically with a high speed
+    params = [p for p in TIERS if p != "max_speed"]
     b_cases = "; ".join(f"`{c}` ({B_CASE_NOTES[c]})" for c in B_CASE_NOTES)
     after = "; ".join(f"`{a}` ({C_AFTER_NOTES[a]})" for a in C_AFTER)
     angles = ", ".join(f"{a} {note}" for a, note in ANGLES)

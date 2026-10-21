@@ -19,7 +19,6 @@ def scenarios(world_root: Path, match: Sequence[str] = ()) -> list[str]:
 
 
 def build(worlds: Mapping[str, Sequence[str]], *, robot: str, episodes: int, seed: int, timeout: str) -> dict[str, Any]:
-    # one seed for every stage, so each contestant meets the same episodes and a stage is the pairing key
     return {
         "launch": {"human": "arena"},
         "stages": [

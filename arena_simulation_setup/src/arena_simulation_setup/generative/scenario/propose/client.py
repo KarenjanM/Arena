@@ -36,7 +36,6 @@ _CLIENT: object | None = None
 TIMEOUT_MS = 120_000
 
 
-# thinking tokens are billed but absent from the answer text, so the caller's cache records these
 LAST_USAGE: dict[str, int | None] | None = None
 
 
@@ -49,7 +48,6 @@ def ask(system: str, user: str, *, model: str | None = None, temperature: float 
     response = None
     for attempt in range(2):
         if _CLIENT is None:
-            # without a timeout a probe hung 26 minutes on a dropped connection (2026-08-31)
             _CLIENT = genai.Client(http_options=genai.types.HttpOptions(timeout=TIMEOUT_MS))
         try:
             response = _CLIENT.models.generate_content(

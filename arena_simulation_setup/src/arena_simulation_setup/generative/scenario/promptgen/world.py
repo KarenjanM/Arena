@@ -31,11 +31,10 @@ Point = tuple[float, float]
 
 #: Metres the robot needs on either side to drive a cell; also the pedestrian body clearance.
 ROBOT_CLEAR = 0.35
-#: Clearance the robot's start and goal get: nav2 will not plan into the inscribed radius plus inflation (mpo700: 0.48 m + 0.35 m),
-#: and a goal 0.35 m from a desk stalled the robot 0.23 m short (2026-08-29). Falls back to `ROBOT_CLEAR` when no such cell is within 3 m.
+#: Clearance the robot's start and goal get: nav2 will not plan into the inscribed radius plus inflation (mpo700: 0.48 m + 0.35 m).
+#: Falls back to `ROBOT_CLEAR` when no such cell is within 3 m.
 ENDPOINT_CLEAR = 0.7
-#: A planned leg shorter than this is replaced by the longest leg the zones offer, so a case has time to play out:
-#: the base scenarios' own floor.
+#: A planned leg shorter than this is replaced by the longest leg the zones offer: the base scenarios' own floor.
 MIN_LEG_M = MIN_EPISODE_S * ROBOT_SPEED_MPS
 #: The episode budget minus the case's reserve; a longer route is truncated there.
 MAX_LEG_M = MAX_ROUTE_M
@@ -218,12 +217,10 @@ class WorldContext:
         grid = parts.grid
         route = [start, goal]
         if grid is not None:
-            # a zone centroid may sit in a table; snap so the route and the reachability reference are real
             start = endpoint(grid, start)
             goal = endpoint(grid, goal)
             route = plan(grid, start, goal)
             if _length(route) > MAX_LEG_M:
-                # over the episode budget: keep the start, cut where the budget runs out
                 cut = _truncate(route, MAX_LEG_M)
                 goal = endpoint(grid, cut[-1])
                 replanned = plan(grid, start, goal)
@@ -274,8 +271,6 @@ class WorldContext:
 
         mask = rasterize(self.polygons[name], grid.shape, grid.res, grid.ox, grid.oy)
         reachable = grid.labels_at(ROBOT_CLEAR) == grid.component(self.start)
-        # Relax the clearance in steps: a room full of furniture may hold a formation only
-        # where its members stand between the desks.
         for clear in (need + 0.3, need, max(0.5, need / 2)):
             ok = mask & (grid.dist >= clear) & reachable
             rows, cols = np.nonzero(ok)
@@ -400,7 +395,6 @@ class WorldContext:
             pt, heading = self.point_at(fraction)
             return pt, heading, self.passage_width(pt, heading)[0]
         narrowest = min(w for _d, _p, _h, w in samples)
-        # Among cross-sections within 0.2 m of the narrowest, the one nearest the request.
         _d, pt, heading, width = min((s for s in samples if s[3] <= narrowest + 0.2), key=lambda s: s[0])
         return pt, heading, width
 

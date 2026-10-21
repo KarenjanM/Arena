@@ -13,10 +13,10 @@ from ..populate import KINEMATICS, MODELS
 
 TIER_NAMES = ("low", "mid", "high")
 
-# `speed` scales by the profile's nominal (a child's "high" is a child running); the rest are absolute
+# `speed` scales by the profile's nominal; the rest are absolute
 TIERS: dict[str, tuple[float, float, float]] = {
     "speed": (0.6, 1.1, 1.7),
-    # the engine clamps to `max_velocity`, so a high `speed` alone is a brisk walk
+    # the engine clamps `speed` to `max_velocity`
     "max_speed": (1.5, 1.8, 2.6),
     "vision_range": (2.0, 5.0, 8.0),
     "vision_fov": (90.0, 180.0, 270.0),

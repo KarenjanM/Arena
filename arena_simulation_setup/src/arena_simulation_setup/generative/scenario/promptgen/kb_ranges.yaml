@@ -1,5 +1,3 @@
-# Observed answer ranges, mined from the installed scenario records by
-# data/promptgen/tools/kb_ranges.py - re-run after a dataset regeneration.
 scenarios: 1983
 b:
   when_at: [0.0, 10.0, 30.0]

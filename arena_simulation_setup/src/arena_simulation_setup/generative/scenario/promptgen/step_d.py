@@ -25,7 +25,6 @@ QUEUE_SPACING = 0.7
 MIN_ROUTE_FOR_FORMATION_M = 4.0
 FORM_AT_S = 4.0
 FORMATION_RADIUS_M = 1.8
-# too tight for the robot to pass between two members; 1.5 m let it drive through
 CIRCLE_SPACING_M = 0.9
 HUDDLE_RADIUS_M = 0.35
 
@@ -56,7 +55,6 @@ def population_summary(doc: Mapping[str, Any], world: WorldContext, owned: Mappi
 
 
 def user_prompt(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Record, *, who: str = "") -> str:
-    # stable material first, so the provider's implicit prefix cache applies
     parts = [world.context_for_model(), population_summary(doc, world, record.owned)]
     if who:
         parts.append(who)
@@ -188,7 +186,6 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
     else:
         points = _circle(centre, len(profiles), _circle_radius(world, centre, heading, len(profiles)))
 
-    # a reused agent keeps its slot through the drops below; one without a slot goes back to the scenario
     slots = [reused[i] if i < len(reused) else None for i in range(len(profiles))]
     resolved: list[Point] = []
     kept_profiles: list[Any] = []
@@ -262,7 +259,6 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         if "robot_within" in when:
             when["of"] = info["formation"]["centre"]
             if not on_route:
-                # the robot passes a formation beside the route at its clearance, never within the gate
                 offset = world.route_clearance(centre)
                 if offset + 1.0 > float(when["robot_within"]):
                     when["robot_within"] = round(offset + 1.0, 2)

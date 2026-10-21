@@ -64,7 +64,6 @@ def _all_worlds(worlds: Path | None) -> list[str]:
     names: set[str] = set()
     for root in world_roots(worlds):
         if root.is_dir():
-            # a dotted directory (`.generated`) is scratch beside the worlds, not a world
             names.update(p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".") and is_world(p))
     return sorted(names)
 
@@ -154,7 +153,6 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
             robot = dict(robots[0])
             if _route_reachable(grid, zones, robot):
                 return zones, robot
-            # a scenario copied from another world carries that world's coordinates (acoustics_bend45_wide, 2026-08-30)
             print(f"  ! {world}: {cand.parent.name}'s robot route is not plannable on this map; ignoring it")
 
     named = [z for z in zones if isinstance(z, dict) and z.get("name") and z.get("corners")]
@@ -166,7 +164,6 @@ def _world_parts(root: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         return (sum(float(c["x"]) for c in cs) / len(cs), sum(float(c["y"]) for c in cs) / len(cs))
 
     pairs = sorted(((math.dist(centroid(a), centroid(b)), a["name"], b["name"]) for i, a in enumerate(named) for b in named[i + 1 :]), reverse=True)
-    # the farthest pair can sit in disconnected rooms (arena_arena_032, _009, _065, _006, _007, 2026-08-30)
     _, start, goal = pairs[0]
     for _d, a_name, b_name in pairs:
         if _route_reachable(grid, named, {"start": a_name, "goal": b_name}):
@@ -311,7 +308,6 @@ def _cmd_populate(args: argparse.Namespace) -> int:
         print(f"  ! zone mapping: {basis} - this world has no work zones, so the active/retreat")
         print("  !   distinction is drawn between living areas and private rooms instead")
 
-    # homes are screened once against the longest form of the route; every base drives the same segments
     spec = robot_for(robot, zones)
     verdicts = screen_zones(zones, world_root=root, route=route_points(spec, zones), statics=world_statics(root), min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot))
     homes = ref_safe_zones(verdicts)
@@ -398,7 +394,7 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
         for prompt in prompts:
             try:
                 result = generate(prompt, world=world, base_id=base_id, base_doc=base_doc, base_dir=base_path.parent, seed=args.seed, cache_dir=cache, model=args.model, oracle=args.oracle, robot=robot)
-            except Exception as exc:  # one prompt must not stop the batch
+            except Exception as exc:
                 print(f"  ! {base_id}/{prompt.id}: {exc!r}")
                 if args.verbose:
                     traceback.print_exc()

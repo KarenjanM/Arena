@@ -36,7 +36,6 @@ def system_prompt() -> str:
 
 
 def user_prompt(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Record, *, taken_fractions: Sequence[float], who: str = "") -> str:
-    # Stable-prefix ordering (see step_d.user_prompt): world first, variable material last.
     parts = [world.context_for_model(), population_summary(doc, world, record.owned)]
     if who:
         parts.append(who)
@@ -60,8 +59,6 @@ def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Rec
             raw = answer.json()
             b = parse_b(raw.get("B"))
             if b is not None and not (isinstance(raw.get("B"), Mapping) and raw["B"].get("when")):
-                # The model gave no onset: the prompt's own time phrase is the onset (the A
-                # sentence keeps its own; C durations are "for ..." phrases, not onsets).
                 spoken = when_in(prompt, exclude_cases=tuple(A_CASES), lexicon=None)
                 if spoken is not None:
                     b = attrs.evolve(b, when=spoken)
@@ -73,7 +70,6 @@ def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Rec
                     if abs(f - c.route_fraction) * world.route_length < gap:
                         if oracle is None:
                             raise SchemaError(f"conflict: C.route_fraction {c.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
-                        # The oracle cannot answer a complaint: move C away from the placement along the route.
                         shift = (gap + 0.3) / max(world.route_length, 1e-9)
                         nudged = f + shift if c.route_fraction >= f else f - shift
                         if not 0.1 <= nudged <= 0.9:
@@ -172,7 +168,6 @@ def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, na
         for k in range(ERRATIC_STOPS):
             angle = (k + i) * _GOLDEN_ANGLE
             if around == "route":
-                # clear of the start and the goal, so the robot can still leave and arrive
                 target = _beside_route(world, 0.15 + 0.7 * ((k * 0.618 + i * 0.29) % 1.0), radius * math.sin(angle))
             else:
                 target = (home[0] + radius * math.cos(angle), home[1] + radius * math.sin(angle))
@@ -194,7 +189,6 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
     if tops_up and all(str(a.get("name")) in owned for a in _agents(doc)):
         chosen = []
     else:
-        # a tuned gait or gaze shows only on someone walking
         chosen = select(doc, decision.select, world, owned, files, walking_only=decision.case == "intrinsic")
     names = [str(a["name"]) for a in chosen]
     notes: list[str] = []
@@ -226,8 +220,6 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
         return effects, names, notes
 
     params = dict(decision.params)
-    # One change per agent type at the onset: until then the selected agents walk as the base
-    # scenario wrote them. A behaviour-only parameter is dropped for plain walkers.
     by_usable: dict[tuple[tuple[str, str], ...], list[str]] = {}
     for agent in chosen:
         ref = agent_type_of(agent)
@@ -243,7 +235,6 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
             by_usable.setdefault(tuple(sorted(usable.items())), []).append(str(agent["name"]))
     for key, members in by_usable.items():
         usable = dict(key)
-        # radius, need decay and duration have no `tune:`, so they hold from the start
         fixed = {k: v for k, v in usable.items() if k not in TUNABLE}
         if fixed:
             try:
@@ -253,10 +244,9 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
             notes.append(f"intrinsic: {fixed} on {members} from the start")
         tunable = {k: v for k, v in usable.items() if k in TUNABLE}
         if tunable:
-            # every agent holds the tune itself while the need is up, a walker on its own walking tree
             walk_as_tree(doc, files, world, members)
             if tunable.get("speed") == "high":
-                tunable["max_speed"] = "high"  # the engine's cap, or a high speed is a brisk walk
+                tunable["max_speed"] = "high"
             effects.extend(tune_trees(doc, tunable, files, need=decision.case, label=label, when=decision.when.as_effect(), names=members))
     notes.append(f"intrinsic: {params} on {len(names)} agent(s) at {decision.when.as_dict()}")
     return effects, names, notes

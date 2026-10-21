@@ -26,7 +26,6 @@ def door(name, x0, y0, x1, y1):
     return {"name": name, "start": {"x": x0, "y": y0, "z": 0}, "end": {"x": x1, "y": y1, "z": 0}}
 
 
-# A building: a long east-west corridor with rooms above and below it, and a second corridor.
 ZONES = [
     zone("main_hallway", 0.0, 14.0, 40.0, 18.0, doors=[door("office_1_door", 10.0, 14.0, 11.5, 14.0)]),
     zone("side_hallway", 42.0, 0.0, 46.0, 30.0),
@@ -62,7 +61,7 @@ def test_the_floor_holds_for_the_faster_controller() -> None:
 
 
 def test_cast_split_keeps_walkers_and_whole_pairs() -> None:
-    assert cast_split(3) == (0, 3) and cast_split(4) == (2, 2)  # a pair as soon as two walkers remain
+    assert cast_split(3) == (0, 3) and cast_split(4) == (2, 2)
     assert cast_split(7) == (2, 5)
     assert cast_split(14) == (4, 10)
     for n in range(1, 40):
@@ -81,7 +80,7 @@ def test_a_normal_base_is_two_per_work_zone_with_pairs_in_rooms() -> None:
     for a in talkers:
         rooms.setdefault(a["pose"], 0)
         rooms[a["pose"]] += 1
-    assert all(count == TALKERS for count in rooms.values()), rooms  # one pair per room
+    assert all(count == TALKERS for count in rooms.values()), rooms
     assert len(agents) - len(talkers) >= MIN_WALKERS
     assert len({a["pose"] for a in agents}) >= 3, "the cast is spread over rooms"
 

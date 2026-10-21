@@ -100,7 +100,6 @@ def _stamp(obj: Mapping[str, Any]) -> shapely.Polygon | None:
     pose = obj.get("pose")
     if not isinstance(pose, (list, tuple)) or len(pose) < 2:
         return None
-    # the box, not a disc: a disc around the reception desk's origin left a goal on its edge looking free
     radius = float(obj.get("radius") or obj.get("interaction_radius") or 0.5)
     x, y = float(pose[0]), float(pose[1])
     return shapely.box(x - radius, y - radius, x + radius, y + radius)

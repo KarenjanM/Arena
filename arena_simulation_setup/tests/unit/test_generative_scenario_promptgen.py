@@ -28,7 +28,6 @@ def _zone(name, x0, y0, x1, y1):
     return {"name": name, "corners": [{"x": x0, "y": y0}, {"x": x1, "y": y0}, {"x": x1, "y": y1}, {"x": x0, "y": y1}], "walls": [], "doors": [], "entities": {"static": []}}
 
 
-# two rooms joined by a 2 m corridor: west room x 0..8, corridor x 8..24 at y 3..5, east room x 24..32, rooms y 0..8
 ZONES = [_zone("reception", 0, 0, 8, 8), _zone("central_hallway", 8, 3, 24, 5), _zone("open_work_area", 24, 0, 32, 8)]
 ROBOT = {"start": [2.0, 4.0, 0.0], "phases": [{"goto": [30.0, 4.0, 0.0]}, {"goto": [2.0, 4.0, 3.14]}]}
 
@@ -104,7 +103,6 @@ def test_time_phrases_are_read_from_the_prompt() -> None:
     assert when_in("The lights go out, after a while. The elderly are slow, once the robot is halfway.", exclude_cases=("blackout",)).as_dict() == {"route_fraction": 0.5}
     assert when_in("A nurse stops in front of the robot for a while.") is None
     assert match("The lights go out, twenty seconds in.").when.as_dict() == {"at": 20.0}
-    # A semicolon does not end the sentence: the phrase after it still belongs to the evacuation.
     assert match("An evacuation is called; everybody makes for the exit, as soon as the robot sets off.").when.as_dict() == {"route_fraction": 0.1}
 
 
@@ -130,7 +128,7 @@ def test_decisions_reject_numbers_where_tiers_are_asked() -> None:
         parse_b({"case": "intrinsic", "select": {"amount": "half"}, "params": {"speed": 0.5}})
     with pytest.raises(SchemaError, match="allowed parameter"):
         parse_b({"case": "intrinsic", "select": {"amount": "half"}, "params": {"mass": "low"}})
-    with pytest.raises(SchemaError, match="B.params"):  # a model once answered a string here; that is a complaint, not a crash
+    with pytest.raises(SchemaError, match="B.params"):
         parse_b({"case": "intrinsic", "select": {"amount": "half"}, "params": "speed: low"})
     assert parse_c({"case": "approach", "angle": 450}).angle == 90.0
     with pytest.raises(SchemaError, match="two to"):
@@ -140,7 +138,6 @@ def test_decisions_reject_numbers_where_tiers_are_asked() -> None:
 
 def test_world_plans_the_route_and_places_on_it(toy) -> None:
     _worlds, _doc, _base, world = toy
-    # The 60 s episode budget truncates the toy's 28 m route at MAX_LEG_M (20 m).
     assert world.route[0] == (2.0, 4.0) and abs(world.route[-1][0] - 22.0) < 1.0
     from arena_simulation_setup.generative.scenario.promptgen.world import MAX_LEG_M
 
@@ -176,7 +173,6 @@ def test_blackout_bakes_each_walkers_route_into_a_tree_tuned_at_the_onset(toy) -
     (stimulus,) = result.effects
     assert stimulus == {"type": "stimulus", "label": "A:blackout", "scope": ["normal_1", "normal_2", "normal_3"], "need": "blackout", "when": {"at": 5.0}}
     agents = {a["name"]: a for a in result.doc["humans"]}
-    # pose, waypoints and spawn speed stay the base's; only the type changes, and only the final types are written
     assert all({k: v for k, v in agents[a["name"]].items() if k != "agent"} == {k: v for k, v in a.items() if k != "agent"} for a in doc["humans"])
     assert agents["normal_1"]["agent"]["desired_velocity"] == 0.7
     assert set(result.files.docs) == {a["agent"]["agent_type"] for a in agents.values()}
@@ -220,7 +216,6 @@ def test_evacuation_switches_the_crowd_present_at_step_a(toy) -> None:
     assert result.record.status == "ok"
     stimulus, intercept = result.effects
     assert stimulus == {"type": "stimulus", "label": "A:evacuation", "scope": ["normal_1", "normal_2", "normal_3"], "need": "alarm", "when": {"at": 4.0}}
-    # Everyone hurries from the same moment, with the engine's speed cap lifted so the hurry is a run, to the exit.
     for agent in result.doc["humans"][:3]:
         evacuate = result.files.docs[agent["agent"]["agent_type"]]["sequences"]["evacuate"]
         assert evacuate["tune"]["max_velocity"] == 2.6 and evacuate["tune"]["desired_velocity"]["mul"] > 1.0
@@ -244,7 +239,6 @@ def test_evacuation_switches_talkers_and_walkers_by_one_stimulus(toy, tmp_path: 
     assert result.record.status == "ok"
     (stimulus,) = result.effects
     assert stimulus == {"type": "stimulus", "label": "A:evacuation", "scope": ["normal_1", "normal_2", "normal_3", "talker_1", "talker_2"], "need": "alarm", "when": {"at": 4.0}}
-    # each agent its own type and its own point in the exit zone
     refs = {a["name"]: a["agent"]["agent_type"] for a in result.doc["humans"]}
     ref = refs["talker_1"]
     assert ref == "./types/talker__evacuate_talker_1.yaml" and refs["talker_2"] == "./types/talker__evacuate_talker_2.yaml"
@@ -269,7 +263,6 @@ def test_evacuation_switches_talkers_and_walkers_by_one_stimulus(toy, tmp_path: 
     ("text", "targets", "oracle", "need", "tune", "scope"),
     [
         ("The lights go out and everyone slows down.", ["A:blackout"], {}, "blackout", {"perception": {"vision_range": 2.0}, "desired_velocity": {"mul": pytest.approx(0.6 / 1.1, abs=0.01)}}, ["normal_1", "normal_2", "normal_3", "talker_1", "talker_2"]),
-        # the talkers stand, so a tuned gaze would never show on them
         ("Half the people here cannot see far.", ["B:intrinsic"], {"B": {"case": "intrinsic", "select": {"amount": "all"}, "params": {"vision_range": "low"}}}, "intrinsic", {"perception": {"vision_range": 2.0}}, ["normal_1", "normal_2", "normal_3"]),
     ],
 )
@@ -320,7 +313,6 @@ def test_blocking_line_spans_the_corridor(toy) -> None:
     assert result.record.status == "ok", result.record.failures
     members = [a for a in result.doc["humans"] if a["name"].startswith("d_")]
     assert len(members) >= 2
-    # Until the onset they walk their own route from a room; at it a stimulus sends each to its spot, where it stands and stops yielding.
     assert all(isinstance(a["pose"], str) and a["waypoint_mode"] == "reverse" for a in members)
     (form,) = result.effects
     assert form["type"] == "stimulus" and form["label"].endswith(":form") and form["need"] == "form" and form["when"] == {"at": 4.0}
@@ -342,7 +334,6 @@ def test_a_talking_pair_stands_in_the_corridor_too_close_to_drive_between(toy) -
     assert result.record.status == "ok", result.record.failures
     spots = [result.files.docs[a["agent"]["agent_type"]]["sequences"]["form"]["steps"]["form"]["target_pose"] for a in result.doc["humans"] if a["name"].startswith("d_")]
     (a, b) = [(s["x"], s["y"]) for s in spots]
-    # the 2 m corridor could not hold the old 1.5 m pair, which stood beside the route in a room
     assert math.dist(a, b) == pytest.approx(0.9, abs=0.05)
     assert world.route_clearance(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)) < 0.5
 
@@ -353,7 +344,6 @@ def test_formation_break_scatters_on_approach(toy) -> None:
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     assert result.record.status == "ok", result.record.failures
     form, scatter = result.effects
-    # They walk first, form the circle at 8 s, and break when the robot comes near the circle.
     assert form["type"] == "rally" and form["when"] == {"at": 4.0} and len(form["targets"]) == 3
     assert scatter["type"] == "scatter" and scatter["when"]["robot_within"] >= 3.0 and len(scatter["scope"]) == 3
     centre = tuple(scatter["when"]["of"])
@@ -470,7 +460,6 @@ def test_a_reused_agent_without_a_slot_goes_back_unchanged(toy) -> None:
     prompt = _prompt("Two nurses stand side by side across the corridor right in the robot's way.", ["D:interaction_unbroken"], D={"case": "interaction_unbroken", "variant": "blocking", "members": ["nurse", "nurse"], "place": {"route_fraction": 0.5}, "reuse": reuse})
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     assert result.record.status == "ok", result.record.failures
-    # a 2 m corridor holds three at LINE_SPACING, so the fourth reused agent has no slot
     assert sorted(result.record.owned["D"]) == ["normal_1", "normal_2", "normal_3"]
     (talker,) = [a for a in result.doc["humans"] if a["name"] == "talker_1"]
     assert talker == next(a for a in doc["humans"] if a["name"] == "talker_1")
@@ -485,7 +474,6 @@ def test_c_conflicting_with_d_is_a_recorded_failure(toy) -> None:
         C={"case": "blocking", "mode": "stand", "route_fraction": 0.5},
     )
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
-    # The oracle cannot answer a complaint, so C is moved along the route instead.
     assert result.record.status == "ok", result.record.failures
     assert result.record.c is not None and result.record.c.route_fraction != 0.5
     assert any("moved to route fraction" in w for w in result.record.warnings)
@@ -517,7 +505,7 @@ def test_robot_route_is_pinned_to_the_planned_points(toy) -> None:
     (robot,) = result.doc["robots"]
     assert robot["start"][:2] == [round(world.start[0], 2), round(world.start[1], 2)] and len(robot["start"]) == 3
     assert robot["phases"] == [{"goto": [round(world.goal[0], 2), round(world.goal[1], 2)]}]
-    assert doc["robots"][0] == ROBOT and len(ROBOT["phases"]) == 2  # the base is untouched
+    assert doc["robots"][0] == ROBOT and len(ROBOT["phases"]) == 2
     assert any("route pinned" in w for w in result.record.warnings)
 
 

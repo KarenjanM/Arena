@@ -14,7 +14,7 @@ if typing.TYPE_CHECKING:
 
 from .occupancy import level_grid
 
-# mirrors the runtime `task.episode.spawn.obstacle_clearance`: a mismatch clears zones the resolver then fails in
+# mirrors the runtime `task.episode.spawn.obstacle_clearance`
 RUNTIME_SAFE_DIST = 0.35
 
 

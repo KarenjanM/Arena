@@ -17,7 +17,6 @@ utility_weights:
 initial_sequence: chat
 
 sequences:
-  # nominal decay completes the 30 s conversation before `social` falls to 40; a raised `need_decay` breaks it off
   chat:
     steps:
       hold_conversation:

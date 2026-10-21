@@ -10,7 +10,7 @@ from .populate import centroid, polygon
 
 MIN_EPISODE_S = 30.0
 
-# the planner queue dwells 60 sim-seconds per scenario (2026-09-01)
+# the planner queue dwells 60 sim-seconds per scenario
 MAX_EPISODE_S = 60.0
 CASE_RESERVE_S = 20.0
 
@@ -54,7 +54,6 @@ def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> d
     ends = _endpoints(robot)
 
     need = MIN_EPISODE_S * ROBOT_SPEED_MPS * ROUTE_MARGIN
-    # the acoustics corridors ship a 200-leg shuttle, a 33-minute episode verbatim
     seq = [ends[0]]
     for point in ends[1:]:
         seq.append(point)
