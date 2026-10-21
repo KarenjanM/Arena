@@ -140,7 +140,6 @@ def generate(
     pin_robot_route(doc, world, record, robot)
     effects: list[dict[str, Any]] = []
     owned: set[str] = set()
-    intercepts = 0
     taken_fractions: list[float] = []
     populated = bool(doc.get("humans"))
 
@@ -200,9 +199,8 @@ def generate(
     if d is not None:
         try:
             work, work_files = copy.deepcopy(doc), copy.deepcopy(files)
-            new, names, notes, info = apply_d(work, d, world, work_files, seed=seed, owned=owned, intercept_index=intercepts)
+            new, names, notes, info = apply_d(work, d, world, work_files, seed=seed, owned=owned)
             doc, files = work, work_files
-            intercepts += sum(1 for e in new if e["type"] == "intercept")
             effects.extend(new)
             owned.update(names)
             record.owned["D"] = list(names)
@@ -240,9 +238,8 @@ def generate(
     if c is not None:
         try:
             work_files = copy.deepcopy(files)
-            new, names, notes = apply_c(c, world, work_files, seed=seed, intercept_index=intercepts, taken_fractions=taken_fractions)
+            new, names, notes = apply_c(c, world, work_files, seed=seed, taken_fractions=taken_fractions)
             files = work_files
-            intercepts += 1
             effects.extend(new)
             owned.update(names)
             record.owned["C"] = list(names)
@@ -276,6 +273,8 @@ def _realized(result: Result, world: WorldContext, *, seed: int, robot_speed: fl
     if record.formation and record.formation.get("at") is not None:
         record.formation["at"] = trigger(record.formation["at"], world)
     record.warnings.extend(done.notes)
+    for step, names in done.owned.items():
+        record.owned.setdefault(step, []).extend(names)
     shift_humans(doc, *world.origin)
     files.to_map()
     result.doc, result.files, result.timeline, result.injected, result.encounters = doc, files, done.timeline, done.injected, done.encounters

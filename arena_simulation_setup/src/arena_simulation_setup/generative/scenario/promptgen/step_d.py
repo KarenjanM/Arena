@@ -115,8 +115,8 @@ def _take_reuse(doc: dict[str, Any], names: Sequence[str], owned: set[str]) -> l
     return [clone(a) for a in taken]
 
 
-def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: TypeFiles, *, seed: int, owned: set[str], intercept_index: int) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any]]:
-    """Realize a Type D decision in place; `info` carries the formation center and radius."""
+def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: TypeFiles, *, seed: int, owned: set[str]) -> tuple[list[dict[str, Any]], list[str], list[str], dict[str, Any]]:
+    """Realize a Type D decision in place, a stubborn walker named when realized, `info` holding the formation."""
     rng = random.Random(f"{world.name}:D:{seed}")
     notes: list[str] = []
     label = f"D:{decision.case}"
@@ -138,7 +138,7 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
             "waypoint_mode": "once",
         }
         notes.append(f"stubborn: a {prof.name} walks head-on at route fraction {decision.route_fraction:g}, not yielding")
-        return [effect], [f"edge_{intercept_index}"], notes, info
+        return [effect], [], notes, info
 
     if decision.place.get("route_fraction") is not None and world.route_length < MIN_ROUTE_FOR_FORMATION_M:
         raise StepError(f"applicability: the robot's first leg is {world.route_length:.1f} m, too short to place a formation on (needs {MIN_ROUTE_FOR_FORMATION_M:g} m)")

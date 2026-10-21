@@ -37,6 +37,8 @@ class Realized:
     injected: list[str] = attrs.Factory(list)
     encounters: list[dict[str, Any]] = attrs.Factory(list)
     notes: list[str] = attrs.Factory(list)
+    #: Step letter -> the injected pedestrians its intercepts were realized as.
+    owned: dict[str, list[str]] = attrs.Factory(dict)
 
 
 def _num(value: float) -> str:
@@ -254,6 +256,7 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
         human, entries, note, point = _intercept(effect, name, world, files, robot_speed=robot_speed)
         doc["humans"].append(human)
         out.injected.append(name)
+        out.owned.setdefault(str(effect.get("label", "")).split(":", 1)[0], []).append(name)
         out.encounters.append({"agent": name, "point": [round(point[0], 2), round(point[1], 2)]})
         out.timeline.extend(entries)
         out.notes.append(note)

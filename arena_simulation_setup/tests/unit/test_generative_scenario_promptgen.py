@@ -841,3 +841,42 @@ def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> N
         ref = agent["agent"]["agent_type"]
         if ref.startswith("./"):
             assert loader.load_agent_type_from_file(out / ref).mode == "behavior_tree"
+
+
+def test_owned_names_follow_the_realized_intercepts_when_d_is_dropped(toy) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.agents import TypeFiles
+    from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, _realized
+    from arena_simulation_setup.generative.scenario.promptgen.spec import Record
+    from arena_simulation_setup.generative.scenario.promptgen.step_bc import apply_c
+    from arena_simulation_setup.generative.scenario.promptgen.step_d import apply as apply_d
+
+    worlds, doc, base, world = toy
+    files = TypeFiles(base_dir=base)
+    d = parse_d({"case": "stubborn", "profile": "elder", "route_fraction": 0.3})
+    c = parse_c({"case": "approach", "profile": "adult", "angle": 90, "route_fraction": 0.7})
+    work = dict(doc)
+    (stubborn,), _names, _notes, _info = apply_d(work, d, world, files, seed=0, owned=set())
+    (approach,), _names, _notes = apply_c(c, world, files, seed=0, taken_fractions=[0.3])
+    unrealizable = {**stubborn, "after": "veer", "veer_to": "nowhere"}
+    record = Record(prompt_id="t_001", prompt="", world=world.name, base="normal_a", d=d, c=c, owned={"D": [], "C": []})
+
+    result = _realized(Result(record=record, doc=work, files=files, effects=[unrealizable, approach], scenario_id="normal_a__t_001"), world, seed=0, robot_speed=ROBOT_SPEED_MPS)
+
+    assert result.record.d is None and "D" not in result.record.owned and [f.step for f in result.record.failures] == ["D"]
+    assert result.injected == ["edge_0"] and result.record.owned["C"] == ["edge_0"]
+    assert result.provenance["owned"] == {"C": ["edge_0"], "D": [], "injected": ["edge_0"]}
+    assert [e["agent"] for e in result.provenance["encounters"]] == ["edge_0"]
+    assert result.timeline[0]["stimulus"] == [{"agents": ["edge_0"], "need": "go"}]
+
+
+def test_owned_names_number_the_realized_intercepts_in_order(toy) -> None:
+    worlds, doc, base, world = toy
+    prompt = _prompt(
+        "An old man walks towards the robot and refuses to give way. A child crosses the robot's path from the right.",
+        ["D:stubborn", "C:approach"],
+        D={"case": "stubborn", "profile": "elder", "route_fraction": 0.3},
+        C={"case": "approach", "profile": "child", "angle": 90, "route_fraction": 0.7},
+    )
+    result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert result.record.status == "ok", result.record.failures
+    assert result.record.owned["D"] == ["edge_0"] and result.record.owned["C"] == ["edge_1"] and result.injected == ["edge_0", "edge_1"]

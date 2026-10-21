@@ -250,7 +250,8 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
     return effects, names, notes
 
 
-def apply_c(decision: CDecision, world: WorldContext, files: TypeFiles, *, seed: int, intercept_index: int, taken_fractions: Sequence[float]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+def apply_c(decision: CDecision, world: WorldContext, files: TypeFiles, *, seed: int, taken_fractions: Sequence[float]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """The intercept effect of a Type C decision, its pedestrian named when realized."""
     rng = random.Random(f"{world.name}:C:{seed}")
     gap = conflict_m(world.route_length)
     for f in taken_fractions:
@@ -276,4 +277,4 @@ def apply_c(decision: CDecision, world: WorldContext, files: TypeFiles, *, seed:
                 raise StepError(f"approach/veer: {decision.veer_to!r} is a room nobody walks into (wc/storage)")
             effect["veer_to"] = decision.veer_to
         note = f"approach: a {prof.name} at {decision.angle:g} deg, fraction {decision.route_fraction:g}, then {decision.after}"
-    return [effect], [f"edge_{intercept_index}"], [note]
+    return [effect], [], [note]
