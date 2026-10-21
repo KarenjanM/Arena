@@ -161,7 +161,7 @@ def _resolved(world: WorldContext, pt: tuple[float, float]) -> tuple[tuple[float
 
 
 def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, names: Sequence[str], *, period: float, radius: float, around: str, label: str, when: dict[str, Any]) -> list[dict[str, Any]]:
-    """On a stimulus each agent switches to its own looped `erratic` sequence, each point given up after `period`, as the
+    """On a stimulus each agent switches to its own loop of `erratic` sequences, one per point, each given up for the next after `period`, as the
     runtime `shuffle` reroutes a walker: points up to `radius` either side of the route's middle, or `radius` around where
     it starts. A reroute from outside would break a tree."""
     walk_as_tree(doc, files, world, names)
@@ -185,7 +185,7 @@ def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, na
             raise StepError(f"{label}: no room around {agent['name']}'s start for an erratic route")
         ref = agent_type_of(agent)
         shared = ref not in files.transient
-        set_type(agent, files.switching(ref, need=ERRATIC, to=ERRATIC, steps=steps, tag=str(agent["name"]) if shared else "", retry=True))
+        set_type(agent, files.switching(ref, need=ERRATIC, to=ERRATIC, steps=steps, tag=str(agent["name"]) if shared else "", advance=True))
     return [{"type": "stimulus", "label": label, "scope": list(names), "need": ERRATIC, "when": dict(when)}]
 
 

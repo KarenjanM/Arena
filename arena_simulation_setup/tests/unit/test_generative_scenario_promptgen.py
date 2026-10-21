@@ -439,7 +439,8 @@ def test_erratic_points_lie_beside_the_middle_of_the_route(toy) -> None:
     worlds, doc, base, world = toy
     result = _erratic(doc["humans"], world, base, radius=1.5)
     for agent in result.doc["humans"]:
-        points = [(s["target_pose"]["x"], s["target_pose"]["y"]) for s in result.files.docs[agent["agent"]["agent_type"]]["sequences"]["erratic"]["steps"].values()]
+        sequences = result.files.docs[agent["agent"]["agent_type"]]["sequences"]
+        points = [(s["target_pose"]["x"], s["target_pose"]["y"]) for name, seq in sequences.items() if name.startswith("erratic") for s in seq["steps"].values()]
         assert all(world.route_clearance(p) <= 2.5 and 0.1 <= world.fraction_of(p) <= 0.9 for p in points), points
 
 
@@ -460,9 +461,10 @@ def test_erratic_route_is_a_tree_sequence_for_walkers_and_trees_alike(toy) -> No
     (stimulus,) = result.effects
     assert stimulus["type"] == "stimulus" and stimulus["need"] == "erratic" and stimulus["scope"] == ["normal_1", "normal_2", "normal_3", "talker_1", "talker_2"]
     for agent in result.doc["humans"]:
-        erratic = result.files.docs[agent["agent"]["agent_type"]]["sequences"]["erratic"]
-        assert erratic["then"] == erratic["on_failure"] == "erratic" and len(erratic["steps"]) >= 2
-        assert all(step["patience"] == {"mean": 3.0} for step in erratic["steps"].values())
+        sequences = result.files.docs[agent["agent"]["agent_type"]]["sequences"]
+        chain = [name for name in sequences if name.startswith("erratic")]
+        assert len(chain) >= 2 and [sequences[n]["then"] for n in chain] == [sequences[n]["on_failure"] for n in chain] == [*chain[1:], chain[0]]
+        assert all(step["patience"] == {"mean": 3.0} for n in chain for step in sequences[n]["steps"].values())
 
     loader = pytest.importorskip("arena_humansim.core.agents.loader")
     out = write_result(result, worlds / "toy")

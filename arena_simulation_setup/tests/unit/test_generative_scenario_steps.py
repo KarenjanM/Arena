@@ -191,3 +191,24 @@ def test_the_shipped_shift_change_prompt_applies_every_step(tmp_path: Path) -> N
 
     assert result.record.status == "ok", result.record.failures
     assert sorted(result.record.steps) == sorted(prompt.targets)
+
+
+def test_an_unreached_erratic_point_gives_way_to_the_next(tmp_path: Path) -> None:
+    world, doc, base = _toy(tmp_path)
+    decision = {"case": "erratic_route", "select": {"amount": "all"}, "period": 3.0}
+    result = _run(world, doc, base, "Everyone keeps changing where they are going.", ["B:erratic_route"], B=decision)
+
+    assert result.record.status == "ok", result.record.failures
+    agent = next(a for a in result.doc["humans"] if a["name"] == "p_1")
+    sequences = result.files.docs[agent["agent"]["agent_type"]]["sequences"]
+    chain = [name for name in sequences if name.startswith("erratic")]
+    assert len(chain) >= 2 and chain[0] == "erratic"
+    for here, there in zip(chain, [*chain[1:], chain[0]], strict=True):
+        assert len(sequences[here]["steps"]) == 1
+        assert sequences[here]["then"] == sequences[here]["on_failure"] == there
+    assert all({"when": {"erratic": {"above": 50.0}}, "goto": "erratic"} not in sequences[n].get("transitions", []) for n in chain)
+
+    loader = pytest.importorskip("arena_humansim.core.agents.loader")
+    result.files.write(tmp_path / "out")
+    loaded = loader.load_agent_type_from_file(tmp_path / "out" / agent["agent"]["agent_type"][2:])
+    assert all(loaded.sequences[here].on_failure == there for here, there in zip(chain, [*chain[1:], chain[0]], strict=True))
