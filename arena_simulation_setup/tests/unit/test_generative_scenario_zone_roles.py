@@ -255,3 +255,16 @@ def test_no_configured_model_is_a_clear_refusal_not_a_guess(tmp_path: Path) -> N
 def test_the_prompt_hash_changes_with_the_prompt() -> None:
     assert client.prompt_sha256("a", "b") == client.prompt_sha256("a", "b")
     assert client.prompt_sha256("a", "b") != client.prompt_sha256("ab", "")
+
+
+def test_the_doors_of_a_zone_reach_the_prompt(tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.formats import first_level
+
+    root = tmp_path / "w"
+    root.mkdir()
+    zones = [{"name": "top_room_0", "polygon": [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]], "floor": False}, {"name": "main_hallway", "polygon": [[4.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0]], "floor": False}]
+    doors = [{"name": "d", "span": [[4.0, 1.5], [4.0, 2.5]]}]
+    (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones, "doors": doors}]}))
+    level = first_level(root)
+    assert {z["name"]: z["doors"] for z in level["zones"]} == {"top_room_0": ["d"], "main_hallway": ["d"]}
+    assert '"doors": 1' in build_prompt(level["zones"], ["top_room_0"], world="w")

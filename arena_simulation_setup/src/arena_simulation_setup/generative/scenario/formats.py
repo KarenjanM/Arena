@@ -13,6 +13,7 @@ from .zones import Role, stated_roles
 if TYPE_CHECKING:
     from arena_humansim.core.agents import AgentType
 
+    from arena_simulation_setup.kg import Scene
     from arena_simulation_setup.tree.World.model import Level, World
 
 SCENARIO_ORDER = ("objects", "humans", "sounds", "lights", "robots", "regions", "timeline", "conditions")
@@ -95,10 +96,12 @@ def _world(root: Path) -> World:
     return WorldView(root.resolve()).load()
 
 
-def _working_level(level: Level) -> dict[str, Any]:
+def _working_level(level: Level, scene: Scene) -> dict[str, Any]:
     import shapely
 
-    zones = [{"name": zone.name, "corners": [{"x": p.x, "y": p.y} for p in zone.polygon], "entities": {"static": []}} for zone in level.zones]
+    from arena_simulation_setup.tree.World.membership import contents
+
+    zones = [{"name": zone.name, "corners": [{"x": p.x, "y": p.y} for p in zone.polygon], "doors": sorted(ref.partition(":")[2] for ref in contents(scene, zone.name) if ref.startswith("door:")), "entities": {"static": []}} for zone in level.zones]
     shapes = [shapely.Polygon([(c["x"], c["y"]) for c in z["corners"]]) if len(z["corners"]) >= 3 else None for z in zones]
     for obj in level.objects:
         x, y = obj.pose.position.x, obj.pose.position.y
@@ -110,7 +113,11 @@ def _working_level(level: Level) -> dict[str, Any]:
 
 def levels(root: Path, world: World | None = None) -> list[dict[str, Any]]:
     """The world's levels with zones as working dicts; `world` is the loaded world at `root` when given."""
-    return [_working_level(level) for level in (world if world is not None else _world(root)).levels.values() if level.zones]
+    from arena_simulation_setup.tree.World.membership import derive
+
+    world = world if world is not None else _world(root)
+    scene = derive(type(world)(levels=world.levels), "auto")
+    return [_working_level(level, scene) for level in world.levels.values() if level.zones]
 
 
 def first_level(root: Path, world: World | None = None) -> dict[str, Any] | None:
