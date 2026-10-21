@@ -27,10 +27,10 @@ from ..zones import Role, zones_by_role
 
 Point = tuple[float, float]
 
-#: Meters the robot needs on either side to drive a cell; also the pedestrian body clearance.
+#: The default robot radius, the clearance its route keeps from walls and furniture, and the pedestrian body clearance.
 ROBOT_CLEAR = 0.35
-#: Clearance of the robot's start and goal past nav2's inscribed radius plus inflation; `ROBOT_CLEAR` when no such cell is within 3 m.
-ENDPOINT_CLEAR = 0.7
+#: Clearance of the robot's start and goal beyond its radius for nav2's inflation, the radius alone when no such cell is within 3 m.
+ENDPOINT_MARGIN = 0.35
 #: A planned leg shorter than this is replaced by the longest leg the zones offer: the base scenarios' own floor.
 MIN_LEG_M = MIN_EPISODE_S * ROBOT_SPEED_MPS
 #: The episode budget minus the case's reserve; a longer route is truncated there.
@@ -39,15 +39,15 @@ MAX_LEG_M = MAX_ROUTE_M
 EGRESS_HINTS = ("exit", "entrance", "entry", "lobby", "reception", "hallway", "corridor", "foyer", "living")
 
 
-def endpoint(grid: Grid, pt: Point) -> Point:
-    if grid.free(pt, ENDPOINT_CLEAR):
+def endpoint(grid: Grid, pt: Point, radius: float = ROBOT_CLEAR) -> Point:
+    if grid.free(pt, radius + ENDPOINT_MARGIN):
         return pt
-    return grid.nearest_free(pt, ENDPOINT_CLEAR, within=3.0) or grid.nearest_free(pt, ROBOT_CLEAR, within=3.0) or pt
+    return grid.nearest_free(pt, radius + ENDPOINT_MARGIN, within=3.0) or grid.nearest_free(pt, radius, within=3.0) or pt
 
 
-def plan(grid: Grid, start: Point, goal: Point) -> list[Point]:
+def plan(grid: Grid, start: Point, goal: Point, radius: float = RUNTIME_SAFE_DIST) -> list[Point]:
     try:
-        return plan_route(grid, start, goal, is_valid=grid.clear_of(RUNTIME_SAFE_DIST))
+        return plan_route(grid, start, goal, is_valid=grid.clear_of(radius))
     except PathError as exc:
         raise WorldError(str(exc)) from None
 
@@ -71,15 +71,15 @@ def _truncate(route: Sequence[Point], cap_m: float) -> list[Point]:
     return list(route)
 
 
-def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, beat: float = 0.0) -> tuple[Point, list[Point]] | None:
+def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, radius: float, beat: float = 0.0) -> tuple[Point, list[Point]] | None:
     """The snapped candidate goal with the longest drivable route from `start` up to `MAX_LEG_M`; None when none beats `beat` by a meter."""
     best: tuple[float, Point, list[Point]] | None = None
     for pt in candidates:
-        goal = endpoint(grid, pt)
+        goal = endpoint(grid, pt, radius)
         if math.dist(goal, start) < 1.0:
             continue
         try:
-            route = plan(grid, start, goal)
+            route = plan(grid, start, goal, radius)
         except WorldError:
             continue
         length = _length(route)
@@ -196,10 +196,11 @@ class WorldContext:
     kind: str
     level: str = ""
     origin: Point = (0.0, 0.0)
+    robot_radius: float = ROBOT_CLEAR
 
     @classmethod
-    def load(cls, root: str | Path, base_doc: Mapping[str, Any], parts: LoadedWorld | None = None) -> WorldContext:
-        """The world at `root` around the base's robot; `parts` is `LoadedWorld.read(root)` when already read."""
+    def load(cls, root: str | Path, base_doc: Mapping[str, Any], parts: LoadedWorld | None = None, *, robot_radius: float = ROBOT_CLEAR) -> WorldContext:
+        """The world at `root` around the base's robot, its route kept `robot_radius` clear, `parts` the already read world."""
         root = Path(root)
         world = root.name
         if parts is None:
@@ -218,16 +219,16 @@ class WorldContext:
         grid = parts.grid
         route = [start, goal]
         if grid is not None:
-            start = endpoint(grid, start)
-            goal = endpoint(grid, goal)
-            route = plan(grid, start, goal)
+            start = endpoint(grid, start, robot_radius)
+            goal = endpoint(grid, goal, robot_radius)
+            route = plan(grid, start, goal, robot_radius)
             if _length(route) > MAX_LEG_M:
                 cut = _truncate(route, MAX_LEG_M)
-                goal = endpoint(grid, cut[-1])
-                replanned = plan(grid, start, goal)
+                goal = endpoint(grid, cut[-1], robot_radius)
+                replanned = plan(grid, start, goal, robot_radius)
                 route = replanned if _length(replanned) <= MAX_LEG_M * 1.2 else cut
             elif _length(route) < MIN_LEG_M:
-                longer = _longest_leg(grid, start, [centroid(polygon(z)) for z in zones if len(polygon(z)) >= 3], beat=_length(route))
+                longer = _longest_leg(grid, start, [centroid(polygon(z)) for z in zones if len(polygon(z)) >= 3], radius=robot_radius, beat=_length(route))
                 if longer is not None:
                     goal, route = longer
 
@@ -240,7 +241,7 @@ class WorldContext:
         if grid is not None:
             clearance_map = (grid.dist, grid.res, grid.ox, grid.oy)
             homes = ref_safe_zones(screen_zones(zones, world_root=root, route=route, min_route_clearance=MIN_ROUTE_CLEARANCE, robot_zones=robot_zones(robot), clearance_map=clearance_map))
-        return cls(name=world, root=root, zones=zones, roles=roles, robot=robot, grid=grid, start=start, goal=goal, route=route, homes=homes, kind=world_kind(zones, overrides), level=str(doc["id"]), origin=parts.origin)
+        return cls(name=world, root=root, zones=zones, roles=roles, robot=robot, grid=grid, start=start, goal=goal, route=route, homes=homes, kind=world_kind(zones, overrides), level=str(doc["id"]), origin=parts.origin, robot_radius=robot_radius)
 
     @cached_property
     def polygons(self) -> dict[str, list[Point]]:

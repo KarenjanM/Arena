@@ -869,7 +869,7 @@ def test_the_written_case_is_a_plain_scenario_the_scenario_model_reads(toy) -> N
     raw = yaml.safe_load((out / "scenario.yaml").read_text())
     assert set(raw) == {"format", "humans", "robots", "timeline"}
     provenance = yaml.safe_load((out / "provenance.yaml").read_text())
-    assert set(provenance) == {"id", "prompt_id", "steps", "note", "decisions", "owned", "formation", "encounters", "provenance"}
+    assert set(provenance) == {"id", "prompt_id", "steps", "note", "decisions", "owned", "formation", "encounters", "robot", "provenance"}
     assert set(provenance["formation"]) == {"center", "radius", "variant", "at"}
     assert "effects" not in json.dumps(provenance) + json.dumps(raw)
 
@@ -904,7 +904,7 @@ def test_owned_names_follow_the_realized_intercepts_when_d_is_dropped(toy) -> No
     unrealizable = {**stubborn, "after": "veer", "veer_to": "nowhere"}
     record = Record(prompt_id="t_001", prompt="", world=world.name, base="normal_a", d=d, c=c, owned={"D": [], "C": []})
 
-    result = _realized(Result(record=record, doc=work, files=files, effects=[unrealizable, approach], scenario_id="normal_a__t_001"), world, seed=0, robot=RobotPlan())
+    result = _realized(Result(record=record, doc=work, files=files, effects=[unrealizable, approach], scenario_id="normal_a__t_001", robot=RobotPlan()), world, seed=0)
 
     assert result.record.d is None and "D" not in result.record.owned and [f.step for f in result.record.failures] == ["D"]
     assert result.injected == ["edge_0"] and result.record.owned["C"] == ["edge_0"]
@@ -998,3 +998,28 @@ def test_timed_onsets_count_from_the_robots_departure_after_its_hold(toy) -> Non
     assert plain.record.status == held.record.status == "ok", held.record.failures
     assert sorted(e["at"] for e in plain.timeline) == [5.0, 20.0] and sorted(e["at"] for e in held.timeline) == [10.0, 25.0]
     assert held.record.formation["at"] == plain.record.formation["at"] == {"at": 20.0}
+
+
+def test_provenance_records_the_robot_the_case_was_designed_for(toy) -> None:
+    worlds, doc, base, world = toy
+    plain = generate(_prompt("The lights go out.", ["A:blackout"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert plain.provenance["robot"] == {"speed_mps": ROBOT_SPEED_MPS, "hold_s": 0.0, "traversals": 1, "tolerance_m": None, "radius_m": 0.35}
+    plan = RobotPlan(speed=0.8, traversals=2, hold=3.0, tolerance=0.6)
+    held = generate(_prompt("The lights go out.", ["A:blackout"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True, robot=plan)
+    out = write_result(held, worlds / "toy")
+    assert yaml.safe_load((out / "provenance.yaml").read_text())["robot"] == {"speed_mps": 0.8, "hold_s": 3.0, "traversals": 2, "tolerance_m": 0.6, "radius_m": 0.35}
+
+
+def test_the_robot_radius_is_the_clearance_of_its_planned_route(toy) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.world import WorldError
+    from arena_simulation_setup.shared.pathing import iter_points
+
+    worlds, doc, base, _world = toy
+    wide = WorldContext.load(worlds / "toy", doc, robot_radius=0.8)
+    assert all(wide.grid.clearance(p) >= 0.8 - wide.grid.res for p in iter_points(wide.route, 0.25))
+    with pytest.raises(WorldError):
+        WorldContext.load(worlds / "toy", doc, robot_radius=1.2)
+    with pytest.raises(ValueError, match="radius"):
+        generate(_prompt("The lights go out.", ["A:blackout"]), world=wide, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    result = generate(_prompt("The lights go out.", ["A:blackout"]), world=wide, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True, robot=RobotPlan(radius=0.8))
+    assert result.provenance["robot"]["radius_m"] == 0.8

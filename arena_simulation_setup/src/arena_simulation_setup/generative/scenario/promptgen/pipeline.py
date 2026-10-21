@@ -29,7 +29,7 @@ from .step_bc import apply_b, apply_c
 from .step_bc import decide as decide_bc
 from .step_d import apply as apply_d
 from .step_d import decide as decide_d
-from .world import WorldContext, WorldError
+from .world import ROBOT_CLEAR, WorldContext, WorldError
 
 #: Type A cases that run on an empty base; the others need a crowd.
 A_ON_EMPTY = frozenset({"busy"})
@@ -40,12 +40,17 @@ _STEP_OF = {"A": "a", "B": "b", "C": "c", "D": "d"}
 
 @attrs.frozen(kw_only=True)
 class RobotPlan:
-    """How the robot drives a generated scenario: the speed releases are designed at, its traversals, a hold at the start and the goal tolerance."""
+    """How the robot drives a case: the speed releases are timed at, traversals, start hold, goal tolerance and route clearance."""
 
     speed: float = ROBOT_SPEED_MPS
     traversals: int = 1
     hold: float = 0.0
     tolerance: float = 0.0
+    radius: float = attrs.field(default=ROBOT_CLEAR, validator=attrs.validators.gt(0.0))
+
+    def as_provenance(self) -> dict[str, Any]:
+        """The `robot` block of `provenance.yaml`, a tolerance of 0 (the runtime's own) as null."""
+        return {"speed_mps": self.speed, "hold_s": self.hold, "traversals": self.traversals, "tolerance_m": self.tolerance if self.tolerance > 0 else None, "radius_m": self.radius}
 
     def phases(self, start: list[float], goal: list[float]) -> list[dict[str, Any]]:
         """A hold phase when `hold` is set, then `2N - 1` alternating legs to the goal and back to the start."""
@@ -72,6 +77,7 @@ class Result:
     timeline: list[dict[str, Any]] = attrs.Factory(list)
     injected: list[str] = attrs.Factory(list)
     encounters: list[dict[str, Any]] = attrs.Factory(list)
+    robot: RobotPlan = attrs.Factory(RobotPlan)
     written: Path | None = None
 
     @property
@@ -87,6 +93,7 @@ class Result:
             "owned": {"C": list(r.owned.get("C", [])), "D": list(r.owned.get("D", [])), "injected": list(self.injected)},
             **({"formation": dict(r.formation)} if r.formation else {}),
             "encounters": [dict(e) for e in self.encounters],
+            "robot": self.robot.as_provenance(),
             "provenance": {**r.provenance, "generator": GENERATOR_VERSION, "status": r.status, "dedup_key": r.dedup_key()},
         }
 
@@ -134,6 +141,8 @@ def generate(
     robot: RobotPlan | None = None,
 ) -> Result:
     robot = RobotPlan() if robot is None else robot
+    if robot.radius != world.robot_radius:
+        raise ValueError(f"the robot plan's radius {robot.radius:g} m differs from the {world.robot_radius:g} m the world's route was planned for")
     doc = copy.deepcopy(dict(base_doc))
     files = TypeFiles(base_dir=Path(base_dir), origin=world.origin)
     record = Record(prompt_id=prompt.id, prompt=prompt.text, world=world.name, base=base_id, targets=tuple(prompt.targets))
@@ -146,7 +155,7 @@ def generate(
     denied = denied_on_empty(prompt.targets)
     if not populated and denied and len(denied) == len(prompt.targets):
         record.failures.append(Failure(step="base", kind="denied", reason=f"empty base: {', '.join(denied)} need a crowd and nothing else is targeted"))
-        return Result(record=record, doc=doc, files=files, effects=[], scenario_id=f"{base_id}__{prompt.id}", prompt=prompt)
+        return Result(record=record, doc=doc, files=files, effects=[], scenario_id=f"{base_id}__{prompt.id}", prompt=prompt, robot=robot)
     shift_humans(doc, -world.origin[0], -world.origin[1])
 
     a = lexicon_match(prompt.text)
@@ -248,12 +257,12 @@ def generate(
         except StepError as exc:
             _fail(record, "C", exc)
 
-    return _realized(Result(record=record, doc=doc, files=files, effects=effects, scenario_id=f"{base_id}__{prompt.id}", prompt=prompt), world, seed=seed, robot=robot)
+    return _realized(Result(record=record, doc=doc, files=files, effects=effects, scenario_id=f"{base_id}__{prompt.id}", prompt=prompt, robot=robot), world, seed=seed)
 
 
-def _realized(result: Result, world: WorldContext, *, seed: int, robot: RobotPlan) -> Result:
+def _realized(result: Result, world: WorldContext, *, seed: int) -> Result:
     """The steps' design realized offline, a step whose realization fails recorded as failed and dropped."""
-    record = result.record
+    record, robot = result.record, result.robot
     while True:
         doc, files = copy.deepcopy(result.doc), copy.deepcopy(result.files)
         try:

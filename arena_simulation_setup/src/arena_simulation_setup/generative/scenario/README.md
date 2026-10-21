@@ -18,7 +18,7 @@ world + zone roles --populate--> bases --promptgen--> <base>__<prompt_id> --suit
 | `promptgen <world>` | `scenarios/<base>__<prompt_id>/` | realize every prompt on every base (`--ids` picks prompts, `--oracle` needs no model) |
 | `suite <world...>` | `<name>.yaml` under `$ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites`, the source tree the benchmark runner reads after the installed share (an installed suite of the same name wins until arena_evaluation is rebuilt, and `suite` says so), or `--out` | one stage per (world, scenario) |
 
-`promptgen` also takes the robot's drive: `--robot-speed` (the speed every interception release is designed at, default 0.5 m/s), `--traversals` (N round trips are 2N-1 legs, default 1), `--hold` (seconds at the start before the first leg, default none) and `--tolerance` (goal radius of every leg, default the runtime's goal tolerance).
+`promptgen` also takes the robot's drive: `--robot-speed` (the speed every interception release is designed at, default 0.5 m/s), `--traversals` (N round trips are 2N-1 legs, default 1), `--hold` (seconds at the start before the first leg, default none), `--tolerance` (goal radius of every leg, default the runtime's goal tolerance) and `--robot-radius` (the clearance its planned route keeps, default 0.35 m).
 Its prompts are the sets in [`promptgen/prompts/`](promptgen/prompts/), every `universal*.yaml` and the world's own `<world>.yaml`, plus the `--prompts` files. It exits 1 when a prompt crashed or no case came out `ok` or `partial`, a missing or unloadable base included.
 
 ```bash
@@ -55,7 +55,7 @@ A prompt scenario directory holds:
 |---|---|
 | `scenario.yaml` | `arena-scenario/2`: `humans`, `robots`, `timeline`, checked by `parse_scenario` against the world's zones before it is written |
 | `types/*.yaml` | the scenario's own HumanSim agent types, referenced as `./types/<name>.yaml` |
-| `provenance.yaml` | `id`, `prompt_id`, `steps`, `note`, `decisions`, `owned` (`C`, `D`, `injected`), `formation` (`center`, `radius`, `variant`, `at`), `encounters` (`agent`, `point` per interception), `provenance` (prompt and answer hashes, generator version, status, dedup key). The runtime never reads it, the arena_evaluation metrics scope by it |
+| `provenance.yaml` | `id`, `prompt_id`, `steps`, `note`, `decisions`, `owned` (`C`, `D`, `injected`), `formation` (`center`, `radius`, `variant`, `at`), `encounters` (`agent`, `point` per interception), `robot` (`speed_mps`, `hold_s`, `traversals`, `tolerance_m`, null for the runtime's own, `radius_m`: the drive the case was designed for), `provenance` (prompt and answer hashes, generator version, status, dedup key). The runtime never reads it, the arena_evaluation metrics scope by it |
 | `record.json` | the full decision record with warnings and failures |
 
 The generator works in the frame of its level, the first one with zones. In `scenario.yaml` every coordinate without a `level` key, a pedestrian's `pose` and `waypoints`, the `go_to` targets of its type and the `x,y` points of the timeline, is in the flattened map frame, as a scenario pose without `level` is: the level-frame point shifted by the level's origin from `WorldView.level_origins()`, none on a single-level world. A base's own coordinates are read the same way. The robot's `start` and `goto` poses stay in the level frame and carry `level` and `goal_level`. The points of `provenance.yaml` (`encounters`, `formation.center`) are in the level frame.
@@ -114,7 +114,7 @@ An interception is solved offline against the planned route ([`promptgen/encount
 
 ## Grid and route
 
-[`occupancy.py`](occupancy.py) renders the generator's level with `Level.render_grid` at 0.05 m, the runtime map's resolution, and stamps every object's footprint (`Obstacle.footprint()` with the world's assets resolvable through `world_assets`, else the 2 m box `WorldManager` stamps). A point is valid at 0.35 m clearance, the runtime's `task.episode.spawn.obstacle_clearance`, checked over the same square window the runtime validates a spawn in. The robot's route is planned on that grid by [`shared/pathing.py`](../../shared/pathing.py), furniture included, from endpoints snapped 0.7 m clear, cut to a 20 m leg and lengthened to the 15 m floor where the zones allow.
+[`occupancy.py`](occupancy.py) renders the generator's level with `Level.render_grid` at 0.05 m, the runtime map's resolution, and stamps every object's footprint (`Obstacle.footprint()` with the world's assets resolvable through `world_assets`, else the 2 m box `WorldManager` stamps). A point is valid at 0.35 m clearance, the runtime's `task.episode.spawn.obstacle_clearance`, checked over the same square window the runtime validates a spawn in. The robot's route is planned on that grid by [`shared/pathing.py`](../../shared/pathing.py), furniture included, `--robot-radius` clear from endpoints snapped 0.35 m more than that, cut to a 20 m leg and lengthened to the 15 m floor where the zones allow.
 
 ## Files
 
