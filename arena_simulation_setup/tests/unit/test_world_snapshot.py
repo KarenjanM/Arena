@@ -58,3 +58,19 @@ def test_a_snapshot_carries_the_schedules_of_linked_worlds(tmp_path: Path) -> No
     world = WorldView(_world(tmp_path / 'house', {'from': './floor'})).load()
     written = yaml.safe_load((save_snapshot(world, tmp_path / 'snapshot') / 'world.yaml').read_text(encoding='utf-8'))
     assert [schedule['name'] for schedule in written['schedules']] == ['fire_alarm']
+
+
+def test_a_level_filtered_snapshot_keeps_the_full_world_level_origins(tmp_path: Path) -> None:
+    root = _world(tmp_path / 'tower', _level('0', 'hall'), _level('1', 'attic'))
+    view = WorldView(root)
+    origins = view.level_origins()
+    filtered = view.load(level_filter={'1'})
+    snapshot = WorldView(save_snapshot(filtered, tmp_path / 'run' / 'worlds' / 'tower', level_origins=origins))
+    assert snapshot.level_origins() == origins
+    assert origins['1'] != (0.0, 0.0)
+
+
+def test_a_snapshot_without_stored_origins_derives_them_from_its_levels(tmp_path: Path) -> None:
+    root = _world(tmp_path / 'tower', _level('0', 'hall'), _level('1', 'attic'))
+    world = WorldView(root).load()
+    assert WorldView(save_snapshot(world, tmp_path / 'snapshot')).level_origins() == WorldView(root).level_origins()

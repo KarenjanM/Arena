@@ -41,6 +41,7 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 KG_FILE = 'kg.yaml'
+LEVEL_ORIGINS_FILE = 'level_origins.yaml'
 LEGACY_GRAPH_FILE = 'graph.yaml'
 _NOT_LEVELS = frozenset({'scenarios', 'assets', 'map'})
 
@@ -323,6 +324,9 @@ class WorldView(PathView):
 
     def level_origins(self) -> dict[str, tuple[float, float]] | None:
         """Per-level offsets that flatten all levels into a single map frame, None for a single-level world."""
+        stored = self.path / LEVEL_ORIGINS_FILE
+        if stored.is_file():
+            return {str(level_id): (float(x), float(y)) for level_id, (x, y) in yaml.safe_load(stored.read_text(encoding='utf-8')).items()}
         world = self.load(validate=False)
         if len(world.levels) <= 1:
             return None
@@ -362,8 +366,8 @@ def _dynamic_path_resolvers() -> Iterator[ResolverBase]:
                 yield resolver
 
 
-def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> Path:
-    """Write `world` as it runs into `directory`: format 2 with its levels under `lighting` and linked levels written out, plus every semantic fact, stated and derived."""
+def save_snapshot(world: World, directory: Path, lighting: str = 'authored', level_origins: dict[str, tuple[float, float]] | None = None) -> Path:
+    """Write `world` as it runs into `directory`: levels under `lighting`, links written out, every fact and the runtime's `level_origins`."""
     from arena_simulation_setup.kg import dump as dump_kg
 
     realized = attrs.evolve(world, levels={level_id: attrs.evolve(level.with_lighting(lighting), source='', prefix='') for level_id, level in world.levels.items()}, sources=[], linked_kg=None, linked_scope=[])
@@ -371,6 +375,8 @@ def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> 
     files = {'world.yaml': write_world(realized)}
     if realized.kg is not None:
         files[KG_FILE] = to_yaml(dump_kg(realized.kg))
+    if level_origins is not None:
+        files[LEVEL_ORIGINS_FILE] = yaml.safe_dump({level_id: [float(x), float(y)] for level_id, (x, y) in level_origins.items()}, sort_keys=False)
     for name, text in files.items():
         partial = directory / f'.{name}.partial'
         partial.write_text(text, encoding='utf-8')
