@@ -1180,7 +1180,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     group="Static",
                 )
             )
-            # the adapter creates these publishers when the human simulator binds, after the first topic scan
             for leaf in ("static_walls", "static_objects"):
                 env_displays.append(
                     AdapterDisplay(
