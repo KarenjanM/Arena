@@ -140,7 +140,10 @@ def test_fire_timeline_entry_writes_sound_sounding_predicate() -> None:
 
 
 def _stimulus_stub(outcomes: dict[str, object]) -> tuple[object, list[tuple[object, str, float]], list[str]]:
+    from arena_simulation_setup.shared.judge import Sample
+
     from task_generator.manager.environment_manager import EnvironmentManager
+    from task_generator.manager.realizer import Realizer
     from task_generator.node import TaskGenerator
 
     calls: list[tuple[object, str, float]] = []
@@ -163,8 +166,14 @@ def _stimulus_stub(outcomes: dict[str, object]) -> tuple[object, list[tuple[obje
     stub = _node_stub()
     stub._environment_manager = environment
     stub._stimulus_tasks = set()
+    stub._stimuli_fired = {}
+    stub._semantics_dirty = False
+    stub._sample = Sample(t=0.0)
+    stub._realizer = Realizer(Realizer._Configuration(x=0.0, y=0.0, prefix="env_3"))
+    stub._stringify_float = TaskGenerator._stringify_float
     stub.get_logger = lambda: _Logger()
     stub._submit_stimulus = TaskGenerator._submit_stimulus.__get__(stub)
+    stub._timeline_semantic_state = TaskGenerator._timeline_semantic_state.__get__(stub)
     return stub, calls, warnings
 
 
@@ -206,6 +215,66 @@ def test_refused_or_failing_stimulus_is_logged_not_raised() -> None:
         ],
     )
     assert stub._stimulus_tasks == set()
+    assert stub._stimuli_fired == {"stimulus.d_1.go": 0.0}
+
+
+def _timeline_fields(stub: object) -> dict[str, str]:
+    state = stub._timeline_semantic_state()
+    return dict(zip(state.discrete_names, state.discrete_values, strict=True))
+
+
+def test_accepted_stimulus_records_the_sim_time_of_its_firing_tick() -> None:
+    from arena_simulation_setup.shared.judge import Sample
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["edge_0", "ghost"], "need": "go"}]})
+    stub, _calls, _warnings = _stimulus_stub({"ghost": False})
+    stub._sample = Sample(t=12.5)
+    _fire_and_drain(stub, entry)
+    assert stub._semantics_dirty is True
+    state = stub._timeline_semantic_state()
+    assert (state.entity, state.kind) == ("env_3/timeline", "timeline")
+    assert _timeline_fields(stub) == {"stimulus.edge_0.go": "12.5"}
+
+
+def test_a_stimulus_fired_again_keeps_its_first_firing_time() -> None:
+    from arena_simulation_setup.shared.judge import Sample
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    go = TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]})
+    form = TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["edge_0"], "need": "form"}]})
+    stub, _calls, _warnings = _stimulus_stub({})
+    stub._sample = Sample(t=3.0)
+    _fire_and_drain(stub, go)
+    stub._sample = Sample(t=9.0)
+    _fire_and_drain(stub, go)
+    _fire_and_drain(stub, form)
+    assert _timeline_fields(stub) == {"stimulus.edge_0.go": "3.0", "stimulus.edge_0.form": "9.0"}
+
+
+def test_semantic_snapshot_carries_the_timeline_entity() -> None:
+    from arena_simulation_setup.shared.judge import Sample
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+    from builtin_interfaces.msg import Time
+
+    from task_generator.node import TaskGenerator
+
+    stub, _calls, _warnings = _stimulus_stub({})
+    published: list[object] = []
+    stub.sim_time = type("SimTime", (), {"to_msg": lambda self: Time(sec=4)})()
+    stub._env_id = 3
+    stub._world_manager = type("World", (), {"loaded_world": "map_empty", "publish_world_markers": lambda self, snapshots: None})()
+    stub._simulator = type("Simulator", (), {"semantics_snapshot": lambda self: []})()
+    stub._zone_semantic_states = list
+    stub._robot_semantic_states = list
+    stub._pub_state_semantics = type("Publisher", (), {"publish": lambda self, msg: published.append(msg)})()
+    TaskGenerator._publish_semantics_snapshot(stub)
+    assert [(e.entity, e.kind, list(e.discrete_names)) for e in published[-1].entities] == [("env_3/timeline", "timeline", [])]
+    stub._sample = Sample(t=4.0)
+    _fire_and_drain(stub, TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["d_1"], "need": "form"}]}))
+    TaskGenerator._publish_semantics_snapshot(stub)
+    assert [(e.entity, list(e.discrete_names), list(e.discrete_values)) for e in published[-1].entities] == [("env_3/timeline", ["stimulus.d_1.form"], ["4.0"])]
+    assert stub._semantics_dirty is False
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +373,7 @@ def _timeline_stub(entries: list, seed: int = 7) -> tuple[object, object, list[i
     stub = _node_stub()
     stub._zone_overrides = {}
     stub._sound_levels = {}
+    stub._stimuli_fired = {}
     stub._fire_timeline_entry = lambda idx, entry: fired.append(idx)
     TaskGenerator.register_timeline(stub, entries, seed)
     return stub, TaskGenerator, fired
@@ -389,7 +459,9 @@ def test_reset_timeline_clears_state() -> None:
     entry = TimelineEntry(set=[{"entity": "a", "field": "x", "value": "1"}], at=1.0)
     stub, cls, _fired = _timeline_stub([entry])
     TaskGenerator.register_sound_levels(stub, {"env_0/alarm_sound": 88.0})
+    stub._stimuli_fired = {"stimulus.edge_0.go": 3.0}
     TaskGenerator.reset_timeline(stub)
+    assert stub._stimuli_fired == {}
     assert stub._timeline == []
     assert stub._timeline_state == []
     assert stub._timeline_t0 is None

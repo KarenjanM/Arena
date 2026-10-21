@@ -259,6 +259,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline_seed: int = 0
         self._timeline_t0: float | None = None
         self._stimulus_tasks: set[asyncio.Task] = set()
+        self._stimuli_fired: dict[str, float] = {}
         self._episode_conditions: list[EpisodeCondition] = []
         self._judge_zones: dict = {}
         self._judge_walls: WallGrid | None = None
@@ -764,6 +765,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         entities = [self._semantic_entity_state_msg(s) for s in snapshots]
         entities.extend(self._zone_semantic_states())
         entities.extend(self._robot_semantic_states())
+        entities.append(self._timeline_semantic_state())
         msg.entities = entities
         self._pub_state_semantics.publish(msg)
 
@@ -905,6 +907,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline = []
         self._timeline_state = []
         self._timeline_t0 = None
+        self._stimuli_fired.clear()
         self._episode_conditions = []
         self._zone_overrides.clear()
         self._sound_levels.clear()
@@ -947,10 +950,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             self._set_semantic(entity, field, value)
         for stimulus in entry.stimulus:
             for agent in stimulus.agents:
-                self._submit_stimulus(agent, stimulus.need, stimulus.intensity)
+                self._submit_stimulus(agent, stimulus.need, stimulus.intensity, self._sample.t)
 
-    def _submit_stimulus(self, agent: str, need: str, intensity: float) -> None:
-        """Send one timeline stimulus without blocking the tick, logging a refusal or failure."""
+    def _submit_stimulus(self, agent: str, need: str, intensity: float, fired_at: float) -> None:
+        """Send one timeline stimulus without blocking the tick, recording `fired_at` once the engine takes it."""
         task = asyncio.create_task(self._environment_manager.notify_stimulus(agent, need, intensity))
         self._stimulus_tasks.add(task)
 
@@ -963,8 +966,20 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} failed: {exc!r}")
             elif not t.result():
                 self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} was not taken")
+            else:
+                self._stimuli_fired.setdefault(f"stimulus.{agent}.{need}", fired_at)
+                self._semantics_dirty = True
 
         task.add_done_callback(_on_done)
+
+    def _timeline_semantic_state(self) -> task_generator_msgs.msg.SemanticEntityState:
+        """The `timeline` entity: sim time of the tick each stimulus fired on, per `stimulus.<agent>.<need>`, grow-only."""
+        msg = task_generator_msgs.msg.SemanticEntityState()
+        msg.entity = self._realizer.prefix("timeline")
+        msg.kind = "timeline"
+        msg.discrete_names = list(self._stimuli_fired.keys())
+        msg.discrete_values = [self._stringify_float(t) for t in self._stimuli_fired.values()]
+        return msg
 
     def _evaluate_timeline(self, now: float) -> None:
         """One sim-time tick of timeline evaluation. Captures t0 on the first post-unpause tick."""

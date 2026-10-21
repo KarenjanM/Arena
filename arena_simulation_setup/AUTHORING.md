@@ -528,6 +528,11 @@ A stimulus naming a pedestrian the human simulator does not know is logged
 and skipped, the other agents still get theirs. Only the `arena` human
 backend acts on stimuli.
 
+Every semantic snapshot of the env carries a `timeline` entity (kind
+`timeline`). Its discrete field `stimulus.<agent>.<need>` holds the sim time
+in seconds of the tick on which that stimulus was first taken by the human
+simulator in the episode, and a stimulus that never landed has no field.
+
 ## 3. Generate the map
 
 ```bash
