@@ -177,10 +177,9 @@ class TypeFiles:
             written.append(path)
         for ref, src in self.copies.items():
             dst = scenario_dir / ref[2:]
-            if not dst.is_file():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                dst.write_text(src.read_text())
-                written.append(dst)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(src.read_text())
+            written.append(dst)
         return written
 
 

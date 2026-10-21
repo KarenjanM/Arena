@@ -435,6 +435,7 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
     seen: dict[str, str] = {}
     counts: dict[str, int] = {}
     written = 0
+    refused = 0
     loaded = 0
     parts: LoadedWorld | None = None
     for base_id in bases:
@@ -471,6 +472,10 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
                 try:
                     if write_result(result, root, keep_partial=not args.strict) is not None:
                         written += 1
+                except WouldOverwrite as exc:
+                    print(f"  ! {base_id}/{prompt.id}: {exc}")
+                    refused += 1
+                    status = "refused"
                 except ValueError as exc:
                     print(f"  ! {base_id}/{prompt.id}: the scenario model rejects the case: {exc}")
                     status = "rejected"
@@ -490,11 +495,13 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
         print(f"generate_scenario: {crashed} prompt(s) crashed" + ("" if args.verbose else ", rerun with -v for the tracebacks"), file=sys.stderr)
     if rejected := counts.get("rejected", 0):
         print(f"generate_scenario: {rejected} case(s) not written, the scenario model rejects them (see the ! lines above)", file=sys.stderr)
+    if refused:
+        print(f"generate_scenario: {refused} case(s) not written over a scenario this tool did not generate, see the ! lines above", file=sys.stderr)
     if not counts.get("ok", 0) + counts.get("partial", 0):
         why = "no prompt was realized as ok or partial on any base" if loaded else f"none of the bases {', '.join(bases)} could be loaded, see the ! lines above"
         print(f"generate_scenario: nothing generated: {why}", file=sys.stderr)
         return 1
-    return 1 if crashed or rejected else 0
+    return 1 if crashed or rejected or refused else 0
 
 
 def _cmd_suite(args: argparse.Namespace) -> int:

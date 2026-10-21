@@ -49,12 +49,12 @@ facts:
 
 ## Outputs
 
-A prompt scenario directory holds:
+A prompt scenario directory holds the files below. `promptgen --write` replaces one only when its `scenario.yaml` carries `GENERATED_MARKER`, and reports a case it did not write and exits 1 otherwise.
 
 | File | Content |
 |---|---|
 | `scenario.yaml` | `arena-scenario/2`: `humans`, `robots`, `timeline`, checked by `parse_scenario` against the world's zones before it is written |
-| `types/*.yaml` | the scenario's own HumanSim agent types, referenced as `./types/<name>.yaml` |
+| `types/*.yaml` | the scenario's own HumanSim agent types, referenced as `./types/<name>.yaml`, a rewrite removing the ones the case no longer has |
 | `provenance.yaml` | `id`, `prompt_id`, `steps`, `note`, `decisions`, `owned` (`C`, `D`, `injected`), `formation` (`center`, `radius`, `variant`, `at`), `encounters` (`agent`, `point` per interception), `robot` (`speed_mps`, `hold_s`, `traversals`, `tolerance_m`, null for the runtime's own, `radius_m`: the drive the case was designed for), `provenance` (prompt and answer hashes, generator version, status, dedup key). The runtime never reads it, the arena_evaluation metrics scope by it |
 | `record.json` | the full decision record with warnings and failures |
 

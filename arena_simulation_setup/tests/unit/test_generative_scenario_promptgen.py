@@ -1054,3 +1054,28 @@ def test_the_seed_reaches_the_wanderers_beside_the_route(toy) -> None:
     walker = [_one_stop("walker", [4.0, 6.0, 0.0], [6.0, 6.0, 0.0])]
     speeds = {seed: [a["agent"]["desired_velocity"] for a in _erratic(walker, world, base, seed=seed).doc["humans"] if a["name"].startswith("wander_")] for seed in (1, 2, 3)}
     assert speeds[1] and len({tuple(v) for v in speeds.values()}) > 1
+
+
+def test_a_hand_authored_scenario_is_never_written_over(toy) -> None:
+    from arena_simulation_setup.generative.scenario.materialize import WouldOverwrite
+
+    worlds, doc, base, world = toy
+    result = generate(_prompt("The lights go out.", ["A:blackout"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    mine = worlds / "toy" / "scenarios" / result.scenario_id / "scenario.yaml"
+    mine.parent.mkdir(parents=True)
+    mine.write_text("format: arena-scenario/2\n")
+    with pytest.raises(WouldOverwrite, match="not generated"):
+        write_result(result, worlds / "toy")
+    assert mine.read_text() == "format: arena-scenario/2\n" and sorted(p.name for p in mine.parent.iterdir()) == ["scenario.yaml"]
+
+
+def test_a_rewrite_removes_the_type_files_the_case_no_longer_has(toy) -> None:
+    worlds, doc, base, world = toy
+    blackout = generate(_prompt("The lights go out.", ["A:blackout"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    out = write_result(blackout, worlds / "toy")
+    before = {p.name for p in (out / "types").iterdir()}
+    stale = out / "types" / "adult__gone.yaml"
+    stale.write_text("name: adult__gone\n")
+    again = generate(_prompt("The lights go out.", ["A:blackout"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert write_result(again, worlds / "toy") == out
+    assert not stale.exists() and {p.name for p in (out / "types").iterdir()} == before
