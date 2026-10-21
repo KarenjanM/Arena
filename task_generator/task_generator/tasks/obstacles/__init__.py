@@ -4,11 +4,11 @@ from collections.abc import Sequence
 
 from arena_simulation_setup.shared import Light
 
-from task_generator.shared import DynamicObstacle, Obstacle, Pose, Region
+from task_generator.shared import DynamicObstacle, Obstacle, Pose
 from task_generator.tasks.mode import TaskMode
 from task_generator.tasks.obstacles._placement import random_placement
 
-from . import edge_case, environment, parametrized, prompt, random, scenario
+from . import environment, parametrized, prompt, random, scenario
 
 Obstacles = tuple[list[Obstacle], list[DynamicObstacle]]
 
@@ -21,10 +21,6 @@ class ObstacleKind(enum.Enum):
 
 class TM_Obstacles(TaskMode):
     lights: Sequence[Light] = ()
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
-        self.pending_regions: list[Region] = []
 
     async def reset(self, *, seed: int) -> Obstacles:
         return [], []
@@ -45,8 +41,5 @@ class TM_Obstacles(TaskMode):
             await self._ctx.environment_manager.spawn_dynamic_obstacles([obstacle])
         return obstacle
 
-    async def retract(self, entity_id: str) -> bool:
-        return bool(await self._ctx.environment_manager.remove_obstacles([entity_id]))
 
-
-__all__ = ["TM_Obstacles", "ObstacleKind", "Obstacles", "edge_case", "environment", "parametrized", "prompt", "random", "scenario"]
+__all__ = ["TM_Obstacles", "ObstacleKind", "Obstacles", "environment", "parametrized", "prompt", "random", "scenario"]

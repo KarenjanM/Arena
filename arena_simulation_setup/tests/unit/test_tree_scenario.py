@@ -14,6 +14,7 @@ from arena_simulation_setup.tree.World.Scenario import (
     RobotGoal,
     Scenario,
     ScenarioView,
+    StimulusAction,
     TimelineEntry,
     parse_scenario,
     upgrade_scenario,
@@ -343,14 +344,14 @@ def test_timeline_entry_parse_at():
 
 
 def test_timeline_entry_parse_every():
-    entry = TimelineEntry.parse({"every": 5.0, "offset": 1.0, "until": 30.0, "set": []})
+    entry = TimelineEntry.parse({"every": 5.0, "offset": 1.0, "until": 30.0, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}]})
     assert entry.every == pytest.approx(5.0)
     assert entry.offset == pytest.approx(1.0)
     assert entry.until == pytest.approx(30.0)
 
 
 def test_timeline_entry_parse_when():
-    entry = TimelineEntry.parse({"when": {"entity": "door_1", "field": "open", "is": True}, "set": []})
+    entry = TimelineEntry.parse({"when": {"entity": "door_1", "field": "open", "is": True}, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}]})
     assert entry.when == {"entity": "door_1", "field": "open", "is": True}
 
 
@@ -400,6 +401,86 @@ def test_timeline_entry_round_trip_through_cattrs():
     raw = converter.unstructure(entry)
     reparsed = converter.structure(raw, TimelineEntry)
     assert reparsed == entry
+
+
+def test_timeline_entry_requires_an_action():
+    with pytest.raises(ValueError, match="at least one action"):
+        TimelineEntry.parse({"at": 1.0, "set": []})
+    with pytest.raises(ValueError, match="at least one action"):
+        TimelineEntry(at=1.0)
+
+
+def test_timeline_entry_parses_stimulus_actions():
+    entry = TimelineEntry.parse(
+        {
+            "when": "robot within 4.2 of 12.1,4.0",
+            "stimulus": [{"agents": ["edge_0"], "need": "go", "intensity": 0.5}, {"agents": ["d_1", "d_2"], "need": "form"}],
+        },
+    )
+    assert entry.set == []
+    assert entry.stimulus == [
+        StimulusAction(agents=("edge_0",), need="go", intensity=0.5),
+        StimulusAction(agents=("d_1", "d_2"), need="form", intensity=1.0),
+    ]
+
+
+def test_timeline_entry_takes_set_and_stimulus_together():
+    entry = converter.structure({"at": 8.0, "set": [{"entity": "fire_alarm", "field": "active", "value": "true"}], "stimulus": [{"agents": ["d_1"], "need": "form"}]}, TimelineEntry)
+    assert len(entry.set) == 1
+    assert entry.stimulus == [StimulusAction(agents=("d_1",), need="form")]
+
+
+@pytest.mark.parametrize(
+    ("stimulus", "message"),
+    [
+        ({"agents": "edge_0", "need": "go"}, "list of agent names"),
+        ({"agents": [], "need": "go"}, "non-empty list of agent names"),
+        ({"agents": ["edge_0", ""], "need": "go"}, "non-empty list of agent names"),
+        ({"agents": ["edge_0"]}, "'need' must be a non-empty string"),
+        ({"agents": ["edge_0"], "need": "go", "level": 1.0}, "unknown keys"),
+        ({"agents": ["edge_0"], "need": "go", "intensity": "loud"}, "could not convert"),
+        ("edge_0", "a stimulus is a mapping"),
+    ],
+)
+def test_timeline_entry_rejects_malformed_stimulus(stimulus, message):
+    with pytest.raises(ValueError, match=message):
+        TimelineEntry.parse({"at": 1.0, "stimulus": [stimulus]})
+
+
+def test_stimulus_round_trips_through_cattrs():
+    entry = TimelineEntry.parse({"at": 8.0, "stimulus": [{"agents": ["d_1", "d_2"], "need": "form"}, {"agents": ["edge_0"], "need": "go", "intensity": 0.25}]})
+    raw = converter.unstructure(entry)
+    assert raw["stimulus"] == [{"agents": ["d_1", "d_2"], "need": "form"}, {"agents": ["edge_0"], "need": "go", "intensity": 0.25}]
+    assert converter.structure(raw, TimelineEntry) == entry
+
+
+def test_scenario_timeline_stimulus_loads_from_yaml(tmp_path):
+    scenario_dir = tmp_path / "sc_stimulus"
+    scenario_dir.mkdir()
+    data = {
+        "format": SCENARIO_FORMAT,
+        "timeline": [
+            {"when": "robot within 4.2 of 12.1,4.0", "stimulus": [{"agents": ["edge_0"], "need": "go"}]},
+        ],
+    }
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+
+    (entry,) = ScenarioView(scenario_dir).load().timeline
+    assert entry.when == "robot within 4.2 of 12.1,4.0"
+    assert entry.stimulus == [StimulusAction(agents=("edge_0",), need="go")]
+
+
+def test_parse_scenario_names_the_bad_timeline_entry():
+    with pytest.raises(ValueError, match=r"timeline\[1\]"):
+        parse_scenario(
+            {
+                "format": SCENARIO_FORMAT,
+                "timeline": [
+                    {"at": 1.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]},
+                    {"at": 2.0, "stimulus": [{"agents": ["edge_0"]}]},
+                ],
+            },
+        )
 
 
 def test_scenario_timeline_default_empty():

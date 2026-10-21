@@ -25,11 +25,6 @@ class TM_Scenario(TM_Robots):
     _linger_after_completion: ROSParamT[bool]
     _idle_robots: set[str]
 
-    def _plan(self, start: Pose, phases: list[TaskPhase]) -> list[TaskPhase]:
-        """The phases submitted for a robot starting at `start`; subclasses reshape the scenario's route here."""
-        del start
-        return phases
-
     async def reset(self) -> None:
         await super().reset()
 
@@ -87,7 +82,7 @@ class TM_Scenario(TM_Robots):
             forbidden: list[PositionRadius] = [
                 PositionRadius(x=start_pose.position.x, y=start_pose.position.y, radius=robot.safe_distance),
             ]
-            phases = self._plan(start_pose, [localize(phase, config.goal_level, forbidden, robot.safe_distance) for phase in config.phases])
+            phases = [localize(phase, config.goal_level, forbidden, robot.safe_distance) for phase in config.phases]
 
             # An empty phase list intentionally describes a stationary robot.
             # Do not submit it to RobotManager: an empty TaskRequest has no

@@ -258,6 +258,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline_state: list[dict[str, object]] = []
         self._timeline_seed: int = 0
         self._timeline_t0: float | None = None
+        self._stimulus_tasks: set[asyncio.Task] = set()
         self._episode_conditions: list[EpisodeCondition] = []
         self._judge_zones: dict = {}
         self._judge_walls: WallGrid | None = None
@@ -944,6 +945,26 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             field = str(action.get("field", ""))
             value = self._resolve_timeline_value(self._norm_token(action.get("value")), idx)
             self._set_semantic(entity, field, value)
+        for stimulus in entry.stimulus:
+            for agent in stimulus.agents:
+                self._submit_stimulus(agent, stimulus.need, stimulus.intensity)
+
+    def _submit_stimulus(self, agent: str, need: str, intensity: float) -> None:
+        """Send one timeline stimulus without blocking the tick, logging a refusal or failure."""
+        task = asyncio.create_task(self._environment_manager.notify_stimulus(agent, need, intensity))
+        self._stimulus_tasks.add(task)
+
+        def _on_done(t: asyncio.Task) -> None:
+            self._stimulus_tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} failed: {exc!r}")
+            elif not t.result():
+                self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} was not taken")
+
+        task.add_done_callback(_on_done)
 
     def _evaluate_timeline(self, now: float) -> None:
         """One sim-time tick of timeline evaluation. Captures t0 on the first post-unpause tick."""
@@ -1796,22 +1817,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = str(e)
         return response
 
-    async def _cb_despawn_obstacle(
-        self,
-        request: task_generator_msgs.srv.DespawnObstacle.Request,
-        response: task_generator_msgs.srv.DespawnObstacle.Response,
-    ) -> task_generator_msgs.srv.DespawnObstacle.Response:
-        try:
-            response.found = await self._task.tm_obstacles.retract(request.id)
-            response.success = True
-            if response.found:
-                self._compromise(f"{request.id} despawned by hand")
-        except Exception as e:
-            response.success = False
-            response.found = False
-            response.error_msg = str(e)
-        return response
-
     async def _cb_spawn_robot(
         self,
         request: task_generator_msgs.srv.SpawnRobot.Request,
@@ -2169,12 +2174,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             task_generator_msgs.srv.SpawnDynamic,
             self.service_namespace("runtime", "spawn_dynamic"),
             self._cb_spawn_dynamic,
-        )
-
-        self.create_service(
-            task_generator_msgs.srv.DespawnObstacle,
-            self.service_namespace("runtime", "despawn_obstacle"),
-            self._cb_despawn_obstacle,
         )
 
         self.create_service(

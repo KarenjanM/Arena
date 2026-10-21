@@ -15,6 +15,7 @@ from arena_simulation_setup.shared.conditions import (
     UntilClause,
     WithinAtom,
     parse_atom,
+    parse_point,
     parse_until,
 )
 from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase
@@ -67,7 +68,12 @@ def _playing(clip: str, nouns: Nouns | None) -> str:
 
 
 def _subject(subject: str, nouns: Nouns | None, robot: str) -> str:
-    return robot if subject == "robot" else noun(subject, nouns)
+    if subject == "robot":
+        return robot
+    point = parse_point(subject)
+    if point is not None:
+        return f"the point ({point[0]:g}, {point[1]:g})"
+    return noun(subject, nouns)
 
 
 def _be(subject: str) -> str:

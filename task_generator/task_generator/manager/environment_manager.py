@@ -1,7 +1,7 @@
 import asyncio
 import json
 import typing
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Any
 
 import attrs
@@ -26,7 +26,6 @@ from task_generator.shared import (
     Elevator,
     Obstacle,
     Pose,
-    Position,
     Region,
     Robot,
     SemanticCfg,
@@ -487,25 +486,8 @@ class EnvironmentManager(NodeInterface):
         await self.spawn_obstacles(setups)
         self._sync_static_polygons()
 
-    async def remove_obstacles(self, ids: Sequence[str]) -> list[str]:
-        """Remove known obstacles mid-episode by name or ``sim_path``, returning the removed ones."""
-        if not ids:
-            return []
-        removed = await self._human_simulator.remove_obstacles(ids=ids)
-        if removed:
-            self._sync_static_polygons()
-        return removed
-
     async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
         return await self._human_simulator.notify_stimulus(agent, stimulus, intensity)
-
-    async def set_agent_waypoints(
-        self,
-        routes: Mapping[str, Sequence[tuple[float, float]]],
-    ) -> bool:
-        """Points arrive in the abstract frame and are realized into the map frame here."""
-        realized = {name: [(lambda p: (float(p.x), float(p.y)))(self._realizer.realize(Position(x=float(x), y=float(y)))) for x, y in points] for name, points in routes.items()}
-        return await self._human_simulator.set_agent_waypoints(realized)
 
     async def spawn_robot(self, robots: Sequence[Robot]) -> Sequence[Robot]:
         """

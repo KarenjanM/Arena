@@ -122,8 +122,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     @classmethod
     def _register_task_modes(cls):
-        from task_generator.tasks.obstacles.edge_case import NS as EDGE_CASE_NS
-        from task_generator.tasks.obstacles.edge_case import declare_schema as edge_case_schema
         from task_generator.tasks.obstacles.prompt import NS, declare_schema
         from task_generator.tasks.registry import OBSTACLES_MODES
 
@@ -132,12 +130,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             from task_generator.tasks.obstacles.prompt.arena import TM_Prompt
 
             return TM_Prompt
-
-        @OBSTACLES_MODES.register(Constants.TaskMode.TM_Obstacles.EDGE_CASE, namespace=EDGE_CASE_NS, schema=edge_case_schema)
-        def _edge_case() -> type:
-            from task_generator.tasks.obstacles.edge_case.impl import TM_EdgeCase
-
-            return TM_EdgeCase
 
     SERVICE_SPAWN_AGENTS = "spawn_agents"
     SERVICE_REMOVE_AGENTS = "remove_agents"
@@ -791,10 +783,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.velocity.x, a.velocity.y = tracked.velocity
             a.radius = 0.3
             msg.agents.append(a)
-        name_to_aid = {agent_name: aid for aid, agent_name in self._agent_names.items()}
         for name, ped in possessed.items():
             a = AgentStateMsg()
-            aid = name_to_aid.get(name)
+            aid = self._agent_id(name)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
             a.name = name
             a.pose = self._engine_pose(Pose.from_msg(ped.pose))
@@ -1135,10 +1126,15 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         finally:
             self._spawns_in_flight -= 1
 
+    def _agent_id(self, agent: str) -> int | None:
+        """Engine id of a spawned agent by name or ``sim_path``."""
+        known = self._known_obstacles.get(agent)
+        sim_path = known.obstacle.sim_path if known is not None else agent
+        return next((aid for aid, name in self._agent_names.items() if name == sim_path), None)
+
     async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
         if isinstance(agent, str):
-            sim_path = self._sim_path_index().get(agent, agent)
-            agent_id = next((aid for aid, name in self._agent_names.items() if name == sim_path), None)
+            agent_id = self._agent_id(agent)
             if agent_id is None:
                 self._logger.warning(f"NotifyStimulus: {agent!r} is not a known agent")
                 return False
@@ -1189,10 +1185,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         return ok
 
-    async def _remove_pedestrians_impl(self, names: Sequence[str] = ()) -> bool:
-        """Remove all dynamic agents from arena_humansim, or just `names`."""
-        if names:
-            return await self._remove_named_agents(names)
+    async def _remove_pedestrians_impl(self) -> bool:
+        """Remove all dynamic agents from arena_humansim."""
         request = RemoveAgents.Request()
         request.agent_ids = []  # empty = remove all
 
@@ -1220,72 +1214,6 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         except Exception as e:
             self._logger.error(f"RemoveAgents call failed: {e}")
             return False
-
-    async def _set_waypoints_impl(
-        self,
-        routes: Mapping[str, Sequence[tuple[float, float]]],
-    ) -> bool:
-        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
-        sent = 0
-        for name, points in routes.items():
-            agent_id = by_name.get(name)
-            if agent_id is None:
-                self._logger.warning(f"SetWaypoints: {name!r} is not a known agent")
-                continue
-
-            request = SetWaypoints.Request()
-            request.agent_id = agent_id
-            request.name = name
-            wp_msg = WaypointsMsg()
-            # a rewritten route is a destination; MODE_REPEAT would walk an evacuating crowd back out
-            wp_msg.mode = WaypointsMsg.MODE_ONCE
-            for x, y in points:
-                # points arrive in `map`; the engine runs in the world frame, as at spawn
-                ex, ey = self._to_engine(x, y)
-                wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=ex, y=ey, theta=0.0)))
-            request.waypoints = wp_msg
-
-            try:
-                response = await self._set_waypoints_client.call_timeout(request)
-            except Exception as e:
-                self._logger.error(f"SetWaypoints call failed for {name!r}: {e}")
-                continue
-            if not response.success:
-                self._logger.error(f"SetWaypoints failed for {name!r}: {response.message}")
-                continue
-            sent += 1
-
-        if not sent:
-            self._logger.warning(f"SetWaypoints: none of {list(routes)} could be rerouted")
-            return False
-        self._logger.info(f"SetWaypoints: rerouted {sent} of {len(routes)} agent(s)")
-        return True
-
-    async def _remove_named_agents(self, names: Sequence[str]) -> bool:
-        by_name = {agent_name: aid for aid, agent_name in self._agent_names.items()}
-        agent_ids = [by_name[name] for name in names if name in by_name]
-        if not agent_ids:
-            self._logger.warning(f"RemoveAgents: none of {list(names)} is a known agent")
-            return False
-
-        request = RemoveAgents.Request()
-        request.agent_ids = agent_ids
-        try:
-            response = await self._remove_client.call_timeout(request)
-        except Exception as e:
-            self._logger.error(f"RemoveAgents call failed: {e}")
-            return False
-
-        if not response.success:
-            self._logger.error(f"RemoveAgents failed: {response.message}")
-            return False
-
-        # `_next_id` is not rewound: reusing an id still being removed would rebind a fresh agent onto a dying one
-        for aid in agent_ids:
-            self._agent_names.pop(aid, None)
-            self._bridge_agent_ids.discard(aid)
-            self._flow_agent_ids.discard(aid)
-        return True
 
     async def _spawn_walls_impl(self, walls: Mapping[str, Wall]) -> bool:
         return await self._add_walls(walls)

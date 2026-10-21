@@ -27,16 +27,6 @@ robot name and exposes `least_progress()`, the tracked robot with the lowest
 `closed_fraction`. Sampled by `TaskGenerator._sample_goal_progress` in
 `node.py` and reset once per episode in `_build_next_record`.
 
-## `gpt.py`
-
-[`gpt.py`](gpt.py)
-
-Lazy shims for `google.genai` and `openai` that redirect API calls to a local
-LLM endpoint when `LLM_API_ENDPOINT` is set in the environment. Accessed via
-module `__getattr__`: `from task_generator.utils import gpt; gpt.genai` /
-`gpt.openai`. When `LLM_API_ENDPOINT` is unset, the shims pass through to the
-upstream libraries unchanged.
-
 ## `map_generator.py`
 
 [`map_generator.py`](map_generator.py)

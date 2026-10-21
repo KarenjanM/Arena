@@ -19,9 +19,8 @@ from PIL import Image
 from scipy import ndimage
 
 from arena_simulation_setup.shared import Obstacle
-from arena_simulation_setup.tree import DynamicPaths, Identifier
-from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
-from arena_simulation_setup.tree.World import Level, WorldIdentifier, WorldView
+from arena_simulation_setup.tree import Identifier
+from arena_simulation_setup.tree.World import Level, WorldIdentifier, WorldView, world_assets
 from arena_simulation_setup.tree.World.model import _PASSAGE_CLEARANCE
 
 DEFAULT_RADIUS = 0.267
@@ -139,10 +138,7 @@ def nav_at_r(
     """NAV@r per level id, with static entities as occupancy unless `walls_only`, the single-start share when `start` is given, and the components painted to `image`."""
     world = view.load(validate=False, level_filter=levels)
     single = len(world.levels) == 1
-    previous = DynamicPaths.WORLD.path
-    DynamicPaths.LINKED.paths = list(world.sources)
-    _point_objects_at(view.path)
-    try:
+    with world_assets(view, world):
         return {
             level_id: _level_nav_at_r(
                 level_id,
@@ -156,14 +152,6 @@ def nav_at_r(
             )
             for level_id, level in world.levels.items()
         }
-    finally:
-        _point_objects_at(previous)
-
-
-def _point_objects_at(path: Path) -> None:
-    DynamicPaths.WORLD.path = path
-    for resolver in ObjectIdentifier._resolvers:
-        resolver.invalidate()
 
 
 def _level_nav_at_r(

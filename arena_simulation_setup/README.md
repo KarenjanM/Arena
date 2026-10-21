@@ -87,3 +87,10 @@ Key `Identifier` types from `arena_simulation_setup.tree`:
 
 See [tree/README.md](src/arena_simulation_setup/tree/README.md) for resolver
 order, the `DynamicPaths` singleton, and how to add a new Identifier.
+
+[utils/llm.py](src/arena_simulation_setup/utils/llm.py) holds the LLM client:
+`from arena_simulation_setup.utils.llm import genai` (or `openai`) imports the
+library on first access, redirected to a local endpoint when `LLM_API_ENDPOINT`
+is set and passed through unchanged otherwise. `DEFAULT_MODEL` is
+`$ARENA_PROMPT_LLM`, default `gemini-3.5-flash`, the model of
+`tm_obstacles:=prompt`.

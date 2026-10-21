@@ -1,11 +1,9 @@
 import os
 import typing
 
-from .context import ARENA_FORMAT, BEHAVIOR_FORMAT, SYSTEM_INSTRUCTION
+from arena_simulation_setup.utils.llm import DEFAULT_MODEL as REMOTE_LM
 
-# Preview model names get retired (gemini-3-pro-preview died 2026-07); keep the
-# default on a stable name and allow overriding without a rebuild.
-REMOTE_LM = os.environ.get("ARENA_PROMPT_LLM", "gemini-3.5-flash")
+from .context import ARENA_FORMAT, BEHAVIOR_FORMAT, SYSTEM_INSTRUCTION
 
 # HuNav's prompt backend only.
 LOCAL_LM = os.environ.get("ARENA_PROMPT_LOCAL_LM", "Qwen/Qwen3-0.6B")

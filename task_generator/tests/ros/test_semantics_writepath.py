@@ -139,6 +139,75 @@ def test_fire_timeline_entry_writes_sound_sounding_predicate() -> None:
     assert snap.predicates["sounding"] is True
 
 
+def _stimulus_stub(outcomes: dict[str, object]) -> tuple[object, list[tuple[object, str, float]], list[str]]:
+    from task_generator.manager.environment_manager import EnvironmentManager
+    from task_generator.node import TaskGenerator
+
+    calls: list[tuple[object, str, float]] = []
+    warnings: list[str] = []
+
+    class _Human:
+        async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+            calls.append((agent, stimulus, intensity))
+            outcome = outcomes.get(str(agent), True)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return bool(outcome)
+
+    class _Logger:
+        def warning(self, msg: str) -> None:
+            warnings.append(msg)
+
+    environment = type("Environment", (), {"notify_stimulus": EnvironmentManager.notify_stimulus})()
+    environment._human_simulator = _Human()
+    stub = _node_stub()
+    stub._environment_manager = environment
+    stub._stimulus_tasks = set()
+    stub.get_logger = lambda: _Logger()
+    stub._submit_stimulus = TaskGenerator._submit_stimulus.__get__(stub)
+    return stub, calls, warnings
+
+
+def _fire_and_drain(stub: object, entry: object) -> None:
+    import asyncio
+
+    from task_generator.node import TaskGenerator
+
+    async def main() -> None:
+        TaskGenerator._fire_timeline_entry(stub, 0, entry)
+        while stub._stimulus_tasks:
+            await asyncio.gather(*stub._stimulus_tasks, return_exceptions=True)
+            await asyncio.sleep(0)
+
+    asyncio.run(main())
+
+
+def test_fire_timeline_entry_sends_one_stimulus_per_agent() -> None:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"at": 8.0, "stimulus": [{"agents": ["d_1", "d_2"], "need": "form"}, {"agents": ["edge_0"], "need": "go", "intensity": 0.5}]})
+    stub, calls, warnings = _stimulus_stub({})
+    _fire_and_drain(stub, entry)
+    assert calls == [("d_1", "form", 1.0), ("d_2", "form", 1.0), ("edge_0", "go", 0.5)]
+    assert warnings == []
+
+
+def test_refused_or_failing_stimulus_is_logged_not_raised() -> None:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["ghost", "broken", "d_1"], "need": "go"}]})
+    stub, calls, warnings = _stimulus_stub({"ghost": False, "broken": RuntimeError("service down")})
+    _fire_and_drain(stub, entry)
+    assert [agent for agent, _, _ in calls] == ["ghost", "broken", "d_1"]
+    assert sorted(warnings) == sorted(
+        [
+            "timeline stimulus 'go' for 'ghost' was not taken",
+            "timeline stimulus 'go' for 'broken' failed: RuntimeError('service down')",
+        ],
+    )
+    assert stub._stimulus_tasks == set()
+
+
 # ---------------------------------------------------------------------------
 # value coercion / stringification
 # ---------------------------------------------------------------------------

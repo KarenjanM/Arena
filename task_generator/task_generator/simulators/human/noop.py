@@ -27,9 +27,8 @@ class NoopHumanSimulator(BaseHumanSimulator):
 
     async def _remove_pedestrians_impl(
         self,
-        names: Sequence[str] = (),
     ) -> bool:
-        return not names
+        return True
 
     async def _spawn_walls_impl(
         self,

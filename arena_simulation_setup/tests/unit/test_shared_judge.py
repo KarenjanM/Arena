@@ -116,6 +116,29 @@ def test_within_between_robots_and_peds():
     assert atom_holds(parse_atom("robot within 1 of carol"), s, ZONES, "robot_0") is None
 
 
+def test_within_resolves_point_literals_on_either_side():
+    s = sample(robot=(12.0, 4.0, 0.0), peds={"alice": (0.0, 0.0)})
+    assert atom_holds(parse_atom("robot within 4.2 of 12.1,4.0"), s, ZONES, "robot_0") is True
+    assert atom_holds(parse_atom("robot within 4.2 of 20,4"), s, ZONES, "robot_0") is False
+    assert atom_holds(parse_atom("not robot within 4.2 of 20,4"), s, ZONES, "robot_0") is True
+    assert atom_holds(parse_atom("-3,4 within 5 of alice"), s, ZONES, "robot_0") is True
+    assert atom_holds(parse_atom("-3,4 within 4.9 of alice"), s, ZONES, "robot_0") is False
+
+
+def test_point_literal_needs_no_robot_or_ped():
+    s = Sample(t=0.0)
+    assert s.point("1.5,-2", "robot_0") == (1.5, -2.0)
+    assert atom_holds(parse_atom("robot within 1 of 1.5,-2"), s, ZONES, "robot_0") is None
+    assert atom_holds(parse_atom("0,0 within 5 of 3,4"), s, ZONES, "robot_0") is True
+
+
+def test_until_monitor_meets_on_a_point_literal_dwell():
+    monitor = UntilMonitor(parse_until("robot within 1 of 10,0 for 2"), "robot_0")
+    assert monitor.step(sample(t=0.0, robot=(0.0, 0.0, 0.0)), ZONES) is False
+    assert monitor.step(sample(t=1.0, robot=(9.5, 0.0, 0.0)), ZONES) is False
+    assert monitor.step(sample(t=3.0, robot=(10.0, 0.5, 0.0)), ZONES) is True
+
+
 def test_entity_atom_values():
     s = sample(fields={("door", "open"): "true", ("lift", "eta"): "4.0000001"})
     assert atom_holds(parse_atom("door.open == true"), s, ZONES) is True

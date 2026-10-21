@@ -75,6 +75,14 @@ walks it calling `destination()`.
 `DynamicPaths.as_resolvers(T)` returns three resolvers for a given `Identifier`
 type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, then `ARENA`.
 
+`world_assets(view, world=None)` ([World/view.py](World/view.py)) is the
+scoped form: a context manager that points `WORLD` at `view` and `LINKED` at
+the worlds it links levels from (taken from `world` when already loaded),
+invalidates the `ObjectIdentifier` resolvers, and restores both paths on exit,
+also on an exception. Offline tools that resolve a world's assets
+(`nav_at_r`, `preload_world`) use it. Long-lived pointers (the task
+generator's world load, `SoundLibrary.use_world`) set the paths themselves.
+
 ## Shipped Identifiers
 
 | Identifier | File | Base class | `_asset_type` | Resolvers (in order) |

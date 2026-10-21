@@ -43,9 +43,7 @@ class TM_Scenario(TM_Obstacles):
             )
             for name, r in scenario.regions.items()
         ]
-        # Recorded, not pushed: `Task._reset_episode` applies these once, after every mode
-        # that wraps this one has had a chance to see them. See TM_Obstacles.pending_regions.
-        self.pending_regions[:] = regions
+        await self._ctx.environment_manager.setup_regions(regions)
 
         self.node.register_timeline(scenario.timeline, seed)
         self.node.register_conditions(scenario.conditions)

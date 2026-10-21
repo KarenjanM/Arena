@@ -56,7 +56,10 @@ setup(
         where=python_root,
     ),
     package_dir={'': python_root},
-    package_data={f'{package_name}.kg': ['packages/*.toml']},
+    package_data={
+        f'{package_name}.kg': ['packages/*.toml'],
+        f'{package_name}.generative.scenario': ['agent_types/*.yaml', 'promptgen/*.yaml', 'promptgen/*.md', 'promptgen/prompts/*.yaml'],
+    },
     data_files=[
         ('share/' + package_name, ['package.xml']),
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -75,6 +78,8 @@ setup(
         'shapely',
         'pillow',
         'numpy',
+        'pyyaml',
+        'scipy',
     ],
     extras_require={
         'test': ['pytest>=7', 'hypothesis>=6'],
@@ -91,6 +96,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
+            f'generate_scenario = {package_name}.generative.scenario.cli:main',
             f'generate_world = {package_name}.generative.world.world_generator:main',
             f'nav_at_r = {package_name}.metrics.nav_at_r:main',
             f'world_generator = {package_name}.generative.world.world_generator_ros:main',

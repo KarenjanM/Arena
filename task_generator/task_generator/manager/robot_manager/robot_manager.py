@@ -518,9 +518,6 @@ class RobotManager(NodeInterface):
         if start is None:
             observed = self.pose
             start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
-        else:
-            # obstacle modes reset before the robot is teleported, so they read this episode's start here
-            self._start_pos = start
         current_level = world_manager.level_of_point(start.position.x, start.position.y)
         boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
 

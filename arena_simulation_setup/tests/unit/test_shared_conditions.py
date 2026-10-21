@@ -15,6 +15,7 @@ from arena_simulation_setup.shared.conditions import (
     WithinAtom,
     atom_subjects,
     parse_atom,
+    parse_point,
     parse_until,
     render_atom,
     render_until,
@@ -186,6 +187,31 @@ def test_parse_atom_rejects_env_prefixed_subject():
 def test_parse_atom_rejects_env_prefixed_zone():
     with pytest.raises(ValueError):
         parse_atom("robot in env_0/ward_a")
+
+
+def test_parse_atom_within_takes_point_literals():
+    assert parse_atom("robot within 4.2 of 12.1,4.0") == WithinAtom(subject="robot", radius=4.2, other="12.1,4.0")
+    assert parse_atom("-3,.5 within 1 of alice") == WithinAtom(subject="-3,.5", radius=1.0, other="alice")
+    assert render_atom(parse_atom("robot within 4.2 of 12.1,4.0")) == "robot within 4.2 of 12.1,4.0"
+
+
+@pytest.mark.parametrize(
+    ("subject", "point"),
+    [("12.1,4.0", (12.1, 4.0)), ("-3,.5", (-3.0, 0.5)), ("+1e1,2.", (10.0, 2.0)), ("alice", None), ("a,b", None), ("1,2,3", None), ("1,", None)],
+)
+def test_parse_point(subject, point):
+    assert parse_point(subject) == point
+
+
+@pytest.mark.parametrize("value", ["1,2 in ward_a", "robot sees 1,2", "1,2 sees alice", "1,2 plays beckon"])
+def test_parse_atom_takes_points_only_as_within_subjects(value):
+    with pytest.raises(ValueError, match="only as a within subject"):
+        parse_atom(value)
+
+
+def test_atom_subjects_leave_points_out():
+    assert atom_subjects(parse_atom("robot within 4 of 1,2")) == {"robot"}
+    assert atom_subjects(parse_atom("not 1,2 within 4 of 3,4")) == frozenset()
 
 
 # ---------------------------------------------------------------------------

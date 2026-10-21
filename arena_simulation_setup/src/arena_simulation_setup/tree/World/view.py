@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import re
@@ -14,6 +15,7 @@ from typing_extensions import Self
 from arena_simulation_setup import ARENA_ASSETS_DIR, ASS_DIR
 from arena_simulation_setup.tree import (
     WORLD_PROVIDERS,
+    DynamicPaths,
     FallbackResolver,
     Identifier,
     NetResolver,
@@ -22,6 +24,7 @@ from arena_simulation_setup.tree import (
     ResolverBase,
     SimplePathResolver,
 )
+from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 
 from .legacy import is_legacy, upgrade
 from .Map import Map
@@ -316,6 +319,25 @@ class WorldView(PathView):
         if len(world.levels) <= 1:
             return None
         return world.level_origins()
+
+
+@contextlib.contextmanager
+def world_assets(view: WorldView, world: World | None = None) -> Iterator[None]:
+    """Point world-local asset resolution at `view` and the worlds it links levels from (`world` when already loaded) for the block, then restore the previous paths."""
+    sources = list((world if world is not None else view.load(validate=False)).sources)
+    previous = DynamicPaths.WORLD.path, list(DynamicPaths.LINKED.paths)
+    _point_assets(view.path, sources)
+    try:
+        yield
+    finally:
+        _point_assets(*previous)
+
+
+def _point_assets(path: Path, linked: list[Path]) -> None:
+    DynamicPaths.WORLD.path = path
+    DynamicPaths.LINKED.paths = linked
+    for resolver in ObjectIdentifier._resolvers:
+        resolver.invalidate()
 
 
 def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> Path:

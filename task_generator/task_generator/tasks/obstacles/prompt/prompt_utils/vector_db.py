@@ -3,10 +3,9 @@ import time
 
 import chromadb
 import numpy as np
+from arena_simulation_setup.utils.llm import genai
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from tqdm import tqdm
-
-from task_generator.utils.gpt import genai
 
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_CFG = genai.types.EmbedContentConfig(task_type="retrieval_document", output_dimensionality=768)

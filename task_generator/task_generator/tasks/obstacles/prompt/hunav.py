@@ -12,9 +12,8 @@ import numpy as np
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_hunav_sim_bridge.agent.llm_parser import Parser
+from arena_simulation_setup.utils.llm import genai
 from std_msgs.msg import Float32MultiArray, MultiArrayDimension
-
-from task_generator.utils.gpt import genai
 
 # Avoids errors related to cv2 + pyglet + X11 with arena_text_crowd
 os.environ["PYGLET_HEADLESS"] = "true"
