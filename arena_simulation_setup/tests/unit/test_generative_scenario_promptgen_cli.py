@@ -37,7 +37,12 @@ def test_promptgen_designs_the_case_for_the_robot_radius_it_is_given(tmp_path: P
     assert robot == {"speed_mps": 0.7, "hold_s": 2.0, "traversals": 1, "tolerance_m": None, "radius_m": 0.6}
 
 
-def test_promptgen_names_a_valid_robot_radius_on_a_bad_one(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("flag", [("--robot-radius", "0"), ("--robot-speed", "0"), ("--traversals", "0"), ("--hold", "-1"), ("--tolerance", "-0.5")])
+def test_promptgen_names_the_valid_range_of_a_robot_argument_out_of_range(tmp_path: Path, capsys: pytest.CaptureFixture[str], flag: tuple[str, str]) -> None:
     _world(tmp_path)
-    assert _promptgen(tmp_path, "--robot-radius", "0") == 1
-    assert "--robot-radius" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as exited:
+        _promptgen(tmp_path, *flag)
+    assert exited.value.code == 2
+    err = capsys.readouterr().err
+    assert flag[0] in err
+    assert "expected a" in err

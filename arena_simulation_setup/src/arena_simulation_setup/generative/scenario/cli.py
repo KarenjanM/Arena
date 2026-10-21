@@ -429,8 +429,6 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
         if unknown := [b for b in bases if b not in have]:
             raise ValueError(f"--bases {', '.join(unknown)}: no such base scenario in {args.world}. Its bases: {', '.join(have) or 'none, run `populate --write` first'}")
     cache = Path(args.cache) if args.cache else None
-    if not args.robot_radius > 0:
-        raise ValueError(f"--robot-radius {args.robot_radius:g}: the robot's radius in meters must be positive, e.g. {ROBOT_CLEAR}")
     robot = RobotPlan(speed=args.robot_speed, traversals=args.traversals, hold=args.hold, tolerance=args.tolerance, radius=args.robot_radius)
     seen: dict[str, str] = {}
     counts: dict[str, int] = {}
@@ -574,11 +572,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--cache", default=None, help="model answer cache directory (default $ARENA_DATA_DIR/promptgen/llm_cache)")
     p.add_argument("--model", default=None, help=f"override the model of every step (default {DEFAULT_MODEL}, step A $ARENA_PROMPT_LLM_A when set)")
     p.add_argument("--oracle", action="store_true", help="use each prompt's own template slots instead of a model")
-    p.add_argument("--robot-speed", type=float, default=ROBOT_SPEED_MPS, help=f"m/s the robot is designed to drive at, which times every interception release (default {ROBOT_SPEED_MPS})")
-    p.add_argument("--traversals", type=int, default=1, help="round trips through the population: N traversals are 2N-1 legs (default 1, the single start->goal leg)")
-    p.add_argument("--hold", type=float, default=0.0, help="seconds the robot holds at its start before the first leg (default 0, no hold phase)")
-    p.add_argument("--tolerance", type=float, default=0.0, help="goal tolerance radius of every leg in meters (default 0: the runtime's goal tolerance)")
-    p.add_argument("--robot-radius", type=float, default=ROBOT_CLEAR, help=f"robot radius in meters, the clearance its planned route keeps from walls and furniture (default {ROBOT_CLEAR})")
+    p.add_argument("--robot-speed", type=_positive_float, default=ROBOT_SPEED_MPS, help=f"m/s the robot is designed to drive at, which times every interception release (default {ROBOT_SPEED_MPS})")
+    p.add_argument("--traversals", type=_positive_int, default=1, help="round trips through the population: N traversals are 2N-1 legs (default 1, the single start->goal leg)")
+    p.add_argument("--hold", type=_non_negative_float, default=0.0, help="seconds the robot holds at its start before the first leg (default 0, no hold phase)")
+    p.add_argument("--tolerance", type=_non_negative_float, default=0.0, help="goal tolerance radius of every leg in meters (default 0: the runtime's goal tolerance)")
+    p.add_argument("--robot-radius", type=_positive_float, default=ROBOT_CLEAR, help=f"robot radius in meters, the clearance its planned route keeps from walls and furniture (default {ROBOT_CLEAR})")
     p.add_argument("--strict", action="store_true", help="do not write partial scenarios")
     p.add_argument("--verbose", "-v", action="store_true", help="print each case's warnings and failures, and the traceback of a crashed prompt")
     p.add_argument("--write", action="store_true", help="write each ok or partial case under the world's scenarios/ (default: a dry run)")
