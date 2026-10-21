@@ -527,6 +527,73 @@ def test_timeline_when_fires_on_rising_edge() -> None:
     assert fired == [0]
 
 
+def _robot_when_stub(entries: list, robots: dict[str, tuple[float, float, float]]) -> tuple[object, object, list[int]]:
+    from arena_simulation_setup.shared.judge import Sample
+
+    from task_generator.node import TaskGenerator
+
+    stub, cls, fired = _timeline_stub(entries)
+    stub._judge_zones = {}
+    stub._sample = Sample(t=0.0, robots=robots, known=frozenset(robots))
+    stub._norm_token = TaskGenerator._norm_token
+    stub._when_true = TaskGenerator._when_true.__get__(stub)
+    return stub, cls, fired
+
+
+def _place(stub: object, robots: dict[str, tuple[float, float, float]]) -> None:
+    from arena_simulation_setup.shared.judge import Sample
+
+    stub._sample = Sample(t=0.0, robots=robots, known=frozenset(robots))
+
+
+def test_timeline_robot_within_a_point_fires_for_a_robot_named_after_its_model() -> None:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"when": "robot within 2.0 of 5.0,0.0", "stimulus": [{"agents": ["edge_0"], "need": "go"}]})
+    stub, cls, fired = _robot_when_stub([entry], {"jackal": (0.0, 0.0, 0.0)})
+    cls._evaluate_timeline(stub, 0.0)
+    assert fired == []
+    _place(stub, {"jackal": (3.5, 0.0, 0.0)})
+    cls._evaluate_timeline(stub, 1.0)
+    assert fired == [0]
+    cls._evaluate_timeline(stub, 2.0)
+    assert fired == [0]
+
+
+def test_timeline_robot_within_fires_when_any_robot_of_the_env_holds() -> None:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"when": "robot within 1.0 of 0.0,0.0", "set": [{"entity": "a", "field": "x", "value": "1"}]})
+    stub, cls, fired = _robot_when_stub([entry], {"jackal": (5.0, 0.0, 0.0), "burger": (4.0, 0.0, 0.0)})
+    cls._evaluate_timeline(stub, 0.0)
+    assert fired == []
+    _place(stub, {"jackal": (5.0, 0.0, 0.0), "burger": (0.5, 0.0, 0.0)})
+    cls._evaluate_timeline(stub, 1.0)
+    assert fired == [0]
+
+
+def test_timeline_not_robot_within_fires_once_the_robot_leaves() -> None:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"when": "not robot within 3.0 of 0.0,0.0", "stimulus": [{"agents": ["d_1"], "need": "break"}]})
+    stub, cls, fired = _robot_when_stub([entry], {"jackal": (1.0, 0.0, 0.0)})
+    cls._evaluate_timeline(stub, 0.0)
+    assert fired == []
+    _place(stub, {"jackal": (4.0, 0.0, 0.0)})
+    cls._evaluate_timeline(stub, 1.0)
+    assert fired == [0]
+
+
+def test_timeline_robot_atom_without_a_placed_robot_does_not_fire() -> None:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    entry = TimelineEntry.parse({"when": "not robot within 3.0 of 0.0,0.0", "set": [{"entity": "a", "field": "x", "value": "1"}]})
+    stub, cls, fired = _robot_when_stub([entry], {})
+    cls._evaluate_timeline(stub, 0.0)
+    cls._evaluate_timeline(stub, 1.0)
+    assert fired == []
+
+
 def test_reset_timeline_clears_state() -> None:
     from arena_simulation_setup.tree.World.Scenario import TimelineEntry
 

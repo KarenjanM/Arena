@@ -486,6 +486,13 @@ actions against exactly one trigger and needs at least one action:
 | `when: {entity, field, is}` | fire on the false-to-true edge of a semantic value |
 | `when: "<atom>"` | fire on the false-to-true edge of a condition atom (see [Add a scenario](#4-add-a-scenario)) |
 
+In a `when` atom the subject `robot` stands for every robot of the env: the
+atom holds while it holds for at least one of them, so
+`not robot within 3 of 2,2` holds while some robot is farther than 3 m from
+`(2, 2)`. A robot's own name (anonymous robots are named after their model,
+e.g. `jackal`) judges only that robot. Without a placed robot such an atom
+does not hold.
+
 | action | meaning |
 | --- | --- |
 | `set: [{entity, field, value}]` | write semantic values |

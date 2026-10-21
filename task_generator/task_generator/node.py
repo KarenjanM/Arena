@@ -960,7 +960,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _when_true(self, when: dict | str) -> bool:
         if isinstance(when, str):
-            return atom_holds(parse_atom(when), self._sample, self._judge_zones) is True
+            atom = parse_atom(when)
+            return any(atom_holds(atom, self._sample, self._judge_zones, robot) is True for robot in self._sample.robots or ("robot",))
         expected = self._norm_token(when.get("is"))
         current = self._semantic_value(str(when.get("entity", "")), str(when.get("field", "")))
         return current is not None and current == expected
