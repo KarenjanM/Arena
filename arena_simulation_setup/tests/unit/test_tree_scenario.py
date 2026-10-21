@@ -454,11 +454,16 @@ def test_stimulus_round_trips_through_cattrs():
     assert converter.structure(raw, TimelineEntry) == entry
 
 
+def _human(name: str) -> dict:
+    return {"name": name, "model": "arenian", "pose": [1.0, 2.0]}
+
+
 def test_scenario_timeline_stimulus_loads_from_yaml(tmp_path):
     scenario_dir = tmp_path / "sc_stimulus"
     scenario_dir.mkdir()
     data = {
         "format": SCENARIO_FORMAT,
+        "humans": [_human("edge_0")],
         "timeline": [
             {"when": "robot within 4.2 of 12.1,4.0", "stimulus": [{"agents": ["edge_0"], "need": "go"}]},
         ],
@@ -475,12 +480,36 @@ def test_parse_scenario_names_the_bad_timeline_entry():
         parse_scenario(
             {
                 "format": SCENARIO_FORMAT,
+                "humans": [_human("edge_0")],
                 "timeline": [
                     {"at": 1.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]},
                     {"at": 2.0, "stimulus": [{"agents": ["edge_0"]}]},
                 ],
             },
         )
+
+
+def test_scenario_rejects_a_stimulus_agent_that_is_not_a_scenario_human():
+    with pytest.raises(ValueError, match=r"timeline\[1\]: stimulus 'form' names agent 'd_2', which is not a scenario human, expected one of \['d_1', 'edge_0'\]"):
+        parse_scenario(
+            {
+                "format": SCENARIO_FORMAT,
+                "humans": [_human("edge_0"), _human("d_1")],
+                "timeline": [
+                    {"at": 1.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]},
+                    {"at": 2.0, "stimulus": [{"agents": ["d_1", "d_2"], "need": "form"}]},
+                ],
+            },
+        )
+
+
+def test_scenario_view_load_names_the_file_of_an_unknown_stimulus_agent(tmp_path):
+    scenario_dir = tmp_path / "sc_typo"
+    scenario_dir.mkdir()
+    data = {"format": SCENARIO_FORMAT, "humans": [_human("edge_0")], "timeline": [{"at": 1.0, "stimulus": [{"agents": ["egde_0"], "need": "go"}]}]}
+    (scenario_dir / "scenario.yaml").write_text(yaml.dump(data))
+    with pytest.raises(RuntimeError, match=r"sc_typo/scenario.yaml: timeline\[0\]: stimulus 'go' names agent 'egde_0'"):
+        ScenarioView(scenario_dir).load()
 
 
 def test_scenario_timeline_default_empty():

@@ -524,9 +524,12 @@ timeline:
   stimulus: [{agents: [d_1, d_2, d_3], need: form}]
 ```
 
-A stimulus naming a pedestrian the human simulator does not know is logged
-and skipped, the other agents still get theirs. Only the `arena` human
-backend acts on stimuli.
+Every agent of a stimulus is one of the scenario's `humans`, loading fails on
+any other name. With the `arena` human backend loading also fails when the
+agent type of an agent (its `agent.agent_type`) neither declares the need nor
+waits for it as the `until` event of an autonomous step. A stimulus the human
+simulator does not take at runtime is logged and skipped, the other agents
+still get theirs. Only the `arena` human backend acts on stimuli.
 
 Every semantic snapshot of the env carries a `timeline` entity (kind
 `timeline`). Its discrete field `stimulus.<agent>.<need>` holds the sim time

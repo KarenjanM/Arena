@@ -47,6 +47,8 @@ from task_generator.simulators.human.utils import (
 )
 
 if typing.TYPE_CHECKING:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
     from task_generator.simulators.acoustics import BaseAcousticsSimulator, PedestrianHearing
 
 PED_RADIUS = 0.3
@@ -999,6 +1001,21 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
         """`agent` is an engine agent id, or a spawned agent's name or ``sim_path``; True when the engine took it."""
         return False
+
+    def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:
+        """The agent type of `obstacle` and the stimulus names it acts on, None when the backend cannot tell."""
+        del obstacle
+        return None
+
+    def check_stimuli(self, scenario: str, humans: Sequence[DynamicObstacle], timeline: Sequence[TimelineEntry]) -> None:
+        """Raise ValueError naming `scenario` for a timeline stimulus that the agent type of its target does not act on."""
+        by_name = {human.name: human for human in humans}
+        for entry in timeline:
+            for stimulus in entry.stimulus:
+                for agent in stimulus.agents:
+                    taken = self.stimuli_taken(by_name[agent])
+                    if taken is not None and stimulus.need not in taken[1]:
+                        raise ValueError(f"scenario {scenario!r}: stimulus {stimulus.need!r} for {agent!r} is neither a need nor a step `until` event of its agent type {taken[0]!r}, which acts on {sorted(taken[1])}")
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""

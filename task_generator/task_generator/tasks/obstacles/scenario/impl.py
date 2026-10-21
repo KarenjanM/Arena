@@ -32,6 +32,7 @@ class TM_Scenario(TM_Obstacles):
         self.scenario = scenario
         self.lights = [anchor_light(light, scenario.objects) for light in scenario.lights]
         await self._check_clips(scenario_view, scenario)
+        self._ctx.environment_manager.check_stimuli(scenario_view.path.name, scenario.humans, scenario.timeline)
 
         regions = [
             Region(

@@ -148,6 +148,12 @@ class Scenario:
             if light.name in names:
                 raise ValueError(f'duplicate scenario light {light.name!r}')
             names.add(light.name)
+        humans = sorted(human.name for human in self.humans)
+        for index, entry in enumerate(self.timeline):
+            for stimulus in entry.stimulus:
+                for agent in stimulus.agents:
+                    if agent not in humans:
+                        raise ValueError(f'timeline[{index}]: stimulus {stimulus.need!r} names agent {agent!r}, which is not a scenario human, expected one of {humans}')
 
 
 def parse_scenario(raw: object, c: ArenaConverter = converter) -> Scenario:

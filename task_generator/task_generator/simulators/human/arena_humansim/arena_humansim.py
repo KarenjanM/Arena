@@ -114,7 +114,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import BaseHumanSimulator
 
-from .agent import ArenaHumanDynamicObstacle, agent_type_def, path_agent_type_name, resolve_agent_type_path
+from .agent import ArenaHumanDynamicObstacle, agent_type_def, agent_type_stimuli, path_agent_type_name, resolve_agent_type_path
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -1154,6 +1154,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         if not response.success:
             self._logger.error(f"NotifyStimulus failed: {response.message}")
         return bool(response.success)
+
+    def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:
+        parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
+        definition = agent_type_def(parsed.agent_type) if parsed is not None else None
+        if parsed is None or definition is None:
+            return None
+        return parsed.agent_type, agent_type_stimuli(definition)
 
     async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
         """Remove static obstacles (and their matching world objects) from arena_humansim."""
