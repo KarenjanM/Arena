@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from arena_simulation_setup.shared.entities import Waypoint
+from arena_simulation_setup.shared.entities import DynamicObstacle, Waypoint
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import PointResolver, Pose, Position
 from arena_simulation_setup.utils.resolution import activate_resolver, current_resolver
@@ -126,3 +126,18 @@ def test_converter_resolves_string_waypoints():
     wps = c.structure(["zone_a", "zone_a"], list[Waypoint])
     assert len(wps) == 2
     assert all(isinstance(w, Waypoint) and _inside(w) for w in wps)
+
+
+def test_converter_keeps_the_zone_and_level_of_waypoints():
+    c = converter.copy()
+    c.set_resolver(_resolver())
+    named, placed = c.structure(["zone_a", {"x": 1.0, "y": 2.0, "level": "1"}], list[Waypoint])
+    assert (named.zone, named.level) == ("zone_a", "")
+    assert placed == Waypoint(x=1.0, y=2.0, z=0.0, level="1")
+
+
+def test_converter_keeps_the_zone_of_a_scenario_human_waypoint():
+    c = converter.copy()
+    c.set_resolver(_resolver())
+    human = c.structure({"name": "rider", "model": "arenian", "pose": [1.0, 1.0], "level": "1", "waypoints": ["zone_a"]}, DynamicObstacle)
+    assert [(w.zone, w.level) for w in human.waypoints] == [("zone_a", "")]

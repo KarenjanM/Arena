@@ -24,6 +24,7 @@ from arena_simulation_setup.utils.resolution import resolve_zone_point
 from .light_state import ObjectLightSettings
 
 if TYPE_CHECKING:
+    import geometry_msgs.msg
     import shapely
 
 
@@ -43,11 +44,15 @@ class Waypoint(Position):
         self.z = value.z
 
     @classmethod
-    def from_any(cls, obj: Union[Position, Mapping, str, typing.Sequence[float], 'Waypoint']) -> 'Waypoint':
+    def parse(cls, value: Union[geometry_msgs.msg.Point, Position, Mapping, str, typing.Sequence[float]]) -> Self:
+        return cls.from_any(value)
+
+    @classmethod
+    def from_any(cls, obj: Union[geometry_msgs.msg.Point, Position, Mapping, str, typing.Sequence[float]]) -> Self:
         """A waypoint from a zone name, a position, `[x, y[, z]]` or `{x, y[, z][, level]}`."""
         if isinstance(obj, str):
             return cls.from_position(pos=resolve_zone_point(obj), zone=obj)
-        if isinstance(obj, Waypoint):
+        if isinstance(obj, cls):
             return obj
         if isinstance(obj, Position):
             return cls.from_position(pos=obj)
@@ -60,7 +65,7 @@ class Waypoint(Position):
         return cls.from_position(pos=Position.parse(obj))
 
     @classmethod
-    def from_position(cls, pos: Position, level: str = '', zone: str = '') -> 'Waypoint':
+    def from_position(cls, pos: Position, level: str = '', zone: str = '') -> Self:
         return cls(x=pos.x, y=pos.y, z=pos.z, level=level, zone=zone)
 
     def __add__(self, other: Vector3) -> Waypoint | NotImplementedType:
