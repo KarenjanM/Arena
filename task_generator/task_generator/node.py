@@ -364,6 +364,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         self._check_status_task: asyncio.Task | None = None
         self._episode_task: asyncio.Task | None = None
+        self._shutting_down = False
 
         self._publish_bootstrap_queue_state()
         self._pub_state_robots_pending.publish(task_generator_msgs.msg.RobotQueue())
@@ -508,6 +509,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return TransitionCallbackReturn.SUCCESS
 
     async def teardown(self) -> None:
+        self._shutting_down = True
         self._heartbeat_stop.set()
         running = [t for t in (self._tick_loop_task, self._check_status_task, self._episode_task) if t is not None and not t.done()]
         for t in running:
@@ -1927,7 +1929,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     # ACTION SERVER
 
     def _goal_callback(self, goal_request: object) -> GoalResponse:
-        return GoalResponse.REJECT if self._episodes.action_in_flight else GoalResponse.ACCEPT
+        return GoalResponse.REJECT if self._shutting_down or self._episodes.action_in_flight else GoalResponse.ACCEPT
 
     def _cancel_callback(self, goal_handle: object) -> CancelResponse:
         episode_id = self._episodes.current.episode_id
@@ -1957,12 +1959,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         seed: int = -1,
         goal_handle: ServerGoalHandle | None = None,
     ) -> task_generator_msgs.action.RunEpisode.Result:
-        if self._episodes.action_in_flight:
+        if self._shutting_down or self._episodes.action_in_flight:
             if goal_handle is not None:
                 goal_handle.abort()
             return task_generator_msgs.action.RunEpisode.Result(
                 state=task_generator_msgs.action.RunEpisode.Result.SKIPPED,
-                reason="busy",
+                info="shutting down" if self._shutting_down else "busy",
             )
 
         if not world:
