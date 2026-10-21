@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import attrs
 import numpy as np
 import pytest
 
@@ -9,8 +10,8 @@ pytestmark = pytest.mark.ros
 
 pytest.importorskip("arena_humansim_msgs", reason="needs a sourced environment")
 
-from task_generator.shared import DynamicObstacle, Pose, Position  # noqa: E402
-from task_generator.simulators.human.arena_humansim.agent import ArenaHumanDynamicObstacle  # noqa: E402
+from task_generator.shared import DynamicObstacle, Pose, Position
+from task_generator.simulators.human.arena_humansim.agent import ArenaHumanDynamicObstacle
 
 
 def _obstacle(agent: dict | str) -> DynamicObstacle:
@@ -23,20 +24,21 @@ def _obstacle(agent: dict | str) -> DynamicObstacle:
     )
 
 
-def test_declared_scalars_are_kept() -> None:
+def test_declared_scalars_collapse_the_speed_range_and_keep_the_type() -> None:
     parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(
-        _obstacle({"agent_type": "adult", "desired_velocity": 1.2, "radius": 0.3}),
+        _obstacle({"agent_type": "elder", "desired_velocity": 1.2, "radius": 0.3}),
     )
-    assert (parsed.desired_velocity_min, parsed.desired_velocity_max, parsed.agent_radius) == (1.2, 1.2, 0.3)
+    assert (parsed.agent_type, parsed.desired_velocity_min, parsed.desired_velocity_max, parsed.agent_radius) == ("elder", 1.2, 1.2, 0.3)
 
 
-def test_a_declared_scalar_still_wins() -> None:
-    rng = np.random.default_rng(0)
-    parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(
+def test_declared_scalars_replace_only_speed_and_radius_of_the_sampled_type() -> None:
+    declared = ArenaHumanDynamicObstacle.from_dynamic_obstacle(
         _obstacle({"agent_type": "elder", "desired_velocity": 1.4, "radius": 0.5}),
-    )
-    params = parsed.sample_params(rng)
-    assert params.desired_velocity == 1.4 and params.agent_radius == 0.5
+    ).sample_params(np.random.default_rng(0))
+    undeclared = ArenaHumanDynamicObstacle(agent_type="elder").sample_params(np.random.default_rng(0))
+    assert declared.name == "elder"
+    assert (declared.desired_velocity, declared.agent_radius) == (1.4, 0.5)
+    assert attrs.evolve(declared, desired_velocity=0.0, agent_radius=0.0) == attrs.evolve(undeclared, desired_velocity=0.0, agent_radius=0.0)
 
 
 @pytest.mark.parametrize("kind", ["child", "hurried", "distracted"])
