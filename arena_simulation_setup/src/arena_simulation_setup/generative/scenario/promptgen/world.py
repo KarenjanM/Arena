@@ -13,7 +13,7 @@ from typing import Any
 
 import attrs
 
-from arena_simulation_setup.shared.pathing import OccupancyGrid, PathError, plan_route
+from arena_simulation_setup.shared.pathing import OccupancyGrid, PathError, plan_route, point_at_arc, route_length
 
 if typing.TYPE_CHECKING:
     import numpy as np
@@ -52,10 +52,6 @@ def plan(grid: Grid, start: Point, goal: Point, radius: float = RUNTIME_SAFE_DIS
         raise WorldError(str(exc)) from None
 
 
-def _length(route: Sequence[Point]) -> float:
-    return sum(math.dist(a, b) for a, b in zip(route, route[1:], strict=False))
-
-
 def _truncate(route: Sequence[Point], cap_m: float) -> list[Point]:
     """The prefix of `route` that is `cap_m` long, ending on an interpolated point of it."""
     out: list[Point] = [route[0]]
@@ -82,7 +78,7 @@ def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, radiu
             route = plan(grid, start, goal, radius)
         except WorldError:
             continue
-        length = _length(route)
+        length = route_length(route)
         if length > MAX_LEG_M or length < beat + 1.0:
             continue
         if best is None or length > best[0]:
@@ -222,13 +218,14 @@ class WorldContext:
             start = endpoint(grid, start, robot_radius)
             goal = endpoint(grid, goal, robot_radius)
             route = plan(grid, start, goal, robot_radius)
-            if _length(route) > MAX_LEG_M:
+            length = route_length(route)
+            if length > MAX_LEG_M:
                 cut = _truncate(route, MAX_LEG_M)
                 goal = endpoint(grid, cut[-1], robot_radius)
                 replanned = plan(grid, start, goal, robot_radius)
-                route = replanned if _length(replanned) <= MAX_LEG_M * 1.2 else cut
-            elif _length(route) < MIN_LEG_M:
-                longer = _longest_leg(grid, start, [centroid(polygon(z)) for z in zones if len(polygon(z)) >= 3], radius=robot_radius, beat=_length(route))
+                route = replanned if route_length(replanned) <= MAX_LEG_M * 1.2 else cut
+            elif length < MIN_LEG_M:
+                longer = _longest_leg(grid, start, [centroid(polygon(z)) for z in zones if len(polygon(z)) >= 3], radius=robot_radius, beat=length)
                 if longer is not None:
                     goal, route = longer
 
@@ -327,24 +324,15 @@ class WorldContext:
         forbidden = set(exclude) | set(robot_zones(self.robot))
         return [n for n in self.zone_names() if self.roles.get(n) is not Role.PRIVATE and n not in forbidden]
 
-    @property
+    @cached_property
     def route_length(self) -> float:
-        return sum(math.dist(a, b) for a, b in zip(self.route, self.route[1:], strict=False))
+        return route_length(self.route)
 
     def point_at(self, fraction: float) -> tuple[Point, Point]:
-        """Position and unit heading `fraction` of the way along the planned route."""
-        remaining = max(0.0, min(1.0, fraction)) * self.route_length
-        heading: Point = (1.0, 0.0)
-        for a, b in zip(self.route, self.route[1:], strict=False):
-            seg = math.dist(a, b)
-            if seg <= 1e-9:
-                continue
-            heading = ((b[0] - a[0]) / seg, (b[1] - a[1]) / seg)
-            if remaining <= seg:
-                f = remaining / seg
-                return (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f), heading
-            remaining -= seg
-        return self.route[-1], heading
+        """Position and unit heading `fraction` of the way along the planned route, (last point, +x) on a degenerate one."""
+        if self.route_length <= 1e-9:
+            return self.route[-1], (1.0, 0.0)
+        return point_at_arc(self.route, max(0.0, min(1.0, fraction)) * self.route_length)
 
     def fraction_of(self, pt: Point) -> float:
         """Arc-length fraction of the route point nearest `pt`."""

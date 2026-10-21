@@ -141,7 +141,7 @@ def _human(name: str, effect: Mapping[str, Any], ref: str, spawn: Point, yaw: fl
 
 def _stand(effect: Mapping[str, Any], name: str, world: WorldContext, files: TypeFiles) -> tuple[dict[str, Any], list[dict[str, Any]], str, Point]:
     route = world.route
-    total = route_length(route)
+    total = world.route_length
     duration = float(effect.get("duration") or 0.0)
     for fraction in encounter_fractions(float(effect["route_fraction"])):
         spot, heading = point_at_arc(route, fraction * total)
@@ -165,7 +165,7 @@ def _solved(effect: Mapping[str, Any], name: str, world: WorldContext, *, robot_
     """The encounter nearest the asked fraction whose release holds neither at the start nor early, with that release."""
     speed = float(effect["speed"])
     offset = float(effect.get("offset") or 0.0)
-    total = route_length(world.route)
+    total = world.route_length
     why = f"{name} has no encounter on the route"
     for fraction in encounter_fractions(float(effect["route_fraction"])):
         try:
@@ -203,7 +203,7 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
         return _stand(effect, name, world, files)
     speed = float(effect["speed"])
     enc, release, point, radius = _solved(effect, name, world, robot_speed=robot_speed)
-    total = route_length(world.route)
+    total = world.route_length
     _at, robot_heading = point_at_arc(world.route, enc.encounter_at_achieved * total)
     facing = math.atan2(-robot_heading[1], -robot_heading[0])
     after = str(effect.get("after") or "continue")
