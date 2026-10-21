@@ -202,3 +202,44 @@ def test_a_world_loads_only_its_own_prompt_set(tmp_path: Path) -> None:
         (tmp_path / f"{name}.yaml").write_text(f"- {{id: {name}, text: t}}\n")
     assert [p.id for p in load_sets("hospital_1", directory=tmp_path)] == ["universal", "hospital_1"]
     assert [p.id for p in load_sets("hospital_1_bare", directory=tmp_path)] == ["universal", "hospital_1_bare"]
+
+
+_NO_MODEL = {k: v for k, v in os.environ.items() if k not in ("LLM_API_ENDPOINT", "GOOGLE_API_KEY", "GEMINI_API_KEY", "ARENA_DATA_DIR")}
+
+
+def _python(code: str, cwd: Path, **env: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, "-c", code], cwd=cwd, env={**_NO_MODEL, **env}, capture_output=True, text=True, timeout=120, check=False)
+
+
+def test_the_default_llm_cache_is_absolute_without_arena_data_dir(tmp_path: Path) -> None:
+    done = _python("from arena_simulation_setup.generative.scenario.promptgen.llm import DEFAULT_CACHE; print(DEFAULT_CACHE)", tmp_path, ARENA_WS_DIR=str(tmp_path / "ws"))
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == str(tmp_path / "ws" / "data" / "promptgen" / "llm_cache")
+
+
+def test_a_truncated_cache_entry_is_a_miss(tmp_path: Path) -> None:
+    code = """
+from pathlib import Path
+from arena_simulation_setup.generative.scenario.promptgen.llm import Unavailable, call
+from arena_simulation_setup.generative.scenario.propose.client import DEFAULT_MODEL, prompt_sha256
+cache = Path('cache')
+cache.mkdir()
+(cache / f"{prompt_sha256(DEFAULT_MODEL, 's', 'u')}.json").write_text('{"model": "m", "answ')
+try:
+    call('s', 'u', cache_dir=cache)
+except Unavailable:
+    print('miss')
+"""
+    done = _python(code, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "miss"
+
+
+def test_a_cache_entry_is_written_whole_or_not_at_all(tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.llm import _read_cached, _write_cached
+
+    path = tmp_path / "k.json"
+    _write_cached(path, {"model": "m", "answer": "{}"})
+    assert [p.name for p in tmp_path.iterdir()] == ["k.json"]
+    answer = _read_cached(path, "m")
+    assert answer is not None and answer.text == "{}" and answer.cached

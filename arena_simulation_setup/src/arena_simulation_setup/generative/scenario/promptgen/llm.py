@@ -15,7 +15,7 @@ import attrs
 from ..propose import client as _client
 from ..propose.client import DEFAULT_MODEL, Unavailable, ask, prompt_sha256
 
-DEFAULT_CACHE = Path(os.environ.get("ARENA_DATA_DIR", "data")) / "promptgen" / "llm_cache"
+DEFAULT_CACHE = Path(os.environ.get("ARENA_DATA_DIR") or Path(os.environ.get("ARENA_WS_DIR", "/opt/arena_ws")) / "data") / "promptgen" / "llm_cache"
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
@@ -56,21 +56,37 @@ class Oracle:
         return value if isinstance(value, str) else json.dumps(value)
 
 
+def _read_cached(path: Path, name: str) -> Answer | None:
+    """The cached answer at `path`, or None when it is absent or unreadable."""
+    try:
+        doc = json.loads(path.read_text())
+        text = str(doc["answer"])
+        model = str(doc.get("model", name))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        return None
+    return Answer(text=text, sha256=hashlib.sha256(text.encode()).hexdigest()[:16], model=model, cached=True)
+
+
+def _write_cached(path: Path, doc: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".{path.name}.{os.getpid()}.partial")
+    partial.write_text(json.dumps(doc, indent=1))
+    os.replace(partial, path)
+
+
 def call(system: str, user: str, *, cache_dir: Path | None = None, model: str | None = None, oracle: Oracle | None = None) -> Answer:
     """One completion, cached. Raises `Unavailable` when no model is configured and no oracle given."""
     name = model or DEFAULT_MODEL
     key = prompt_sha256(name, system, user)
     root = Path(cache_dir) if cache_dir else DEFAULT_CACHE
     path = root / f"{key}.json"
-    if oracle is None and path.is_file():
-        doc = json.loads(path.read_text())
-        return Answer(text=str(doc["answer"]), sha256=hashlib.sha256(str(doc["answer"]).encode()).hexdigest()[:16], model=str(doc.get("model", name)), cached=True)
+    if oracle is None and (cached := _read_cached(path, name)) is not None:
+        return cached
     if oracle is not None:
         text = oracle(system, user)
         return Answer(text=text, sha256=hashlib.sha256(text.encode()).hexdigest()[:16], model="oracle", cached=False)
     text = ask(system, user, model=name, temperature=0.0)
-    root.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"model": name, "system_sha256": prompt_sha256(system), "user": user, "answer": text, "usage": _client.LAST_USAGE}, indent=1))
+    _write_cached(path, {"model": name, "system_sha256": prompt_sha256(system), "user": user, "answer": text, "usage": _client.LAST_USAGE})
     return Answer(text=text, sha256=hashlib.sha256(text.encode()).hexdigest()[:16], model=name, cached=False)
 
 

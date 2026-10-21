@@ -478,7 +478,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--ids", default="", help="comma-separated prompt ids to restrict to (default: every shipped prompt for the world and every --prompts one)")
     p.add_argument("--prompts", nargs="*", help="extra prompt files, YAML lists in the shipped prompts/*.yaml format")
     p.add_argument("--seed", type=int, default=0, help="seed of every random draw; the same seed writes the same cases (default 0)")
-    p.add_argument("--cache", default=None, help="model answer cache directory")
+    p.add_argument("--cache", default=None, help="model answer cache directory (default $ARENA_DATA_DIR/promptgen/llm_cache)")
     p.add_argument("--model", default=None, help=f"override the model of every step (default {DEFAULT_MODEL}, step A $ARENA_PROMPT_LLM_A when set)")
     p.add_argument("--oracle", action="store_true", help="use each prompt's own template slots instead of a model")
     p.add_argument("--robot-speed", type=float, default=ROBOT_SPEED_MPS, help=f"m/s the robot is designed to drive at, which times every interception release (default {ROBOT_SPEED_MPS})")
