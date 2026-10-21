@@ -904,7 +904,7 @@ def test_owned_names_follow_the_realized_intercepts_when_d_is_dropped(toy) -> No
     unrealizable = {**stubborn, "after": "veer", "veer_to": "nowhere"}
     record = Record(prompt_id="t_001", prompt="", world=world.name, base="normal_a", d=d, c=c, owned={"D": [], "C": []})
 
-    result = _realized(Result(record=record, doc=work, files=files, effects=[unrealizable, approach], scenario_id="normal_a__t_001"), world, seed=0, robot_speed=ROBOT_SPEED_MPS)
+    result = _realized(Result(record=record, doc=work, files=files, effects=[unrealizable, approach], scenario_id="normal_a__t_001"), world, seed=0, robot=RobotPlan())
 
     assert result.record.d is None and "D" not in result.record.owned and [f.step for f in result.record.failures] == ["D"]
     assert result.injected == ["edge_0"] and result.record.owned["C"] == ["edge_0"]
@@ -984,3 +984,17 @@ def test_an_intercept_whose_release_holds_at_the_start_moves_along_the_route(toy
     assert result.record.status == "ok", result.record.failures
     radius, point = _within(result.timeline[0])
     assert not holds_at_start(world, point, radius) and world.fraction_of(_encounter(result)) > 0.1
+
+
+def test_timed_onsets_count_from_the_robots_departure_after_its_hold(toy) -> None:
+    worlds, doc, base, world = toy
+    prompt = _prompt(
+        "Two nurses stand talking right in the robot's way after twenty seconds. The lights go out.",
+        ["D:interaction_unbroken", "A:blackout"],
+        D={"case": "interaction_unbroken", "variant": "standing", "members": ["nurse", "nurse"], "place": {"route_fraction": 0.5}, "when": {"at": 20.0}},
+    )
+    plain = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    held = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True, robot=RobotPlan(hold=5.0))
+    assert plain.record.status == held.record.status == "ok", held.record.failures
+    assert sorted(e["at"] for e in plain.timeline) == [5.0, 20.0] and sorted(e["at"] for e in held.timeline) == [10.0, 25.0]
+    assert held.record.formation["at"] == plain.record.formation["at"] == {"at": 20.0}

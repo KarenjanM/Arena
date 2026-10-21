@@ -85,7 +85,7 @@ timeline:
   - {agents: [edge_0], need: go}
 ```
 
-An onset `{at: s}` stays `at: s`. A proximity onset becomes `when: robot within <m> of <x>,<y>`, a point literal in the map frame. Without a point of its own it is measured to the point of the planned route nearest the centroid of the agents it scopes, a route fraction is measured to that point of the planned route within 1.5 m, and a `robot_beyond` onset is `not robot within`.
+An onset `{at: s}` becomes `at: s + hold`: the timeline counts from the episode's first tick and the robot drives after its `--hold`, while `formation.at` in `provenance.yaml` counts from the departure. A proximity onset becomes `when: robot within <m> of <x>,<y>`, a point literal in the map frame. Without a point of its own it is measured to the point of the planned route nearest the centroid of the agents it scopes, a route fraction is measured to that point of the planned route within 1.5 m, and a `robot_beyond` onset is `not robot within`.
 
 | Case | Agents | Need |
 |---|---|---|

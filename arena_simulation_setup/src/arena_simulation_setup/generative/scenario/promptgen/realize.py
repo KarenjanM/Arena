@@ -71,8 +71,8 @@ def _centroid(points: Sequence[Point]) -> Point | None:
     return (sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points))
 
 
-def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | None = None, origin: Point = (0.0, 0.0)) -> dict[str, Any]:
-    """The timeline trigger of an onset: `at` seconds, or the robot's distance to a level-frame point written shifted by `origin`."""
+def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | None = None, origin: Point = (0.0, 0.0), hold: float = 0.0) -> dict[str, Any]:
+    """An onset's trigger: `at` seconds after the start `hold`, or the robot's distance to a level point moved by `origin`."""
     if when.get("route_fraction") is not None:
         pt, _heading = world.point_at(float(when["route_fraction"]))
         return {"when": within(ROUTE_TRIGGER_M, pt, origin)}
@@ -85,7 +85,7 @@ def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | 
             raise StepError(f"a proximity onset {dict(when)} has no point to measure the robot against")
         atom = within(float(when[key]), pt, origin)
         return {"when": f"not {atom}" if negate else atom}
-    return {"at": float(when.get("at") or 0.0)}
+    return {"at": float(when.get("at") or 0.0) + hold}
 
 
 def release_point(route: Sequence[Point], at: float, radius: float = ROUTE_TRIGGER_M) -> tuple[Point, float]:
@@ -280,7 +280,7 @@ def _scatter_points(names: Sequence[str], spots: Mapping[str, Point], radius: fl
     return out, notes
 
 
-def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: WorldContext, files: TypeFiles, *, seed: int, robot_speed: float) -> Realized:
+def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: WorldContext, files: TypeFiles, *, seed: int, robot_speed: float, hold: float = 0.0) -> Realized:
     """Add the injected pedestrians and every switch to `doc` and `files`, and return the timeline that drives them."""
     out = Realized()
     made: set[str] = set()
@@ -288,13 +288,13 @@ def realize(doc: dict[str, Any], effects: Sequence[Mapping[str, Any]], world: Wo
     doc.setdefault("humans", [])
     for effect in effects:
         try:
-            _one(doc, effect, world, files, out, made, spots, seed=seed, robot_speed=robot_speed)
+            _one(doc, effect, world, files, out, made, spots, seed=seed, robot_speed=robot_speed, hold=hold)
         except (StepError, WorldError) as exc:
             raise StepError(str(exc), str(effect.get("label", "")).split(":", 1)[0]) from None
     return out
 
 
-def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, files: TypeFiles, out: Realized, made: set[str], spots: dict[str, Point], *, seed: int, robot_speed: float) -> None:
+def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, files: TypeFiles, out: Realized, made: set[str], spots: dict[str, Point], *, seed: int, robot_speed: float, hold: float) -> None:
     kind = effect["type"]
     if kind == "intercept":
         name = f"{INJECT_PREFIX}_{len(out.injected)}"
@@ -310,7 +310,7 @@ def _one(doc: dict[str, Any], effect: Mapping[str, Any], world: WorldContext, fi
     placed = [p for a in doc["humans"] if str(a["name"]) in scope and (p := _position(a, world)) is not None]
     crowd = _centroid(placed)
     reference = None if crowd is None else world.point_at(world.fraction_of(crowd))[0]
-    trig = trigger(effect["when"], world, reference=reference, origin=world.origin)
+    trig = trigger(effect["when"], world, reference=reference, origin=world.origin, hold=hold)
     if kind == "stimulus":
         out.timeline.append(_entry(trig, scope, str(effect["need"])))
         return

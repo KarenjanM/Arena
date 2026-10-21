@@ -248,16 +248,16 @@ def generate(
         except StepError as exc:
             _fail(record, "C", exc)
 
-    return _realized(Result(record=record, doc=doc, files=files, effects=effects, scenario_id=f"{base_id}__{prompt.id}", prompt=prompt), world, seed=seed, robot_speed=robot.speed)
+    return _realized(Result(record=record, doc=doc, files=files, effects=effects, scenario_id=f"{base_id}__{prompt.id}", prompt=prompt), world, seed=seed, robot=robot)
 
 
-def _realized(result: Result, world: WorldContext, *, seed: int, robot_speed: float) -> Result:
+def _realized(result: Result, world: WorldContext, *, seed: int, robot: RobotPlan) -> Result:
     """The steps' design realized offline, a step whose realization fails recorded as failed and dropped."""
     record = result.record
     while True:
         doc, files = copy.deepcopy(result.doc), copy.deepcopy(result.files)
         try:
-            done = realize(doc, result.effects, world, files, seed=seed, robot_speed=robot_speed)
+            done = realize(doc, result.effects, world, files, seed=seed, robot_speed=robot.speed, hold=robot.hold)
         except (StepError, WorldError) as exc:
             step = str(exc.args[1]) if len(exc.args) > 1 else ""
             if step not in _STEP_OF:
