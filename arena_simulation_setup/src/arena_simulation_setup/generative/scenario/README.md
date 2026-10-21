@@ -19,7 +19,7 @@ world + zone roles --populate--> bases --promptgen--> <base>__<prompt_id> --suit
 | `suite <world...>` | `<name>.yaml` under `$ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites`, the source tree the benchmark runner reads after the installed share (an installed suite of the same name wins until arena_evaluation is rebuilt, and `suite` says so), or `--out` | one stage per (world, scenario) |
 
 `promptgen` also takes the robot's drive: `--robot-speed` (the speed every interception release is designed at, default 0.5 m/s), `--traversals` (N round trips are 2N-1 legs, default 1), `--hold` (seconds at the start before the first leg, default none), `--tolerance` (goal radius of every leg, default the runtime's goal tolerance) and `--robot-radius` (the clearance its planned route keeps, default 0.35 m).
-Its prompts are the sets in [`promptgen/prompts/`](promptgen/prompts/), every `universal*.yaml` and the world's own `<world>.yaml`, plus the `--prompts` files. It exits 1 when a prompt crashed or no case came out `ok` or `partial`, a missing or unloadable base included.
+Its prompts are the sets in [`promptgen/prompts/`](promptgen/prompts/), every `universal*.yaml` and the world's own `<world>.yaml`, plus the `--prompts` files. It exits 1 when a prompt crashed or no case came out `ok` or `partial`, a missing or unloadable base included. Every step asks `DEFAULT_MODEL` of [`utils/llm.py`](../../utils/llm.py) (`$ARENA_PROMPT_LLM` when set) or `--model`, and step A, without `--model`, `$ARENA_PROMPT_LLM_A` when that is set.
 
 ```bash
 generate_scenario populate hospital_1 --write --prune
