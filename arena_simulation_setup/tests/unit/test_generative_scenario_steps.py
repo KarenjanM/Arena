@@ -225,3 +225,21 @@ def test_a_baked_radius_replaces_the_radius_the_base_pinned(tmp_path: Path) -> N
 
     radius = {h["name"]: h["agent"]["radius"] for h in read_scenario(out / "scenario.yaml")["humans"]}
     assert radius == {"p_1": 0.4, "p_2": 0.25}
+
+
+def test_an_erratic_route_naming_a_missing_agent_is_not_applicable(tmp_path: Path) -> None:
+    world, doc, base = _toy(tmp_path)
+    decision = {"case": "erratic_route", "select": {"names": ["ghost"]}}
+    result = _run(world, doc, base, "Ghost wanders about with no settled destination.", ["B:erratic_route"], B=decision)
+
+    assert any(f.step == "B" and f.kind == "applicability" and "ghost" in f.reason for f in result.record.failures), result.record.failures
+    assert "B" not in result.record.owned and not [h for h in result.doc["humans"] if h["name"].startswith("wander_")]
+
+
+def test_an_erratic_route_over_an_owned_crowd_adds_wanderers(tmp_path: Path) -> None:
+    world, doc, base = _toy(tmp_path)
+    prompt = "The break is over and the whole crowd rushes back to work all at once. Some people wander about with no settled destination."
+    result = _run(world, doc, base, prompt, ["A:stampede", "B:erratic_route"], B={"case": "erratic_route", "select": {"amount": "half"}})
+
+    assert result.record.status == "ok", result.record.failures
+    assert result.record.owned["B"] and all(n.startswith("wander_") for n in result.record.owned["B"])

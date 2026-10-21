@@ -191,13 +191,11 @@ def erratic_trees(doc: dict[str, Any], files: TypeFiles, world: WorldContext, na
 
 def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files: TypeFiles, *, owned: set[str]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     tops_up = decision.case == "erratic_route" and decision.around == "route"
-    try:
+    if tops_up and all(str(a.get("name")) in owned for a in _agents(doc)):
+        chosen = []
+    else:
         # a tuned gait or gaze shows only on someone walking
         chosen = select(doc, decision.select, world, owned, files, walking_only=decision.case == "intrinsic")
-    except StepError:
-        if not tops_up:
-            raise
-        chosen = []
     names = [str(a["name"]) for a in chosen]
     notes: list[str] = []
     effects: list[dict[str, Any]] = []
