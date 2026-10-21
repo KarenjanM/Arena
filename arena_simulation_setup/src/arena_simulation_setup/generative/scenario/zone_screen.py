@@ -1,4 +1,4 @@
-"""Which zones a pedestrian may start in by name: every point the runtime resolver could return there clears the robot's route."""
+"""Zones a pedestrian may start in by name: every point the runtime resolver could return there clears the route."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def screen_zones(
     clearance_map: tuple[np.ndarray, float, float, float] | None = None,
     world: World | None = None,
 ) -> dict[str, Verdict]:
-    """A verdict per zone on whether every point the resolver could return there clears the route; `robot_zones` are refused whole."""
+    """A verdict per zone on whether every point the resolver could return there clears the route, `robot_zones` refused."""
     verdicts: dict[str, Verdict] = {}
     names = [str(z["name"]) for z in zones if z.get("name")]
 
@@ -121,7 +121,7 @@ def screen_zones(
             verdicts[name] = Verdict(
                 zone=name,
                 ref_safe=False,
-                reason="no point in the zone clears SAFE_DIST; the resolver would warn and return a blocked point",
+                reason="no point in the zone clears SAFE_DIST, so the resolver would warn and return a blocked point",
             )
             continue
 

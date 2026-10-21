@@ -143,7 +143,7 @@ def _bare(args: argparse.Namespace) -> int:
 
 
 def default_suites_dir() -> Path:
-    """`$ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites`, the source tree the runner reads after its share."""
+    """`configs/benchmark/suites` of arena_evaluation under `$ARENA_DIR`, read by the runner after its share."""
     if not (arena := os.environ.get("ARENA_DIR")):
         raise FileNotFoundError("ARENA_DIR is unset: set it to the Arena checkout, or pass --out to name the suite file")
     out = Path(arena) / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites"
@@ -164,7 +164,7 @@ def _shadowing_suite(out: Path) -> Path | None:
 
 
 def _grid_loader(root: Path, world: World, statics: Sequence[Mapping[str, Any]] | None = None) -> Callable[[], Grid | None]:
-    """The planning grid of `world` (loaded from `root`) with `statics`, else its own furniture, stamped, built once on the first call."""
+    """The planning grid of `world` at `root` with `statics` (default its furniture) stamped, built on the first call."""
 
     @functools.cache
     def grid() -> Grid | None:
@@ -205,7 +205,7 @@ def _world_parts(root: Path, loaded: World, grid: Callable[[], Grid | None], rad
             robot = dict(robots[0])
             if _route_reachable(grid, zones, robot, radius):
                 return zones, robot
-            print(f"  ! {world}: {cand.parent.name}'s robot route is not plannable on this map; ignoring it")
+            print(f"  ! {world}: {cand.parent.name}'s robot route is not plannable on this map, ignoring it")
 
     centroids = zone_centroids(zones)
     if len(centroids) < 2:
@@ -218,7 +218,7 @@ def _world_parts(root: Path, loaded: World, grid: Callable[[], Grid | None], rad
         if _route_reachable(grid, zones, {"start": a_name, "goal": b_name}, radius):
             start, goal = a_name, b_name
             break
-    print(f"  ! {world}: no scenario declares a robot; using the two most separated reachable zones as endpoints - start={start!r} goal={goal!r}")
+    print(f"  ! {world}: no scenario declares a robot, using the two most separated reachable zones as endpoints - start={start!r} goal={goal!r}")
     print("  ! override with --robot-start / --robot-goal if that is not the traverse you want")
     return zones, {"start": start, "goal": goal}
 
@@ -281,7 +281,7 @@ def _cmd_classify(args: argparse.Namespace) -> int:
         for world, (_, zones, todo) in pending.items():
             print(f"\n### {world}  ({len(todo)})")
             print(build_prompt(zones, todo, world=world))
-        print("(dry run - this is the prompt that would be sent; pass --write to ask and store)")
+        print("(dry run - this is the prompt that would be sent, pass --write to ask and store)")
         return 0
 
     for root, _, _ in pending.values():
@@ -327,7 +327,7 @@ def _endpoint_arg(flag: str, value: str, zones: list[dict[str, Any]]) -> str | l
 
 
 def _override_robot(robot: dict[str, Any], zones: list[dict[str, Any]], *, start: str | None, goal: str | None) -> dict[str, Any]:
-    """`robot` with the given start and goal; a new goal replaces the route's legs with the single leg to it."""
+    """`robot` with the given start and goal, a new goal replacing the route's legs with the single leg to it."""
     out = dict(robot)
     if start is not None:
         out["start"] = _endpoint_arg("--robot-start", start, zones)
@@ -373,7 +373,7 @@ def _cmd_populate(args: argparse.Namespace) -> int:
     for name, verdict in sorted(verdicts.items()):
         if not verdict.ref_safe and verdict.reason:
             print(f"    - {name}: {verdict.reason}")
-    print(f"  route: {route_seconds(spec, zones):.0f} s at {ROBOT_SPEED_MPS} m/s ({len(spec['phases'])} leg(s); floor {MIN_EPISODE_S:.0f} s)")
+    print(f"  route: {route_seconds(spec, zones):.0f} s at {ROBOT_SPEED_MPS} m/s ({len(spec['phases'])} leg(s), floor {MIN_EPISODE_S:.0f} s)")
 
     written: list[str] = []
     for profile in PROFILES:
@@ -473,14 +473,14 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
                     print(f"  ! {base_id}/{prompt.id}: the scenario model rejects the case: {exc}")
                     status = "rejected"
             counts[status.split(" ")[0]] = counts.get(status.split(" ")[0], 0) + 1
-            fails = "; ".join(f"{f.step}:{f.kind}" for f in result.record.failures)
+            fails = ", ".join(f"{f.step}:{f.kind}" for f in result.record.failures)
             print(f"  {result.scenario_id:40s} {status:10s} [{', '.join(result.record.steps) or '-'}]" + (f"  failures: {fails}" if fails else ""))
             if args.verbose:
                 for note in result.record.warnings:
                     print(f"      - {note}")
                 for failure in result.record.failures:
                     print(f"      ! {failure.step}: {failure.reason}")
-    print(f"{sum(counts.values())} prompt run(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) + (f"; wrote {written}" if args.write else " (dry run - pass --write)"))
+    print(f"{sum(counts.values())} prompt run(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) + (f", wrote {written}" if args.write else " (dry run - pass --write)"))
     if written:
         _runtime_note(root)
     crashed = counts.get("crashed", 0)
@@ -538,20 +538,20 @@ def _parser() -> argparse.ArgumentParser:
         return p
 
     p = verb("zones", _cmd_zones, "classify a world's zones into roles (work, break, transit, private, unknown)")
-    p.add_argument("world", nargs="?", help="the world whose zones to print; bare, the verb lists the worlds")
+    p.add_argument("world", nargs="?", help="the world whose zones to print (bare, the verb lists the worlds)")
 
     p = verb("classify", _cmd_classify, "ask a model for the zone roles no rule or KG fact covers and write them as has_purpose facts into each world's kg.yaml")
-    p.add_argument("world", nargs="*", help="worlds to classify; bare, the verb lists the worlds")
+    p.add_argument("world", nargs="*", help="worlds to classify (bare, the verb lists the worlds)")
     p.add_argument("--all", action="store_true", help="classify every world of the source roots")
     p.add_argument("--model", default=None, help=f"override the model (default {DEFAULT_MODEL})")
     p.add_argument("--write", action="store_true", help="call the model and write what it returns into the world's kg.yaml")
 
     p = verb("populate", _cmd_populate, "write the four base scenarios (normal, break, night, empty) for a world")
-    p.add_argument("world", nargs="?", help="the world to populate; bare, the verb lists the worlds")
-    p.add_argument("--seed", type=int, default=0, help="seed of the crowd draws; the same world and seed write the same bases (default 0)")
+    p.add_argument("world", nargs="?", help="the world to populate (bare, the verb lists the worlds)")
+    p.add_argument("--seed", type=int, default=0, help="seed of the crowd draws, the same world and seed write the same bases (default 0)")
     p.add_argument("--write", action="store_true", help="write the bases under the world's scenarios/ (default: a dry run that prints them)")
     p.add_argument("--robot-start", default=None, help="robot start: a zone name of its level or 'x,y[,yaw]' (default: the route of the world's first scenario with a robot)")
-    p.add_argument("--robot-goal", default=None, help="robot goal: a zone name of its level or 'x,y[,yaw]'; replaces the route's legs with the single leg to it")
+    p.add_argument("--robot-goal", default=None, help="robot goal: a zone name of its level or 'x,y[,yaw]', replacing the route's legs with the single leg to it")
     p.add_argument("--prune", action="store_true", help="with --write, remove generated bases this run did not write (never hand-authored ones)")
     p.add_argument("--force", action="store_true", help="replace scenarios this tool did not generate (they may be hand-authored)")
     p.add_argument("--robot-radius", type=_positive_float, default=ROBOT_CLEAR, help=f"meters the robot's route keeps clear of walls and furniture when the base route is picked, above 0 (default {ROBOT_CLEAR})")
@@ -574,13 +574,13 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--write", action="store_true", help="write each ok or partial case under the world's scenarios/ (default: a dry run)")
 
     p = verb("suite", _cmd_suite, "write a benchmark suite with one scenario stage per (world, scenario)")
-    p.add_argument("world", nargs="*", help="the worlds whose scenarios become stages; bare, the verb lists the worlds")
+    p.add_argument("world", nargs="*", help="the worlds whose scenarios become stages (bare, the verb lists the worlds)")
     p.add_argument("--name", default="edge_case", help="suite name, the file stem under $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites (default edge_case)")
     p.add_argument("--out", default=None, help="write here instead of $ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites/<name>.yaml")
     p.add_argument("--match", nargs="*", default=[], help="scenario globs (default: every scenario the generator wrote)")
-    p.add_argument("--robot", default="jackal", help="the chassis; a contest compares planners on one drive family")
+    p.add_argument("--robot", default="jackal", help="the chassis, as a contest compares planners on one drive family (default jackal)")
     p.add_argument("--episodes", type=_positive_int, default=1, help="episodes per stage, seeded seed..seed+episodes-1, at least 1 (default 1)")
-    p.add_argument("--seed", type=int, default=1000, help="first episode seed; keep screening and dataset seed blocks disjoint")
+    p.add_argument("--seed", type=int, default=1000, help="first episode seed, keep screening and dataset seed blocks disjoint (default 1000)")
     p.add_argument("--timeout", default="240s", help="sim-time budget per episode")
     p.add_argument("--write", action="store_true", help="write the suite file (default: a dry run that prints it)")
     return parser

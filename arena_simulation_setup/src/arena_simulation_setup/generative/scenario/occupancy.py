@@ -80,7 +80,7 @@ def _stamp(obj: Mapping[str, Any]) -> shapely.Polygon | None:
 
 
 def level_grid(world_root: str | Path, statics: Sequence[Mapping[str, Any]] = (), world: World | None = None) -> tuple[np.ndarray, float, float, float] | None:
-    """The level's walls at `RESOLUTION` with `statics` stamped as (occupied, resolution, origin x, origin y); None for a directory that is no world."""
+    """The level's walls at `RESOLUTION` with `statics` stamped, as (occupied, resolution, origin x, origin y), or None."""
     root = Path(world_root)
     if not is_world(root):
         return None

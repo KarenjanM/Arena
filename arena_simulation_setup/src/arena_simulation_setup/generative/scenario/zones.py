@@ -23,7 +23,7 @@ class Role(enum.StrEnum):
     UNKNOWN = "unknown"
 
 
-#: Substring rules, first match wins: BREAK comes first so `nurse_resting_room` and `wc_waiting` reach it.
+#: Substring rules, first match wins.
 _RULES: tuple[tuple[Role, tuple[str, ...]], ...] = (
     (
         Role.BREAK,

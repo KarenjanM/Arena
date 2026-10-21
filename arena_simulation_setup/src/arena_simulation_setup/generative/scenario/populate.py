@@ -12,7 +12,6 @@ from arena_humansim.core.agents import BUILTIN_AGENTS
 
 from .zones import Role, zones_by_role
 
-# the builtin agent types are all `mode: simple`, which a behavior-tree case cannot act on
 BT_AGENT_TYPE = "talker.yaml"
 
 TALKERS = 2
@@ -185,7 +184,7 @@ def _pool(by_role: Mapping[Role, Sequence[str]], centroids: Mapping[str, tuple[f
 
 
 def _starts(targets: Sequence[str], by_role: Mapping[Role, Sequence[str]], homes: frozenset[str], centroids: Mapping[str, tuple[float, float]], forbidden: frozenset[str], *, widen: bool) -> list[str]:
-    """The zones walkers start in: the screened homes among `targets` (with `widen`, topped up from the pool), else the targets."""
+    """The zones walkers start in: the screened homes of `targets`, topped up from the pool with `widen`, else `targets`."""
     placed = [z for z in targets if z in centroids]
     starts = for_people([z for z in placed if z in homes])
     if widen and len(starts) < 3 and homes:
@@ -207,9 +206,9 @@ def build(
     homes: frozenset[str] = frozenset(),
     world: str = "",
 ) -> dict[str, Any]:
-    """The `profile` base scenario, deterministic in its inputs; empty `homes` means unscreened."""
+    """The `profile` base scenario, deterministic in its inputs, unscreened for empty `homes`."""
     if profile not in PROFILES:
-        raise ValueError(f"unknown profile {profile!r}; expected one of {sorted(PROFILES)}")
+        raise ValueError(f"unknown profile {profile!r}, expected one of {sorted(PROFILES)}")
 
     doc: dict[str, Any] = {"robots": [dict(robot)], "humans": []}
     spec = PROFILES[profile]
@@ -254,7 +253,6 @@ def build(
             home = talker_rooms[(i // TALKERS) % len(talker_rooms)]
             kind = f"./{BT_AGENT_TYPE}"
             speed = speed_for("adult", rng, spec["speed"] * tempo)
-            # the backend appends the spawn pose to a one-entry list
             waypoints: list[str] = [home, home]
         else:
             home = starts[i % len(starts)]

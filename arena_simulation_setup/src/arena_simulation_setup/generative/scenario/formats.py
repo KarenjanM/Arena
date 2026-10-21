@@ -20,7 +20,7 @@ SCENARIO_ORDER = ("objects", "humans", "sounds", "lights", "robots", "regions", 
 
 
 def read_scenario(path: Path) -> dict[str, Any]:
-    """The format 2 mapping of a scenario file without its `format` key; a format 1 file is upgraded on read."""
+    """The format 2 mapping of a scenario file without its `format` key, a format 1 file upgraded on read."""
     from arena_simulation_setup.tree.World.Scenario import upgrade_scenario
 
     try:
@@ -35,7 +35,7 @@ def read_scenario(path: Path) -> dict[str, Any]:
 
 
 def _agent_type(ref: str, out: Path) -> AgentType | None:
-    """The agent type a scenario names, scenario-local files resolved against `out`; None when it names no file or builtin."""
+    """The agent type a scenario names, local files resolved against `out`, None when it names no file or builtin."""
     from arena_humansim.core.agents import BUILTIN_AGENTS
     from arena_humansim.core.agents.loader import load_agent_type_from_file
 
@@ -75,7 +75,7 @@ def check_scenario(scenario: Mapping[str, Any], world_root: Path) -> None:
 
 
 def scenario_text(doc: Mapping[str, Any], *, world_root: Path, types_dir: Path, header: str = "") -> str:
-    """`doc` as format 2 scenario text, scenario-local types resolved against `types_dir`; raises on a key format 2 does not know or a scenario the model rejects."""
+    """`doc` as format 2 scenario text with local types from `types_dir`, ValueError on an unknown key or a rejected scenario."""
     from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
     from arena_simulation_setup.tree.World.write import to_yaml
 
@@ -120,7 +120,7 @@ def _working_level(level: Level, scene: Scene) -> dict[str, Any]:
 
 
 def levels(root: Path, world: World | None = None) -> list[dict[str, Any]]:
-    """The world's levels with zones as working dicts; `world` is the loaded world at `root` when given."""
+    """The world's levels with zones as working dicts, `world` being the loaded world at `root` when given."""
     from arena_simulation_setup.tree.World.membership import derive
 
     world = world if world is not None else load_world(root)
@@ -133,7 +133,7 @@ def first_level(root: Path, world: World | None = None) -> dict[str, Any] | None
 
 
 def world_roles(root: Path, world: World | None = None) -> dict[str, Role]:
-    """Zone name to role as the world's KG states it, linked worlds' facts included; `world` is the loaded world at `root` when given."""
+    """Zone name to role as the world's KG states it, linked worlds' facts included, `world` loaded from `root`."""
     return stated_roles((world if world is not None else load_world(root)).kg)
 
 

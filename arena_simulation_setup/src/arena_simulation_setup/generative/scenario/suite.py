@@ -11,7 +11,7 @@ from .materialize import is_generated
 
 
 def scenarios(world_root: Path, match: Sequence[str] = ()) -> list[str]:
-    """Scenarios matching any glob in `match`; without one, every scenario the generator wrote."""
+    """Scenarios matching any glob in `match`, without one every scenario the generator wrote."""
     paths = sorted((world_root / "scenarios").glob("*/scenario.yaml"))
     if match:
         return [p.parent.name for p in paths if any(fnmatch(p.parent.name, m) for m in match)]

@@ -10,11 +10,9 @@ from .populate import endpoint_xy, robot_endpoints, zone_centroids
 
 MIN_EPISODE_S = 30.0
 
-# the planner queue dwells 60 sim-seconds per scenario
 MAX_EPISODE_S = 60.0
 CASE_RESERVE_S = 20.0
 
-# what nav2 drives at, for the episode budget and the interception releases
 ROBOT_SPEED_MPS = 0.5
 
 
@@ -33,7 +31,7 @@ def straight_length(endpoints: Sequence[Any], zones: Sequence[Mapping[str, Any]]
 
 
 def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """The shipped route in `phases` form: its shortest prefix that takes `MIN_EPISODE_S` at `ROBOT_SPEED_MPS`, or shuttled until it does."""
+    """The shipped route as `phases`: its shortest prefix lasting `MIN_EPISODE_S` at `ROBOT_SPEED_MPS`, else shuttled to it."""
     ends = robot_endpoints(robot)
 
     need = MIN_EPISODE_S * ROBOT_SPEED_MPS * ROUTE_MARGIN

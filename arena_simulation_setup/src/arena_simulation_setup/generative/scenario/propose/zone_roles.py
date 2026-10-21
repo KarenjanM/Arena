@@ -121,7 +121,7 @@ def classify_tail(
 
 
 def merge(proposals: Sequence[Proposal], kg: Path) -> tuple[int, list[str]]:
-    """Write confident proposals into the `kg.yaml` at `kg`, never over a human's fact; returns (written, notes)."""
+    """Write confident proposals into the `kg.yaml` at `kg`, never over a human's fact, as (written, notes)."""
     from arena_simulation_setup.kg import Scene, dump, load
     from arena_simulation_setup.kg.scene import DEFAULT_USES
     from arena_simulation_setup.tree.World.write import to_yaml

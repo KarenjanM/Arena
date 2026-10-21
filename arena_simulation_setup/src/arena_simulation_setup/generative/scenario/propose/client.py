@@ -48,7 +48,7 @@ class Reply:
 
 
 def ask(system: str, user: str, *, model: str | None = None, temperature: float = 0.0) -> Reply:
-    """One completion as raw text with its token usage; raises `Unavailable` when the model gives none."""
+    """One completion as raw text with its token usage, `Unavailable` when the model gives none."""
     global _CLIENT
     import httpx
 
