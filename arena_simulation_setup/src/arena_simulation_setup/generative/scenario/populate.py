@@ -186,6 +186,24 @@ def _waypoint_mode(legs: int, rng: random.Random) -> str:
     return rng.choices(("repeat", "reverse", "random"), weights=(0.5, 0.3, 0.2))[0]
 
 
+def _pool(by_role: Mapping[Role, Sequence[str]], centroids: Mapping[str, tuple[float, float]]) -> list[str]:
+    """Every placeable zone a walker may head for, in role order."""
+    return [z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in centroids]
+
+
+def _starts(targets: Sequence[str], by_role: Mapping[Role, Sequence[str]], homes: frozenset[str], centroids: Mapping[str, tuple[float, float]], forbidden: frozenset[str], *, widen: bool) -> list[str]:
+    """The zones walkers start in: the screened homes among `targets` (with `widen`, topped up from the pool), else the targets."""
+    placed = [z for z in targets if z in centroids]
+    starts = for_people([z for z in placed if z in homes])
+    if widen and len(starts) < 3 and homes:
+        starts += for_people([z for z in _pool(by_role, centroids) if z in homes and z not in starts and z not in forbidden])
+    return starts or for_people([z for z in placed if z not in forbidden]) or for_people(placed) or placed
+
+
+def _walker(name: str, model: str, home: str, agent: dict[str, Any], waypoints: list[str], rng: random.Random) -> dict[str, Any]:
+    return {"name": name, "model": model, "pose": home, "agent": agent, "waypoints": waypoints, "waypoint_mode": _waypoint_mode(len(waypoints), rng)}
+
+
 def build(
     profile: str,
     *,
@@ -211,17 +229,12 @@ def build(
         return doc
 
     centroids = zone_centroids(zones)
-    route = route_points(robot, zones)
-    forbidden = robot_zones(robot)
-
-    starts = for_people([z for z in targets if z in homes and z in centroids])
-    if len(starts) < 3 and homes:
-        starts += for_people([z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in homes and z in centroids and z not in starts and z not in forbidden])
-    starts = starts or for_people([z for z in targets if z not in forbidden and z in centroids]) or for_people([z for z in targets if z in centroids]) or [z for z in targets if z in centroids]
+    starts = _starts(targets, by_role, homes, centroids, robot_zones(robot), widen=True)
     if not starts:
         return doc
 
-    destinations = for_people([z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in centroids]) or [z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in centroids]
+    pool = _pool(by_role, centroids)
+    destinations = for_people(pool) or pool
 
     rng = random.Random(f"{world}:{profile}:{seed}")
     world_rng = random.Random(f"{world}:{seed}")
@@ -257,17 +270,7 @@ def build(
             legs = _route(home, destinations, i, stops, centroids)
             waypoints = [home, *legs] if legs else [home, home]
 
-        agent: dict[str, Any] = {"agent_type": kind, "desired_velocity": speed}
-        agents.append(
-            {
-                "name": f"{profile}_{i + 1}",
-                "model": models[i % len(models)],
-                "pose": home,
-                "agent": agent,
-                "waypoints": waypoints,
-                "waypoint_mode": _waypoint_mode(len(waypoints), rng),
-            }
-        )
+        agents.append(_walker(f"{profile}_{i + 1}", models[i % len(models)], home, {"agent_type": kind, "desired_velocity": speed}, waypoints, rng))
 
     walkers = [a for a in agents if not str(a["agent"]["agent_type"]).startswith("./")]
     if walkers and all(a["agent"]["agent_type"] != "elder" for a in walkers):
@@ -299,10 +302,13 @@ def world_kind(zones: Sequence[Mapping[str, Any]], overrides: Mapping[str, str] 
     return "office"
 
 
+def _allowed(weights: Mapping[str, int], kind: str) -> dict[str, int]:
+    """`weights` without the types a `kind` of world does not hold, a lone adult when none is left."""
+    return {t: w for t, w in weights.items() if kind in ONLY_IN.get(t, (kind,))} or {"adult": 1}
+
+
 def mix_for(profile: str, kind: str) -> dict[str, int]:
-    weights = MIX.get(profile, {"adult": 1})
-    allowed = {t: w for t, w in weights.items() if kind in ONLY_IN.get(t, (kind,))}
-    return allowed or {"adult": 1}
+    return _allowed(MIX.get(profile, {"adult": 1}), kind)
 
 
 def speed_for(kind: str, rng: random.Random, scale: float = 1.0) -> float:
@@ -326,16 +332,15 @@ def extra_agents(
     by_role = zones_by_role(zones, overrides)
     targets, _basis = _targets("normal", by_role)
     centroids = zone_centroids(zones)
-    forbidden = robot_zones(robot)
-    starts = for_people([z for z in targets if z in homes and z in centroids]) or [z for z in targets if z not in forbidden and z in centroids] or [z for z in targets if z in centroids]
+    starts = _starts(targets, by_role, homes, centroids, robot_zones(robot), widen=False)
     if not starts or n <= 0:
         return []
-    destinations = for_people([z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in centroids])
+    destinations = for_people(_pool(by_role, centroids))
     rng = random.Random(f"{world}:busy:{seed}")
     models = list(MODELS)
     rng.shuffle(models)
-    weights = mix_for("normal", world_kind(zones, overrides)) if not mix else {t: w for t, w in mix.items() if world_kind(zones, overrides) in ONLY_IN.get(t, (world_kind(zones, overrides),))}
-    weights = weights or {"adult": 1}
+    kind_of_world = world_kind(zones, overrides)
+    weights = _allowed(mix, kind_of_world) if mix else mix_for("normal", kind_of_world)
     types, type_weights = list(weights), list(weights.values())
     taken = {str(a.get("name")) for a in ((existing or {}).get("humans") or []) if isinstance(a, Mapping)}
     agents: list[dict[str, Any]] = []
@@ -350,14 +355,5 @@ def extra_agents(
         kind = rng.choices(types, weights=type_weights)[0]
         legs = _route(home, destinations, i, stops, centroids)
         waypoints = [home, *legs] if legs else [home, home]
-        agents.append(
-            {
-                "name": name,
-                "model": models[i % len(models)],
-                "pose": home,
-                "agent": {"agent_type": kind, "desired_velocity": speed_for(kind, rng)},
-                "waypoints": waypoints,
-                "waypoint_mode": _waypoint_mode(len(waypoints), rng),
-            }
-        )
+        agents.append(_walker(name, models[i % len(models)], home, {"agent_type": kind, "desired_velocity": speed_for(kind, rng)}, waypoints, rng))
     return agents
