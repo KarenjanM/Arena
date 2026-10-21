@@ -8,7 +8,7 @@ if [ "$1" = --purge-dropped ]; then
 fi
 rosdep update --rosdistro jazzy
 mapfile -t paths < <(colcon list --packages-up-to "$@" -p)
-keys=$(rosdep keys --ignore-src --rosdistro jazzy --from-paths "${paths[@]}" | sort -u)
+keys=$(env -u AMENT_PREFIX_PATH -u ROS_PACKAGE_PATH rosdep keys --ignore-src --rosdistro jazzy --from-paths "${paths[@]}" | sort -u)
 record=/etc/arena-ci
 if $purge && [ -f "$record/rosdep-keys" ] && [ -f "$record/base-packages" ]; then
   mapfile -t dropped < <(comm -23 "$record/rosdep-keys" - <<< "$keys" \
