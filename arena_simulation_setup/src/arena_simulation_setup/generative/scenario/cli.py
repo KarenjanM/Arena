@@ -198,12 +198,41 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _endpoint_arg(flag: str, value: str, zones: list[dict[str, Any]]) -> str | list[float]:
+    """A `--robot-start`/`--robot-goal` value as a zone name or an `[x, y]`/`[x, y, yaw]` pose."""
+    names = sorted(str(z["name"]) for z in zones if isinstance(z, dict) and z.get("name"))
+    forms = f"a zone name ({', '.join(names) or 'this level has none'}) or 'x,y[,yaw]' in meters and radians, e.g. '1.5,2,0'"
+    if "," not in value:
+        if value in names:
+            return value
+        raise ValueError(f"{flag} {value!r}: no zone of that name on the robot's level. Pass {forms}")
+    try:
+        pose = [float(v) for v in value.split(",")]
+    except ValueError:
+        pose = []
+    if len(pose) not in (2, 3) or not all(math.isfinite(v) for v in pose):
+        raise ValueError(f"{flag} {value!r}: not a pose. Pass {forms}")
+    return pose
+
+
+def _override_robot(robot: dict[str, Any], zones: list[dict[str, Any]], *, start: str | None, goal: str | None) -> dict[str, Any]:
+    """`robot` with the given start and goal; a new goal replaces the route's legs with the single leg to it."""
+    out = dict(robot)
+    if start is not None:
+        out["start"] = _endpoint_arg("--robot-start", start, zones)
+    if goal is not None:
+        out.pop("phases", None)
+        out.pop("goal_level", None)
+        out["goal"] = _endpoint_arg("--robot-goal", goal, zones)
+    return out
+
+
 def _cmd_populate(args: argparse.Namespace) -> int:
     root = world_root(args.worlds, args.world)
     zones, robot = _world_parts(root)
-    if args.robot_start:
-        robot = {"start": args.robot_start, "goal": args.robot_goal or robot.get("goal")}
-        print(f"  robot endpoints overridden: start={robot['start']!r} goal={robot['goal']!r}")
+    if args.robot_start is not None or args.robot_goal is not None:
+        robot = _override_robot(robot, zones, start=args.robot_start, goal=args.robot_goal)
+        print(f"  robot endpoints overridden: start={robot['start']!r} goal={robot.get('goal')!r}")
 
     overrides = world_roles(root)
     if unresolved := unknown_names(zones, overrides):
@@ -358,8 +387,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("world")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--write", action="store_true")
-    p.add_argument("--robot-start", default=None, help="zone name or 'x,y,yaw' for the robot start")
-    p.add_argument("--robot-goal", default=None, help="zone name or 'x,y,yaw' for the robot goal")
+    p.add_argument("--robot-start", default=None, help="robot start: a zone name of its level or 'x,y[,yaw]' (default: the route of the world's first scenario with a robot)")
+    p.add_argument("--robot-goal", default=None, help="robot goal: a zone name of its level or 'x,y[,yaw]'; replaces the route's legs with the single leg to it")
     p.add_argument("--prune", action="store_true", help="remove generated bases this run did not write (never hand-authored ones)")
     p.add_argument("--force", action="store_true", help="replace scenarios this tool did not generate (they may be hand-authored)")
 
