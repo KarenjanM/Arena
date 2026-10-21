@@ -40,24 +40,34 @@ def _arena_world_path() -> list[Path]:
 
 
 def world_roots(worlds: Path | None) -> list[Path]:
-    """`--worlds`, else the `ARENA_WORLD_PATH` roots, then `$ARENA_DIR/arena_simulation_setup/worlds`."""
+    """The source world roots: `--worlds`, else the `ARENA_WORLD_PATH` roots, then `$ARENA_DIR/arena_simulation_setup/worlds`."""
     if worlds is not None:
         return [worlds]
     roots = _arena_world_path()
     if arena := os.environ.get("ARENA_DIR"):
         roots.append(Path(arena) / "arena_simulation_setup" / "worlds")
-    if not roots:
-        raise FileNotFoundError("no worlds root: set ARENA_DIR to the Arena checkout or ARENA_WORLD_PATH to world roots, or pass --worlds DIR")
     return roots
 
 
-def world_root(worlds: Path | None, world: str) -> Path:
-    """`<root>/<world>` under the first of `world_roots` that has it."""
+def world_root(worlds: Path | None, world: str, *, write: bool = False) -> Path:
+    """`<root>/<world>` under the first source root that has it, else the world `WorldIdentifier` resolves for a read."""
+    from arena_simulation_setup.tree.World import WorldIdentifier
+
     roots = world_roots(worlds)
     for root in roots:
         if (root / world).is_dir():
             return root / world
-    raise FileNotFoundError(f"no world {world!r} under {', '.join(map(str, roots))}. Worlds there: {_world_names(worlds)}")
+    searched = ", ".join(map(str, roots)) or "no source root (ARENA_DIR and ARENA_WORLD_PATH are unset)"
+    if worlds is not None:
+        raise FileNotFoundError(f"no world {world!r} under {searched}. Worlds there: {_world_names(worlds)}")
+    identifier = WorldIdentifier(world)
+    try:
+        path = identifier.resolve_source_sync().path if write else identifier.resolve_sync().path
+    except FileNotFoundError:
+        raise FileNotFoundError(f"no world {world!r} under {searched}, and no resolver has it. Worlds there: {_world_names(worlds)}. Set ARENA_DIR to the Arena checkout or ARENA_WORLD_PATH to world roots, or pass --worlds DIR") from None
+    if write:
+        raise ValueError(f"world {world!r} resolves to {path}, which is no source world root ({searched}), so it is not written. Copy it into one of them, or pass --worlds DIR")
+    return Path(path)
 
 
 def _all_worlds(worlds: Path | None) -> list[str]:
@@ -69,10 +79,7 @@ def _all_worlds(worlds: Path | None) -> list[str]:
 
 
 def _world_names(worlds: Path | None) -> str:
-    try:
-        return ", ".join(_all_worlds(worlds)) or "none"
-    except FileNotFoundError as exc:
-        return f"none ({exc})"
+    return ", ".join(_all_worlds(worlds)) or "none"
 
 
 def _writable(path: Path) -> Path:
@@ -100,13 +107,24 @@ def _bare(args: argparse.Namespace) -> int:
 
 
 def default_suites_dir() -> Path:
-    """The source tree's arena_evaluation `configs/benchmark/suites` under `$ARENA_DIR`."""
+    """`$ARENA_DIR/arena_evaluation/arena_evaluation/configs/benchmark/suites`, the source tree the runner reads after its share."""
     if not (arena := os.environ.get("ARENA_DIR")):
         raise FileNotFoundError("ARENA_DIR is unset: set it to the Arena checkout, or pass --out to name the suite file")
     out = Path(arena) / "arena_evaluation" / "arena_evaluation" / "configs" / "benchmark" / "suites"
     if not out.is_dir():
         raise FileNotFoundError(f"{out} does not exist: pass --out to name the suite file")
     return out
+
+
+def _shadowing_suite(out: Path) -> Path | None:
+    """The installed arena_evaluation suite of the same name the runner reads before `out`, if any."""
+    try:
+        from ament_index_python.packages import get_package_share_path
+
+        installed = get_package_share_path("arena_evaluation") / "configs" / "benchmark" / "suites" / out.name
+    except (ImportError, LookupError):
+        return None
+    return installed if installed.is_file() and not installed.samefile(out) else None
 
 
 def _grid_loader(root: Path) -> Callable[[], Grid | None]:
@@ -214,7 +232,7 @@ def _cmd_classify(args: argparse.Namespace) -> int:
     names = sorted(args.world) if args.world else _all_worlds(args.worlds)
     pending: dict[str, tuple[Path, list[dict[str, Any]], list[str]]] = {}
     for world in dict.fromkeys(names):
-        root = world_root(args.worlds, world)
+        root = world_root(args.worlds, world, write=args.write)
         zones = _all_zones(root)
         if not zones:
             print(f"  ! {world}: no zones declared on any level")
@@ -292,7 +310,7 @@ def _cmd_populate(args: argparse.Namespace) -> int:
         return _bare(args)
     if args.prune and not args.write:
         raise ValueError("--prune removes stale generated bases, which only a writing run does: add --write")
-    root = world_root(args.worlds, args.world)
+    root = world_root(args.worlds, args.world, write=args.write)
     if args.write:
         _writable(root)
     zones, robot = _world_parts(root)
@@ -355,7 +373,7 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
 
     if args.world is None:
         return _bare(args)
-    root = world_root(args.worlds, args.world)
+    root = world_root(args.worlds, args.world, write=args.write)
     if args.write:
         _writable(root)
     prompts = P.load_sets(args.world, extra=[Path(p) for p in args.prompts or []])
@@ -449,7 +467,9 @@ def _cmd_suite(args: argparse.Namespace) -> int:
         return 1
     doc = build(worlds, robot=args.robot, episodes=args.episodes, seed=args.seed, timeout=args.timeout)
     out.write_text(yaml.safe_dump(doc, sort_keys=False))
-    print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s); run with `arena evaluation benchmark --suite {out.stem} --contest <contest>`")
+    print(f"wrote {out}: {len(doc['stages'])} stage(s) x {args.episodes} episode(s). Run with `arena evaluation benchmark --suite {out.stem} --contest <contest>`")
+    if (shadow := _shadowing_suite(out)) is not None:
+        print(f"  ! the runner reads the installed {shadow} first: rebuild arena_evaluation for it to read this one")
     return 0
 
 
@@ -466,7 +486,7 @@ def _parser() -> argparse.ArgumentParser:
 
     def verb(name: str, fn: Callable[[argparse.Namespace], int], text: str) -> argparse.ArgumentParser:
         p = verbs.add_parser(name, help=text, description=text)
-        p.add_argument("--worlds", type=Path, default=None, help="worlds root to read and write (default: the ARENA_WORLD_PATH roots, then $ARENA_DIR/arena_simulation_setup/worlds)")
+        p.add_argument("--worlds", type=Path, default=None, help="worlds root to read and write (default: the ARENA_WORLD_PATH roots, then $ARENA_DIR/arena_simulation_setup/worlds, and for reading also every world the world resolvers find)")
         p.set_defaults(fn=fn, help_text=p.format_help)
         return p
 
