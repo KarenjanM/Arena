@@ -79,11 +79,11 @@ MODELS: tuple[str, ...] = (
 )
 
 
-def _polygon(zone: Mapping[str, Any]) -> list[tuple[float, float]]:
+def polygon(zone: Mapping[str, Any]) -> list[tuple[float, float]]:
     return [(float(c["x"]), float(c["y"])) for c in zone.get("corners", []) if isinstance(c, Mapping)]
 
 
-def _centroid(poly: Sequence[tuple[float, float]]) -> tuple[float, float]:
+def centroid(poly: Sequence[tuple[float, float]]) -> tuple[float, float]:
     return (sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly))
 
 
@@ -116,7 +116,7 @@ def route_points(
     robot: Mapping[str, Any],
     zones: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[tuple[float, float]]:
-    centroids = {str(z["name"]): _centroid(_polygon(z)) for z in (zones or []) if isinstance(z, Mapping) and z.get("name") and len(_polygon(z)) >= 3}
+    centroids = {str(z["name"]): centroid(polygon(z)) for z in (zones or []) if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
     pts: list[tuple[float, float]] = []
     for endpoint in _endpoints(robot):
         if isinstance(endpoint, str):
@@ -208,7 +208,7 @@ def build(
     if not targets:
         return doc
 
-    centroids = {str(z["name"]): _centroid(_polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(_polygon(z)) >= 3}
+    centroids = {str(z["name"]): centroid(polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
     route = route_points(robot, zones)
     forbidden = robot_zones(robot)
 
@@ -328,7 +328,7 @@ def extra_agents(
 ) -> list[dict[str, Any]]:
     by_role = zones_by_role(zones, overrides)
     targets, _basis = _targets("normal", by_role)
-    centroids = {str(z["name"]): _centroid(_polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(_polygon(z)) >= 3}
+    centroids = {str(z["name"]): centroid(polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
     forbidden = robot_zones(robot)
     starts = for_people([z for z in targets if z in homes and z in centroids]) or [z for z in targets if z not in forbidden and z in centroids] or [z for z in targets if z in centroids]
     if not starts or n <= 0:

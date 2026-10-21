@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .populate import _centroid, _polygon
+from .populate import centroid, polygon
 
 MIN_EPISODE_S = 30.0
 
@@ -44,7 +44,7 @@ def _xy(pose: str | Sequence[float], centroids: Mapping[str, tuple[float, float]
 
 
 def route_length(endpoints: Sequence[Any], zones: Sequence[Mapping[str, Any]]) -> float:
-    centroids = {str(z["name"]): _centroid(_polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(_polygon(z)) >= 3}
+    centroids = {str(z["name"]): centroid(polygon(z)) for z in zones if isinstance(z, Mapping) and z.get("name") and len(polygon(z)) >= 3}
     pts = [p for p in (_xy(e, centroids) for e in endpoints) if p is not None]
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
 

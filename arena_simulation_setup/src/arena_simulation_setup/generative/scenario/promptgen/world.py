@@ -22,9 +22,9 @@ if typing.TYPE_CHECKING:
 
 from ..formats import first_level, world_roles
 from ..occupancy import level_grid, load_world, world_statics
-from ..populate import MIN_ROUTE_CLEARANCE, _centroid, _polygon, clearance, robot_zones, route_points, work_zones, world_kind
+from ..populate import MIN_ROUTE_CLEARANCE, centroid, clearance, polygon, robot_zones, route_points, work_zones, world_kind
 from ..route import MAX_ROUTE_M, MIN_EPISODE_S, ROBOT_SPEED_MPS
-from ..zone_screen import RUNTIME_SAFE_DIST, _rasterize, _route_clearance, ref_safe_zones, screen_zones
+from ..zone_screen import RUNTIME_SAFE_DIST, rasterize, ref_safe_zones, route_clearance, screen_zones
 from ..zones import Role, zones_by_role
 
 Point = tuple[float, float]
@@ -43,13 +43,13 @@ MAX_LEG_M = MAX_ROUTE_M
 EGRESS_HINTS = ("exit", "entrance", "entry", "lobby", "reception", "hallway", "corridor", "foyer", "living")
 
 
-def _endpoint(grid: Grid, pt: Point) -> Point:
+def endpoint(grid: Grid, pt: Point) -> Point:
     if grid.free(pt, ENDPOINT_CLEAR):
         return pt
     return grid.nearest_free(pt, ENDPOINT_CLEAR, within=3.0) or grid.nearest_free(pt, ROBOT_CLEAR, within=3.0) or pt
 
 
-def _plan(grid: Grid, start: Point, goal: Point) -> list[Point]:
+def plan(grid: Grid, start: Point, goal: Point) -> list[Point]:
     try:
         return plan_route(grid, start, goal, is_valid=grid.clear_of(RUNTIME_SAFE_DIST))
     except PathError as exc:
@@ -80,11 +80,11 @@ def _longest_leg(grid: Grid, start: Point, candidates: Sequence[Point], *, beat:
     None when none beats `beat` by a metre. A small world may never reach `MIN_LEG_M`; its longest leg is still the right one."""
     best: tuple[float, Point, list[Point]] | None = None
     for pt in candidates:
-        goal = _endpoint(grid, pt)
+        goal = endpoint(grid, pt)
         if math.dist(goal, start) < 1.0:
             continue
         try:
-            route = _plan(grid, start, goal)
+            route = plan(grid, start, goal)
         except WorldError:
             continue
         length = _length(route)
@@ -219,17 +219,17 @@ class WorldContext:
         route = [start, goal]
         if grid is not None:
             # a zone centroid may sit in a table; snap so the route and the reachability reference are real
-            start = _endpoint(grid, start)
-            goal = _endpoint(grid, goal)
-            route = _plan(grid, start, goal)
+            start = endpoint(grid, start)
+            goal = endpoint(grid, goal)
+            route = plan(grid, start, goal)
             if _length(route) > MAX_LEG_M:
                 # over the episode budget: keep the start, cut where the budget runs out
                 cut = _truncate(route, MAX_LEG_M)
-                goal = _endpoint(grid, cut[-1])
-                replanned = _plan(grid, start, goal)
+                goal = endpoint(grid, cut[-1])
+                replanned = plan(grid, start, goal)
                 route = replanned if _length(replanned) <= MAX_LEG_M * 1.2 else cut
             elif _length(route) < MIN_LEG_M:
-                longer = _longest_leg(grid, start, [_centroid(_polygon(z)) for z in zones if len(_polygon(z)) >= 3], beat=_length(route))
+                longer = _longest_leg(grid, start, [centroid(polygon(z)) for z in zones if len(polygon(z)) >= 3], beat=_length(route))
                 if longer is not None:
                     goal, route = longer
 
@@ -246,11 +246,11 @@ class WorldContext:
 
     @cached_property
     def polygons(self) -> dict[str, list[Point]]:
-        return {str(z["name"]): _polygon(z) for z in self.zones if len(_polygon(z)) >= 3}
+        return {str(z["name"]): polygon(z) for z in self.zones if len(polygon(z)) >= 3}
 
     @cached_property
     def centroids(self) -> dict[str, Point]:
-        return {name: _centroid(poly) for name, poly in self.polygons.items()}
+        return {name: centroid(poly) for name, poly in self.polygons.items()}
 
     def zone_names(self) -> list[str]:
         return sorted(self.polygons)
@@ -272,7 +272,7 @@ class WorldContext:
             return c
         import numpy as np
 
-        mask = _rasterize(self.polygons[name], grid.shape, grid.res, grid.ox, grid.oy)
+        mask = rasterize(self.polygons[name], grid.shape, grid.res, grid.ox, grid.oy)
         reachable = grid.labels_at(ROBOT_CLEAR) == grid.component(self.start)
         # Relax the clearance in steps: a room full of furniture may hold a formation only
         # where its members stand between the desks.
@@ -284,7 +284,7 @@ class WorldContext:
             xs = (cols + 0.5) * grid.res + grid.ox
             ys = (grid.shape[0] - 1 - rows + 0.5) * grid.res + grid.oy
             far = (np.hypot(xs - self.start[0], ys - self.start[1]) >= 1.8 + need) & (np.hypot(xs - self.goal[0], ys - self.goal[1]) >= 1.3 + need)
-            keep = far & (_route_clearance(xs, ys, self.route) >= 1.5 + need)
+            keep = far & (route_clearance(xs, ys, self.route) >= 1.5 + need)
             if not keep.any():
                 keep = far
             if not keep.any():
@@ -305,7 +305,7 @@ class WorldContext:
             return self.centroids[name]
         import numpy as np
 
-        clear = _rasterize(self.polygons[name], grid.shape, grid.res, grid.ox, grid.oy) & (grid.dist >= need)
+        clear = rasterize(self.polygons[name], grid.shape, grid.res, grid.ox, grid.oy) & (grid.dist >= need)
         reachable = clear & (grid.labels_at(ROBOT_CLEAR) == grid.component(self.start))
         rows, cols = np.nonzero(reachable if reachable.any() else clear)
         if rows.size == 0:
@@ -467,7 +467,7 @@ class WorldContext:
         d = np.hypot(xs - pt[0], ys - pt[1])
         keep = (d <= within) & (np.hypot(xs - self.start[0], ys - self.start[1]) >= 1.5) & (np.hypot(xs - self.goal[0], ys - self.goal[1]) >= 1.0)
         if not on_route:
-            keep &= _route_clearance(xs, ys, self.route) >= 1.5
+            keep &= route_clearance(xs, ys, self.route) >= 1.5
         order = np.argsort(d[keep], kind="stable")
         return [(float(x), float(y)) for x, y in zip(xs[keep][order], ys[keep][order], strict=True)]
 

@@ -21,7 +21,7 @@ from .occupancy import level_grid, load_world, world_statics
 from .populate import MIN_ROUTE_CLEARANCE, PROFILES, basis_for, robot_zones, route_points
 from .populate import build as build_base
 from .promptgen import prompts as P
-from .promptgen.world import Grid, WorldError, _endpoint, _plan
+from .promptgen.world import Grid, WorldError, endpoint, plan
 from .propose import DEFAULT_MODEL, Unavailable, build_prompt, classify_tail, merge, unknown_names
 from .route import MIN_EPISODE_S, ROBOT_SPEED_MPS, robot_for, route_seconds
 from .zone_screen import ref_safe_zones, screen_zones
@@ -136,7 +136,7 @@ def _route_reachable(grid: Callable[[], Grid | None], zones: list[dict[str, Any]
         if held is None:
             return True
         for a, b in itertools.pairwise(pts):
-            _plan(held, _endpoint(held, a), _endpoint(held, b))
+            plan(held, endpoint(held, a), endpoint(held, b))
     except WorldError:
         return False
     except Exception:  # a hint only: populate and promptgen validate the route again

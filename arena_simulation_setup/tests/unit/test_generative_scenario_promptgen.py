@@ -11,8 +11,8 @@ from arena_simulation_setup.generative.scenario.formats import read_scenario
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match
 from arena_simulation_setup.generative.scenario.promptgen.pipeline import RobotPlan, generate, write_result
-from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, STAND_TRIGGER_M, trigger
 from arena_simulation_setup.generative.scenario.promptgen.profiles import ProfileError, derive, derived_name, profile, tier_value
+from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, STAND_TRIGGER_M, trigger
 from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_when
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 from arena_simulation_setup.generative.scenario.propose import client
@@ -154,9 +154,9 @@ def test_world_plans_the_route_and_places_on_it(toy) -> None:
     _worlds, _doc, _base, world = toy
     # The 60 s episode budget truncates the toy's 28 m route at MAX_LEG_M (20 m).
     assert world.route[0] == (2.0, 4.0) and abs(world.route[-1][0] - 22.0) < 1.0
-    from arena_simulation_setup.generative.scenario.promptgen.world import MAX_LEG_M, _length
+    from arena_simulation_setup.generative.scenario.promptgen.world import MAX_LEG_M
 
-    assert _length(world.route) <= MAX_LEG_M * 1.2
+    assert world.route_length <= MAX_LEG_M * 1.2
     pt, heading = world.point_at(0.5)
     assert pt == pytest.approx((12.0, 4.0), abs=0.3) and heading == pytest.approx((1.0, 0.0), abs=0.05)
     width, _l, _r = world.passage_width(pt, heading)
@@ -590,12 +590,10 @@ def test_system_prompts_document_every_phrase() -> None:
 
 
 def test_wc_and_storage_placements_are_refused(toy) -> None:
-    from arena_simulation_setup.generative.scenario.promptgen.step_a import StepError
-    from arena_simulation_setup.generative.scenario.promptgen.step_d import _place
-
-    d = parse_d({"case": "interaction_unbroken", "variant": "standing", "members": ["adult", "adult"], "place": {"zone": "wc_west"}})
-    with pytest.raises(StepError, match="nobody is placed"):
-        _place(d, toy)
+    _worlds, doc, base, world = toy
+    prompt = _prompt("Two colleagues stand talking in the washroom.", ["D:interaction_unbroken"], D={"case": "interaction_unbroken", "variant": "standing", "members": ["adult", "adult"], "place": {"zone": "wc_west"}})
+    result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
+    assert "D" not in result.record.owned and any("nobody is placed" in f.reason for f in result.record.failures), result.record.failures
 
 
 def test_slightly_busy_reads_k_one_and_a_half() -> None:

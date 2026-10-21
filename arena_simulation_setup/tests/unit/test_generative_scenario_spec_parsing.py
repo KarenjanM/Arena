@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import pytest
+import json
+from pathlib import Path
 
+import pytest
+from arena_simulation_setup.generative.scenario.promptgen import step_a_llm
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match, score, when_in
-from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, When, parse_b, parse_c, parse_d, parse_selection, parse_when
-from arena_simulation_setup.generative.scenario.promptgen.step_a_llm import _parse as parse_a_llm
+from arena_simulation_setup.generative.scenario.promptgen.spec import Record, SchemaError, When, parse_b, parse_c, parse_d, parse_selection, parse_when
+from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
 
 
 @pytest.mark.parametrize(
@@ -71,8 +74,11 @@ def test_null_fields_read_as_absent(parse, base, keys) -> None:
         assert parse({**base, key: None}) == parse(base), key
 
 
-def test_null_k_and_who_profile_read_as_absent_in_the_model_answer() -> None:
-    decision, who, warnings = parse_a_llm({"case": "busy", "k": None, "who": [{"mention": "a nurse", "profile": None, "count": None}]})
+def test_null_k_and_who_profile_read_as_absent_in_the_model_answer(tmp_path: Path) -> None:
+    text = "A nurse walks by."
+    answer = json.dumps({"case": "busy", "k": None, "who": [{"mention": "a nurse", "profile": None, "count": None}]})
+    (tmp_path / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": answer}))
+    decision, who, warnings = step_a_llm.decide(text, Record(prompt_id="t", prompt=text, world="w", base="b"), cache_dir=tmp_path)
     assert decision is not None and decision.k == 2.0
     assert who == [{"mention": "a nurse", "profile": "adult", "count": 0}] and warnings == []
 

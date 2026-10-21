@@ -30,7 +30,7 @@ class Verdict:
         return self.ref_safe
 
 
-def _rasterize(poly: Sequence[tuple[float, float]], shape: tuple[int, int], res: float, ox: float, oy: float) -> np.ndarray:
+def rasterize(poly: Sequence[tuple[float, float]], shape: tuple[int, int], res: float, ox: float, oy: float) -> np.ndarray:
     import numpy as np
     from PIL import Image, ImageDraw
 
@@ -51,7 +51,7 @@ def _cell_centres(mask: np.ndarray, res: float, ox: float, oy: float) -> tuple[n
     return cols * res + ox, (height - 1 - rows) * res + oy
 
 
-def _route_clearance(xs: np.ndarray, ys: np.ndarray, route: Sequence[tuple[float, float]]) -> np.ndarray:
+def route_clearance(xs: np.ndarray, ys: np.ndarray, route: Sequence[tuple[float, float]]) -> np.ndarray:
     import numpy as np
 
     if not route:
@@ -107,7 +107,7 @@ def screen_zones(
             verdicts[name] = Verdict(zone=name, ref_safe=False, reason="fewer than three corners")
             continue
 
-        mask = _rasterize(poly, dist.shape, res, ox, oy)
+        mask = rasterize(poly, dist.shape, res, ox, oy)
         if not mask.any():
             verdicts[name] = Verdict(zone=name, ref_safe=False, reason="polygon covers no grid cell")
             continue
@@ -136,7 +136,7 @@ def screen_zones(
         xs, ys = _cell_centres(mask, res, ox, oy)
         xs, ys, clearance = xs[admissible], ys[admissible], clearance[admissible]
 
-        route_bad = _route_clearance(xs, ys, route) < min_route_clearance
+        route_bad = route_clearance(xs, ys, route) < min_route_clearance
         n_rejected = int(route_bad.sum())
 
         if n_rejected == 0:
