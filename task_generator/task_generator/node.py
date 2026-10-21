@@ -907,6 +907,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline = []
         self._timeline_state = []
         self._timeline_t0 = None
+        for task in self._stimulus_tasks:
+            task.cancel()
+        self._stimulus_tasks.clear()
         self._stimuli_fired.clear()
         self._episode_conditions = []
         self._zone_overrides.clear()
@@ -958,6 +961,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._stimulus_tasks.add(task)
 
         def _on_done(t: asyncio.Task) -> None:
+            if t not in self._stimulus_tasks:
+                return
             self._stimulus_tasks.discard(t)
             if t.cancelled():
                 return

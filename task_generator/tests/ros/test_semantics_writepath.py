@@ -218,6 +218,81 @@ def test_refused_or_failing_stimulus_is_logged_not_raised() -> None:
     assert stub._stimuli_fired == {"stimulus.d_1.go": 0.0}
 
 
+def _reset_stub(stub: object) -> None:
+    from task_generator.node import TaskGenerator
+
+    stub._timeline = []
+    stub._timeline_state = []
+    stub._timeline_t0 = None
+    stub._episode_conditions = []
+    stub._zone_overrides = {}
+    stub._sound_levels = {}
+    stub.reset_timeline = TaskGenerator.reset_timeline.__get__(stub)
+
+
+def test_reset_cancels_a_stimulus_still_in_flight() -> None:
+    import asyncio
+
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    from task_generator.manager.environment_manager import EnvironmentManager
+    from task_generator.node import TaskGenerator
+
+    stub, _calls, warnings = _stimulus_stub({})
+    reached: list[str] = []
+
+    class _Hanging:
+        async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+            reached.append(str(agent))
+            await asyncio.Event().wait()
+            return True
+
+    environment = type("Environment", (), {"notify_stimulus": EnvironmentManager.notify_stimulus})()
+    environment._human_simulator = _Hanging()
+    stub._environment_manager = environment
+    _reset_stub(stub)
+
+    async def main() -> list[asyncio.Task]:
+        TaskGenerator._fire_timeline_entry(stub, 0, TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]}))
+        await asyncio.sleep(0)
+        tasks = list(stub._stimulus_tasks)
+        stub.reset_timeline()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        return tasks
+
+    (task,) = asyncio.run(main())
+    assert reached == ["edge_0"]
+    assert task.cancelled()
+    assert stub._stimulus_tasks == set()
+    assert stub._stimuli_fired == {}
+    assert warnings == []
+
+
+def test_a_stimulus_answered_before_a_reset_is_not_recorded_after_it() -> None:
+    import asyncio
+
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
+    from task_generator.node import TaskGenerator
+
+    stub, calls, warnings = _stimulus_stub({})
+    _reset_stub(stub)
+
+    async def main() -> bool:
+        TaskGenerator._fire_timeline_entry(stub, 0, TimelineEntry.parse({"at": 0.0, "stimulus": [{"agents": ["edge_0"], "need": "go"}]}))
+        (task,) = stub._stimulus_tasks
+        await asyncio.sleep(0)
+        answered = task.done()
+        stub.reset_timeline()
+        await asyncio.sleep(0)
+        return answered
+
+    assert asyncio.run(main()) is True
+    assert calls == [("edge_0", "go", 1.0)]
+    assert stub._stimuli_fired == {}
+    assert warnings == []
+
+
 def _timeline_fields(stub: object) -> dict[str, str]:
     state = stub._timeline_semantic_state()
     return dict(zip(state.discrete_names, state.discrete_values, strict=True))
@@ -373,6 +448,7 @@ def _timeline_stub(entries: list, seed: int = 7) -> tuple[object, object, list[i
     stub = _node_stub()
     stub._zone_overrides = {}
     stub._sound_levels = {}
+    stub._stimulus_tasks = set()
     stub._stimuli_fired = {}
     stub._fire_timeline_entry = lambda idx, entry: fired.append(idx)
     TaskGenerator.register_timeline(stub, entries, seed)
