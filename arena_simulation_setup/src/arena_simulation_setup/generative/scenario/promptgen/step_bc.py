@@ -13,10 +13,11 @@ import attrs
 
 from ..populate import MODELS, for_people, speed_for
 from .agents import TypeFiles, agent_type_of, mesh_for, profile_of_agent
+from .ask import ask, system_prompt
 from .lexicon import when_in
-from .llm import AnswerError, Oracle, call
+from .llm import Oracle
 from .profiles import BT_ONLY, TUNABLE, ProfileError, is_behavior_tree, profile, scaled_speed, tier_value
-from .spec import A_CASES, BDecision, CDecision, ConflictError, FailureKind, Record, SchemaError, Selection, conflict_m, parse_b, parse_c
+from .spec import A_CASES, BDecision, CDecision, ConflictError, Record, Selection, conflict_m, conflicts, parse_b, parse_c
 from .step_a import StepError, bake, set_type, tune_trees, walk_as_tree, walks
 from .step_d import population_summary
 from .world import WorldContext, WorldError
@@ -27,12 +28,6 @@ ERRATIC_STOPS = 6
 ERRATIC_NEAR_M = 4.0
 ERRATIC_NEAR_MIN = 3
 _GOLDEN_ANGLE = math.pi * (3.0 - math.sqrt(5.0))
-
-_SYSTEM = Path(__file__).with_name("system_bc.md")
-
-
-def system_prompt() -> str:
-    return _SYSTEM.read_text()
 
 
 def user_prompt(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Record, *, taken_fractions: Sequence[float], who: str = "") -> str:
@@ -49,39 +44,31 @@ def user_prompt(prompt: str, doc: Mapping[str, Any], world: WorldContext, record
 
 
 def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Record, *, taken_fractions: Sequence[float], cache_dir: Path | None, model: str | None, oracle: Oracle | None, who: str = "") -> tuple[BDecision | None, CDecision | None]:
-    system = system_prompt()
-    user = user_prompt(prompt, doc, world, record, taken_fractions=taken_fractions, who=who)
-    complaint = ""
-    kind: FailureKind = "schema"
-    for attempt in range(2):
-        answer = call(system, user + (f"\n\nYour previous answer was rejected: {complaint}. Answer again." if complaint else ""), cache_dir=cache_dir, model=model, oracle=oracle)
-        record.provenance.setdefault("BC", []).append({"model": answer.model, "response_sha256": answer.sha256, "cached": answer.cached, "attempt": attempt})
-        try:
-            raw = answer.json()
-            b = parse_b(raw.get("B"))
-            if b is not None and not (isinstance(raw.get("B"), Mapping) and raw["B"].get("when")):
-                spoken = when_in(prompt, exclude_cases=tuple(A_CASES), lexicon=None)
-                if spoken is not None:
-                    b = attrs.evolve(b, when=spoken)
-                    record.warnings.append(f"B onset read from the prompt: {spoken.as_dict()}")
-            c = parse_c(raw.get("C"))
-            if c is not None:
-                gap = conflict_m(world.route_length)
-                for f in taken_fractions:
-                    if abs(f - c.route_fraction) * world.route_length < gap:
-                        if oracle is None:
-                            raise ConflictError(f"conflict: C.route_fraction {c.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
-                        shift = (gap + 0.3) / max(world.route_length, 1e-9)
-                        nudged = f + shift if c.route_fraction >= f else f - shift
-                        if not 0.1 <= nudged <= 0.9:
-                            nudged = f - shift if c.route_fraction >= f else f + shift
-                        c = attrs.evolve(c, route_fraction=round(min(0.9, max(0.1, nudged)), 3))
-                        record.warnings.append(f"C moved to route fraction {c.route_fraction:g} to clear the Type D placement at {f:.2f}")
-            return b, c
-        except (AnswerError, SchemaError) as exc:
-            complaint = str(exc)
-            kind = "conflict" if isinstance(exc, ConflictError) else "schema"
-    raise StepError(kind, complaint)
+    """Ask the model (or the oracle) for the Type B and C decisions, once more on a schema error or a conflict with Type D."""
+
+    def parse(raw: dict[str, Any]) -> tuple[BDecision | None, CDecision | None]:
+        b = parse_b(raw.get("B"))
+        if b is not None and not (isinstance(raw.get("B"), Mapping) and raw["B"].get("when")):
+            spoken = when_in(prompt, exclude_cases=tuple(A_CASES), lexicon=None)
+            if spoken is not None:
+                b = attrs.evolve(b, when=spoken)
+                record.warnings.append(f"B onset read from the prompt: {spoken.as_dict()}")
+        c = parse_c(raw.get("C"))
+        if c is not None:
+            gap = conflict_m(world.route_length)
+            for f in taken_fractions:
+                if conflicts(f, c.route_fraction, world.route_length):
+                    if oracle is None:
+                        raise ConflictError(f"conflict: C.route_fraction {c.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
+                    shift = (gap + 0.3) / max(world.route_length, 1e-9)
+                    nudged = f + shift if c.route_fraction >= f else f - shift
+                    if not 0.1 <= nudged <= 0.9:
+                        nudged = f - shift if c.route_fraction >= f else f + shift
+                    c = attrs.evolve(c, route_fraction=round(min(0.9, max(0.1, nudged)), 3))
+                    record.warnings.append(f"C moved to route fraction {c.route_fraction:g} to clear the Type D placement at {f:.2f}")
+        return b, c
+
+    return ask("BC", system_prompt("bc"), user_prompt(prompt, doc, world, record, taken_fractions=taken_fractions, who=who), record, parse, cache_dir=cache_dir, model=model, oracle=oracle)
 
 
 def _agents(doc: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -255,10 +242,9 @@ def apply_b(doc: dict[str, Any], decision: BDecision, world: WorldContext, files
 def apply_c(decision: CDecision, world: WorldContext, files: TypeFiles, *, seed: int, taken_fractions: Sequence[float]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     """The intercept effect of a Type C decision, its pedestrian named when realized."""
     rng = random.Random(f"{world.name}:C:{seed}")
-    gap = conflict_m(world.route_length)
-    for f in taken_fractions:
-        if abs(f - decision.route_fraction) * world.route_length < gap:
-            raise StepError("conflict", f"route fraction {decision.route_fraction:g} is within {gap:g} m of a Type D placement at {f:.2f}")
+    clash = next((f for f in taken_fractions if conflicts(f, decision.route_fraction, world.route_length)), None)
+    if clash is not None:
+        raise StepError("conflict", f"route fraction {decision.route_fraction:g} is within {conflict_m(world.route_length):g} m of a Type D placement at {clash:.2f}")
     prof = profile(decision.profile)
     ref = files.derived(prof.base, {}, prof=prof)
     label = f"C:{decision.case}"

@@ -38,6 +38,11 @@ def conflict_m(route_length: float) -> float:
 FailureKind = Literal["schema", "placement", "applicability", "conflict", "infeasible", "unavailable", "denied"]
 
 
+def conflicts(a: float, b: float, route_length: float) -> bool:
+    """Whether route fractions `a` and `b` of a route `route_length` long are closer than `conflict_m` of it."""
+    return abs(a - b) * route_length < conflict_m(route_length)
+
+
 class SchemaError(ValueError):
     pass
 
@@ -505,6 +510,7 @@ __all__ = [
     "SchemaError",
     "Selection",
     "When",
+    "conflicts",
     "parse_b",
     "parse_c",
     "parse_d",

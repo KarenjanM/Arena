@@ -10,10 +10,11 @@ from typing import Any
 
 from ..populate import for_people
 from .agents import STAND_STEP, TypeFiles, agent_type_of, clone, entry, mesh_for, unique_names
-from .llm import AnswerError, Oracle, call
+from .ask import ask, system_prompt
+from .llm import Oracle
 from .profiles import profile, scaled_speed, tier_value, tune_block
 from .realize import ROUTE_TRIGGER_M
-from .spec import DDecision, Record, SchemaError, parse_d
+from .spec import DDecision, Record, parse_d
 from .step_a import StepError, set_type, walk_as_tree
 from .world import WorldContext, WorldError
 
@@ -33,13 +34,6 @@ HUDDLE_RADIUS_M = 0.35
 
 def circle_radius(n: int) -> float:
     return max(HUDDLE_RADIUS_M, CIRCLE_SPACING_M / (2.0 * math.sin(math.pi / max(2, n))))
-
-
-_SYSTEM = Path(__file__).with_name("system_d.md")
-
-
-def system_prompt() -> str:
-    return _SYSTEM.read_text()
 
 
 def population_summary(doc: Mapping[str, Any], world: WorldContext, owned: Mapping[str, Sequence[str]]) -> str:
@@ -67,21 +61,8 @@ def user_prompt(prompt: str, doc: Mapping[str, Any], world: WorldContext, record
 
 
 def decide(prompt: str, doc: Mapping[str, Any], world: WorldContext, record: Record, *, cache_dir: Path | None, model: str | None, oracle: Oracle | None, who: str = "") -> DDecision | None:
-    """Ask the model (or the oracle) for the Type D decision; one retry on a schema error."""
-    system = system_prompt()
-    user = user_prompt(prompt, doc, world, record, who=who)
-    complaint = ""
-    for attempt in range(2):
-        answer = call(system, user + (f"\n\nYour previous answer was rejected: {complaint}. Answer again." if complaint else ""), cache_dir=cache_dir, model=model, oracle=oracle)
-        record.provenance.setdefault("D", []).append({"model": answer.model, "response_sha256": answer.sha256, "cached": answer.cached, "attempt": attempt})
-        try:
-            raw = answer.json()
-            if str(raw.get("case", "")).lower() == "none":
-                return None
-            return parse_d(raw)
-        except (AnswerError, SchemaError) as exc:
-            complaint = str(exc)
-    raise StepError("schema", complaint)
+    """Ask the model (or the oracle) for the Type D decision, once more on a schema error."""
+    return ask("D", system_prompt("d"), user_prompt(prompt, doc, world, record, who=who), record, lambda raw: None if str(raw.get("case", "")).lower() == "none" else parse_d(raw), cache_dir=cache_dir, model=model, oracle=oracle)
 
 
 def _place(decision: DDecision, world: WorldContext) -> tuple[Point, Point, bool]:

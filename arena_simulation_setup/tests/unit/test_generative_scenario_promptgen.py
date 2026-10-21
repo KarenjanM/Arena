@@ -634,10 +634,11 @@ def test_kb_system_prompts_are_committed_builds() -> None:
 
 def _cache_a(cache: Path, text: str, answer: dict, model: str | None = None) -> Path:
     from arena_simulation_setup.generative.scenario.promptgen import step_a_llm
+    from arena_simulation_setup.generative.scenario.promptgen.ask import system_prompt
     from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
 
     cache.mkdir(exist_ok=True)
-    (cache / f"{prompt_sha256(model or step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": json.dumps(answer)}))
+    (cache / f"{prompt_sha256(model or step_a_llm.A_MODEL, system_prompt('a'), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": json.dumps(answer)}))
     return cache
 
 
@@ -1098,6 +1099,7 @@ def test_a_failure_is_recorded_with_the_kind_its_step_raised(toy, text: str, tar
 
 def test_a_model_answer_conflicting_twice_with_d_is_a_conflict(toy, tmp_path: Path) -> None:
     from arena_simulation_setup.generative.scenario.promptgen import step_bc
+    from arena_simulation_setup.generative.scenario.promptgen.ask import system_prompt
     from arena_simulation_setup.generative.scenario.promptgen.spec import Record, conflict_m
     from arena_simulation_setup.generative.scenario.promptgen.step_a import StepError
     from arena_simulation_setup.generative.scenario.propose.client import DEFAULT_MODEL, prompt_sha256
@@ -1110,7 +1112,7 @@ def test_a_model_answer_conflicting_twice_with_d_is_a_conflict(toy, tmp_path: Pa
     cache = tmp_path / "llm_cache"
     cache.mkdir()
     for asked in (user, f"{user}\n\nYour previous answer was rejected: {complaint}. Answer again."):
-        (cache / f"{prompt_sha256(DEFAULT_MODEL, step_bc.system_prompt(), asked)}.json").write_text(json.dumps({"answer": json.dumps({"B": "none", "C": {"case": "blocking", "route_fraction": 0.5}})}))
+        (cache / f"{prompt_sha256(DEFAULT_MODEL, system_prompt('bc'), asked)}.json").write_text(json.dumps({"answer": json.dumps({"B": "none", "C": {"case": "blocking", "route_fraction": 0.5}})}))
     with pytest.raises(StepError, match="Type D placement") as caught:
         step_bc.decide(text, doc, world, record, taken_fractions=[0.5], cache_dir=cache, model=None, oracle=None)
     assert caught.value.kind == "conflict"

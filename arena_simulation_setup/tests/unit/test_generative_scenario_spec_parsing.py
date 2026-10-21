@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from arena_simulation_setup.generative.scenario.promptgen import step_a_llm
+from arena_simulation_setup.generative.scenario.promptgen.ask import system_prompt
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match, score, when_in
 from arena_simulation_setup.generative.scenario.promptgen.spec import Record, SchemaError, When, parse_b, parse_c, parse_d, parse_selection, parse_when
 from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
@@ -77,7 +78,7 @@ def test_null_fields_read_as_absent(parse, base, keys) -> None:
 def test_null_k_and_who_profile_read_as_absent_in_the_model_answer(tmp_path: Path) -> None:
     text = "A nurse walks by."
     answer = json.dumps({"case": "busy", "k": None, "who": [{"mention": "a nurse", "profile": None, "count": None}]})
-    (tmp_path / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": answer}))
+    (tmp_path / f"{prompt_sha256(step_a_llm.A_MODEL, system_prompt('a'), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": answer}))
     decision, who, warnings = step_a_llm.decide(text, Record(prompt_id="t", prompt=text, world="w", base="b"), cache_dir=tmp_path)
     assert decision is not None and decision.k == 2.0
     assert who == [{"mention": "a nurse", "profile": "adult", "count": 0}] and warnings == []
@@ -126,6 +127,6 @@ def test_a_non_finite_busy_multiplier_is_rejected(tmp_path: Path) -> None:
     text = "The place is packed."
     retry = f"{step_a_llm.user_prompt(text)}\n\nYour previous answer was rejected: A.k: 'inf' is not a finite number. Answer again."
     for user in (step_a_llm.user_prompt(text), retry):
-        (tmp_path / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), user)}.json").write_text(json.dumps({"answer": json.dumps({"case": "busy", "k": "inf"})}))
+        (tmp_path / f"{prompt_sha256(step_a_llm.A_MODEL, system_prompt('a'), user)}.json").write_text(json.dumps({"answer": json.dumps({"case": "busy", "k": "inf"})}))
     with pytest.raises(StepError, match=r"A\.k: 'inf' is not a finite number"):
         step_a_llm.decide(text, Record(prompt_id="t", prompt=text, world="w", base="b"), cache_dir=tmp_path)
