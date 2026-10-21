@@ -100,7 +100,7 @@ A plain walker a change reaches first becomes its own walking tree (`types/<type
 
 ## Interceptions
 
-An interception is solved offline against the planned route ([`promptgen/encounter.py`](promptgen/encounter.py)): the encounter point at the requested route fraction, the spawn at most `LEAD_IN_M` = 4 m before it along the requested angle (180 head-on, 90 from the robot's right, 0 overtaking), and a lead-out of 3 m past it. When the walk or the spawn is blocked the solver tries other angles within 90 degrees, shorter lead-outs and nearby encounter fractions, and the achieved values are noted. The pedestrian stands at its spawn and walks on `go`, which the timeline raises when the robot is `speed * (walk time - offset)` from the encounter point, at least half a second out.
+An interception is solved offline against the planned route ([`promptgen/encounter.py`](promptgen/encounter.py)): the encounter point at the requested route fraction, the spawn at most `LEAD_IN_M` = 4 m before it along the requested angle (180 head-on, 90 from the robot's right, 0 overtaking), and a lead-out of 3 m past it. When the walk or the spawn is blocked the solver tries other angles within 90 degrees, shorter lead-outs and nearby encounter fractions, and the achieved values are noted. The pedestrian stands at its spawn and walks on `go`, which the timeline raises when the robot has `speed * (walk time - offset)` meters of its planned route left to the encounter point, at least half a second out: the trigger is `robot within 1.5 of` the route point whose 1.5 m circle the robot enters there, and a release whose circle an earlier stretch of the route already enters is a placement failure.
 
 | `after` | Walk |
 |---|---|

@@ -26,6 +26,7 @@ STAND_TRIGGER_M = 3.0
 # a `route_fraction` onset fires when the robot comes this close to that point of its route
 ROUTE_TRIGGER_M = 1.5
 MIN_RELEASE_S = 0.5
+TRIGGER_STEP_M = 0.05
 FOLLOW_STEP_M = 2.0
 ANGLE_SEARCH_DEG = 90.0
 LEAD_OUT_M = 3.0
@@ -84,6 +85,26 @@ def trigger(when: Mapping[str, Any], world: WorldContext, *, reference: Point | 
         atom = within(float(when[key]), pt, origin)
         return {"when": f"not {atom}" if negate else atom}
     return {"at": float(when.get("at") or 0.0)}
+
+
+def release_point(route: Sequence[Point], at: float, radius: float = ROUTE_TRIGGER_M) -> tuple[Point, float]:
+    """The route point whose `radius` circle the robot enters `at` meters along `route`, and that radius, shorter near the goal."""
+    total = route_length(route)
+    here = point_at_arc(route, at)[0]
+    s = at
+    while s < total and math.dist(point_at_arc(route, s)[0], here) < radius:
+        s += TRIGGER_STEP_M
+    if s < total:
+        return point_at_arc(route, s)[0], radius
+    end = point_at_arc(route, total)[0]
+    return end, max(math.dist(end, here), TRIGGER_STEP_M)
+
+
+def entered_at(route: Sequence[Point], pt: Point, radius: float) -> float | None:
+    """Meters along `route` where the robot first comes within `radius` of `pt`; None when it never does."""
+    total = route_length(route)
+    steps = max(1, math.ceil(total / TRIGGER_STEP_M))
+    return next((total * i / steps for i in range(steps + 1) if math.dist(point_at_arc(route, total * i / steps)[0], pt) <= radius), None)
 
 
 def _go_to(pt: Point, *, theta: float = 0.0, duration: float | None = None) -> dict[str, Any]:
@@ -184,12 +205,17 @@ def _intercept(effect: Mapping[str, Any], name: str, world: WorldContext, files:
     ref = files.switching(files.standing(str(effect["profile"]), name), need=GO, to="walk", steps=steps)
     walk = math.dist(enc.spawn, enc.encounter) / speed
     release = robot_speed * max(walk - offset, MIN_RELEASE_S)
+    at = max(0.0, enc.encounter_at_achieved * total - release)
+    point, radius = release_point(world.route, at)
+    entered = entered_at(world.route, point, radius)
+    if entered is not None and entered < at - 0.5:
+        raise StepError(f"placement: {name}'s release at {at:.1f} m along the route is within {radius:g} m of the route {at - entered:.1f} m earlier")
     human = _human(name, effect, ref, enc.spawn, _heading(enc.spawn, enc.encounter))
     note = (
-        f"{effect.get('label')}: {name} waits at ({enc.spawn[0]:.1f}, {enc.spawn[1]:.1f}) and walks when the robot is {release:.1f} m from the encounter ({enc.encounter[0]:.1f}, {enc.encounter[1]:.1f}), "
+        f"{effect.get('label')}: {name} waits at ({enc.spawn[0]:.1f}, {enc.spawn[1]:.1f}) and walks when the robot has {release:.1f} m of its route left to the encounter ({enc.encounter[0]:.1f}, {enc.encounter[1]:.1f}), "
         f"angle {enc.angle_achieved:g} (asked {enc.angle_requested:g}), fraction {enc.encounter_at_achieved:g} (asked {enc.encounter_at_requested:g}), then {after}"
     )
-    return human, [_entry({"when": within(release, enc.encounter, world.origin)}, [name], GO)], note, enc.encounter
+    return human, [_entry({"when": within(radius, point, world.origin)}, [name], GO)], note, enc.encounter
 
 
 def _switch(doc: dict[str, Any], names: Sequence[str], files: TypeFiles, world: WorldContext, made: set[str], *, need: str, to: str, steps_of: Mapping[str, dict[str, Any]]) -> None:

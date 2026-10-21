@@ -15,7 +15,7 @@ from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.lexicon import match
 from arena_simulation_setup.generative.scenario.promptgen.pipeline import RobotPlan, generate, write_result
 from arena_simulation_setup.generative.scenario.promptgen.profiles import ProfileError, derive, derived_name, profile, tier_value
-from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, STAND_TRIGGER_M, trigger
+from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, ROUTE_TRIGGER_M, STAND_TRIGGER_M, trigger
 from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_when
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 from arena_simulation_setup.generative.scenario.route import ROBOT_SPEED_MPS
@@ -687,6 +687,17 @@ def _edge(result) -> tuple[dict, dict]:
     return edge, result.files.docs[edge["agent"]["agent_type"]]
 
 
+def _encounter(result) -> tuple[float, float]:
+    (encounter,) = result.encounters
+    return tuple(encounter["point"])
+
+
+def _released_m(result, world) -> float:
+    """Meters of route the robot has left to the encounter when its release circle is entered."""
+    radius, point = _within(result.timeline[0])
+    return (world.fraction_of(_encounter(result)) - world.fraction_of(point)) * world.route_length + radius
+
+
 def test_an_intercept_waits_until_a_timeline_stimulus_releases_it(toy) -> None:
     world = toy[3]
     result = _approach(toy)
@@ -694,12 +705,14 @@ def test_an_intercept_waits_until_a_timeline_stimulus_releases_it(toy) -> None:
     (entry,) = result.timeline
     assert set(entry) == {"when", "stimulus"} and entry["stimulus"] == [{"agents": ["edge_0"], "need": "go"}]
     parse_atom(entry["when"])
-    radius, encounter = _within(entry)
+    radius, point = _within(entry)
+    encounter = _encounter(result)
     edge, tree = _edge(result)
     spawn = (edge["pose"][0], edge["pose"][1])
     assert encounter == pytest.approx(world.point_at(0.5)[0], abs=0.05)
     assert math.dist(spawn, encounter) <= LEAD_IN_M + 0.01 and spawn[0] > encounter[0]
-    assert radius == pytest.approx(ROBOT_SPEED_MPS * math.dist(spawn, encounter) / edge["agent"]["desired_velocity"], abs=0.05)
+    assert radius == ROUTE_TRIGGER_M and world.route_clearance(point) < 0.05
+    assert _released_m(result, world) == pytest.approx(ROBOT_SPEED_MPS * math.dist(spawn, encounter) / edge["agent"]["desired_velocity"], abs=0.1)
     assert tree["mode"] == "behavior_tree" and tree["initial_sequence"] == "wait" and tree["needs"]["go"] == {"initial": 0.0, "decay_rate": 0.0}
     assert {"when": {"go": {"above": 50.0}}, "goto": "walk"} in tree["sequences"]["wait"]["transitions"]
     assert list(tree["sequences"]["walk"]["steps"]) == ["cross", "stay"]
@@ -714,7 +727,7 @@ def test_the_release_distance_follows_the_designed_robot_speed(toy) -> None:
     prompt = _prompt("An adult walks straight at the robot.", ["C:approach"], C={"case": "approach", "profile": "adult", "angle": 180, "route_fraction": 0.5})
     slow = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     fast = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True, robot=RobotPlan(speed=2 * ROBOT_SPEED_MPS))
-    assert _within(fast.timeline[0])[0] == pytest.approx(2 * _within(slow.timeline[0])[0], abs=0.02)
+    assert _released_m(fast, world) == pytest.approx(2 * _released_m(slow, world), abs=0.1)
 
 
 @pytest.mark.parametrize(
@@ -731,7 +744,7 @@ def test_the_after_variants_are_steps_of_the_walk(toy, after: str, extra: dict, 
     _edge_agent, tree = _edge(result)
     walk = tree["sequences"]["walk"]["steps"]
     assert list(walk) == steps
-    _radius, encounter = _within(result.timeline[0])
+    encounter = _encounter(result)
     meet = walk["meet"]["target_pose"]
     assert (meet["x"], meet["y"]) == pytest.approx(encounter, abs=0.01)
     if after == "stop_facing":
@@ -745,7 +758,7 @@ def test_following_walks_the_robots_route_behind_it(toy) -> None:
     _edge_agent, tree = _edge(result)
     walk = tree["sequences"]["walk"]["steps"]
     follow = [walk[k]["target_pose"]["x"] for k in walk if k.startswith("follow_")]
-    _radius, encounter = _within(result.timeline[0])
+    encounter = _encounter(result)
     assert follow and follow == sorted(follow) and follow[0] > encounter[0]
     assert follow[-1] - encounter[0] == pytest.approx(min(6 * 1.1, 22.0 - encounter[0]), abs=0.1)
 
@@ -880,3 +893,34 @@ def test_owned_names_number_the_realized_intercepts_in_order(toy) -> None:
     result = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=True)
     assert result.record.status == "ok", result.record.failures
     assert result.record.owned["D"] == ["edge_0"] and result.record.owned["C"] == ["edge_1"] and result.injected == ["edge_0", "edge_1"]
+
+
+def _u_turn(tmp_path: Path) -> tuple[Path, dict, Path, WorldContext]:
+    """A U-shaped hall: east along the south arm, up the east leg, west along the north arm, the arms 4 m apart."""
+    root = tmp_path / "worlds" / "u_turn"
+    root.mkdir(parents=True)
+    rooms = {"south_arm": (0, 0, 8, 2), "east_leg": (8, 0, 10, 6), "north_arm": (0, 4, 8, 6)}
+    zones = [{"name": n, "polygon": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "floor": False} for n, (x0, y0, x1, y1) in rooms.items()]
+    (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones}]}))
+    doc = {"robots": [{"start": [1.0, 1.0, 0.0], "phases": [{"goto": [1.0, 5.0, 0.0]}]}], "humans": []}
+    base = root / "scenarios" / "empty"
+    base.mkdir(parents=True)
+    (base / "scenario.yaml").write_text(yaml.safe_dump({"format": "arena-scenario/2", **doc}, sort_keys=False))
+    return tmp_path / "worlds", doc, base, WorldContext.load(root, doc)
+
+
+def test_a_release_on_a_bent_route_fires_its_designed_arc_before_the_encounter(tmp_path: Path) -> None:
+    from arena_simulation_setup.generative.scenario.promptgen.realize import entered_at
+
+    _worlds, doc, base, world = _u_turn(tmp_path)
+    assert world.route_length > 15.0 and max(x for x, _y in world.route) > 8.0
+    prompt = _prompt("An old man shuffles straight at the robot.", ["C:approach"], C={"case": "approach", "profile": "elder", "speed": "low", "angle": 180, "route_fraction": 0.7})
+    result = generate(prompt, world=world, base_id="empty", base_doc=doc, base_dir=base, oracle=True)
+    assert result.record.status == "ok", result.record.failures
+    radius, point = _within(result.timeline[0])
+    edge, _tree = _edge(result)
+    encounter = _encounter(result)
+    release = ROBOT_SPEED_MPS * math.dist((edge["pose"][0], edge["pose"][1]), encounter) / edge["agent"]["desired_velocity"]
+    designed = world.fraction_of(encounter) * world.route_length - release
+    assert world.zone_of(encounter) == "north_arm" and entered_at(world.route, encounter, release) < designed - 3.0
+    assert radius == ROUTE_TRIGGER_M and entered_at(world.route, point, radius) == pytest.approx(designed, abs=0.2)
