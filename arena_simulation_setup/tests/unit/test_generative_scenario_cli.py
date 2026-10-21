@@ -88,6 +88,32 @@ def test_promptgen_fails_when_a_prompt_crashes(tmp_path: Path, capsys: pytest.Ca
     assert "1 prompt(s) crashed" in err
 
 
+def test_a_case_the_scenario_model_rejects_fails_only_its_prompt(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    worlds = _worlds(tmp_path)
+    assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0
+    scenarios = worlds / "sbend" / "scenarios"
+    doc = yaml.safe_load((scenarios / "normal" / "scenario.yaml").read_text())
+    (scenarios / "odd").mkdir()
+    shutil.copy(scenarios / "normal" / "talker.yaml", scenarios / "odd" / "talker.yaml")
+    (scenarios / "odd" / "scenario.yaml").write_text(yaml.safe_dump({**doc, "knobs": {"speed": "high"}}))
+    capsys.readouterr()
+    rc, out, err = _promptgen(worlds, capsys, "--bases", "odd,normal", "--ids", "u_002", "--write")
+    assert "odd/u_002: the scenario model rejects the case" in out and "knobs" in out, out
+    assert "rejected=1" in out and "ok=1" in out and "wrote 1" in out, out
+    assert rc == 1
+    assert "1 case(s) not written" in err
+    assert (scenarios / "normal__u_002" / "scenario.yaml").is_file()
+    assert not (scenarios / "odd__u_002").exists()
+
+
+@pytest.mark.parametrize("verb", ["zones", "classify"])
+def test_a_malformed_world_is_reported(tmp_path: Path, capsys: pytest.CaptureFixture[str], verb: str) -> None:
+    worlds = _worlds(tmp_path)
+    (worlds / "sbend" / "world.yaml").write_text("format: arena-world/2\nlevels: [\n")
+    assert main([verb, "sbend", "--worlds", str(worlds)]) == 1
+    assert "sbend: a world file is not valid YAML" in capsys.readouterr().err
+
+
 def test_promptgen_succeeds_when_a_case_is_realized(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     worlds = _worlds(tmp_path)
     assert main(["populate", "sbend", "--worlds", str(worlds), "--write"]) == 0

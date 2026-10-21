@@ -196,11 +196,7 @@ def _all_zones(root: Path) -> list[dict[str, Any]]:
     """Every named zone across all levels, the first of each name kept."""
     zones: list[dict[str, Any]] = []
     seen: set[str] = set()
-    try:
-        docs = levels(root)
-    except yaml.YAMLError:
-        docs = []
-    for doc in docs:
+    for doc in levels(root):
         for zone in doc.get("zones") or []:
             if isinstance(zone, dict) and zone.get("name") and str(zone["name"]) not in seen:
                 seen.add(str(zone["name"]))
@@ -428,6 +424,13 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
                     status = f"duplicate of {seen[key]}"
                 else:
                     seen[key] = result.scenario_id
+            if args.write and status in ("ok", "partial"):
+                try:
+                    if write_result(result, root, keep_partial=not args.strict) is not None:
+                        written += 1
+                except ValueError as exc:
+                    print(f"  ! {base_id}/{prompt.id}: the scenario model rejects the case: {exc}")
+                    status = "rejected"
             counts[status.split(" ")[0]] = counts.get(status.split(" ")[0], 0) + 1
             fails = "; ".join(f"{f.step}:{f.kind}" for f in result.record.failures)
             print(f"  {result.scenario_id:40s} {status:10s} [{', '.join(result.record.steps) or '-'}]" + (f"  failures: {fails}" if fails else ""))
@@ -436,21 +439,19 @@ def _cmd_promptgen(args: argparse.Namespace) -> int:
                     print(f"      - {note}")
                 for failure in result.record.failures:
                     print(f"      ! {failure.step}: {failure.reason}")
-            if status not in ("ok", "partial"):
-                continue
-            if args.write and write_result(result, root, keep_partial=not args.strict) is not None:
-                written += 1
     print(f"{sum(counts.values())} prompt run(s): " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) + (f"; wrote {written}" if args.write else " (dry run - pass --write)"))
     if written:
         _runtime_note(root)
     crashed = counts.get("crashed", 0)
     if crashed:
         print(f"generate_scenario: {crashed} prompt(s) crashed" + ("" if args.verbose else ", rerun with -v for the tracebacks"), file=sys.stderr)
+    if rejected := counts.get("rejected", 0):
+        print(f"generate_scenario: {rejected} case(s) not written, the scenario model rejects them (see the ! lines above)", file=sys.stderr)
     if not counts.get("ok", 0) + counts.get("partial", 0):
         why = "no prompt was realized as ok or partial on any base" if loaded else f"none of the bases {', '.join(bases)} could be loaded, see the ! lines above"
         print(f"generate_scenario: nothing generated: {why}", file=sys.stderr)
         return 1
-    return 1 if crashed else 0
+    return 1 if crashed or rejected else 0
 
 
 def _cmd_suite(args: argparse.Namespace) -> int:
@@ -541,7 +542,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         return int(args.fn(args))
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, yaml.YAMLError) as exc:
         print(f"generate_scenario: {exc}", file=sys.stderr)
         return 1
 

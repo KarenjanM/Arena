@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .formats import is_world
+from .formats import is_world, load_world
 
 if TYPE_CHECKING:
     import numpy as np
@@ -38,13 +38,6 @@ def _footprints(view: WorldView, world: World, objects: list[Obstacle]) -> list[
 
     with world_assets(view, world):
         return Identifier._run_sync(collect())
-
-
-def load_world(world_root: str | Path) -> World:
-    """The world at `world_root` as `WorldView` loads it."""
-    from arena_simulation_setup.tree.World.view import WorldView
-
-    return WorldView(Path(world_root).resolve()).load()
 
 
 def world_statics(world_root: str | Path, world: World | None = None) -> list[dict[str, Any]]:

@@ -23,7 +23,10 @@ def read_scenario(path: Path) -> dict[str, Any]:
     """The format 2 mapping of a scenario file without its `format` key; a format 1 file is upgraded on read."""
     from arena_simulation_setup.tree.World.Scenario import upgrade_scenario
 
-    raw = yaml.safe_load(path.read_text()) or {}
+    try:
+        raw = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path}: not valid YAML: {exc}") from exc
     if "format" not in raw:
         raw, _warnings = upgrade_scenario(raw)
     doc = dict(raw)
@@ -90,10 +93,15 @@ def scenario_text(doc: Mapping[str, Any], *, world_root: Path, types_dir: Path, 
     return header + to_yaml(scenario)
 
 
-def _world(root: Path) -> World:
+def load_world(world_root: str | Path) -> World:
+    """The world at `world_root` as `WorldView` loads it, a YAML error named after its file."""
     from arena_simulation_setup.tree.World.view import WorldView
 
-    return WorldView(root.resolve()).load()
+    view = WorldView(Path(world_root).resolve())
+    try:
+        return view.load()
+    except yaml.YAMLError as exc:
+        raise ValueError(f"world {view.path}: a world file is not valid YAML: {exc}") from exc
 
 
 def _working_level(level: Level, scene: Scene) -> dict[str, Any]:
@@ -115,7 +123,7 @@ def levels(root: Path, world: World | None = None) -> list[dict[str, Any]]:
     """The world's levels with zones as working dicts; `world` is the loaded world at `root` when given."""
     from arena_simulation_setup.tree.World.membership import derive
 
-    world = world if world is not None else _world(root)
+    world = world if world is not None else load_world(root)
     scene = derive(type(world)(levels=world.levels), "auto")
     return [_working_level(level, scene) for level in world.levels.values() if level.zones]
 
@@ -126,7 +134,7 @@ def first_level(root: Path, world: World | None = None) -> dict[str, Any] | None
 
 def world_roles(root: Path, world: World | None = None) -> dict[str, Role]:
     """Zone name to role as the world's KG states it, linked worlds' facts included; `world` is the loaded world at `root` when given."""
-    return stated_roles((world if world is not None else _world(root)).kg)
+    return stated_roles((world if world is not None else load_world(root)).kg)
 
 
 def is_world(root: Path) -> bool:
