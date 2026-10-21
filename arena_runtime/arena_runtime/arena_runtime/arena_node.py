@@ -514,6 +514,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         if record is None:
             return
 
+        heartbeat_age = (self.wall_time - Time.from_msg(record.last_heartbeat)).to_seconds()
+        self.get_logger().warning(f"evicting env_{env_id} ({reason}), last heartbeat {heartbeat_age:.1f} s ago")
         self._publish_envs()
 
         await self._force_release_window(record.fqn)

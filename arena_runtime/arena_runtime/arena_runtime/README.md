@@ -117,6 +117,7 @@ the lockstep scheduler. Restarting the runtime is the benchmark runner's job.
    `ShutdownRequest` the env observes and acts on via its own lifecycle.
 6. **Eviction**: on a `sweep_verdict` reason or lifecycle FINALIZED,
    `arena_node` calls `start_eviction` (marks draining, releases holds),
+   logs a warning with the reason and the age of the last heartbeat,
    publishes a `ShutdownRequest`, awaits env disposal (reaping the wrapper
    process for managed envs), and only then cleans up the namespace via
    `SimLifecycle` and calls `complete_eviction` (frees the ID for reuse).
