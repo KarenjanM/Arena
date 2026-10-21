@@ -60,10 +60,6 @@ def _footprints(view: WorldView, world: World, objects: list[Obstacle]) -> list[
         return Identifier._run_sync(collect())
 
 
-def static_polygon(obj: Mapping[str, Any]) -> list[tuple[float, float]] | None:
-    return obj.get("polygon")
-
-
 def load_world(world_root: str | Path) -> World:
     """The world at `world_root` as `WorldView` loads it."""
     from arena_simulation_setup.tree.World.view import WorldView
@@ -98,7 +94,7 @@ def _stamp(obj: Mapping[str, Any]) -> shapely.Polygon | None:
     """The polygon a static is stamped as: its footprint, else the box of its radius around its pose."""
     import shapely
 
-    poly = static_polygon(obj)
+    poly = obj.get("polygon")
     if poly is not None:
         return shapely.Polygon(poly)
     pose = obj.get("pose")

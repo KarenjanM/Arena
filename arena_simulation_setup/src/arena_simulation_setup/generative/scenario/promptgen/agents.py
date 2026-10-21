@@ -46,14 +46,14 @@ def mesh_for(prof: Profile, rng: random.Random) -> str:
     return rng.choice(list(prof.meshes))
 
 
-def entry(name: str, prof: Profile, pose: Point | str, waypoints: Sequence[Point | str], *, speed: float, mode: str, agent_type: str, rng: random.Random, yaw: float = 0.0) -> dict[str, Any]:
+def entry(name: str, prof: Profile, pose: Point | str, waypoints: Sequence[Point | str], *, speed: float, mode: str, agent_type: str, rng: random.Random) -> dict[str, Any]:
     def pt(p: Point | str) -> str | list[float]:
         return p if isinstance(p, str) else [round(p[0], 2), round(p[1], 2), 0.0]
 
     return {
         "name": name,
         "model": mesh_for(prof, rng),
-        "pose": pose if isinstance(pose, str) else [round(pose[0], 2), round(pose[1], 2), round(yaw, 3)],
+        "pose": pose if isinstance(pose, str) else [round(pose[0], 2), round(pose[1], 2), 0.0],
         "agent": {"agent_type": agent_type, "desired_velocity": round(speed, 2)},
         "waypoints": [pt(p) for p in waypoints],
         "waypoint_mode": mode,

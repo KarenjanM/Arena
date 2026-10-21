@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .client import DEFAULT_MODEL, Unavailable, available, prompt_sha256
+from .client import DEFAULT_MODEL, Unavailable, prompt_sha256
 from .zone_roles import (
     Proposal,
     build_prompt,
@@ -16,7 +16,6 @@ __all__ = [
     "DEFAULT_MODEL",
     "Proposal",
     "Unavailable",
-    "available",
     "build_prompt",
     "classify_tail",
     "merge",

@@ -21,13 +21,11 @@ class Prompt:
     text: str
     targets: tuple[str, ...]
     oracle: dict[str, Any]
-    scope: str = "universal"
-    world: str = ""
 
 
 def read(path: Path) -> list[Prompt]:
     raw = yaml.safe_load(path.read_text()) or []
-    return [Prompt(id=str(p["id"]), text=str(p["text"]), targets=tuple(p.get("targets") or ()), oracle=dict(p.get("oracle") or {}), scope=str(p.get("scope", "universal")), world=str(p.get("world", ""))) for p in raw]
+    return [Prompt(id=str(p["id"]), text=str(p["text"]), targets=tuple(p.get("targets") or ()), oracle=dict(p.get("oracle") or {})) for p in raw]
 
 
 def shipped_dir() -> Path:

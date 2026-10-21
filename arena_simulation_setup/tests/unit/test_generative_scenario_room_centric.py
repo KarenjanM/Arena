@@ -24,30 +24,11 @@ def zone(name, x0, y0, x1, y1):
 
 @pytest.fixture
 def world(tmp_path: Path) -> Path:
-    # A 30x20 m open box with a 0.05 m grid, written as a real map.png plus map.yaml.
-    np = pytest.importorskip("numpy")
-    Image = pytest.importorskip("PIL.Image")
     import yaml
 
-    res, width, height = 0.05, 600, 400
-    pixels = np.full((height, width), 255, dtype=np.uint8)
-    pixels[0, :] = pixels[-1, :] = pixels[:, 0] = pixels[:, -1] = 0
-
     root = tmp_path / "w"
-    (root / "map").mkdir(parents=True)
+    root.mkdir(parents=True)
     (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": [{"name": "box", "polygon": [[0.0, 0.0], [30.0, 0.0], [30.0, 20.0], [0.0, 20.0]], "floor": False}]}]}))
-    Image.fromarray(pixels).save(root / "map" / "0.png")
-    (root / "map" / "0.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "image": "0.png",
-                "resolution": res,
-                "origin": [0.0, 0.0, 0.0],
-                "occupied_thresh": 0.65,
-                "negate": 0,
-            }
-        )
-    )
     return root
 
 

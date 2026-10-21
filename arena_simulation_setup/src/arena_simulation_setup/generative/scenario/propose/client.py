@@ -20,14 +20,6 @@ def prompt_sha256(*parts: str) -> str:
     return digest.hexdigest()[:16]
 
 
-def available() -> bool:
-    try:
-        _client()
-    except Unavailable:
-        return False
-    return True
-
-
 def _client() -> object:
     if not os.environ.get("LLM_API_ENDPOINT") and not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
         raise Unavailable("no LLM configured: set GEMINI_API_KEY (or GOOGLE_API_KEY) for the hosted API, or LLM_API_ENDPOINT to point at a local one")

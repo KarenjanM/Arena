@@ -31,7 +31,6 @@ def write_base(
     *,
     world_root: str | os.PathLike[str],
     profile: str,
-    generator: str = "populate",
     force: bool = False,
     note: str = "",
 ) -> Path:
@@ -47,7 +46,7 @@ def write_base(
     header = "\n".join(
         (
             f"# Base scenario: {profile} ({n} pedestrian{'s' if n != 1 else ''})",
-            f"# generator: {generator}",
+            "# generator: populate",
             *([f"# {note}"] if note else []),
             "#",
             GENERATED_MARKER,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from arena_simulation_setup.generative.scenario.formats import read_scenario, write_scenario
+from arena_simulation_setup.generative.scenario.formats import read_scenario, scenario_text
 from arena_simulation_setup.generative.scenario.promptgen import prompts as P
 from arena_simulation_setup.generative.scenario.promptgen.pipeline import Result, generate, write_result
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
@@ -23,6 +23,13 @@ def _world(tmp_path: Path) -> Path:
     return root
 
 
+def _rewrite(world: Path, name: str, doc: dict) -> Path:
+    out = world / "scenarios" / name
+    out.mkdir(parents=True)
+    (out / "scenario.yaml").write_text(scenario_text(doc, world_root=world, types_dir=out))
+    return out / "scenario.yaml"
+
+
 def _human(**extra: object) -> dict:
     return {"name": "walker_1", "model": "female_adult_medical_01", "pose": "lobby", "agent": {"agent_type": "adult"}, "waypoints": ["lobby", "ward"], **extra}
 
@@ -33,8 +40,8 @@ def test_format_2_hunav_round_trips_without_nesting(tmp_path: Path) -> None:
     base.mkdir(parents=True)
     (base / "scenario.yaml").write_text(yaml.safe_dump({"format": scenario_format.SCENARIO_FORMAT, "humans": [_human(hunav=_HUNAV)]}))
 
-    path = write_scenario(world / "scenarios" / "once", read_scenario(base / "scenario.yaml"), world_root=world)
-    again = write_scenario(world / "scenarios" / "twice", read_scenario(path), world_root=world)
+    path = _rewrite(world, "once", read_scenario(base / "scenario.yaml"))
+    again = _rewrite(world, "twice", read_scenario(path))
 
     assert read_scenario(again)["humans"][0]["hunav"] == _HUNAV
 
@@ -45,8 +52,8 @@ def test_format_1_extra_human_keys_nest_once_across_rewrites(tmp_path: Path) -> 
     base.mkdir(parents=True)
     (base / "scenario.yaml").write_text(yaml.safe_dump({"robots": [{"start": [1.0, 1.0, 0.0], "goal": [8.0, 2.0, 0.0]}], "dynamic": [_human(**_HUNAV)]}))
 
-    path = write_scenario(world / "scenarios" / "once", read_scenario(base / "scenario.yaml"), world_root=world)
-    again = write_scenario(world / "scenarios" / "twice", read_scenario(path), world_root=world)
+    path = _rewrite(world, "once", read_scenario(base / "scenario.yaml"))
+    again = _rewrite(world, "twice", read_scenario(path))
 
     assert read_scenario(again)["humans"][0]["hunav"] == _HUNAV
 
@@ -62,19 +69,10 @@ def _walker(name: str, home: str, away: str, agent_type: str = "adult") -> dict:
 
 def _corridor_world(tmp_path: Path, names: dict[str, str], robot: dict, humans: list[dict]) -> tuple[WorldContext, dict, Path]:
     """Two rooms joined by a 2 m corridor, each zone named by `names` (a missing key leaves that area unzoned)."""
-    np = pytest.importorskip("numpy")
-    from PIL import Image
-
     root = tmp_path / "worlds" / "corridor"
-    (root / "map").mkdir(parents=True)
+    root.mkdir(parents=True)
     zones = [{"name": names[key], "polygon": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], "floor": False} for key, (x0, y0, x1, y1) in _ROOMS.items() if key in names]
     (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones}]}))
-    res = 0.1
-    px = np.zeros((int(8 / res), int(32 / res)), dtype=np.uint8)
-    for x0, y0, x1, y1 in ((0.3, 0.3, 7.7, 7.7), (7.7, 3.0, 24.3, 5.0), (24.3, 0.3, 31.7, 7.7)):
-        px[px.shape[0] - int(y1 / res) : px.shape[0] - int(y0 / res), int(x0 / res) : int(x1 / res)] = 255
-    Image.fromarray(px, mode="L").save(root / "map" / "0.png")
-    (root / "map" / "0.yaml").write_text(yaml.safe_dump({"image": "0.png", "resolution": res, "origin": [0.0, 0.0, 0.0], "occupied_thresh": 0.65, "negate": 0}))
     base = root / "scenarios" / "base"
     base.mkdir(parents=True)
     doc = {"robots": [robot], "humans": humans}

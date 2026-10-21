@@ -78,7 +78,6 @@ def screen_zones(
     route: Sequence[tuple[float, float]],
     statics: Sequence[Mapping[str, Any]] = (),
     min_route_clearance: float,
-    safe_dist: float = RUNTIME_SAFE_DIST,
     robot_zones: frozenset[str] = frozenset(),
     clearance_map: tuple[np.ndarray, float, float, float] | None = None,
 ) -> dict[str, Verdict]:
@@ -113,7 +112,7 @@ def screen_zones(
             continue
 
         clearance = dist[mask]
-        admissible = clearance > safe_dist
+        admissible = clearance > RUNTIME_SAFE_DIST
         n_admissible = int(admissible.sum())
         if n_admissible == 0:
             verdicts[name] = Verdict(

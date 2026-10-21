@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from arena_simulation_setup.generative.scenario.formats import first_level, read_scenario, write_scenario
+from arena_simulation_setup.generative.scenario.formats import first_level, read_scenario, scenario_text
 from arena_simulation_setup.tree.World import legacy
 from arena_simulation_setup.tree.World import Scenario as scenario_format
 
@@ -66,7 +66,9 @@ _DOC = {
 
 def test_a_scenario_is_written_as_format_2_the_scenario_model_reads(tmp_path: Path) -> None:
     world = _world(tmp_path)
-    path = write_scenario(world / "scenarios" / "s", _DOC, world_root=world, header="# header\n")
+    path = world / "scenarios" / "s" / "scenario.yaml"
+    path.parent.mkdir(parents=True)
+    path.write_text(scenario_text(_DOC, world_root=world, types_dir=path.parent, header="# header\n"))
 
     assert path.read_text().startswith("# header\n")
     raw = yaml.safe_load(path.read_text())
@@ -95,12 +97,10 @@ def test_a_format_1_scenario_reads_as_format_2(tmp_path: Path) -> None:
 def test_a_key_format_2_does_not_know_refuses_to_write(tmp_path: Path) -> None:
     world = _world(tmp_path)
     with pytest.raises(ValueError, match="does not know"):
-        write_scenario(world / "scenarios" / "s", {"humans": [], "knobs": {"speed": "high"}}, world_root=world)
+        scenario_text({"humans": [], "knobs": {"speed": "high"}}, world_root=world, types_dir=world / "scenarios" / "s")
 
 
-def test_a_scenario_the_model_rejects_is_not_written(tmp_path: Path) -> None:
+def test_a_scenario_the_model_rejects_is_refused(tmp_path: Path) -> None:
     world = _world(tmp_path)
-    out = world / "scenarios" / "s"
     with pytest.raises(ValueError, match="kitchen"):
-        write_scenario(out, {**_DOC, "humans": [{**_DOC["humans"][0], "pose": "kitchen"}]}, world_root=world)
-    assert not (out / "scenario.yaml").exists()
+        scenario_text({**_DOC, "humans": [{**_DOC["humans"][0], "pose": "kitchen"}]}, world_root=world, types_dir=world / "scenarios" / "s")

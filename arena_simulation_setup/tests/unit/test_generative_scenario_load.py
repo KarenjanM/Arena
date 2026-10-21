@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from arena_simulation_setup.generative.scenario.formats import first_level, read_scenario, write_scenario
+from arena_simulation_setup.generative.scenario.formats import first_level, read_scenario, scenario_text
 from arena_simulation_setup.generative.scenario.populate import MIN_ROUTE_CLEARANCE, bt_type_source, build, robot_zones, route_points
 from arena_simulation_setup.generative.scenario.zone_screen import ref_safe_zones, screen_zones
 from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
@@ -42,7 +42,8 @@ def written(world: Path) -> dict:
     out = world / "scenarios" / NAME
     out.mkdir(parents=True)
     shutil.copy(bt_type_source(), out / bt_type_source().name)
-    return read_scenario(write_scenario(out, doc, world_root=world))
+    (out / "scenario.yaml").write_text(scenario_text(doc, world_root=world, types_dir=out))
+    return read_scenario(out / "scenario.yaml")
 
 
 @pytest.fixture

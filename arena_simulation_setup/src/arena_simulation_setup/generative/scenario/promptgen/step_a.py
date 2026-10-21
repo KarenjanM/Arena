@@ -123,10 +123,10 @@ def tune_trees(doc: dict[str, Any], params: Mapping[str, str], files: TypeFiles,
     return [{"type": "stimulus", "label": label, "scope": scope, "need": need, "when": dict(when)}] if scope else []
 
 
-def inject_busy(doc: dict[str, Any], world: WorldContext, k: float, *, seed: int, prefix: str = "busy") -> list[str]:
+def inject_busy(doc: dict[str, Any], world: WorldContext, k: float, *, seed: int) -> list[str]:
     present = len(_agents(doc))
     n = max(2, round(present * (k - 1.0))) if present else max(2, round(k * 3))
-    added = extra_agents(n, zones=world.zones, robot=world.robot, homes=world.homes, seed=seed, world=world.name, mix=BUSY_MIX, prefix=prefix, existing=doc)
+    added = extra_agents(n, zones=world.zones, robot=world.robot, homes=world.homes, seed=seed, world=world.name, mix=BUSY_MIX, existing=doc)
     if not added:
         raise StepError("busy: no zone to inject pedestrians into")
     doc["humans"] = [*doc.get("humans", []), *added]

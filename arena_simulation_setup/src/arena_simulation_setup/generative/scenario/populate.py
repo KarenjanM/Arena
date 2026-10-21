@@ -321,8 +321,6 @@ def extra_agents(
     seed: int = 0,
     world: str = "",
     mix: Mapping[str, int] = BUSY_MIX,
-    prefix: str = "busy",
-    speed_scale: float = 1.0,
     overrides: Mapping[str, str] | None = None,
     existing: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -334,7 +332,7 @@ def extra_agents(
     if not starts or n <= 0:
         return []
     destinations = for_people([z for role in (Role.WORK, Role.BREAK, Role.TRANSIT, Role.UNKNOWN) for z in by_role[role] if z in centroids])
-    rng = random.Random(f"{world}:{prefix}:{seed}")
+    rng = random.Random(f"{world}:busy:{seed}")
     models = list(MODELS)
     rng.shuffle(models)
     weights = mix_for("normal", world_kind(zones, overrides)) if not mix else {t: w for t, w in mix.items() if world_kind(zones, overrides) in ONLY_IN.get(t, (world_kind(zones, overrides),))}
@@ -345,7 +343,7 @@ def extra_agents(
     i = 0
     while len(agents) < n:
         i += 1
-        name = f"{prefix}_{i}"
+        name = f"busy_{i}"
         if name in taken:
             continue
         stops = rng.choices([s for s, _ in ROUTE_STOPS], weights=[w for _, w in ROUTE_STOPS])[0]
@@ -358,7 +356,7 @@ def extra_agents(
                 "name": name,
                 "model": models[i % len(models)],
                 "pose": home,
-                "agent": {"agent_type": kind, "desired_velocity": speed_for(kind, rng, speed_scale)},
+                "agent": {"agent_type": kind, "desired_velocity": speed_for(kind, rng)},
                 "waypoints": waypoints,
                 "waypoint_mode": _waypoint_mode(len(waypoints), rng),
             }

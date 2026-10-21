@@ -118,7 +118,7 @@ An interception is solved offline against the planned route ([`promptgen/encount
 | Path | Purpose |
 |---|---|
 | `cli.py` | `generate_scenario` |
-| `formats.py` | worlds in the working shape (`levels`, `first_level`), scenarios read (`read_scenario`) and written (`write_scenario`) |
+| `formats.py` | worlds in the working shape (`levels`, `first_level`), scenarios read (`read_scenario`) and rendered for writing (`scenario_text`) |
 | `zones.py` | zone name to role: the world's `has_purpose` facts, then substring rules |
 | `occupancy.py`, `zone_screen.py` | the level grid, and which zones may be homes (every admissible cell 1.5 m off the route) |
 | `route.py`, `populate.py`, `materialize.py` | the base route, the four bases, the base writer and `GENERATED_MARKER` |
@@ -133,7 +133,7 @@ An interception is solved offline against the planned route ([`promptgen/encount
 
 - **People are written in rooms, never coordinates.** `pose: laboratory`, `waypoints: [...]`, resolved at run time. The exceptions are the robot's pinned start and goal and the pedestrians a case injects.
 - **Normal until the onset.** A case changes the crowd only through its timeline, except a parameter HumanSim has no `tune:` for (radius, need decay, step duration), which is pinned into the agent's type from the start.
-- **Every agent block carries its type's radius.** HumanSim's adapter overrides an undeclared `radius` with 0.35 m, so `write_scenario` writes the type's mean.
+- **Every agent block carries its type's radius.** HumanSim's adapter overrides an undeclared `radius` with 0.35 m, so `scenario_text` writes the type's mean.
 - **The model runs at temperature 0**, every answer cached by content hash under `$ARENA_DATA_DIR/promptgen/llm_cache` (`$ARENA_WS_DIR/data`, else `/opt/arena_ws/data`, when `ARENA_DATA_DIR` is unset), so regeneration is byte-identical and free. An entry is written to a temporary file and renamed into place, and an unreadable one is asked again.
 - **Generated files carry `GENERATED_MARKER`.** `populate --write` refuses to replace a scenario without it unless `--force`, and `--prune` removes only marked bases this run did not write.
 - **Same world and seed reproduce byte-identically.** World variance, scatter points and waypoint draws come from RNGs keyed on world, agent, profile and seed.

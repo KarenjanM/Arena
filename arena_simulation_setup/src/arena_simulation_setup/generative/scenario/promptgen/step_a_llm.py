@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .lexicon import ONSETS
-from .llm import DEFAULT_MODEL, AnswerError, Oracle, call
+from .llm import DEFAULT_MODEL, AnswerError, call
 from .profiles import ProfileError, profile
 from .spec import A_CASES, ADecision, Record, SchemaError, When, parse_when
 from .step_a import StepError
@@ -65,13 +65,13 @@ def _parse(raw: dict[str, Any]) -> tuple[ADecision | None, list[dict[str, Any]],
     return ADecision(case=case, k=k, when=when if isinstance(when, When) else ONSETS[case]), who, warnings
 
 
-def decide(prompt: str, record: Record, *, cache_dir: Path | None, model: str | None = None, oracle: Oracle | None = None) -> tuple[ADecision | None, list[dict[str, Any]], list[str]]:
+def decide(prompt: str, record: Record, *, cache_dir: Path | None, model: str | None = None) -> tuple[ADecision | None, list[dict[str, Any]], list[str]]:
     """(decision-or-None, who block, warnings). Raises `StepError` on a twice-rejected answer."""
     system = system_prompt()
     user = user_prompt(prompt)
     complaint = ""
     for attempt in range(2):
-        answer = call(system, user + (f"\n\nYour previous answer was rejected: {complaint}. Answer again." if complaint else ""), cache_dir=cache_dir, model=model or A_MODEL, oracle=oracle)
+        answer = call(system, user + (f"\n\nYour previous answer was rejected: {complaint}. Answer again." if complaint else ""), cache_dir=cache_dir, model=model or A_MODEL)
         record.provenance.setdefault("A", []).append({"model": answer.model, "response_sha256": answer.sha256, "cached": answer.cached, "attempt": attempt})
         try:
             return _parse(answer.json())

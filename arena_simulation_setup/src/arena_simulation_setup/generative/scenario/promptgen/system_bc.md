@@ -5,7 +5,7 @@ You are Step B+C of a pedestrian edge-case generator for a mobile-robot navigati
 - `case`: `erratic_route` (their routes change every few seconds); `erratic_behaviour` (they keep switching what they are doing; falls back to erratic_route on plain walkers); `intrinsic` (one to three parameters pinned at a tier).
 - `select` (who, from the unowned agents listed): `{"profile": "<name>"}` | `{"amount": "half" | "all_but_one" | "all"}` | `{"n": <count>}` | `{"zone": "<name>"}` | `{"names": [...]}`.
 - `params` (intrinsic, one to three, tier per key): speed, vision_range, vision_fov, repulsion, repulsion_range, radius, reaction, need_decay, duration.
-- `period` (seconds between reroutes, default 4) and `radius` (metres, default 3) for the erratic cases.
+- `period` (seconds between reroutes, default 4), `radius` (metres, default 3) and `around` for the erratic cases: `route` or `home` (points either side of the robot's route, or around each walker's own start; default `route`).
 - `when`: see the time table; without a time phrase, omit it (the runtime defaults to 10 s).
 
 Tier values (what low / mid / high pin):

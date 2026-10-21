@@ -18,7 +18,7 @@ from . import prompts as P
 from . import step_d as D
 from .lexicon import load as lex_load
 from .profiles import ALIASES, PROFILES, TIERS, tier_value
-from .spec import C_AFTER, CONFLICT_M, FORMATION_TRIGGER_M, PHRASES, CDecision, DDecision
+from .spec import C_AFTER, CONFLICT_M, ERRATIC_AROUND, FORMATION_TRIGGER_M, PHRASES, BDecision, CDecision, DDecision
 
 _DIR = Path(__file__).parent
 
@@ -150,7 +150,7 @@ def _bc_contract() -> str:
             f"- `case`: {b_cases}.",
             '- `select` (who, from the unowned agents listed): `{"profile": "<name>"}` | `{"amount": "half" | "all_but_one" | "all"}` | `{"n": <count>}` | `{"zone": "<name>"}` | `{"names": [...]}`.',
             f"- `params` (intrinsic, one to three, tier per key): {', '.join(params)}.",
-            "- `period` (seconds between reroutes, default 4) and `radius` (metres, default 3) for the erratic cases.",
+            f"- `period` (seconds between reroutes, default 4), `radius` (metres, default 3) and `around` for the erratic cases: {' or '.join(f'`{a}`' for a in ERRATIC_AROUND)} (points either side of the robot's route, or around each walker's own start; default `{_default(BDecision, 'around')}`).",
             "- `when`: see the time table; without a time phrase, omit it (the runtime defaults to 10 s).",
             "",
             _tier_table(params),

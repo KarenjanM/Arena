@@ -160,11 +160,6 @@ def test_no_predicate_means_no_filtering() -> None:
     assert first_blocked((0.0, 0.0), (10.0, 0.0), None) is None
 
 
-def test_designed_ttc_is_the_encounter_time() -> None:
-    enc = solve(encounter_at=0.3)
-    assert enc.designed_ttc == pytest.approx(enc.t_encounter)
-
-
 def test_encounter_sweep_tries_the_request_first_then_spreads_both_ways() -> None:
     got = list(encounter_fractions(0.5))
     assert got[0] == 0.5

@@ -47,14 +47,9 @@ class Encounter:
     angle_achieved: float
     encounter_at_requested: float
     encounter_at_achieved: float
-    lead_out_achieved: float
     ped_speed: float
     co_arrival_offset: float
     retries: int
-
-    @property
-    def designed_ttc(self) -> float:
-        return self.t_encounter
 
     @property
     def designed_pet(self) -> float:
@@ -63,14 +58,6 @@ class Encounter:
     @property
     def deviated(self) -> bool:
         return abs(self.angle_achieved - self.angle_requested) > 1e-9 or abs(self.encounter_at_achieved - self.encounter_at_requested) > 1e-9
-
-
-def _unit(a: Point, b: Point) -> tuple[Point, float]:
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    length = math.hypot(dx, dy)
-    if length < 1e-9:
-        raise GeometryError("robot start and goal coincide; there is no route to intercept")
-    return (dx / length, dy / length), length
 
 
 def rotate(v: Point, degrees: float) -> Point:
@@ -233,7 +220,6 @@ def solve_encounter(
             angle_achieved=angle,
             encounter_at_requested=encounter_at,
             encounter_at_achieved=enc_at,
-            lead_out_achieved=lead,
             ped_speed=ped_speed,
             co_arrival_offset=co_arrival_offset,
             retries=attempts - 1,

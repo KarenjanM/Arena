@@ -184,7 +184,6 @@ class ADecision:
     when: When = When(at=0.0)
     #: Runner-up cases the lexicon saw and dropped.
     dropped: tuple[str, ...] = ()
-    scores: Mapping[str, float] = attrs.Factory(dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {"case": self.case, "k": self.k, "when": self.when.as_dict(), "dropped": list(self.dropped)}

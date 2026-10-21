@@ -90,17 +90,6 @@ def scenario_text(doc: Mapping[str, Any], *, world_root: Path, types_dir: Path, 
     return header + to_yaml(scenario)
 
 
-def write_scenario(out: Path, doc: Mapping[str, Any], *, world_root: Path, header: str = "") -> Path:
-    """Write `doc` as `out/scenario.yaml` in format 2, refusing a key format 2 does not know or a scenario the model rejects."""
-    try:
-        text = scenario_text(doc, world_root=world_root, types_dir=out, header=header)
-    except ValueError as exc:
-        raise ValueError(f"{out}: {exc}") from exc
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "scenario.yaml").write_text(text)
-    return out / "scenario.yaml"
-
-
 def _world(root: Path) -> World:
     from arena_simulation_setup.tree.World.view import WorldView
 

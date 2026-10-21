@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -220,10 +223,12 @@ def test_nothing_to_ask_asks_nothing() -> None:
     assert classify_tail([zone("kitchen")], world="w", names=[]) == ([], [])
 
 
-@pytest.mark.skipif(client.available(), reason="a model is configured here")
-def test_no_configured_model_is_a_clear_refusal_not_a_guess() -> None:
-    with pytest.raises(client.Unavailable, match="no LLM configured"):
-        client.ask("s", "u")
+def test_no_configured_model_is_a_clear_refusal_not_a_guess(tmp_path: Path) -> None:
+    code = "from arena_simulation_setup.generative.scenario.propose.client import Unavailable, ask\ntry:\n    ask('s', 'u')\nexcept Unavailable as exc:\n    print(exc)"
+    env = {k: v for k, v in os.environ.items() if k not in ("LLM_API_ENDPOINT", "GOOGLE_API_KEY", "GEMINI_API_KEY")}
+    done = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120, check=False)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("no LLM configured")
 
 
 def test_the_prompt_hash_changes_with_the_prompt() -> None:

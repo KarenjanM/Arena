@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,7 +18,6 @@ from arena_simulation_setup.generative.scenario.promptgen.profiles import Profil
 from arena_simulation_setup.generative.scenario.promptgen.realize import LEAD_IN_M, STAND_TRIGGER_M, trigger
 from arena_simulation_setup.generative.scenario.promptgen.spec import SchemaError, parse_b, parse_c, parse_d, parse_when
 from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
-from arena_simulation_setup.generative.scenario.propose import client
 from arena_simulation_setup.generative.scenario.route import ROBOT_SPEED_MPS
 from arena_simulation_setup.shared.conditions import parse_atom
 
@@ -32,24 +34,10 @@ ROBOT = {"start": [2.0, 4.0, 0.0], "phases": [{"goto": [30.0, 4.0, 0.0]}, {"goto
 
 
 def _world(tmp_path):
-    from PIL import Image
-
     root = tmp_path / "worlds" / "toy"
-    (root / "map").mkdir(parents=True)
+    root.mkdir(parents=True)
     zones = [{"name": z["name"], "polygon": [[c["x"], c["y"]] for c in z["corners"]], "floor": False} for z in ZONES]
     (root / "world.yaml").write_text(yaml.safe_dump({"format": "arena-world/2", "levels": [{"id": "0", "zones": zones}]}))
-    res = 0.1
-    w, h = int(32 / res), int(8 / res)
-    px = np.full((h, w), 0, dtype=np.uint8)  # occupied everywhere...
-
-    def free(x0, y0, x1, y1):
-        px[h - int(y1 / res) : h - int(y0 / res), int(x0 / res) : int(x1 / res)] = 255
-
-    free(0.3, 0.3, 7.7, 7.7)
-    free(7.7, 3.0, 24.3, 5.0)
-    free(24.3, 0.3, 31.7, 7.7)
-    Image.fromarray(px, mode="L").save(root / "map" / "0.png")
-    (root / "map" / "0.yaml").write_text(yaml.safe_dump({"image": "0.png", "resolution": res, "origin": [0.0, 0.0, 0.0], "occupied_thresh": 0.65, "negate": 0}))
     base = root / "scenarios" / "normal_a"
     base.mkdir(parents=True)
     doc = {
@@ -625,34 +613,56 @@ def test_kb_system_prompts_are_committed_builds() -> None:
         assert (root / name).read_text() == text, f"{name} is stale - run python3 -m arena_simulation_setup.generative.scenario.promptgen.build_kb"
 
 
-def test_step_a_llm_parses_and_tolerates_typos() -> None:
-    from arena_simulation_setup.generative.scenario.promptgen.llm import Oracle
+def _cache_a(cache: Path, text: str, answer: dict) -> Path:
+    from arena_simulation_setup.generative.scenario.promptgen import step_a_llm
+    from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
+
+    cache.mkdir(exist_ok=True)
+    (cache / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": json.dumps(answer)}))
+    return cache
+
+
+def test_step_a_llm_parses_and_tolerates_typos(tmp_path: Path) -> None:
     from arena_simulation_setup.generative.scenario.promptgen.spec import Record
     from arena_simulation_setup.generative.scenario.promptgen.step_a_llm import decide, who_line
 
+    text = "An evacation is caled."
     rec = Record(prompt_id="t", prompt="", world="w", base="b")
-    answer = Oracle({"case": "evacuation", "when": {"at": 10}, "who": [{"mention": "a visiter", "profile": "visitor", "count": 1}, {"mention": "three colleagues", "profile": "adult", "count": 3}, {"mention": "a dragon", "profile": "dragon", "count": 1}]})
-    a, who, warnings = decide("An evacation is caled.", rec, cache_dir=None, oracle=answer)
+    answer = {"case": "evacuation", "when": {"at": 10}, "who": [{"mention": "a visiter", "profile": "visitor", "count": 1}, {"mention": "three colleagues", "profile": "adult", "count": 3}, {"mention": "a dragon", "profile": "dragon", "count": 1}]}
+    a, who, warnings = decide(text, rec, cache_dir=_cache_a(tmp_path / "llm_cache", text, answer))
     assert a is not None and a.case == "evacuation" and a.when.at == 10.0
     assert [w["profile"] for w in who] == ["adult", "adult"] and "dragon" in warnings[0]
     assert who_line(who).startswith("who (actors read from the prompt): 1 x adult")
 
 
-@pytest.mark.skipif(client.available(), reason="steps D and B/C would call the configured model for real")
-def test_llm_a_overrides_a_silent_lexicon(toy, tmp_path: Path) -> None:
-    from arena_simulation_setup.generative.scenario.promptgen import step_a_llm
-    from arena_simulation_setup.generative.scenario.propose.client import prompt_sha256
+_LIVE_A = """
+import json, sys
+from pathlib import Path
+from arena_simulation_setup.generative.scenario.formats import read_scenario
+from arena_simulation_setup.generative.scenario.promptgen import prompts as P
+from arena_simulation_setup.generative.scenario.promptgen.pipeline import generate
+from arena_simulation_setup.generative.scenario.promptgen.world import WorldContext
 
-    worlds, doc, base, world = toy
+worlds, base, cache, text = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4]
+doc = read_scenario(base / "scenario.yaml")
+world = WorldContext.load(worlds / "toy", doc)
+prompt = P.Prompt(id="t_001", text=text, targets=("A:evacuation",), oracle={})
+record = generate(prompt, world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=False, cache_dir=cache).record
+print(json.dumps({"a": record.a.case if record.a else None, "warnings": record.warnings, "who": record.provenance.get("who")}))
+"""
+
+
+def test_llm_a_overrides_a_silent_lexicon(toy, tmp_path: Path) -> None:
+    worlds, _doc, base, _world = toy
     text = "An evacation is caled; evrybody hurrys out."
-    cache = tmp_path / "llm_cache"
-    cache.mkdir()
-    answer = json.dumps({"case": "evacuation", "who": [{"mention": "a visiter", "profile": "adult", "count": 1}]})
-    (cache / f"{prompt_sha256(step_a_llm.A_MODEL, step_a_llm.system_prompt(), step_a_llm.user_prompt(text))}.json").write_text(json.dumps({"answer": answer}))
-    result = generate(_prompt(text, ["A:evacuation"]), world=world, base_id="normal_a", base_doc=doc, base_dir=base, oracle=False, cache_dir=cache)
-    assert result.record.a is not None and result.record.a.case == "evacuation"
-    assert any("lexicon silent" in w for w in result.record.warnings)
-    assert result.record.provenance["who"] == [{"mention": "a visiter", "profile": "adult", "count": 1}]
+    cache = _cache_a(tmp_path / "llm_cache", text, {"case": "evacuation", "who": [{"mention": "a visiter", "profile": "adult", "count": 1}]})
+    env = {k: v for k, v in os.environ.items() if k not in ("LLM_API_ENDPOINT", "GOOGLE_API_KEY", "GEMINI_API_KEY")}
+    done = subprocess.run([sys.executable, "-c", _LIVE_A, str(worlds), str(base), str(cache), text], env=env, capture_output=True, text=True, timeout=300, check=False)
+    assert done.returncode == 0, done.stderr
+    got = json.loads(done.stdout.strip().splitlines()[-1])
+    assert got["a"] == "evacuation"
+    assert any("lexicon silent" in w for w in got["warnings"])
+    assert got["who"] == [{"mention": "a visiter", "profile": "adult", "count": 1}]
 
 
 _WITHIN = re.compile(r"robot within (\S+) of (\S+),(\S+)")

@@ -49,17 +49,11 @@ def route_length(endpoints: Sequence[Any], zones: Sequence[Mapping[str, Any]]) -
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:], strict=False))
 
 
-def robot_for(
-    robot: Mapping[str, Any],
-    zones: Sequence[Mapping[str, Any]],
-    *,
-    min_seconds: float = MIN_EPISODE_S,
-    speed: float = ROBOT_SPEED_MPS,
-) -> dict[str, Any]:
-    """The shipped route in `phases` form: its shortest prefix that takes `min_seconds` at `speed`, or shuttled until it does."""
+def robot_for(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The shipped route in `phases` form: its shortest prefix that takes `MIN_EPISODE_S` at `ROBOT_SPEED_MPS`, or shuttled until it does."""
     ends = _endpoints(robot)
 
-    need = min_seconds * speed * ROUTE_MARGIN
+    need = MIN_EPISODE_S * ROBOT_SPEED_MPS * ROUTE_MARGIN
     # the acoustics corridors ship a 200-leg shuttle, a 33-minute episode verbatim
     seq = [ends[0]]
     for point in ends[1:]:
@@ -96,8 +90,8 @@ def robot_for(
     return spec
 
 
-def route_seconds(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]], speed: float = ROBOT_SPEED_MPS) -> float:
-    return route_length(_endpoints(robot), zones) / speed if speed > 0 else float("inf")
+def route_seconds(robot: Mapping[str, Any], zones: Sequence[Mapping[str, Any]]) -> float:
+    return route_length(_endpoints(robot), zones) / ROBOT_SPEED_MPS
 
 
 __all__ = [

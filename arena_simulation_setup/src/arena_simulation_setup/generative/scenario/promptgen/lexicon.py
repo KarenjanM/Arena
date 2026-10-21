@@ -108,9 +108,9 @@ def when_in(text: str, *, exclude_cases: Sequence[str] = (), lexicon: dict[str, 
     return None
 
 
-def match(prompt: str, lexicon: dict[str, Any] | None = None) -> ADecision | None:
+def match(prompt: str) -> ADecision | None:
     """The Type A case a prompt asks for, or None."""
-    lex = lexicon or load()
+    lex = load()
     scores = score(prompt, lex)
     ranked = sorted(scores.items(), key=lambda kv: (-kv[1][0], kv[1][1], kv[0]))
     if not ranked or ranked[0][1][0] < THRESHOLD:
@@ -128,5 +128,4 @@ def match(prompt: str, lexicon: dict[str, Any] | None = None) -> ADecision | Non
         k=k,
         when=_onset(prompt, ONSETS[case], case, lex),
         dropped=tuple(c for c, _ in ranked[1:] if scores[c][0] >= THRESHOLD),
-        scores={c: s for c, (s, _pos) in scores.items()},
     )
