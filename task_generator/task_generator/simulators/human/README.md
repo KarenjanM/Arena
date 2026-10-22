@@ -386,12 +386,14 @@ are un-shifted going in, agent poses, gesture targets, flow agents and the engin
 coming out. Nothing engine-side knows the env.
 
 World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
-`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y}` with an
-optional `yaw`, the same grammar as `pose`, from the annotation or overridden per scenario entry, and an empty
-list clears the annotation's). Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
+`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its
+placed `affordances.sit` slots, each at its bbox center facing one of its yaws, drawn per object from the
+episode RNG. A scenario entry's `seats` (object-local poses in the `pose` grammar without zone names) override
+them, and an empty list clears them. Without a `capacity`, an object takes as many agents as the scenario's
+`seats`, else the most of its sit slots that can be occupied at once with no two overlapping, and at least one. Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
 ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
-the object's origin, not its seat, so an object whose seats sit outside `interaction_radius` needs that radius
-widened to cover the object or the ped never gets close enough to sit.
+the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its
+whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius.
 
 Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
 realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the
