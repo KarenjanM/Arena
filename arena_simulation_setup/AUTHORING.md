@@ -253,7 +253,7 @@ facts:
   `light:<light>`, `sound:<sound>`, `elevator:<cabin>`, `floor:<level id>`.
   Those must name something in `world.yaml`, except an `obj` with
   `placed: false` (an object a generator asked for but never placed). Roles,
-  regions, agents, profiles and materials live only here.
+  regions, agents, profiles, purposes and materials live only here.
 - The KG carries no geometry (`boundary`, `line`, `pose`, `model`, ...):
   `world.yaml` owns it.
 - Membership is `contains` (a thing may sit in several zones), connectivity
@@ -272,6 +272,11 @@ facts:
   name is part of this world, `floor:<id>` follows the level's new id, and
   this world's own KG wins every conflict. Saving writes only this
   world's own part back.
+- What people use a zone for is `room has_purpose purpose:<work|break|transit|private|unknown>`
+  (package `space@1`). The scenario generator places its crowds by it, a
+  `params: {by: llm, ...}` marks a model's proposal that a human has not
+  reviewed, see
+  [generative/scenario](src/arena_simulation_setup/generative/scenario/README.md#zone-roles).
 - Nothing in the KG drives the runtime. Mechanism semantics (presets,
   `light_on`, `recall_on`, zone states) stay in `world.yaml`.
 
@@ -471,14 +476,27 @@ published state. See the fire-alarm worked example below.
 
 ### Scenario timelines
 
-`scenario.yaml` accepts an optional `timeline:` list. Each entry fires a `set`
-action list of `{entity, field, value}` writes against exactly one trigger:
+`scenario.yaml` accepts an optional `timeline:` list. Each entry fires its
+actions against exactly one trigger and needs at least one action:
 
 | trigger | meaning |
 | --- | --- |
 | `at: <seconds>` | fire once at episode second `t` |
 | `every: <seconds>` | fire at `offset` (default: one period in), then each period, optional `until` |
 | `when: {entity, field, is}` | fire on the false-to-true edge of a semantic value |
+| `when: "<atom>"` | fire on the false-to-true edge of a condition atom (see [Add a scenario](#4-add-a-scenario)) |
+
+In a `when` atom the subject `robot` stands for every robot of the env: the
+atom holds while it holds for at least one of them, so
+`not robot within 3 of 2,2` holds while some robot is farther than 3 m from
+`(2, 2)`. A robot's own name (anonymous robots are named after their model,
+e.g. `jackal`) judges only that robot. Without a placed robot such an atom
+does not hold.
+
+| action | meaning |
+| --- | --- |
+| `set: [{entity, field, value}]` | write semantic values |
+| `stimulus: [{agents, need, intensity}]` | raise `need` on each pedestrian named in `agents` through humansim's `notify_stimulus`, `intensity` 1 by default (humansim sets the need to 100 x `intensity`) |
 
 ```yaml
 timeline:
@@ -499,6 +517,33 @@ holds its cabin door open, all as pure regime consults with no per-effect
 timeline entry. See
 [worlds/three_storied_residential/scenarios/fire_alarm/scenario.yaml](worlds/three_storied_residential/scenarios/fire_alarm/scenario.yaml)
 for the reference timeline.
+
+A `stimulus` drives behavior-tree agents whose agent type declares the need
+and a transition on it, as for [pedestrian stimuli](#pedestrian-stimuli). Here
+`edge_0` waits until the robot comes within 4.2 m of `(12.1, 4.0)` and the
+`d_*` group switches at `t=8s`:
+
+```yaml
+timeline:
+- when: "robot within 4.2 of 12.1,4.0"
+  stimulus: [{agents: [edge_0], need: go, intensity: 1.0}]
+- at: 8.0
+  stimulus: [{agents: [d_1, d_2, d_3], need: form}]
+```
+
+Every agent of a stimulus is one of the scenario's `humans`, loading fails on
+any other name. With the `arena` human backend loading also fails when the
+agent type of an agent (its `agent.agent_type`) neither declares the need nor
+waits for it as the `until` event of an autonomous step. A stimulus the human
+simulator does not take at runtime is logged and skipped, the other agents
+still get theirs. Only the `arena` human backend acts on stimuli: under any
+other backend a scenario with `stimulus` entries fails to load with an error
+naming `human:=arena`.
+
+Every semantic snapshot of the env carries a `timeline` entity (kind
+`timeline`). Its discrete field `stimulus.<agent>.<need>` holds the sim time
+in seconds of the tick on which that stimulus was first taken by the human
+simulator in the episode, and a stimulus that never landed has no field.
 
 ## 3. Generate the map
 
@@ -601,8 +646,10 @@ Atoms are the `conditions:` grammar of [worlds/README.md](worlds/README.md):
 `<entity>.<field> == <value>`, `<subject> in <zone>`, `<subject> within <r> of
 <subject>`, `<subject> sees <subject> [within <r>]` (in range, default 12 m, with
 no wall of the rendered wall grid between them), `<ped> plays <clip>` and `not
-<atom>`. A goto to a pedestrian by name is judged by `tolerance_radius` around
-the pedestrian.
+<atom>`. Either `within` subject may also be a point `x,y` (no spaces), in the
+frame of a scenario pose without `level`, so `robot within 4.2 of 12.1,4.0`.
+A goto to a pedestrian by name is judged by `tolerance_radius` around the
+pedestrian.
 
 Add static obstacles under `objects:` and pedestrians under `humans:`, with
 the same schema as a world level's lists plus `level` (the level an entry

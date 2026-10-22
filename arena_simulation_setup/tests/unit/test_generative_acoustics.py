@@ -8,7 +8,7 @@ import shapely
 import shapely.affinity
 
 from arena_simulation_setup.tree.World import WorldView
-from arena_simulation_setup.utils.generative.sketch import WorldGeneratorSketch
+from arena_simulation_setup.generative.world.sketch import WorldGeneratorSketch
 
 BUNDLE = Path(__file__).resolve().parents[3] / 'arena_evaluation/arena_evaluation/configs/benchmark/suites/acoustics/worlds'
 

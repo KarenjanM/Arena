@@ -10,16 +10,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import sys
 import traceback
 from pathlib import Path
 
 import yaml
 
-from arena_simulation_setup.tree import DynamicPaths, Identifier, Verdict
+from arena_simulation_setup.tree import Identifier, Verdict
 from arena_simulation_setup.tree.assets.Sound import SoundIdentifier
 from arena_simulation_setup.tree.assets.sound_catalog import SoundLibrary
-from arena_simulation_setup.tree.World import WorldIdentifier, WorldView
+from arena_simulation_setup.tree.World import WorldIdentifier, WorldView, world_assets
 
 
 async def _resolve_all(identifiers: list[Identifier]) -> tuple[int, int]:
@@ -73,38 +74,37 @@ def main() -> int:
         parser.error('give a world name, --sounds, or both')
 
     identifiers: list[Identifier] = []
-    if args.world_name is not None:
-        try:
-            world: WorldView = WorldIdentifier(args.world_name).resolve_sync()
-        except FileNotFoundError as exc:
-            print(exc, file=sys.stderr)
-            return 1
+    with contextlib.ExitStack() as stack:
+        if args.world_name is not None:
+            try:
+                world: WorldView = WorldIdentifier(args.world_name).resolve_sync()
+            except FileNotFoundError as exc:
+                print(exc, file=sys.stderr)
+                return 1
 
-        DynamicPaths.WORLD.path = world.path
+            try:
+                stack.enter_context(world_assets(world))
+                identifiers = list(world.identifiers(scenarios=not args.no_scenarios))
+            except Exception:
+                print(f'failed to load {world.path}:', file=sys.stderr)
+                traceback.print_exc()
+                return 1
 
-        try:
-            DynamicPaths.LINKED.paths = list(world.load(validate=False).sources)
-            identifiers = list(world.identifiers(scenarios=not args.no_scenarios))
-        except Exception:
-            print(f'failed to load {world.path}:', file=sys.stderr)
-            traceback.print_exc()
-            return 1
+        if args.sounds:
+            try:
+                kinds = SoundLibrary.default().kinds().values()
+            except (ValueError, OSError, yaml.YAMLError) as exc:
+                print(f'sound kinds unreadable, default sounds not preloaded: {exc}', file=sys.stderr)
+                kinds = ()
+            named = {ident.shortname for ident in identifiers}
+            for kind in kinds:
+                if kind.default_asset and (default := SoundIdentifier.parse(kind.default_asset)).shortname not in named:
+                    named.add(default.shortname)
+                    identifiers.append(default)
 
-    if args.sounds:
-        try:
-            kinds = SoundLibrary.default().kinds().values()
-        except (ValueError, OSError, yaml.YAMLError) as exc:
-            print(f'sound kinds unreadable, default sounds not preloaded: {exc}', file=sys.stderr)
-            kinds = ()
-        named = {ident.shortname for ident in identifiers}
-        for kind in kinds:
-            if kind.default_asset and (default := SoundIdentifier.parse(kind.default_asset)).shortname not in named:
-                named.add(default.shortname)
-                identifiers.append(default)
+        print(f'world {args.world_name or "(none)"}: {len(identifiers)} unique asset(s)')
 
-    print(f'world {args.world_name or "(none)"}: {len(identifiers)} unique asset(s)')
-
-    n_ok, n_total = asyncio.run(_probe_all(identifiers) if args.dry_run else _resolve_all(identifiers))
+        n_ok, n_total = asyncio.run(_probe_all(identifiers) if args.dry_run else _resolve_all(identifiers))
     print(f'resolved {n_ok}/{n_total}')
     return 0 if n_ok == n_total else 1
 

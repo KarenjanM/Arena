@@ -271,6 +271,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline_state: list[_TimelineState] = []
         self._timeline_seed: int = 0
         self._timeline_t0: float | None = None
+        self._stimulus_tasks: set[asyncio.Task] = set()
+        self._stimuli_fired: dict[str, float] = {}
         self._episode_conditions: list[EpisodeCondition] = []
         self._judge_zones: dict = {}
         self._judge_walls: WallGrid | None = None
@@ -364,6 +366,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         self._check_status_task: asyncio.Task | None = None
         self._episode_task: asyncio.Task | None = None
+        self._shutting_down = False
 
         self._publish_bootstrap_queue_state()
         self._pub_state_robots_pending.publish(task_generator_msgs.msg.RobotQueue())
@@ -508,6 +511,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return TransitionCallbackReturn.SUCCESS
 
     async def teardown(self) -> None:
+        self._shutting_down = True
         self._heartbeat_stop.set()
         running = [t for t in (self._tick_loop_task, self._check_status_task, self._episode_task) if t is not None and not t.done()]
         for t in running:
@@ -778,6 +782,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         entities = [self._semantic_entity_state_msg(s) for s in snapshots]
         entities.extend(self._zone_semantic_states())
         entities.extend(self._robot_semantic_states())
+        entities.append(self._timeline_semantic_state())
         msg.entities = entities
         self._pub_state_semantics.publish(msg)
 
@@ -922,6 +927,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline = []
         self._timeline_state = []
         self._timeline_t0 = None
+        for task in self._stimulus_tasks:
+            task.cancel()
+        self._stimulus_tasks.clear()
+        self._stimuli_fired.clear()
         self._episode_conditions = []
         self._zone_overrides.clear()
         self._sound_levels.clear()
@@ -951,7 +960,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _when_true(self, when: dict | str) -> bool:
         if isinstance(when, str):
-            return atom_holds(parse_atom(when), self._sample, self._judge_zones) is True
+            atom = parse_atom(when)
+            return any(atom_holds(atom, self._sample, self._judge_zones, robot) is True for robot in self._sample.robots or ("robot",))
         expected = self._norm_token(when.get("is"))
         current = self._semantic_value(str(when.get("entity", "")), str(when.get("field", "")))
         return current is not None and current == expected
@@ -962,6 +972,40 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             field = str(action.get("field", ""))
             value = self._resolve_timeline_value(self._norm_token(action.get("value")), idx)
             self._set_semantic(entity, field, value)
+        for stimulus in entry.stimulus:
+            for agent in stimulus.agents:
+                self._submit_stimulus(agent, stimulus.need, stimulus.intensity, self._sample.t)
+
+    def _submit_stimulus(self, agent: str, need: str, intensity: float, fired_at: float) -> None:
+        """Send one timeline stimulus without blocking the tick, recording `fired_at` once the engine takes it."""
+        task = asyncio.create_task(self._environment_manager.notify_stimulus(agent, need, intensity))
+        self._stimulus_tasks.add(task)
+
+        def _on_done(t: asyncio.Task) -> None:
+            if t not in self._stimulus_tasks:
+                return
+            self._stimulus_tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} failed: {exc!r}")
+            elif not t.result():
+                self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} was not taken")
+            else:
+                self._stimuli_fired.setdefault(f"stimulus.{agent}.{need}", fired_at)
+                self._semantics_dirty = True
+
+        task.add_done_callback(_on_done)
+
+    def _timeline_semantic_state(self) -> task_generator_msgs.msg.SemanticEntityState:
+        """The `timeline` entity: sim time of the tick each stimulus fired on, per `stimulus.<agent>.<need>`, grow-only."""
+        msg = task_generator_msgs.msg.SemanticEntityState()
+        msg.entity = self._realizer.prefix("timeline")
+        msg.kind = "timeline"
+        msg.discrete_names = list(self._stimuli_fired.keys())
+        msg.discrete_values = [self._stringify_float(t) for t in self._stimuli_fired.values()]
+        return msg
 
     def _evaluate_timeline(self, now: float) -> None:
         """One sim-time tick of timeline evaluation. Captures t0 on the first post-unpause tick."""
@@ -1182,7 +1226,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         topic_type="visualization_msgs/MarkerArray",
                         kind=DisplayKind.MARKER_ARRAY,
                         style_json=latched,
-                        topic_must_exist=True,
+                        topic_must_exist=False,
                         group="Static",
                     )
                 )
@@ -1936,7 +1980,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     # ACTION SERVER
 
     def _goal_callback(self, goal_request: object) -> GoalResponse:
-        return GoalResponse.REJECT if self._episodes.action_in_flight else GoalResponse.ACCEPT
+        return GoalResponse.REJECT if self._shutting_down or self._episodes.action_in_flight else GoalResponse.ACCEPT
 
     def _cancel_callback(self, goal_handle: object) -> CancelResponse:
         episode_id = self._episodes.current.episode_id
@@ -1966,12 +2010,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         seed: int = -1,
         goal_handle: ServerGoalHandle | None = None,
     ) -> task_generator_msgs.action.RunEpisode.Result:
-        if self._episodes.action_in_flight:
+        if self._shutting_down or self._episodes.action_in_flight:
             if goal_handle is not None:
                 goal_handle.abort()
             return task_generator_msgs.action.RunEpisode.Result(
                 state=task_generator_msgs.action.RunEpisode.Result.SKIPPED,
-                reason="busy",
+                info="shutting down" if self._shutting_down else "busy",
             )
 
         if not world:

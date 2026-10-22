@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import re
@@ -15,6 +16,9 @@ from arena_simulation_setup import ARENA_ASSETS_DIR, ASS_DIR
 from arena_simulation_setup.shared import Schedule, Signal
 from arena_simulation_setup.tree import (
     WORLD_PROVIDERS,
+    DynamicPathListResolver,
+    DynamicPathResolver,
+    DynamicPaths,
     FallbackResolver,
     Identifier,
     NetResolver,
@@ -37,6 +41,7 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 KG_FILE = 'kg.yaml'
+LEVEL_ORIGINS_FILE = 'level_origins.yaml'
 LEGACY_GRAPH_FILE = 'graph.yaml'
 _NOT_LEVELS = frozenset({'scenarios', 'assets', 'map'})
 
@@ -319,14 +324,50 @@ class WorldView(PathView):
 
     def level_origins(self) -> dict[str, tuple[float, float]] | None:
         """Per-level offsets that flatten all levels into a single map frame, None for a single-level world."""
+        stored = self.path / LEVEL_ORIGINS_FILE
+        if stored.is_file():
+            return {str(level_id): (float(x), float(y)) for level_id, (x, y) in yaml.safe_load(stored.read_text(encoding='utf-8')).items()}
         world = self.load(validate=False)
         if len(world.levels) <= 1:
             return None
         return world.level_origins()
 
 
-def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> Path:
-    """Write `world` as it runs into `directory`: format 2 with its levels under `lighting` and linked levels written out, plus every semantic fact, stated and derived."""
+@contextlib.contextmanager
+def world_assets(view: WorldView, world: World | None = None) -> Iterator[None]:
+    """Point world-local asset resolution at `view` and its linked worlds for the block, then restore the previous paths."""
+    sources = list((world if world is not None else view.load(validate=False)).sources)
+    previous = DynamicPaths.WORLD.path, list(DynamicPaths.LINKED.paths)
+    point_world_assets(view.path, sources)
+    try:
+        yield
+    finally:
+        point_world_assets(*previous)
+
+
+def point_world_assets(path: Path | None, linked: Iterable[Path]) -> None:
+    """Point world-local resolution of every asset kind at `path` (None for no world) and the worlds in `linked`."""
+    DynamicPaths.WORLD.path = path if path is not None else Path('/dev/null')
+    DynamicPaths.LINKED.paths = list(linked)
+    for resolver in _dynamic_path_resolvers():
+        resolver.invalidate()
+
+
+def _dynamic_path_resolvers() -> Iterator[ResolverBase]:
+    """Every resolver registered on an Identifier kind that reads its root from DynamicPaths, each once."""
+    seen: set[int] = set()
+    kinds: list[type] = [Identifier]
+    while kinds:
+        kind = kinds.pop()
+        kinds.extend(kind.__subclasses__())
+        for resolver in kind._resolvers:
+            if isinstance(resolver, DynamicPathResolver | DynamicPathListResolver) and id(resolver) not in seen:
+                seen.add(id(resolver))
+                yield resolver
+
+
+def save_snapshot(world: World, directory: Path, lighting: str = 'authored', level_origins: dict[str, tuple[float, float]] | None = None) -> Path:
+    """Write `world` as it runs into `directory`: levels under `lighting`, links written out, every fact and the runtime's `level_origins`."""
     from arena_simulation_setup.kg import dump as dump_kg
 
     realized = attrs.evolve(world, levels={level_id: attrs.evolve(level.with_lighting(lighting), source='', prefix='') for level_id, level in world.levels.items()}, sources=[], linked_kg=None, linked_scope=[])
@@ -334,6 +375,8 @@ def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> 
     files = {'world.yaml': write_world(realized)}
     if realized.kg is not None:
         files[KG_FILE] = to_yaml(dump_kg(realized.kg))
+    if level_origins is not None:
+        files[LEVEL_ORIGINS_FILE] = yaml.safe_dump({level_id: [float(x), float(y)] for level_id, (x, y) in level_origins.items()}, sort_keys=False)
     for name, text in files.items():
         partial = directory / f'.{name}.partial'
         partial.write_text(text, encoding='utf-8')

@@ -130,7 +130,7 @@ whole world. See `WorldMicrophone` in
 
 ### `kg.yaml`
 
-The optional KG: zone types and descriptions, which zone holds
+The optional KG: zone types, descriptions and purposes, which zone holds
 which thing, which door joins which zones, relations and intent constraints,
 see [AUTHORING.md](../AUTHORING.md#kg). A world that links levels
 also reads the `kg.yaml` of every world it links from.
@@ -240,6 +240,8 @@ Resolved by `World.scenario` property which returns a per-world
 `ScenarioIdentifier` class
 ([tree/World/view.py](../src/arena_simulation_setup/tree/World/view.py)).
 `ScenarioView.load()` tries `scenario.yaml` first, then `scenario.json`.
+A scenario `generate_scenario` wrote carries its `GENERATED_MARKER` header, see
+[generative/scenario](../src/arena_simulation_setup/generative/scenario/README.md).
 
 ```yaml
 format: arena-scenario/2
@@ -322,8 +324,8 @@ holds it (a waypoint's human, an attached sound's or light's object), else to
 the sole level the env runs. Entries a world level lists sit on that level
 and take no `level`.
 
-`timeline` is a list of scripted `set` actions fired on `at`/`every`/`when`
-triggers. See [AUTHORING.md, Scenario timelines](../AUTHORING.md#scenario-timelines).
+`timeline` is a list of scripted `set` and `stimulus` actions fired on
+`at`/`every`/`when` triggers. See [AUTHORING.md, Scenario timelines](../AUTHORING.md#scenario-timelines).
 
 `regions` is a mapping of name to source/sink spawner consumed by the
 arena_humansim backend:
@@ -384,7 +386,8 @@ An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
 world's rendered wall grid on the segment between them, doors open), `<ped>
 plays <clip>` (the pedestrian publishes that gesture clip) and `not <atom>`. A
 subject is `robot` (the robot being judged), another robot's name or a
-pedestrian's name.
+pedestrian's name, and a `within` subject may also be a point `x,y` (no
+spaces).
 Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
 `failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
 A world entity (zone, door, elevator, schedule, sound) is named

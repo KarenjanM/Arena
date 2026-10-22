@@ -1,0 +1,12 @@
+# Package "space": what people use rooms for, loaded on demand
+name = "space"
+version = 1
+
+[nodes.purpose]
+props = []
+auto = true
+propless = true
+
+[verbs.has_purpose]
+from = ["room"]
+to = ["purpose"]

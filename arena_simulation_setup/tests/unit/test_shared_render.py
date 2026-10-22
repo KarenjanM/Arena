@@ -26,6 +26,7 @@ NOUNS = {"kitchen": "the kitchen", "sofa": "the sofa", "hallway": "the hallway",
         ("not robot sees alice", "you cannot see the visitor within 12 m"),
         ("alice plays beckon", "the visitor is making the beckon gesture"),
         ("not alice plays beckon", "the visitor is not making the beckon gesture"),
+        ("robot within 4 of 12.5,3", "you are within 4 m of the point (12.5, 3)"),
     ],
 )
 def test_render_atom_text(atom, text):

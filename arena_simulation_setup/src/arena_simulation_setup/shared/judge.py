@@ -21,6 +21,7 @@ from arena_simulation_setup.shared.conditions import (
     UntilClause,
     WithinAtom,
     parse_atom,
+    parse_point,
     parse_until,
 )
 
@@ -89,7 +90,10 @@ class Sample:
     walls: WallGrid | None = None
 
     def point(self, subject: str, robot: str) -> tuple[float, float] | None | typing.Literal[False]:
-        """Planar position of a subject, False when it is known but absent, None when it is unknown."""
+        """Planar position of a subject or an `x,y` literal, False when it is known but absent, None when it is unknown."""
+        literal = parse_point(subject)
+        if literal is not None:
+            return literal
         name = robot if subject == 'robot' else subject
         pose = self.robots.get(name)
         if pose is not None:

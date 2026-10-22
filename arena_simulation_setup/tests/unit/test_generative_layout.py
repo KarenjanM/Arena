@@ -2,8 +2,8 @@ import pytest
 import shapely
 import shapely.affinity
 from arena_simulation_setup.tree.World import describe
-from arena_simulation_setup.utils.generative import WorldGenerator
-from arena_simulation_setup.utils.generative.layout import (
+from arena_simulation_setup.generative.world import WorldGenerator
+from arena_simulation_setup.generative.world.layout import (
     Area,
     Layout,
     Region,

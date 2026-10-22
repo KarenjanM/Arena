@@ -6,7 +6,7 @@ import unicodedata
 import pytest
 import shapely
 
-from arena_simulation_setup.utils.generative.letter import GLYPHS, SEGMENTS, WorldGeneratorLetter, paint
+from arena_simulation_setup.generative.world.letter import GLYPHS, SEGMENTS, WorldGeneratorLetter, paint
 
 
 def build(text: str, **config) -> tuple[WorldGeneratorLetter, shapely.Polygon | shapely.MultiPolygon]:
