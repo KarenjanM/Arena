@@ -34,7 +34,7 @@ pedestrian agents, and environment templates through the types defined here.
 | `preload_world` | `preload_world [<world_name>] [--no-scenarios] [--dry-run] [--sounds]` | Resolves every identifier the world and its scenarios reference, downloading what is missing. `--dry-run` reports without transferring. `--sounds` adds the default sound of every sound kind, alone or with a world, and `arena launch` passes it under `acoustics:=arena`. Reached from the CLI as `arena preload`. |
 | `touch_world` | `touch_world <world_name> [--all \| --migrate] [--resolution N] [--assets color] ...` | Renders a preview `map.png` + `map.yaml` into the world dir for inspection; `--all` re-saves `world.yaml` as canonical format 2 with `kg.yaml` and `map/<level id>.png`, `--migrate` rewrites a format 1 world in place. The runtime renders its own map in-process, so this is an authoring aid, not required after editing. |
 
-Scripts live under [scripts/](scripts). To fetch a single asset by identifier, use `arena asset pull <kind> <name>`.
+Scripts live under [scripts/](scripts). To fetch a single asset by identifier, use `arena asset pull <kind> <name>`. `arena asset expire [<kind> <name>]` marks cached assets expired, all of them when bare, so each is downloaded again on its next use.
 
 ## Human assets and skeletal articulation
 

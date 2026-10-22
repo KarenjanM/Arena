@@ -297,6 +297,37 @@ def _config_source(identifier: AssetIdentifier) -> Path:
     return resolved
 
 
+def expire(argv: list[str]) -> int:
+    """Mark cached assets expired, so each is downloaded again on its next use.
+
+    `arena asset expire [KIND NAME] [--bucket B]`. Bare, every cached asset of every bucket
+    (or of B) and the bucket listings, else one asset. An expired asset is still served
+    while its bucket is unreachable. A running runtime keeps what it already resolved.
+    """
+    pos, opts = _parse(argv, ("KIND", "NAME"), valued=("--bucket",), optional=2)
+    if len(pos) == 1:
+        raise CLIError(f"expected KIND NAME or nothing, got only {pos[0]!r}. Kinds: {', '.join(KINDS)}")
+    if pos:
+        kind, name = pos
+        bucket = _bucket_of(opts, kind)
+        if not _net_resolver(kind, bucket).expire(_identifier(kind, name)):
+            print(f"{kind} {name} is not cached from {bucket}, nothing to expire. `arena asset pull {kind} {name}` fetches it", file=sys.stderr)
+            return 1
+        print(f"expired {kind} {name} in {bucket}")
+        return 0
+
+    from arena_simulation_setup.tree import Identifier, NetResolver
+
+    buckets = list(dict.fromkeys(bucket for kind in KINDS for bucket in _buckets(kind)))
+    if "--bucket" in opts:
+        if opts["--bucket"] not in buckets:
+            raise CLIError(f"{opts['--bucket']} is not a configured bucket, expected one of {', '.join(buckets)}")
+        buckets = [str(opts["--bucket"])]
+    for bucket in buckets:
+        print(f"{bucket}: expired {NetResolver(Identifier, provider=bucket).expire()} cached asset(s)")
+    return 0
+
+
 def _drop_listing(kind: str, bucket: str) -> None:
     """A publish makes the cached bucket listing stale, so the next ls re-fetches it."""
     from arena_simulation_setup.tree import NetResolver
@@ -390,6 +421,7 @@ COMMANDS = {
         make_verb("find", find, complete=Sub(_KIND.subs, extra=Flags({"--json": "machine-readable verdicts"}))),
         make_verb("ls", ls, complete=Union(_KINDS, Flags({"--network": "include bucket-only entries", "--json": "machine-readable"}))),
         make_verb("pull", pull, complete=_KIND),
+        make_verb("expire", expire, complete=_KIND),
         make_verb("push", push, complete=Sub(_KIND.subs, extra=Flags({"--force": "publish despite a failed preflight", "--yes": "skip the confirmation"}))),
     )
 }
