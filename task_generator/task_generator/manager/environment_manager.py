@@ -13,9 +13,12 @@ from arena_runtime.sim._semantics import _SEMANTIC_KINDS
 from arena_simulation_setup.shared import Ceiling, Light
 from arena_simulation_setup.tree.World import Level, World, entity_lights
 from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
+from arena_simulation_setup.utils.affordance import AffordanceSlot
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from std_msgs.msg import String
+from visualization_msgs.msg import MarkerArray
 
+from task_generator.manager.affordance_markers import affordance_markers
 from task_generator.manager.collision_grid import CollisionGrid
 from task_generator.manager.realizer import Realizer
 from task_generator.manager.world_manager.utils import WorldMap
@@ -135,6 +138,7 @@ class EnvironmentManager(NodeInterface):
 
     _collision_grid: CollisionGrid | None
     _static_polygons: dict[str, shapely.Polygon]
+    _affordances: dict[str, tuple[str, Pose, list[AffordanceSlot]]]
 
     def __init__(
         self,
@@ -152,6 +156,13 @@ class EnvironmentManager(NodeInterface):
 
         self._collision_grid = None
         self._static_polygons = {}
+        self._affordances = {}
+        self._affordance_markers_pub = self.node.create_publisher(
+            MarkerArray,
+            'affordance_markers',
+            rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE),
+        )
+        self._human_simulator.on_seated_change(self._publish_affordance_markers)
         self._attached_semantic_entities: set[str] = set()
         self._world_light_names: set[str] = set()
         self._episode_lights: dict[str, dict[str, str]] = {}
@@ -241,13 +252,33 @@ class EnvironmentManager(NodeInterface):
             self._static_polygons[obstacle.name] = poly
             if self._collision_grid is not None:
                 self._collision_grid.stamp(obstacle.name, poly)
+        slots = await asyncio.gather(*(o.affordance_slots() for o in obstacles), return_exceptions=True)
+        for obstacle, found in zip(obstacles, slots, strict=True):
+            if isinstance(found, ValueError):
+                self._logger.warning(f"Ignoring the affordances of '{obstacle.name}': {found}")
+                found = []
+            elif isinstance(found, BaseException):
+                raise found
+            if found:
+                self._affordances[obstacle.name] = (obstacle.sim_path, obstacle.pose, found)
+            else:
+                self._affordances.pop(obstacle.name, None)
+        self._publish_affordance_markers()
 
     def _sync_static_polygons(self) -> None:
-        """Drop polygons whose obstacle is no longer registered in the human simulator."""
+        """Drop polygons and affordance slots whose obstacle is no longer registered in the human simulator."""
         alive = set(self._human_simulator._known_obstacles.keys())
         self._static_polygons = {n: p for n, p in self._static_polygons.items() if n in alive}
+        self._affordances = {n: placed for n, placed in self._affordances.items() if n in alive}
         if self._collision_grid is not None:
             self._collision_grid.sync(self._static_polygons.keys())
+        self._publish_affordance_markers()
+
+    def _publish_affordance_markers(self) -> None:
+        """Republish the latched slot overlay of every spawned obstacle, occupancy from the agents seated on it."""
+        seated = self._human_simulator.seated()
+        objects = ((name, pose, slots, seated.get(sim_path, [])) for name, (sim_path, pose, slots) in sorted(self._affordances.items()))
+        self._affordance_markers_pub.publish(MarkerArray(markers=affordance_markers(objects, self.node.sim_time.to_msg())))
 
     async def spawn_world_obstacles(
         self,

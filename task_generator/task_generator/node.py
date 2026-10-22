@@ -1151,16 +1151,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     group="Pedestrians",
                 )
             )
-            # Backend marker overlay. On by default: the canonical Skeletons3D
-            # display cannot render namespaced envs (upstream hri_rviz reads
-            # absolute /humans paths), so this is the working pedestrian view.
             env_displays.append(
                 AdapterDisplay(
                     name="Extra",
                     topic=f"{env_ns}/pedestrian_markers/extra",
                     topic_type="visualization_msgs/MarkerArray",
                     kind=DisplayKind.MARKER_ARRAY,
-                    style_json=StyleSpec().to_json(),
+                    style_json=StyleSpec(enabled=False).to_json(),
                     topic_must_exist=False,
                     group="Pedestrians",
                 )
@@ -1211,6 +1208,18 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 style_json=StyleSpec(latched=True, enabled=False).to_json(),
                 topic_must_exist=False,
                 group="Static",
+            )
+        )
+
+        env_displays.append(
+            AdapterDisplay(
+                name="Affordances",
+                topic=f"{env_ns}/affordance_markers",
+                topic_type="visualization_msgs/MarkerArray",
+                kind=DisplayKind.MARKER_ARRAY,
+                style_json=StyleSpec(latched=True, enabled=False).to_json(),
+                topic_must_exist=False,
+                group="Interaction",
             )
         )
 

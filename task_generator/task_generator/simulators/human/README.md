@@ -395,6 +395,10 @@ ped on the seat, not on a ring around the object. An object without seats keeps 
 the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its
 whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius.
 
+The adapter follows the engine's latched `interactions` frame and reports the participants of every held `SIT_ON`
+by object through `seated()`, map-frame positions from the latest agent states, notifying `on_seated_change`
+listeners when the set changes. The base class reports nobody seated.
+
 Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
 realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the
 cabin center facing the door, `doorway` outside the door side at the cabin half-size along the door normal plus

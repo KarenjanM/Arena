@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     import geometry_msgs.msg
     import shapely
 
+    from arena_simulation_setup.utils.affordance import AffordanceSlot
+
 
 @attrs.define(auto_attribs=True, kw_only=True)
 class Waypoint(Position):
@@ -163,6 +165,14 @@ class Obstacle(Entity):
         poly = shapely.Polygon(bounds)
         poly = shapely.affinity.rotate(poly, self.pose.orientation.to_yaw(), origin=(0, 0), use_radians=True)
         return shapely.affinity.translate(poly, xoff=self.pose.position.x, yoff=self.pose.position.y)
+
+    async def affordance_slots(self) -> list[AffordanceSlot]:
+        """Placed affordance slots of the asset in the obstacle-local frame, empty when unannotated."""
+        try:
+            view = await self.model.resolve()
+        except FileNotFoundError:
+            return []
+        return view.affordances
 
 
 converter.register_structure_hook_func(lambda t: t == dict | str | None, lambda v, _t: v)

@@ -138,3 +138,14 @@ def test_material_default_unknown_fallback():
     m = Material.default('some_unknown_context')
     assert isinstance(m, MaterialIdentifier)
     assert m.name == "Marble"
+
+
+def test_object_view_reads_placed_affordance_slots(tmp_path: Path) -> None:
+    model_dir = tmp_path / "bench"
+    model_dir.mkdir()
+    (model_dir / "annotation.yaml").write_text("affordances:\n  sit:\n    - {bbox: [[-0.5, 0.5], [0.0, 0.4], [0.0, 0.45]], yaw: -y}\n    - {}\n")
+    slots = ObjectIdentifier("bench").load(model_dir).affordances
+    assert [(slot.kind, slot.index, slot.bbox[2]) for slot in slots] == [("sit", 0, (0.0, 0.45))]
+    empty = tmp_path / "box"
+    empty.mkdir()
+    assert ObjectIdentifier("box").load(empty).affordances == []

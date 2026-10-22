@@ -4,7 +4,10 @@ import math
 
 import pytest
 
-from task_generator.simulators.human.arena_humansim.arena_humansim import reach_radius, seat_capacity
+from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
+from arena_humansim_msgs.msg import InteractionFrame
+
+from task_generator.simulators.human.arena_humansim.arena_humansim import reach_radius, seat_capacity, seated_agents
 
 SOFA = [
     {"bbox": [[-0.46, 0.48], [0.03, 0.72], [0.0, 0.47]], "yaw": "-y"},
@@ -31,3 +34,16 @@ def test_capacity_is_one_without_usable_slots():
 def test_reach_radius_covers_the_footprint_from_beside_it():
     assert reach_radius([[-0.7, 0.7], [-0.3, 0.3], [0.0, 0.9]]) == pytest.approx(math.hypot(0.7, 0.3) + 0.3)
     assert reach_radius([[0.0, 2.0], [-0.5, 0.0], [0.0, 0.5]]) == pytest.approx(math.hypot(2.0, 0.5) + 0.3)
+
+
+def test_seated_agents_lists_participants_of_held_sit_interactions_only():
+    frame = InteractionFrame(
+        interaction_id=[1, 2, 3],
+        interaction_type=[InteractionType.SIT_ON, InteractionType.SIT_ON, InteractionType.QUEUE_USE],
+        object_id=["env_0/sofa", "env_0/bench", "env_0/desk"],
+        holding=[True, False, True],
+        member_offset=[0, 2, 3, 4],
+        member_id=[7, 8, 9, 10],
+        member_role=[MembershipRole.PARTICIPANT, MembershipRole.QUEUED, MembershipRole.PARTICIPANT, MembershipRole.PARTICIPANT],
+    )
+    assert seated_agents(frame) == {"env_0/sofa": [7]}

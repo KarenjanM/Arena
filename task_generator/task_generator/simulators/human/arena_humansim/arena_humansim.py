@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 
 import numpy as np
 import yaml
+from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
 from arena_humansim_msgs.msg import (
     AgentFrame as AgentFrameMsg,
 )
@@ -29,6 +30,9 @@ from arena_humansim_msgs.msg import (
 )
 from arena_humansim_msgs.msg import (
     Gesture as EngineGestureMsg,
+)
+from arena_humansim_msgs.msg import (
+    InteractionFrame as InteractionFrameMsg,
 )
 from arena_humansim_msgs.msg import (
     ObstacleConfig as ObstacleConfigMsg,
@@ -129,6 +133,18 @@ def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[Mapping[st
         return max(1, max_occupancy(placed_slots({AffordanceKind.SIT: slots})))
     except ValueError:
         return 1
+
+
+def seated_agents(frame: InteractionFrameMsg) -> dict[str, list[int]]:
+    """Participants of every held sit interaction, by the object they sit on."""
+    seated: dict[str, list[int]] = {}
+    holding, objects, offsets = list(frame.holding), list(frame.object_id), list(frame.member_offset)
+    members, roles = list(frame.member_id), list(frame.member_role)
+    for index, kind in enumerate(frame.interaction_type):
+        if kind != InteractionType.SIT_ON or not holding[index] or not objects[index]:
+            continue
+        seated.setdefault(objects[index], []).extend(int(members[m]) for m in range(offsets[index], offsets[index + 1]) if roles[m] == MembershipRole.PARTICIPANT)
+    return seated
 
 
 def reach_radius(bounding_box: Sequence[Sequence[float]]) -> float:
@@ -321,6 +337,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             10,
         )
 
+        self._seated_ids: dict[str, list[int]] = {}
+        self.node.create_subscription(
+            InteractionFrameMsg,
+            self.node.service_namespace("interactions"),
+            self._interactions_callback,
+            QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL),
+        )
+
         self._debug_markers_sub = LazySubscription(
             self.node,
             self._marker_publisher,
@@ -386,6 +410,19 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             marker.pose.position.x += cfg.x
             marker.pose.position.y += cfg.y
         return msg
+
+    def _interactions_callback(self, msg: InteractionFrameMsg) -> None:
+        seated = seated_agents(msg)
+        if seated != self._seated_ids:
+            self._seated_ids = seated
+            self._notify_seated()
+
+    def seated(self) -> dict[str, list[tuple[float, float]]]:
+        frame = self._curr_agent_states
+        if frame is None:
+            return {}
+        positions = {int(agent_id): self._from_engine(x, y) for agent_id, x, y in zip(frame.agent_id, frame.x, frame.y, strict=True)}
+        return {object_id: [positions[agent] for agent in agents if agent in positions] for object_id, agents in self._seated_ids.items()}
 
     def _agent_states_callback(self, msg: AgentFrameMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
