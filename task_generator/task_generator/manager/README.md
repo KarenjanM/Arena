@@ -138,6 +138,7 @@ All obstacle/robot operations go through here.
 | `move_robot(robots)` | teleport robots |
 | `remove_robot(robots)` | remove robots from both layers |
 | `respawn(callback)` | `unuse_obstacles()` → `callback()` → `remove_obstacles(UNUSED)` |
+| `notify_stimulus(agent, stimulus, intensity)` | forwards to the human simulator, `agent` is an engine id or a spawned agent's name or `sim_path` |
 | `reset(purge)` | remove all obstacles at or below `purge` layer |
 | `before_reset_episode()` | delegates to `BaseSim.before_reset_episode()` (pauses sim) |
 | `after_reset_episode()` | delegates to `BaseSim.after_reset_episode()` (unpauses sim) |

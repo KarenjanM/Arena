@@ -55,8 +55,9 @@ def _stimuli(backend: str, drive, expected: int) -> list[tuple[int, str, float]]
             super().__init__(*args, **kwargs)
             self.calls: list[tuple[int, str, float]] = []
 
-        async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
-            self.calls.append((agent_id, stimulus, intensity))
+        async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+            self.calls.append((agent, stimulus, intensity))
+            return True
 
     suffix = f"t_{uuid.uuid4().hex[:8]}"
     ns = Namespace(f"/test/{suffix}")

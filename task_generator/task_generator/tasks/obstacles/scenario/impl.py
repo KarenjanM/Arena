@@ -5,12 +5,11 @@ from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView
-from arena_simulation_setup.utils.geometry import Position
 
-from task_generator.manager.world_manager.utils import WorldOccupancy
-from task_generator.shared import PositionRadius, Region
+from task_generator.shared import Region
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
+from task_generator.tasks.obstacles._validation import make_is_valid
 from task_generator.tasks.registry import default_scenario
 
 
@@ -23,26 +22,7 @@ class TM_Scenario(TM_Obstacles):
         await self._ctx.environment_manager.configure_gestures(self._gesture_mode.value)
         world_description = self._ctx.world_manager.world_compacted()
 
-        safe_dist = self.node.conf.Obstacles.SAFE_DIST.value
-        is_valid: typing.Callable[[Position], bool] | None = None
-        if safe_dist > 0:
-            world_map = self._ctx.world_manager.map
-            occupancy_grid = world_map.occupancy.grid
-            rows, cols = occupancy_grid.shape
-
-            def _is_valid(pt: Position) -> bool:
-                (lo_r, lo_c), (hi_r, hi_c) = world_map.tf_posr2rect(
-                    PositionRadius(x=pt.x, y=pt.y, radius=safe_dist),
-                )
-                r0 = max(0, int(min(lo_r, hi_r)))
-                r1 = min(rows, int(max(lo_r, hi_r)) + 1)
-                c0 = max(0, int(min(lo_c, hi_c)))
-                c1 = min(cols, int(max(lo_c, hi_c)) + 1)
-                if r0 >= r1 or c0 >= c1:
-                    return False
-                return bool(WorldOccupancy.empty(occupancy_grid[r0:r1, c0:c1]).all())
-
-            is_valid = _is_valid
+        is_valid = make_is_valid(self._ctx.world_manager.map, self.node.conf.Obstacles.SAFE_DIST.value)
 
         zone_conv = world_description.zone_converter(
             self.node.conf.General.RNG.stream("obstacles", "scenario"),
@@ -54,6 +34,7 @@ class TM_Scenario(TM_Obstacles):
         self.scenario = scenario
         self.lights = [anchor_light(light, scenario.objects) for light in scenario.lights]
         await self._check_clips(scenario_view, scenario)
+        self._ctx.environment_manager.check_stimuli(scenario_view.path.name, scenario.humans, scenario.timeline)
 
         regions = [
             Region(

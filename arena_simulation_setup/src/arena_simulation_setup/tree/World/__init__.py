@@ -14,7 +14,7 @@ from .model import (
     entity_lights,
 )
 from .parse import WorldFormatError, parse_world
-from .view import WorldIdentifier, WorldView, save_snapshot
+from .view import WorldIdentifier, WorldView, save_snapshot, world_assets
 from .write import write_world
 
 __all__ = [
@@ -35,6 +35,7 @@ __all__ = [
     'WorldMicrophone',
     'WorldView',
     'save_snapshot',
+    'world_assets',
     'Zone',
     'ZoneCeiling',
     'ZoneWalls',

@@ -48,6 +48,8 @@ from task_generator.simulators.human.utils import (
 )
 
 if typing.TYPE_CHECKING:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
     from task_generator.simulators.acoustics import BaseAcousticsSimulator, PedestrianHearing
 
 PED_RADIUS = 0.3
@@ -109,6 +111,7 @@ class HumanSimulatorOptions(typing.TypedDict):
 
 class BaseHumanSimulator(NodeInterface, abc.ABC):
     PARAM_NAMESPACE: typing.ClassVar[str | None] = None
+    TAKES_STIMULI: typing.ClassVar[bool] = False
 
     _arena_peds_publisher: rclpy.publisher.Publisher
     _marker_publisher: LazyPublisher[MarkerArray]
@@ -1021,8 +1024,26 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def unpause(self):
         pass
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
-        pass
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        """True when the engine took the stimulus for `agent`, an engine agent id or a spawned agent's name or ``sim_path``."""
+        return False
+
+    def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:
+        """The agent type of `obstacle` and the stimulus names it acts on, None when the backend cannot tell."""
+        del obstacle
+        return None
+
+    def check_stimuli(self, scenario: str, humans: Sequence[DynamicObstacle], timeline: Sequence[TimelineEntry]) -> None:
+        """Raise ValueError naming `scenario` for a timeline stimulus this backend drops or the agent type of its target ignores."""
+        stimuli = [stimulus for entry in timeline for stimulus in entry.stimulus]
+        if stimuli and not self.TAKES_STIMULI:
+            raise ValueError(f"scenario {scenario!r} has timeline stimulus entries, which only the arena human backend acts on, run it with human:=arena")
+        by_name = {human.name: human for human in humans}
+        for stimulus in stimuli:
+            for agent in stimulus.agents:
+                taken = self.stimuli_taken(by_name[agent])
+                if taken is not None and stimulus.need not in taken[1]:
+                    raise ValueError(f"scenario {scenario!r}: stimulus {stimulus.need!r} for {agent!r} is neither a need nor a step `until` event of its agent type {taken[0]!r}, which acts on {sorted(taken[1])}")
 
     async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
         return True

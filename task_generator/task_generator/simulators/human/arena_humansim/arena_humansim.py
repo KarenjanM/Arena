@@ -115,7 +115,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import PED_RADIUS, BaseHumanSimulator, HumanSimulatorOptions
 
-from .agent import ArenaHumanDynamicObstacle, agent_type_def, flow_agent_template, path_agent_type_name
+from .agent import ArenaHumanDynamicObstacle, agent_type_def, agent_type_stimuli, flow_agent_template, path_agent_type_name
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -154,6 +154,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     SERVICE_SET_ELEVATORS = "set_elevators"
     SERVICE_SET_ELEVATOR_DOORS = "set_elevator_doors"
     SERVICE_TELEPORT_AGENTS = "teleport_agents"
+    TAKES_STIMULI = True
 
     def __init__(self, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> None:
         super().__init__(**kwargs)
@@ -807,10 +808,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.velocity.x, a.velocity.y = tracked.velocity
             a.radius = 0.3
             msg.agents.append(a)  # pyright: ignore[reportAttributeAccessIssue]
-        name_to_aid = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        ids = self._agent_ids()
         for name, ped in possessed.items():
             a = AgentStateMsg()
-            aid = name_to_aid.get(name)
+            aid = self._agent_id(name, ids)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
             a.name = name
             a.pose = self._engine_pose(Pose.from_msg(ped.pose))
@@ -1161,18 +1162,45 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         finally:
             self._spawns_in_flight -= 1
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
+    def _agent_ids(self) -> dict[str, int]:
+        """Engine id of every spawned agent by ``sim_path``."""
+        return {name: aid for aid, name in self._agent_names.items()}
+
+    def _agent_id(self, agent: str, ids: Mapping[str, int] | None = None) -> int | None:
+        """Engine id of a spawned agent by name or ``sim_path``, looked up in `ids` (an `_agent_ids()` result) when given."""
+        known = self._known_obstacles.get(agent)
+        sim_path = known.obstacle.sim_path if known is not None else agent
+        return (self._agent_ids() if ids is None else ids).get(sim_path)
+
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        if isinstance(agent, str):
+            agent_id = self._agent_id(agent)
+            if agent_id is None:
+                self._logger.warning(f"NotifyStimulus: {agent!r} is not a known agent")
+                return False
+            agent = agent_id
         request = NotifyStimulus.Request()
-        request.agent_id = agent_id
+        request.agent_id = agent
         request.stimulus = stimulus
         request.intensity = intensity
         try:
             response = await self._notify_stimulus_client.call_timeout(request)
         except Exception as e:
             self._logger.error(f"NotifyStimulus call failed: {e}")
-            return
-        if response is not None and not response.success:
+            return False
+        if response is None:
+            self._logger.error("NotifyStimulus timed out")
+            return False
+        if not response.success:
             self._logger.error(f"NotifyStimulus failed: {response.message}")
+        return bool(response.success)
+
+    def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:
+        parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
+        definition = agent_type_def(parsed.agent_type) if parsed is not None else None
+        if parsed is None or definition is None:
+            return None
+        return parsed.agent_type, agent_type_stimuli(definition)
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
         """Teleport pedestrians by published name to (x, y) in the engine, keeping their facing."""

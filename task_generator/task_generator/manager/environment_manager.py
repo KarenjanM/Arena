@@ -13,6 +13,7 @@ from arena_runtime.sim._semantics import _SEMANTIC_KINDS
 from arena_simulation_setup.shared import Ceiling, Light
 from arena_simulation_setup.tree.World import Level, World, entity_lights
 from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
+from arena_simulation_setup.tree.World.Scenario import TimelineEntry
 from rcl_interfaces.msg import Parameter as ParameterMsg
 from std_msgs.msg import String
 
@@ -506,6 +507,12 @@ class EnvironmentManager(NodeInterface):
         """Moves already spawned static obstacles and rebuilds the collision grid without their old footprints."""
         await self.spawn_obstacles(setups)
         self._sync_static_polygons()
+
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        return await self._human_simulator.notify_stimulus(agent, stimulus, intensity)
+
+    def check_stimuli(self, scenario: str, humans: Sequence[DynamicObstacle], timeline: Sequence[TimelineEntry]) -> None:
+        self._human_simulator.check_stimuli(scenario, humans, timeline)
 
     async def spawn_robot(self, robots: Sequence[Robot]) -> Sequence[Robot]:
         """

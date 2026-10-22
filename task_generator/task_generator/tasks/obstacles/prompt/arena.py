@@ -16,6 +16,7 @@ from arena_simulation_setup.kg import Scene
 from arena_simulation_setup.shared.entities import WAYPOINT_MODES
 from arena_simulation_setup.tree.World import Level, WorldIdentifier, describe, zones_of
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, Scenario, parse_scenario
+from arena_simulation_setup.utils.llm import genai
 
 from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
 from task_generator.tasks.mode import TaskModeKwargs
@@ -24,7 +25,6 @@ from task_generator.tasks.obstacles import (
     Obstacle,
     TM_Obstacles,
 )
-from task_generator.utils.gpt import genai
 
 from .prompt_utils import (
     ARENA_FORMAT,
