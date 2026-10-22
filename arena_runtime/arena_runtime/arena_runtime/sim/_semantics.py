@@ -14,6 +14,7 @@ from ._mechanism_shim import _DoorState, _near_door_segment, _reset_door
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.semantics import SemanticCfg
+    from task_generator.shared import Door
 
     from ._interface import MechanismITF
     from ._mechanism_shim import _DoorRuntime, _ElevatorRuntime
@@ -42,10 +43,10 @@ class SemanticChange:
 _SEMANTIC_KINDS: dict[str, type[SemanticKind]] = {}
 
 
-def semantic_kind(name: str) -> Callable[[type[SemanticKind]], type[SemanticKind]]:
+def semantic_kind[K: type[SemanticKind]](name: str) -> Callable[[K], K]:
     """Register a SemanticKind subclass under name and set cls.KIND."""
 
-    def register(cls: type[SemanticKind]) -> type[SemanticKind]:
+    def register(cls: K) -> K:
         cls.KIND = name
         _SEMANTIC_KINDS[name] = cls
         return cls
@@ -519,7 +520,7 @@ class GateSemantics(SemanticKind):
         self,
         mech: MechanismITF,
         entity: str,
-        door: object,
+        door: Door,
         authorized: frozenset[str],
         initial_locked: bool,
         unlock_on: str | None,
@@ -799,11 +800,11 @@ class SoundSemantics(SemanticKind):
 class LightSemantics(SemanticKind):
     SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'dummy'})
 
-    CONTINUOUS = ('level', 'dead_fraction')
+    CONTINUOUS = ('dim', 'dead_fraction')
     PREDICATES = ('lit',)
-    QUANTA = {'level': 0.01, 'dead_fraction': 0.01}
-    WRITABLE = frozenset({'lit', 'level', 'dead_fraction'})
-    RANGES = {'level': (0.0, 1.0), 'dead_fraction': (0.0, 1.0)}
+    QUANTA = {'dim': 0.01, 'dead_fraction': 0.01}
+    WRITABLE = frozenset({'lit', 'dim', 'dead_fraction'})
+    RANGES = {'dim': (0.0, 1.0), 'dead_fraction': (0.0, 1.0)}
 
     def __init__(
         self,
@@ -811,7 +812,7 @@ class LightSemantics(SemanticKind):
         entity: str,
         light_on: str | None,
         initial_lit: bool,
-        initial_level: float,
+        initial_dim: float,
         initial_dead_fraction: float,
         discrete: tuple[str, ...],
         continuous: tuple[str, ...],
@@ -821,9 +822,9 @@ class LightSemantics(SemanticKind):
         self._mech = mech
         self._light_on = light_on
         self._initial_lit = initial_lit
-        self._initial_level = initial_level
+        self._initial_dim = initial_dim
         self._initial_dead_fraction = initial_dead_fraction
-        self._level = initial_level
+        self._dim = initial_dim
         self._dead_fraction = initial_dead_fraction
         self._override_lit: bool | None = None
         self._last_natural_lit = self._natural()
@@ -834,20 +835,20 @@ class LightSemantics(SemanticKind):
         params = _merge_params(cfgs)
         light_on = params.get('light_on')
         initial_lit = True
-        initial_level = 1.0
+        initial_dim = 1.0
         initial_dead_fraction = 0.0
         for cfg in cfgs:
             if cfg.value is None:
                 continue
-            if cfg.name == 'level':
-                initial_level = float(cfg.value)
+            if cfg.name == 'dim':
+                initial_dim = float(cfg.value)
             elif cfg.name == 'dead_fraction':
                 initial_dead_fraction = float(cfg.value)
             elif cfg.name == 'lit':
                 if light_on is not None:
                     raise ValueError(f"light {entity!r}: lit value and light_on are exclusive")
                 initial_lit = bool(cfg.value)
-        return cls(mech, entity, light_on, initial_lit, initial_level, initial_dead_fraction, discrete, continuous, predicates)
+        return cls(mech, entity, light_on, initial_lit, initial_dim, initial_dead_fraction, discrete, continuous, predicates)
 
     def _natural(self) -> bool:
         return self._mech._semantics.regime(self._light_on) if self._light_on is not None else self._initial_lit
@@ -864,7 +865,7 @@ class LightSemantics(SemanticKind):
     def reset(self) -> None:
         self._override_lit = None
         self._last_natural_lit = self._natural()
-        self._level = self._initial_level
+        self._dim = self._initial_dim
         self._dead_fraction = self._initial_dead_fraction
 
     def set_value(self, field: str, value: str) -> None:
@@ -880,24 +881,24 @@ class LightSemantics(SemanticKind):
         low, high = self.RANGES[field]
         if not low <= fraction <= high:
             raise ValueError('malformed value')
-        if field == 'level':
-            self._level = fraction
+        if field == 'dim':
+            self._dim = fraction
         else:
             self._dead_fraction = fraction
 
     def output(self) -> tuple[float, float]:
-        """Rendered (level, dead fraction), level 0.0 while unlit."""
-        level = self._level if self._live_lit() else 0.0
+        """Rendered (dim, dead fraction), dim 0.0 while unlit."""
+        dim = self._dim if self._live_lit() else 0.0
         dead_fraction = self._dead_fraction if 'dead_fraction' in self._continuous else 0.0
-        return level, dead_fraction
+        return dim, dead_fraction
 
     def snapshot(self) -> SemanticEntitySnapshot:
         continuous: dict[str, float] = {}
         predicates: dict[str, bool] = {}
         if 'lit' in self._predicates:
             predicates['lit'] = self._live_lit()
-        if 'level' in self._continuous:
-            continuous['level'] = self._level
+        if 'dim' in self._continuous:
+            continuous['dim'] = self._dim
         if 'dead_fraction' in self._continuous:
             continuous['dead_fraction'] = self._dead_fraction
         return SemanticEntitySnapshot(self._entity, self.KIND, {}, continuous, predicates)

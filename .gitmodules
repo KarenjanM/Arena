@@ -7,8 +7,8 @@
 	update = checkout
 [submodule "arena_evaluation"]
 	path = arena_evaluation
-	url = https://github.com/shibuina/arena-evaluation.git
-	branch = feature/edge_case
+	url = https://github.com/voshch/arena-evaluation.git
+	branch = jazzy
 	update = checkout
 [submodule "arena_isaac"]
 	path = arena_isaac

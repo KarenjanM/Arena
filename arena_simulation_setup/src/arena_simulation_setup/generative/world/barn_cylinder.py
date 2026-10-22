@@ -5,8 +5,7 @@ from collections import deque
 import numpy as np
 import shapely
 
-from . import BaseConfiguration
-from .barn import BarnBase
+from .barn import BarnBase, BarnConfiguration
 from .utils import to_walls
 
 logger = logging.getLogger(__name__)
@@ -23,9 +22,7 @@ class WorldGeneratorBarnCylinder(BarnBase):
 
     SCENARIO = 'barn_cylinder'
 
-    class Configuration(BaseConfiguration):
-        width: float = 10.0
-        height: float = 10.0
+    class Configuration(BarnConfiguration):
         margin: float = 0.5  # clear border inside the boundary walls
         cell_size: float = 0.3  # CA grid cell and cylinder spacing (m)
         fill_probability: float = 0.45  # initial random wall fraction

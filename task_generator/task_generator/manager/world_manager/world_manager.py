@@ -20,7 +20,9 @@ _UNKNOWN_FOOTPRINT_RADIUS = 1.0
 def _occupancy_to_available(occupancy: np.ndarray, safe_dist_cells: float) -> np.ndarray:
     """Return (row, col) cells whose Euclidean safe_dist_cells neighbourhood is fully not-full. Off-map counts as full."""
     free = np.pad(WorldOccupancy.not_full(occupancy), 1, constant_values=False)
-    clearance = scipy.ndimage.distance_transform_edt(free)[1:-1, 1:-1]
+    distances = scipy.ndimage.distance_transform_edt(free)
+    assert isinstance(distances, np.ndarray)
+    clearance = distances[1:-1, 1:-1]
     return np.transpose(np.where(clearance > safe_dist_cells))
 
 

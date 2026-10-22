@@ -94,9 +94,12 @@ def screen_zones(
             return {n: Verdict(zone=n, ref_safe=False, reason="no occupancy grid to screen against") for n in names}
         occupied, res, ox, oy = grid
 
+        import numpy as np
         import scipy.ndimage
 
-        dist = scipy.ndimage.distance_transform_edt(~occupied) * res
+        edt = scipy.ndimage.distance_transform_edt(~occupied)
+        assert isinstance(edt, np.ndarray)
+        dist = edt * res
     else:
         dist, res, ox, oy = clearance_map
 

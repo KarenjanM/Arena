@@ -81,9 +81,8 @@ def test_human_simulator_values_stable():
     HS = Constants.HumanSimulator
     assert HS.DUMMY.value == "dummy"
     assert HS.NONE.value == "none"
-    assert HS.ISAAC.value == "isaac"
     assert HS.HUNAV.value == "hunav"
     assert HS.ARENA.value == "arena"
     # hunav and arena are both registered — alternative backends chosen by `human:=`,
     # never concurrent. Dropping either changes what `human:=<key>` resolves to.
-    assert {m.value for m in HS} == {"dummy", "none", "isaac", "hunav", "arena"}
+    assert {m.value for m in HS} == {"dummy", "none", "hunav", "arena"}

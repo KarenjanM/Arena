@@ -11,7 +11,7 @@ from collections.abc import Sequence
 import attrs
 import rclpy.impl.rcutils_logger
 from arena_simulation_setup.shared.world import CABIN_DOOR_INSET as DOOR_INSET
-from arena_simulation_setup.shared.world import CABIN_DOOR_WIDTH
+from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD, CABIN_DOOR_WIDTH
 from task_generator.shared import Door, Elevator, Orientation, Pose, Position
 
 from ._interface import _BOX_FLOOR_CLEARANCE
@@ -117,6 +117,7 @@ class _ElevatorRuntime:
     departing: bool = False
     # Occupants already dispatched this leg, still in the cabin until their teleport fires.
     dispatched: set[str] = attrs.field(factory=set)
+    door_reported_open: bool = False
 
 
 @attrs.define
@@ -532,7 +533,7 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
         if door_runtime is None:
             continue
         occupants = [named_positions[i] for i in elev_occupant_idx[elev_name]]
-        outside_trigger = _is_triggered(door_runtime.door, outside_xys)
+        outside_trigger = _near_door_segment(door_runtime.door, outside_xys, CABIN_DOOR_THRESHOLD) if occupants else _is_triggered(door_runtime.door, outside_xys)
         dest_runtime = mech._elevator_runtime.get(runtime.destination_name)
         if mech._semantics.elevator_recalled(elev_name, now):
             door_runtime.last_trigger_sim_time = now  # recall: hold cabin door open
@@ -561,6 +562,17 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             pending.append(mech.move_box(name, _interp_pose(runtime)))
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
+
+    if mech._human_simulator is not None:
+        door_changes: dict[str, bool] = {}
+        for elev_name, runtime in mech._elevator_runtime.items():
+            door_runtime = mech._door_runtime.get(runtime.door_name)
+            is_open = door_runtime is not None and door_runtime.state == _DoorState.OPEN
+            if is_open != runtime.door_reported_open:
+                runtime.door_reported_open = is_open
+                door_changes[elev_name] = is_open
+        if door_changes:
+            await mech._human_simulator.elevator_doors_changed(door_changes)
 
     # Run teleport jobs after door updates are dispatched.
     for source_name, dest_name, named_occupants in teleport_jobs:

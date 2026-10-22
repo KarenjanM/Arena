@@ -5,6 +5,8 @@
 
 A modular ROS 2 (Jazzy) platform for researching and benchmarking autonomous robot navigation in 2D and 3D simulated environments. It supports classical planners (Nav2), deep-RL planners ([rosnav_rl](https://github.com/Arena-Rosnav/rosnav-rl)), and a variety of simulators (Gazebo, Isaac Sim, MuJoCo, flatsim).
 
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a pull request.
+
 ---
 
 ## Installation
@@ -41,7 +43,7 @@ We recommend installing at least one simulator.
 
 GPU passthrough takes effect on the next `source arena`, which recreates the container.
 
-ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted.
+ROS 2 traffic stays on loopback by default (`arena settings net local`), which keeps multi-interface hosts from flooding discovery. `arena settings net lan` opens every interface, Gazebo's own transport always stays local; new shells pick it up on `source arena`, running nodes keep theirs until restarted. The scope lives in the profiles `_meta/docker/fastdds.<net>.xml` and `cyclonedds.<net>.xml`, so `source arena` sets `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`. Do not export `LOCALHOST` after it: rmw_fastrtps then adds a shared-memory transport to every process, which fills a fork's 64 MB `/dev/shm` and leaves segments behind when processes are killed. The Fast DDS profiles probe 120 participant ids on unicast, so a domain with more than 32 processes still discovers under `LOCALHOST`.
 
 #### vllm
 
@@ -115,6 +117,17 @@ ruff format .             # apply the formatting the hook enforces
 
 If the hook auto-fixes something, the commit is aborted and the fixes are left unstaged, `git add` and re-commit.
 
+### Type checking
+
+[basedpyright](https://docs.basedpyright.com/) checks types with the `[tool.pyright]` config in the root [`pyproject.toml`](pyproject.toml). It runs inside the Arena container as a manual pre-commit hook:
+```bash
+pre-commit run basedpyright --hook-stage manual
+```
+
+[`_meta/typings`](_meta/typings) holds stubs for compiled modules that ship no type information (USD, MuJoCo, Box2D, gz-transport, tf2, the Qt bindings).
+
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs the same check, at the hook's basedpyright version, over `_meta` and every package it tests, after the test suites.
+
 ### Python dependencies
 
 Each Arena package declares the pip packages it imports in the `[project]` table of its own `pyproject.toml`. Versions and dependencies live only there, `setup.py` keeps the ament glue. `arena update` composes the packages present in your checkout into one uv workspace (`.uv-workspace/`, generated) and syncs it into the venv. Every repo tracks a `uv.lock` derived from the full-tree lock, so a submodule such as `arena_planners` reproduces the same versions standalone with `uv sync`.
@@ -130,13 +143,17 @@ then commit the changed `uv.lock` files, submodules first.
 
 ### CI
 
-[`.github/workflows/lint.yml`](.github/workflows/lint.yml) runs the same pre-commit hooks on every push to `jazzy` and every pull request targeting it. The GH check uses the exact config and hook pins from `.pre-commit-config.yaml`, so local and CI never drift. Make the check required in branch protection to block merges on lint failures.
+The lint, tests and coverage workflows run on every push to `jazzy` and every pull request targeting it. Each checks out the change merged into `jazzy` with [`voshch/ci/trial-merge`](https://github.com/voshch/ci): conflicting submodule pins are merged at every depth, and only a conflict outside them fails the run. GitHub starts no `pull_request` run while a pull request has conflicts, so run a conflicting one by hand with `gh workflow run <lint|tests|coverage>.yml --ref jazzy -f pr=<N>`.
+
+[`.github/workflows/lint.yml`](.github/workflows/lint.yml) runs the same pre-commit hooks on that merge, and on each new commit as a separate `lint / per commit` status. The GH check uses the exact config and hook pins from `.pre-commit-config.yaml`, so local and CI never drift. Make the check required in branch protection to block merges on lint failures.
 
 Bump the Ruff version with `pre-commit autoupdate`.
 
-[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs every test suite of the Arena-owned packages on every push to `jazzy` and every pull request targeting it, in a clean `ros:jazzy` container. It installs what they need the way `arena update` does (`rosdep` from each `package.xml`, `colcon --packages-up-to`, `uv_workspace.py compose` with `uv sync`, the default robot's submodules), so a missing `package.xml` or `pyproject.toml` dependency fails it, and runs them with `colcon test`, the runner behind `arena test`.
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) runs every test suite of the Arena-owned packages in a `ros:jazzy` container. It installs what they need the way `arena update` does (`rosdep` from each `package.xml`, `colcon --packages-up-to`, `uv_workspace.py compose` with `uv sync`, the default robot's submodules), so a missing `package.xml` or `pyproject.toml` dependency fails it, and runs them with `colcon test`, the runner behind `arena test`, one package per worker on its own `ROS_DOMAIN_ID`.
 
-[`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the lines a push to `jazzy` or a pull request changes under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. Changes outside `GATED` end the job after the diff.
+The container is this or last week's `ghcr.io/voshch/arena-ci:jazzy-<ISO week>` when one exists, else plain `ros:jazzy`. A push to `jazzy` without this week's image dispatches [`.github/workflows/ci-image.yml`](.github/workflows/ci-image.yml), which runs [`.github/ci/provision.sh`](.github/ci/provision.sh) on a clean `ros:jazzy` and publishes the result. The image records the rosdep keys it was provisioned for, and [`.github/ci/system-deps.sh --purge-dropped`](.github/ci/system-deps.sh) purges what only a since-dropped key installed before installing the current ones, so a run in the image installs the same set as a run in plain `ros:jazzy`. Build objects go through ccache and downloads through the uv cache, both content-addressed. The package must be public for runs to pull it.
+
+[`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the changed lines under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. Changes outside `GATED` end the job after the diff.
 
 ## Troubleshooting
 

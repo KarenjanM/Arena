@@ -301,10 +301,10 @@ SKIN_TYPES: dict[int, str] = {0: 'elegant_man.dae', 1: 'casual_man.dae', 2: 'ele
 
 
 class ANIMATION_TYPES(enum.StrEnum):
-    WALK = ('07_01-walk.bvh',)
-    WALK_FORWARD = ('69_02_walk_forward.bvh',)
-    NORMAL_WAIT = ('137_28-normal_wait.bvh',)
-    WALK_CHILDISH = ('142_01-walk_childist.bvh',)
-    SLOW_WALK = ('07_04-slow_walk.bvh',)
-    WALK_SCARED = ('142_17-walk_scared.bvh',)
+    WALK = '07_01-walk.bvh'
+    WALK_FORWARD = '69_02_walk_forward.bvh'
+    NORMAL_WAIT = '137_28-normal_wait.bvh'
+    WALK_CHILDISH = '142_01-walk_childist.bvh'
+    SLOW_WALK = '07_04-slow_walk.bvh'
+    WALK_SCARED = '142_17-walk_scared.bvh'
     WALK_ANGRY = '17_01-walk_with_anger.bvh'

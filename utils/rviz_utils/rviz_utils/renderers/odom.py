@@ -6,6 +6,7 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 
 def _color_str(style: StyleSpec, fallback: str = "255; 255; 255") -> str:
@@ -43,5 +44,5 @@ def render_odom(d: AdapterDisplay, robot: RobotDescriptor | None) -> dict[str, o
         "Head Radius": 0.1,
         "Covariance": {"Value": False},
     }
-    result.update(style.extra.get("rviz", {}))
+    result.update(_rviz_extra(style))
     return result

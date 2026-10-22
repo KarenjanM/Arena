@@ -187,6 +187,20 @@ def test_unknown_elevator_destination_raises_unless_its_level_was_not_loaded() -
     assert world.validate(loaded_level_ids={'0'}) == ["elevator 'lift' has destination 'gone' on a level that was not loaded, it will have no destination"]
 
 
+@pytest.mark.parametrize(
+    'level',
+    [
+        Level(objects=[Obstacle(name='desk', pose=Pose(Position(1, 1)), model='desk', level='1')]),
+        Level(humans=[DynamicObstacle(name='walker', pose=Pose(Position(1, 1)), model='human', level='1')]),
+        Level(lights=[Light(name='lamp', fixture='bulb', pose=Pose(position=Position(1, 1, 2)), lumens=400.0, level='1')]),
+        Level(sounds=[Sound(name='siren', asset_id='alarm', position=Position(1, 2), level='1')]),
+    ],
+)
+def test_everything_a_level_lists_sits_on_it_and_takes_no_level(level: Level) -> None:
+    with pytest.raises(ValueError, match='takes no level'):
+        World.from_levels(level).validate()
+
+
 def _door_side(*walls: list[list[float]]) -> str | None:
     world = World.from_levels(Level(walls=[WallPath(path=path) for path in walls], elevators=[Elevator(name='lift', position=Position(0, 0))]))
     world.apply_elevator_door_sides()

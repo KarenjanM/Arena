@@ -295,7 +295,7 @@ serialize when empty):
 | `pressure_plate` | a `doors:`/`elevators:` entry (own `position`) | `pressed` | `position` (`[x, y]`), `radius`, `drives`, `latch`, `press_on`, `regime` |
 | `occupancy_cap` | a `zones:` entry | `occupancy`, `cap`, `over_cap` | `cap` |
 | `sound` | a `sounds:` entry (level or scenario) | `sounding`, `volume_db` | `sound_on`, `regime`, `sounding`/`volume_db` (initial values) |
-| `light` | every `lights:` entry and every zone ceiling rig, attached from the light's own fields | `lit`, `level`, `dead_fraction` (rigs only) | `light_on` |
+| `light` | every `lights:` entry and every zone ceiling rig, attached from the light's own fields | `lit`, `dim`, `dead_fraction` (rigs only) | `light_on` |
 
 `signal` and `schedule` have no geometry, so they sit at world scope beside
 `levels:`. A `sound` needs a placement: exactly one of `position`, `attach`
@@ -340,7 +340,7 @@ may also name one of the scenario's own `objects:`.
 #### Lights
 
 A light is one fixture, an ambient light, or a zone's ceiling rig. Each is a
-`light` semantic entity with `lit` (on/off), `level` (dimming in 0..1) and,
+`light` semantic entity with `lit` (on/off), `dim` (dimming in 0..1) and,
 for rigs, `dead_fraction` (share of dead fixtures), all writable through
 `semantics/set` and the scenario timeline and recorded with every other kind.
 Worlds that declare no light render as before. A world that declares any
@@ -355,16 +355,16 @@ adds its light on top of the default lighting.
 | level `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `pose`, `attach` or `frame`, the latter two with an `offset` |
 | zone `ceiling: {lights: ...}` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
 | object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `pose` in the object frame, moved, turned and scaled with every placement |
-| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:` |
+| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:`, `level` the floor of a literal `pose` |
 | robot `model_params.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `frame` of the robot plus `offset`, see [robots/README.md](../arena_robots/arena_robots/robots/README.md#model_paramsyaml) |
 
 `Light` fields: `name`, `fixture`, `lumens` (local fixtures, per fixture for a
 rig) or `lux` (`dome`, `sun`), `cct_K` (default 6500), `cast_shadows` (default
 false), `cone_deg` (`spot` only, default 40), and one
 of `light_on` (a regime, `!` negates) or `lit` (initial value, default true),
-plus `level` (default 1.0). A ceiling rig takes `fixture` (default
+plus `dim` (default 1.0). A ceiling rig takes `fixture` (default
 `panel`), `spacing` (default 2.4), `lumens`, `cct_K`, `cast_shadows`,
-`light_on`/`lit`, `level` and `dead_fraction`, needs a ceiling, and is
+`light_on`/`lit`, `dim` and `dead_fraction`, needs a ceiling, and is
 named after the zone. The same fixtures of a rig die at the same
 `dead_fraction` in every run, and raising it only adds dead ones.
 
@@ -407,18 +407,18 @@ An object's `annotation.yaml` can carry `lights:` entries with `name` (default
 source model contains lights (hand-written entries win, and the built models
 carry no light themselves). `glow` names the material that glows with the
 light, a lamp shade for instance: Isaac, Gazebo and MuJoCo make it emit the
-light's color scaled by its level, and it is dark while the light is off. Every
+light's color scaled by its dim, and it is dark while the light is off. Every
 placement of the object, in a level's `objects:`, a scenario's `objects:` or
 by an obstacle mode, then gets the light `<entity>_<name>` for as long as the
 placement exists, and a `light:` key on the placement sets its `lit`,
-`light_on` or `level`:
+`light_on` or `dim`:
 
 ```yaml
 objects:
 - {name: desk_lamp, model: Residential/Desk_Lamp, pose: {x: 2, y: 1, z: 0.75}, light: {light_on: "!daylight"}}
 ```
 
-A scenario dims the hall with `{entity: central_hallway, field: level, value:
+A scenario dims the hall with `{entity: central_hallway, field: dim, value:
 "0.3..1.0"}` in its timeline. Isaac renders every fixture as an area light, and
 shades asset materials that only emit a texture by that texture, so they
 darken with the lights.
@@ -672,7 +672,8 @@ humans:
 A scenario can also carry `regions:` (named pedestrian source/sink spawners
 for arena_humansim) and `conditions:` (episode success/failure clauses). Its
 `sounds:`, `lights:` and `timeline:` keys are the ones covered above. Scenario
-lights count as declared, like the world's, and go at the next reset. See
+lights count as declared, like the world's, and go at the next reset, and so
+do its regions. See
 [worlds/README.md](worlds/README.md) for the full key list of every
 top-level key.
 

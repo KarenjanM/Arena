@@ -6,6 +6,7 @@ import os
 import re
 import tempfile
 import time
+import typing
 from enum import Enum
 
 import attrs
@@ -18,6 +19,7 @@ from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, Scenario
 from arena_simulation_setup.utils.llm import genai
 
 from task_generator.manager.world_manager.world_manager import WORLD_ENTITY_PREFIX
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import (
     DynamicObstacle,
     Obstacle,
@@ -256,7 +258,7 @@ class TM_Prompt(TM_Obstacles):
                 top_p=top_p,
                 temperature=0.2,
                 top_k=40,
-                thinking_config=genai.types.ThinkingConfig(thinking_level="low"),
+                thinking_config=genai.types.ThinkingConfig(thinking_level=genai.types.ThinkingLevel.LOW),
             ),
         )
 
@@ -316,7 +318,7 @@ class TM_Prompt(TM_Obstacles):
 
         return scenario.objects, scenario.humans
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
         self._config = PromptConfig(
@@ -340,7 +342,8 @@ class TM_Prompt(TM_Obstacles):
             caches = self.inference_client.caches.list()
             if caches:
                 for cache in caches:
-                    self.inference_client.caches.delete(name=cache.name)
+                    if cache.name is not None:
+                        self.inference_client.caches.delete(name=cache.name)
         except Exception as e:
             print(e)
 

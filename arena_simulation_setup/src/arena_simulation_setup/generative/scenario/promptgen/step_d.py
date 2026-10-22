@@ -231,8 +231,8 @@ def apply(doc: dict[str, Any], decision: DDecision, world: WorldContext, files: 
         else:
             away = [z for z in world.other_zones(exclude=[home]) if z != here] or [home]
             member = entry(names[i], prof, home, [home, away[(i + 1) % len(away)]], speed=scaled_speed(prof, "mid"), mode="reverse", agent_type=prof.base, rng=rng)
-        if kept_slots[i] is not None:
-            member["model"] = kept_slots[i].get("model", member["model"])
+        if (kept := kept_slots[i]) is not None:
+            member["model"] = kept.get("model", member["model"])
         members.append(member)
     doc["humans"] = [*doc.get("humans", []), *members]
 

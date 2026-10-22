@@ -162,7 +162,10 @@ def resolve(name: str, spec: object = None, stack: tuple[str, ...] = ()) -> list
 
 def expand_spec(spec: dict, params: object, stack: tuple[str, ...]) -> list[_Action]:
     """Expand a parsed shot spec under merged (defaults + caller) params."""
-    args = {**spec.get("params", {}), **(params or {})}
+    given = params or {}
+    if not isinstance(given, dict):
+        raise ValueError(f"cam shot: params must be a mapping, got {type(given).__name__}")
+    args = {**spec.get("params", {}), **given}
     actions: list[_Action] = []
     for step in desugar(spec):
         ((name, raw),) = step.items()

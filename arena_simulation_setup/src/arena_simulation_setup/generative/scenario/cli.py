@@ -100,6 +100,8 @@ def world_root(worlds: Path | None, world: str, *, write: bool = False) -> Path:
     try:
         path = identifier.resolve_source_sync().path if write else identifier.resolve_sync().path
     except FileNotFoundError:
+        path = None
+    if path is None:
         raise FileNotFoundError(f"no world {world!r} under {searched}, and no resolver has it. Worlds there: {_world_names(worlds)}. Set ARENA_DIR to the Arena checkout or ARENA_WORLD_PATH to world roots, or pass --worlds DIR") from None
     if write:
         raise ValueError(f"world {world!r} resolves to {path}, which is no source world root ({searched}), so it is not written. Copy it into one of them, or pass --worlds DIR")

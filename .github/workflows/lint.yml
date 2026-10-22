@@ -5,13 +5,20 @@ on:
     branches: [jazzy]
   pull_request:
     branches: [jazzy]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request to test merged into jazzy
+        required: true
 
 jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: voshch/ci/trial-merge@v1
         with:
+          base: jazzy
+          head: ${{ inputs.pr && format('refs/pull/{0}/head', inputs.pr) || github.event.pull_request.head.sha || github.sha }}
           submodules: true
       - uses: actions/setup-python@v6
         with:

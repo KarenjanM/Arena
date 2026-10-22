@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from arena_viz import DisplayKind
+from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 RendererFn = Callable[[AdapterDisplay, "RobotDescriptor | None"], "dict[str, object] | None"]
@@ -20,3 +20,11 @@ def register(kind: DisplayKind) -> Callable[[RendererFn], RendererFn]:
         return fn
 
     return decorator
+
+
+def rviz_extra(style: StyleSpec) -> dict[str, object]:
+    """The style's `extra.rviz` mapping, empty when unset."""
+    extra = style.extra.get("rviz", {})
+    if not isinstance(extra, dict):
+        raise TypeError(f"style extra 'rviz' must be a mapping, got {extra!r}")
+    return extra

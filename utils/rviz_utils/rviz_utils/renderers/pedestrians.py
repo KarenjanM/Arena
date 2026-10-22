@@ -6,12 +6,13 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 
 @register(DisplayKind.PEDESTRIANS)
 def render_pedestrians(d: AdapterDisplay, robot: RobotDescriptor | None) -> dict[str, object] | None:
     style = StyleSpec.from_json(d.style_json)
-    rviz_extra: dict[str, object] = style.extra.get("rviz", {})
+    rviz_extra = _rviz_extra(style)
     result: dict[str, object] = {
         "Class": "hri_rviz/Skeletons3D",
         "Name": d.name,

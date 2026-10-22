@@ -25,6 +25,10 @@ def fleet_size(ns: str) -> int:
         rclpy.init(args=[])
     try:
         node = rclpy.create_node('arena_viz_fleet_probe')
+
+        def on_fleet(m: RobotFleet) -> None:
+            seen.append(len(m.robots))
+
         qos = rclpy.qos.QoSProfile(
             depth=1,
             durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL,
@@ -32,7 +36,7 @@ def fleet_size(ns: str) -> int:
         sub = node.create_subscription(
             RobotFleet,
             f'{ns}/state/robots',
-            lambda m: seen.append(len(m.robots)),
+            on_fleet,
             qos,
         )
         deadline = time.monotonic() + 5.0

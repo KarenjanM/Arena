@@ -213,6 +213,7 @@ class TaskRunner:
         self._advance(state.index + 1, transition)
 
     def _exit_loop(self, state: PhaseState, transition: Transition) -> None:
+        assert state.loop is not None
         for other in self.phases:
             if other.loop is state.loop and other.outcome == "pending":
                 other.outcome = "dropped"

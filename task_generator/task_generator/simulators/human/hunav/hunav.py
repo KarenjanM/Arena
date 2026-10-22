@@ -15,9 +15,7 @@ import rclpy.qos
 import rclpy.time
 from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
-from arena_rclpy_mixins.shared import Namespace
 from arena_runtime.constants import SimSimulator
-from arena_runtime.sim import BaseSim
 from arena_runtime_msgs.msg import LockstepChannel
 from geometry_msgs.msg import Point
 from hunav_msgs.msg import Agent, AgentBehavior, Agents, WallSegment
@@ -33,7 +31,7 @@ from task_generator.shared import (
     Position,
     Wall,
 )
-from task_generator.simulators.human import BaseHumanSimulator, TrackedRobot
+from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorOptions, TrackedRobot
 from task_generator.simulators.human.noop import NoopHumanSimulator
 
 from .agent import HunavDynamicObstacle
@@ -80,9 +78,9 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
     _get_agents_service: rclpy.node.Service
     _get_walls_service: rclpy.node.Service
 
-    def __init__(self, *args: object, namespace: Namespace, simulator: BaseSim, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> None:
         """Initialize HunavManager with debug logging"""
-        super().__init__(*args, namespace=namespace, simulator=simulator, **kwargs)
+        super().__init__(**kwargs)
         # Detect Simulator Type to decide between Plugin or move_entity callback
         self._logger.info(f"Detected simulator type: {self._simulator_type}")
 
@@ -173,8 +171,8 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
         self._publish_loop_task = asyncio.create_task(self._publish_arena_peds_loop())
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, simulator: BaseSim, **kwargs: object) -> "HunavHumanSimulator":
-        self = cls(*args, namespace=namespace, simulator=simulator, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> "HunavHumanSimulator":
+        self = cls(**kwargs)
         await self.setup()
         return self
 
@@ -727,10 +725,9 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
             marker.lifetime.sec = 1
 
             # Add start and end points of the wall segment
-            marker.points.append(wall.start)
-            marker.points.append(wall.end)
+            marker.points = [wall.start, wall.end]
 
-            marker_array.markers.append(marker)
+            marker_array.markers.append(marker)  # pyright: ignore[reportAttributeAccessIssue]
 
         self.publish_static_markers(marker_array)
 

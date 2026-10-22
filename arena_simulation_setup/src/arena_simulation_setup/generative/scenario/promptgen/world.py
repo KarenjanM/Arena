@@ -95,16 +95,21 @@ class Grid(OccupancyGrid):
 
     @cached_property
     def dist(self) -> np.ndarray:
+        import numpy as np
         import scipy.ndimage
 
-        return scipy.ndimage.distance_transform_edt(~self.occupied) * self.res
+        dist = scipy.ndimage.distance_transform_edt(~self.occupied)
+        assert isinstance(dist, np.ndarray)
+        return dist * self.res
 
     def labels_at(self, radius: float) -> np.ndarray:
         import scipy.ndimage
 
         key = round(radius, 2)
         if key not in self._labels_cache:
-            self._labels_cache[key], _n = scipy.ndimage.label(self.dist >= key)
+            labelled = scipy.ndimage.label(self.dist >= key)
+            assert isinstance(labelled, tuple)
+            self._labels_cache[key] = labelled[0]
         return self._labels_cache[key]
 
     def clearance(self, pt: Point) -> float:

@@ -1,3 +1,6 @@
+import typing
+
+import rclpy.node
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
 
@@ -11,10 +14,16 @@ class Namespaced:
         return self._namespace(*path)
 
 
+class TaskModeKwargs(typing.TypedDict):
+    ctx: TaskContext
+    namespace: Namespace
+    node: rclpy.node.Node
+
+
 class TaskMode(NodeInterface, Namespaced):
     _ctx: TaskContext
 
-    def __init__(self, *args: object, ctx: TaskContext, namespace: Namespace, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, *, ctx: TaskContext, namespace: Namespace, node: rclpy.node.Node) -> None:
+        super().__init__(node=node)
         self._ctx = ctx
         self._namespace = namespace

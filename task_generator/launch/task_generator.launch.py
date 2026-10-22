@@ -7,12 +7,13 @@ import time
 import launch
 import launch.event_handlers
 import launch.substitutions
+import launch.utilities
 import launch_ros.actions
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from arena_bringup.actions import IsolatedGroupAction
 from arena_bringup.defaults import default_human
-from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction, active_spec
 from arena_bringup.substitutions import LaunchArgument, deprecated_launch_args
 from arena_rclpy_mixins import launch_str_to_value
 from launch.actions import (
@@ -23,6 +24,7 @@ from launch.actions import (
 )
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import PathJoinSubstitution
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from task_generator.constants.runtime import EPISODE_PARAMS
 from task_generator.simulators.hearing import nav2_overlay
@@ -71,6 +73,8 @@ def _allocate_env(env_id: int, ns: str) -> tuple[int, str, str]:
                     logger.warning(f"waiting for /arena/register_env response ({int(now - start)}s elapsed)")
                     next_log = now + _REGISTER_LOG_INTERVAL_SEC
             resp = future.result()
+            if resp is None:
+                raise RuntimeError("/arena/register_env returned no response")
             if resp.success:
                 return (resp.env_id, resp.ns, resp.sim)
             if "not ACTIVE" in resp.error_msg:
@@ -320,7 +324,7 @@ def generate_launch_description() -> launch.LaunchDescription:
         )
 
         environment_namespace = "/" + os.path.dirname(allocated_ns).strip("/")
-        acoustics_actions: list[launch.LaunchDescriptionEntity] = []
+        acoustics_actions: list[launch.Action] = []
         if acoustics_val != "none":
             acoustics_actions.append(
                 launch.actions.GroupAction(
@@ -344,7 +348,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                 )
             )
 
-        hearing_actions: list[launch.LaunchDescriptionEntity] = []
+        hearing_actions: list[launch.Action] = []
         if hearing_val != "none":
             hearing_actions.append(
                 launch.actions.GroupAction(
@@ -465,6 +469,7 @@ def generate_launch_description() -> launch.LaunchDescription:
                     "env_id": allocated_id,
                     "prefix": prefix_val,
                     "tf_namespace": tf_namespace,
+                    "log_level": ParameterValue(active_spec(context), value_type=str),
                 },
                 parameter_file.substitution,
                 {

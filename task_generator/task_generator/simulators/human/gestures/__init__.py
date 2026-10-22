@@ -13,9 +13,7 @@ import numpy as np
 from arena_rclpy_mixins.registry import ClassRegistry
 
 if typing.TYPE_CHECKING:
-    from rclpy.impl.rcutils_logger import RcutilsLogger
-
-    from task_generator.simulators.human.animation_manager import AnimationManager
+    from task_generator.simulators.human.animation_manager import AnimationLogger, AnimationManager
 
 BODY_HEIGHT = 1.65
 RETARGET_EPS_M = 0.15
@@ -245,7 +243,7 @@ class _Agent:
 class GestureLayer:
     """Per-agent gesture state machine, installed as ``AnimationManager.gesture_hook``."""
 
-    def __init__(self, manager: AnimationManager, logger: RcutilsLogger) -> None:
+    def __init__(self, manager: AnimationManager, logger: AnimationLogger) -> None:
         self._manager = manager
         self._logger = logger
         self._gestures: dict[str, Gesture] = {}
@@ -315,7 +313,7 @@ class GestureLayer:
             st = ag.slots.get(overlay) if ag is not None else None
             ch = wanted.get(overlay)
             if ch is None:
-                if st is not None and st.phase != "release":
+                if ag is not None and st is not None and st.phase != "release":
                     self._release(agent_id, ag, st)
                 continue
             if st is not None and st.phase == "release":
@@ -333,6 +331,7 @@ class GestureLayer:
                 self._start_slot(agent_id, overlay, ch, kind, local, req.moving)
             return
         if st.channel != ch.slot or st.opts != ch.opts:
+            assert ag is not None
             self._release(agent_id, ag, st, restart=True)
             return
         st.release_pending = False
@@ -403,7 +402,7 @@ class GestureLayer:
     def _advance(self, agent_id: int, ag: _Agent, st: _Slot) -> None:
         if st.phase in ("ramp", "transition") and st.clip is not None and st.t >= st.clip.hold_start / st.clip.fps:
             st.phase = "hold"
-        if st.release_pending and st.phase == "hold" and st.t >= st.clip.hold_start / st.clip.fps + HOLD_MIN_S:
+        if st.release_pending and st.phase == "hold" and st.clip is not None and st.t >= st.clip.hold_start / st.clip.fps + HOLD_MIN_S:
             self._release(agent_id, ag, st)
 
     def _drop(self, agent_id: int, ag: _Agent, st: _Slot, msg: str) -> None:

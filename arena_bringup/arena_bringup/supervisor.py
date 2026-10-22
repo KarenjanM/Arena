@@ -21,12 +21,11 @@ import rclpy
 import rclpy.node
 from rcl_interfaces.srv import GetParameters
 
+from arena_bringup.reaper import GRACE_INT_S, GRACE_KILL_S, GRACE_TERM_S, Reaper
+
 REGISTER_ENV_SERVICE = '/arena/register_env'
 VIZ_MANIFEST_SUFFIX = '/state/viz_manifest'
 
-GRACE_INT_S = float(os.environ.get('ARENA_SHUTDOWN_TIMEOUT', '30'))
-GRACE_TERM_S = 3.0
-GRACE_KILL_S = 5.0
 _DEPRECATED_KNOBS = {'env_n': 'env.n'}
 
 
@@ -39,9 +38,11 @@ class Supervisor:
         self._node = node
         self._children: dict[str, subprocess.Popen] = {}
         self._signal_count = 0
+        self._reaper = Reaper()
 
     def spawn(self, role: str, cmd: list[str]) -> subprocess.Popen:
         proc = subprocess.Popen(cmd, start_new_session=True)
+        self._reaper.watch(proc.pid)
         self._children[role] = proc
         sys.stderr.write(f'arena launch: spawned {role} (pid={proc.pid})\n')
         return proc
@@ -66,6 +67,9 @@ class Supervisor:
             os._exit(130)
         sys.stderr.write(f'arena launch: {label} -> {len(snap)} child(ren) (Ctrl-C again to escalate)\n')
         self._signal_pgs(snap, sig)
+
+    def release(self) -> None:
+        self._reaper.release()
 
     def cleanup(self) -> None:
         snap = self.alive()
@@ -315,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
         return run(args, sup)
     finally:
         sup.cleanup()
+        sup.release()
         with contextlib.suppress(Exception):
             node.destroy_node()
         with contextlib.suppress(Exception):

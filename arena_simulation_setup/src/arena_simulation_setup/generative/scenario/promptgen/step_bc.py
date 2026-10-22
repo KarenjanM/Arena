@@ -110,6 +110,8 @@ def select(doc: Mapping[str, Any], sel: Selection, world: WorldContext, owned: s
 
 def _home(agent: Mapping[str, Any], world: WorldContext, *, seed: int) -> tuple[float, float]:
     pose = agent.get("pose")
+    if pose is None:
+        raise WorldError(f"agent {agent['name']!r} has no pose to wander from")
     return world.zone_sample(pose, random.Random(f"{world.name}:{seed}:{agent['name']}:{ERRATIC}")) if isinstance(pose, str) else (float(pose[0]), float(pose[1]))
 
 

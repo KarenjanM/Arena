@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import attrs
-import rclpy
 
 from .clips import AssetClips, ClipSource, joint_mask
 from .gait import GaitGenerator
@@ -14,7 +13,6 @@ from .profile import PoseProfile
 JOINT_NAMES = GaitGenerator.JOINT_NAMES
 
 if TYPE_CHECKING:
-    import rclpy.impl.rcutils_logger
     from arena_simulation_setup.tree.assets.Animation import AnimationClip
     from builtin_interfaces.msg import Time
     from sensor_msgs.msg import JointState
@@ -22,7 +20,13 @@ else:
     try:
         from sensor_msgs.msg import JointState
     except ImportError:
-        JointState = None  # type: ignore[assignment,misc]
+        JointState = None
+
+
+class AnimationLogger(Protocol):
+    def info(self, message: str, /) -> object: ...
+
+    def warning(self, message: str, /) -> object: ...
 
 
 @attrs.define
@@ -122,7 +126,7 @@ class AnimationManager:
 
     def __init__(
         self,
-        logger: rclpy.impl.rcutils_logger.RcutilsLogger,
+        logger: AnimationLogger,
         fps: float = 20.0,
         clips: ClipSource | None = None,
     ) -> None:

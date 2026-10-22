@@ -123,7 +123,7 @@ class VelocityFieldVisualizer:
                 marker.scale.z = 0.15  # Head length
                 marker.color = ColorRGBA(r=1.0, g=0.5, b=0.0, a=1.0)  # Orange
 
-                marker_array.markers.append(marker)
+                marker_array.markers.append(marker)  # pyright: ignore[reportAttributeAccessIssue]
                 id_counter += 1
 
         return id_counter

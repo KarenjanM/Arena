@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import itertools
 import math
+import typing
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -53,6 +54,8 @@ class PositionalNumber(Parseable):
     def parse(cls, value: object) -> PositionalNumber:
         if isinstance(value, str) and value.endswith('%'):
             return cls(relative=float(value[:-1]) / 100.0)
+        if not isinstance(value, (typing.SupportsFloat, str)):
+            raise TypeError(f'expected a number, got {value!r}')
         return cls(absolute=float(value))
 
 

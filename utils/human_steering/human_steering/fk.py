@@ -50,7 +50,8 @@ def _mat3_mul(a: tuple, b: tuple) -> tuple:
 
 
 def _mat3_vec(a: tuple, v: tuple[float, float, float]) -> tuple[float, float, float]:
-    return tuple(sum(a[i][k] * v[k] for k in range(3)) for i in range(3))
+    x, y, z = (sum(a[i][k] * v[k] for k in range(3)) for i in range(3))
+    return (x, y, z)
 
 
 def _vec3_add(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:

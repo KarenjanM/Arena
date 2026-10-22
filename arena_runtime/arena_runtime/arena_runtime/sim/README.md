@@ -89,8 +89,11 @@ The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 | --- | --- |
 | `pedestrian_discs` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, ground truth: name, xy, radius) |
 | `pedestrian_teleport` | `(Mapping[str, tuple[float, float]]) -> bool` (async) |
+| `elevator_doors_changed` | `(Mapping[str, bool]) -> None` (async, cabin name to door open) |
 
 The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../task_generator/task_generator/simulators/human/README.md)). Without an attached human-sim, the shim still drives doors against `robot_discs` alone and logs a no-op for ped teleports.
+
+Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as an occupant, and when the cabin door has closed behind it the ride hands the destinations to `pedestrian_teleport`. An empty cabin opens for a robot or ped outside within `activation_distance` of its door, a cabin with an occupant only for one within `CABIN_DOOR_THRESHOLD` (0.6 m), so riders queuing for the next trip do not hold a loaded cabin. The shim also tells the human-sim which cabin doors are passable: each tick it collects the cabins whose door turned `open` or left `open` since the last report, starting from closed at spawn and including the close an episode reset causes, and sends them in one `elevator_doors_changed` call, nothing on ticks without a change.
 
 ### `SimLifecycle`
 
@@ -219,8 +222,11 @@ while gates hold the pace and wall rate while no channel is registered,
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by
 design. `soft` channels are observed and reported only. The scheduler also
-idles while a foreign hold or an unpause window is open (episode resets)
-and rebases its window grid to whatever sim time passed meanwhile.
+idles while a foreign hold is open (episode resets) and rebases its window
+grid to whatever sim time passed meanwhile. An unpause window never unpauses
+the sim during a run: the scheduler keeps stepping for it, also under a
+foreign hold or `pause`, gated on every hard channel except those registered
+in the window holder's env.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
 pause state and gz `real_time_factor`, responding as soon as the hold is
 released (the guard against a draining gz chunk re-pausing the world runs
@@ -353,7 +359,7 @@ are what Arena sends it.
 
 ```python
 @SimulatorRegistry.register(Constants.SimSimulator.MY_SIM)
-async def lazy_mysim(**kwargs):
+async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .my_sim import MySimulator
     return await MySimulator.create(**kwargs)
 ```

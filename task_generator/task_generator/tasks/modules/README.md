@@ -41,7 +41,6 @@ Parameters live under `task.<mode>.<leaf>`.
 | `sounds` | `Mod_Sounds` | [`sounds/`](sounds/) | - | renders world-, scenario- and launch-declared `sound` semantic entities |
 | `rviz_ui` | `Mod_OverrideRobot` | [`rviz_ui/`](rviz_ui/) | - | puts the robot and goal handles |
 | `zone_edit` | `Mod_ZoneEdit` | [`zone_edit/`](zone_edit/) | - | puts one drag handle per zone polygon point |
-| `staged` | `Mod_Staged` | [`staged/`](staged/) | loads new stage config when stage index changes; publishes `goal_radius` and obstacle counts | - |
 
 ### `Mod_ClearForbiddenZones`
 
@@ -117,15 +116,6 @@ format 2 writer, with its `kg.yaml` and preview maps
 when no point moved. The next reset that applies the world reloads it,
 because the world manager compares the `world.yaml` and `kg.yaml`
 mtimes. A world resolved from a download cache is saved into that cache.
-
-### `Mod_Staged`
-
-[`staged/impl.py:47`](staged/impl.py#L47)
-
-Reads a curriculum YAML (list of stages, each with `static`, `dynamic`, `goal_radius`, and optional `dynamic_map` fields). Stage index is
-advanced via `next_stage` / `previous_stage` ROS topics. `before_reset`
-publishes the stage's `goal_radius` and obstacle counts as ROS params when
-the stage index changes.
 
 ## Adding a module
 

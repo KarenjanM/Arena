@@ -10,6 +10,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 import attrs
+import rclpy.node
 import rclpy.publisher
 import rclpy.qos
 import rclpy.time
@@ -34,7 +35,7 @@ from visualization_msgs.msg import MarkerArray
 
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
-from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
@@ -99,6 +100,15 @@ class TrackedRobot:
         self.stamp = stamp
 
 
+class HumanSimulatorOptions(typing.TypedDict):
+    node: rclpy.node.Node
+    namespace: Namespace
+    simulator: BaseSim
+    realizer: Realizer
+    acoustics: BaseAcousticsSimulator
+    robots_visible: typing.NotRequired[bool]
+
+
 class BaseHumanSimulator(NodeInterface, abc.ABC):
     PARAM_NAMESPACE: typing.ClassVar[str | None] = None
     TAKES_STIMULI: typing.ClassVar[bool] = False
@@ -141,6 +151,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._known_doors = KnownObstacles[Door]()
         self._wall_counter = itertools.count()
         self._known_regions: dict[str, Region] = {}
+        self._known_elevators: tuple[Elevator, ...] = ()
         self._robots: dict[str, TrackedRobot] = {}
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
@@ -256,7 +267,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
             ped.gait_phase = self._gait.phase(ped.id)
-            animation.peds.append(self._animation_state(ped))
+            animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
         for ped in out.pedestrians:
             drivers = self._drivers_for(ped.model_uri)
@@ -278,7 +289,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             kind, channel, phase, clip = phases.get(slot, ("", "", "", ""))
             if not phase and overlay.releasing:
                 phase = "release"
-            state.slots.append(
+            state.slots.append(  # pyright: ignore[reportAttributeAccessIssue]
                 AnimationSlot(
                     slot=slot,
                     kind=kind,
@@ -365,7 +376,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ped.pose.position.z = 0.0
             if (orientation := self._ped_orientations.get(name)) is not None:
                 ped.pose.orientation = orientation
-            peds_msg.pedestrians.append(ped)
+            peds_msg.pedestrians.append(ped)  # pyright: ignore[reportAttributeAccessIssue]
             if cur is not None:
                 self._ped_positions_xy[name] = (x, y)
         results = await self.relay_pedestrian_update(peds_msg)
@@ -667,6 +678,17 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._spawn_doors_impl(door_map),
         )
 
+    async def spawn_elevators(self, elevators: Sequence[Elevator]) -> bool:
+        """Hand the realized elevator cabins of the world to the human simulator, replacing those of the world before."""
+        if not elevators and not self._known_elevators:
+            return True
+        self._known_elevators = tuple(elevators)
+        return await self._set_elevators_impl(self._known_elevators)
+
+    async def elevator_doors_changed(self, doors: Mapping[str, bool]) -> None:
+        """Cabin doors by realized cabin name that turned open (True) or stopped being open (False)."""
+        await self._set_elevator_doors_impl(doors)
+
     @staticmethod
     def _door_wall_name(door_name: str) -> str:
         return f"__door_{door_name}"
@@ -860,6 +882,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             await self._simulator.remove_mechanisms()
             await self._simulator.remove_lights()
             futures.append(self._simulator.remove_world())
+            if self._known_elevators:
+                self._known_elevators = ()
+                futures.append(self._set_elevators_impl(()))
 
         if stale_walls:
             futures.append(self._remove_walls_impl(stale_walls))
@@ -1020,6 +1045,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 if taken is not None and stimulus.need not in taken[1]:
                     raise ValueError(f"scenario {scenario!r}: stimulus {stimulus.need!r} for {agent!r} is neither a need nor a step `until` event of its agent type {taken[0]!r}, which acts on {sorted(taken[1])}")
 
+    async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
+        return True
+
+    async def _set_elevator_doors_impl(self, doors: Mapping[str, bool]) -> bool:
+        return True
+
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""
         del standing_distance
@@ -1107,14 +1138,14 @@ HumanSimulatorRegistry = Registry[Constants.HumanSimulator, BaseHumanSimulator](
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.DUMMY)
-async def dummy(**kwargs: object) -> BaseHumanSimulator:
+async def dummy(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     from .dummy import DummyHumanSimulator
 
     return DummyHumanSimulator(**kwargs)
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.NONE)
-async def none(**kwargs: object) -> BaseHumanSimulator:
+async def none(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     # 'none' launches no human-sim node (empty GroupAction in human.launch.py);
     # the node still needs a no-op backend for the registry lookup.
     from .dummy import DummyHumanSimulator
@@ -1122,15 +1153,8 @@ async def none(**kwargs: object) -> BaseHumanSimulator:
     return DummyHumanSimulator(**kwargs)
 
 
-@HumanSimulatorRegistry.register(Constants.HumanSimulator.ISAAC)
-async def isaacsim(**kwargs: object) -> BaseHumanSimulator:
-    from .isaac import IsaacHumanSimulator
-
-    return IsaacHumanSimulator(**kwargs)
-
-
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.HUNAV)
-async def lazy_hunavsim(**kwargs: object) -> BaseHumanSimulator:
+async def lazy_hunavsim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     # Imported lazily: hunav_msgs / hunav_sim are optional deps, so registering the
     # backend must not require them to be installed. Only selecting human:=hunav does.
     from .hunav.hunav import HunavHumanSimulator
@@ -1139,7 +1163,7 @@ async def lazy_hunavsim(**kwargs: object) -> BaseHumanSimulator:
 
 
 @HumanSimulatorRegistry.register(Constants.HumanSimulator.ARENA)
-async def arenasim(**kwargs: object) -> BaseHumanSimulator:
+async def arenasim(**kwargs: typing.Unpack[HumanSimulatorOptions]) -> BaseHumanSimulator:
     from .arena_humansim.arena_humansim import ArenaHumanSimulator
 
     return await ArenaHumanSimulator.create(**kwargs)

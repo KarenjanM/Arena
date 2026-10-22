@@ -21,7 +21,7 @@ DESCRIPTION = (
     "  rm <name...|--all>   deinit planner's submodules (alias: uninstall <name...>)\n"
     "  ls                   list planners, [x] ready, [ ] pending\n"
     "  check [--all]        verify planner submodules are initialized\n"
-    "  update               refresh initialized planner submodules\n"
+    "  update               refresh initialized planner submodules and relink their weights\n"
     "  uninstall            deinit all planner submodules\n"
     "  test [--preflight] [--lanes N] <name...|--all>  lockstep soak, or a short start-and-drive check, via the benchmark runner, over N lanes with --lanes, each in its own fork (needs the evaluation feature)"
 )
@@ -226,7 +226,15 @@ def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
     sdk = arena / _SDK_SUBDIR
     if not (sdk / ".gitmodules").is_file():
         return 0
-    return _git(["submodule", "update", "--recursive"], sdk, check=False)
+    rc = _git(["submodule", "update", "--recursive"], sdk, check=False)
+    reg = _registry()
+    kinds = reg.kinds(arena)
+    status = reg.submodule_status(arena)
+    ready = [name for name, paths in reg.submodule_paths(arena).items() if all(status.get(p) == "init" for p in paths)]
+    for planner in sorted(ready) + reg.local_planners(arena):
+        if kinds.get(planner) != "nav2":
+            _fetch_weights(arena, planner)
+    return rc
 
 
 def cmd_uninstall(arena: Path, _args: argparse.Namespace) -> int:

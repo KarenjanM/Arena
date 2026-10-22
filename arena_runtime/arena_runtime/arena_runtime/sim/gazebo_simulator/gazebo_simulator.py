@@ -25,7 +25,6 @@ import rclpy.time
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
-from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Ceiling, Light, cct_to_rgb
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
@@ -57,7 +56,7 @@ from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
-from arena_runtime.sim import BaseSim, SimLifecycle, SimUnavailable
+from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
@@ -273,6 +272,7 @@ class GazeboHost(SimLifecycle):
 
     async def cleanup_namespace(self, prefix: str) -> int:
         removed = 0
+        targets: list[str] = []
         for attempt in range(_CLEANUP_ATTEMPTS + 1):
             try:
                 names = await _list_models()
@@ -305,12 +305,12 @@ class GazeboHost(SimLifecycle):
 class GazeboSimulator(BaseSim):
     SIM_NAME = 'gazebo'
 
-    def __init__(self, *args: object, namespace: Namespace, **kwargs: object) -> None:
-        super().__init__(*args, namespace=namespace, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
+        super().__init__(**kwargs)
 
         self._semaphore = asyncio.Semaphore(5)
 
-        self._logger.info(f"Initializing GazeboSimulator with namespace: {namespace}")
+        self._logger.info(f"Initializing GazeboSimulator with namespace: {self._namespace}")
 
         self.entities: dict[str, Entity] = {}
         self._walls_entities: list[str] = []
@@ -348,6 +348,7 @@ class GazeboSimulator(BaseSim):
             f"/model/{robot.sim_path}",
         )
         if robot.resolved_assembly is not None:
+            assert robot_config.assembly is not None
             catalog = arena_robots.catalog.Catalog()
             args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
             args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
@@ -508,13 +509,15 @@ class GazeboSimulator(BaseSim):
     async def _spawn_lights(self, lights: Sequence[Light]) -> bool:
         ok = await self._light_link()
         if any(not light.intrinsic for light in lights):
-            ok = self._scale_default_lights(_default_light_scale([*self._lights.values(), *lights])) and ok
+            scale = _default_light_scale([*self._lights.values(), *lights])
+            assert scale is not None
+            ok = self._scale_default_lights(scale) and ok
             self._default_lights_scaled = self._owns_ambient
         spawns = []
         for light in lights:
             if light.fixture == 'dome' or (light.spec.ambient and not self._owns_ambient):
                 continue
-            level = 0.0 if light.lit is False else light.level
+            level = 0.0 if light.lit is False else light.dim
             names = []
             for params in _light_params(light, level, light.alive(light.dead_fraction)):
                 names.append(self._realizer.realize(f"light_{next(self._wall_counter)}"))
@@ -561,7 +564,7 @@ class GazeboSimulator(BaseSim):
         if not names:
             return
         pose = self._light_poses.get(light.name)
-        params = _light_params(light, level, alive, *(pose if pose is not None else ()))
+        params = _light_params(light, level, alive) if pose is None else _light_params(light, level, alive, *pose)
         if not all([self._light_config(_light_request(name, p)) for name, p in zip(names, params, strict=True)]):
             raise RuntimeError(f"light {light.name!r} did not take its state")
 
@@ -900,7 +903,7 @@ class GazeboSimulator(BaseSim):
                 traceback.print_exc()
                 return False
 
-    async def _resolve_wall_textures(self, material: object) -> dict[str, str]:
+    async def _resolve_wall_textures(self, material: MaterialIdentifier | None) -> dict[str, str]:
         """Resolve a wall material to absolute PBR texture paths, cached per identifier. Empty for unset/unresolvable materials."""
         if material is None:
             return {}
@@ -936,7 +939,7 @@ class GazeboSimulator(BaseSim):
                 if wall_sdf:
                     async with self._semaphore:
                         if not await self._spawn_sdf(wall_name, wall_sdf, Pose()):
-                            raise RuntimeError(f"spawn_walls: {wall_name} ({wall.name}) did not spawn")
+                            raise RuntimeError(f"spawn_walls: {wall_name} (wall from {wall.start} to {wall.end}) did not spawn")
                     self._walls_entities.append(wall_name)
             for obstacle, model in obstacles:
                 obstacle.sim_path = self._realizer.realize(f"wall_obj_{next(self._wall_counter)}")
@@ -1170,8 +1173,8 @@ class GazeboSimulator(BaseSim):
         self._id_wanted.clear()
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, **kwargs: object) -> "GazeboSimulator":
-        simulator = cls(*args, namespace=namespace, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[SimKwargs]) -> "GazeboSimulator":
+        simulator = cls(**kwargs)
         await simulator._set_up_services()
         return simulator
 

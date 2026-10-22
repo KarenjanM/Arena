@@ -1,8 +1,10 @@
 import math
+import typing
 
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 
 from task_generator.shared import Orientation, Pose, Position
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
 
@@ -13,7 +15,7 @@ class TM_Stationary(TM_Robots):
     _pos_y: ROSParamT[float]
     _pos_theta: ROSParamT[float]
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Robots.__init__(self, **kwargs)
 
         self._pos_x = self.node.ROSParam[float](self.namespace('pos_x'), math.nan)

@@ -45,7 +45,7 @@ class ClassRegistry(typing.Generic[K, V]):
         try:
             loader = self._loaders[key]
         except KeyError:
-            raise KeyError(f"no entry for {key!r}; known: {sorted(self._loaders) if self._loaders else []!r}") from None
+            raise KeyError(f"no entry for {key!r}; known: {sorted(self._loaders, key=str) if self._loaders else []!r}") from None
         value = loader()
         self._cache[key] = value
         return value
@@ -87,7 +87,7 @@ class FactoryRegistry(typing.Generic[K, V]):
         try:
             loader = self._registry[key]
         except KeyError:
-            raise KeyError(f"no entry for {key!r}; known: {sorted(self._registry) if self._registry else []!r}") from None
+            raise KeyError(f"no entry for {key!r}; known: {sorted(self._registry, key=str) if self._registry else []!r}") from None
         return loader(*args, **kwargs)
 
     def keys(self) -> typing.KeysView[K]:
@@ -127,7 +127,7 @@ class AsyncFactoryRegistry(typing.Generic[K, V]):
         try:
             loader = self._registry[key]
         except KeyError:
-            raise KeyError(f"no entry for {key!r}; known: {sorted(self._registry) if self._registry else []!r}") from None
+            raise KeyError(f"no entry for {key!r}; known: {sorted(self._registry, key=str) if self._registry else []!r}") from None
         return loader(*args, **kwargs)
 
     def keys(self) -> typing.KeysView[K]:

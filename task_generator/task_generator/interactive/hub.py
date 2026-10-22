@@ -78,9 +78,10 @@ def planar_marker(
     move = _z_axis_control("move", InteractiveMarkerControl.MOVE_PLANE)
     move.always_visible = True
     move.markers = list(visuals)
-    marker.controls.append(move)
+    controls = [move]
     if rotate:
-        marker.controls.append(_z_axis_control("yaw", InteractiveMarkerControl.ROTATE_AXIS))
+        controls.append(_z_axis_control("yaw", InteractiveMarkerControl.ROTATE_AXIS))
+    marker.controls = controls
     return marker
 
 
@@ -90,7 +91,7 @@ def static_marker(name: str, pose: PoseMsg, visuals: Sequence[Marker], *, descri
     marker.header.frame_id = FRAME
     control = InteractiveMarkerControl(name="body", interaction_mode=InteractiveMarkerControl.BUTTON, always_visible=True)
     control.markers = list(visuals)
-    marker.controls.append(control)
+    marker.controls = [control]
     return marker
 
 

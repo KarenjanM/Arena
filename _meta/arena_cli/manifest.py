@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 import json
 import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from arena_cli import complete
@@ -63,7 +65,7 @@ def _show_args(package: str, file: str) -> dict[str, dict[str, str]]:
     return args
 
 
-def _enum_names(keys: object) -> list[str]:
+def _enum_names(keys: Iterable[enum.Enum]) -> list[str]:
     return sorted(k.value for k in list(keys))
 
 
@@ -119,7 +121,7 @@ def _uninstalled_robots(arena: Path) -> set[str]:
     from arena_cli.features import robots
 
     status = robots.submodule_status(arena)
-    return {name for name, paths in robots.robot_submodules(arena).items() if any(status.get(p) == "uninit" for p in paths)}
+    return {name for name, paths in robots.robot_submodules(arena).items() if not all(status.get(p) == "init" for p in paths)}
 
 
 def _installed_planners(arena: Path) -> list[str]:
@@ -127,7 +129,7 @@ def _installed_planners(arena: Path) -> list[str]:
 
     paths = registry.submodule_paths(arena)
     status = registry.submodule_status(arena)
-    return [n for n in registry.all_planners(arena) if not any(status.get(p) == "uninit" for p in paths.get(n, []))]
+    return [n for n in registry.all_planners(arena) if all(status.get(p) == "init" for p in paths.get(n, []))]
 
 
 def build(ws: str) -> dict:

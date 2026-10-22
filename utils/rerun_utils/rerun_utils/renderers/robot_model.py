@@ -21,7 +21,7 @@ try:
 
     _HAVE_URDF = True
 except ImportError:
-    URDFLogger = None  # type: ignore
+    URDFLogger = None
     _HAVE_URDF = False
 
 
@@ -42,6 +42,7 @@ def render_robot_model(d: AdapterDisplay, robot: RobotDescriptor | None, ctx: Re
         with tempfile.NamedTemporaryFile("w", suffix=".urdf", delete=False) as f:
             f.write(msg.data)
             urdf_path = f.name
+        assert URDFLogger is not None
         try:
             logger = URDFLogger(urdf_path, entity_path_prefix=entity)
             logger.log()

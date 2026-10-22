@@ -63,7 +63,7 @@ class OccupancyGrid:
     @typing.overload
     def xy(self, cell: tuple[np.ndarray, np.ndarray]) -> tuple[np.ndarray, np.ndarray]: ...
 
-    def xy(self, cell: Cell | tuple[np.ndarray, np.ndarray]) -> Point | tuple[np.ndarray, np.ndarray]:
+    def xy(self, cell: Cell | tuple[np.ndarray, np.ndarray]) -> tuple[typing.Any, typing.Any]:
         """The center of a cell, or of arrays of rows and columns elementwise, with `cell(xy(c)) == c`."""
         rows = self.shape[0]
         return ((cell[1] + 0.5) * self.res + self.ox, (rows - 1 - cell[0] + 0.5) * self.res + self.oy)

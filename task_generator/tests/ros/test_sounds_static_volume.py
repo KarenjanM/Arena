@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -93,7 +92,7 @@ def test_sound_with_an_unresolvable_asset_stays_silent(rclpy_context, tmp_path: 
         module._library.use_world(tmp_path / "world")
         try:
             sound = _launch_sound("[{name: broken, asset_id: tmp_broken, position: {x: 1.0, y: 2.0}}]")
-            return module._resolve_and_build(sound, SimpleNamespace(levels={}), {}, None, sound.name)
+            return module._resolve_and_build(sound, {}, "", sound.name)
         finally:
             module._library.use_world(None)
 

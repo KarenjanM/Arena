@@ -139,9 +139,11 @@ def _get(raw: Mapping[str, Any], key: str, default: object) -> object:
 
 def _num(raw: object, *, where: str, low: float | None = None) -> float:
     """`raw` as a finite float, at least `low` when given."""
+    if not isinstance(raw, int | float | str):
+        raise SchemaError(f"{where}: {raw!r} is not a number")
     try:
         value = float(raw)
-    except (TypeError, ValueError):
+    except ValueError:
         raise SchemaError(f"{where}: {raw!r} is not a number") from None
     if not math.isfinite(value):
         raise SchemaError(f"{where}: {raw!r} is not a finite number")

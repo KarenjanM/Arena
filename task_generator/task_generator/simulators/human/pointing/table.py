@@ -151,7 +151,7 @@ class PointTable:
         for (ia, ie), w in zip(idx, weights, strict=True):
             sw += w * complex(math.cos(self.swivel[s, ia, ie]), math.sin(self.swivel[s, ia, ie]))
         wrist = sum(w * self.wrist[s, ia, ie] for (ia, ie), w in zip(idx, weights, strict=True))
-        angles = {n.replace("{side}", side): float(v) for n, v in zip(self.dofs, linear, strict=True)}
+        angles = {n.replace("{side}", side): float(v) for n, v in zip(self.dofs, linear, strict=True)}  # pyright: ignore[reportArgumentType]
         for name, value in zip((f"{side}_y_shoulder", f"{side}_p_shoulder", f"{side}_r_shoulder"), S.arm_rot_inverse(r_shoulder), strict=True):
             angles[name] = float(value)
         return Cell(
@@ -419,7 +419,7 @@ class BakedPointAt(PointAtGenerator):
         n_hold = (h1 - h0) if opts.hold_s is None else max(1, int(round(opts.hold_s / tpl.dt)))
         idx = self._plateau(n_trans + n_hold)
         s_track = [0.5 - 0.5 * math.cos(math.pi * k / n_trans) for k in range(n_trans)] + [1.0] * n_hold
-        prev_tri = tuple(float(prev.angles[n]) for n in tri)
+        prev_tri = (float(prev.angles[tri[0]]), float(prev.angles[tri[1]]), float(prev.angles[tri[2]]))
         start = self._source_pose(idx[0], side)
         start.update(prev.angles)
         r_prev = self._collar(side, start, opts.upright) @ S.arm_rot(*prev_tri)

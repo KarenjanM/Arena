@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import TYPE_CHECKING, TypedDict
 
 import rclpy
 import rclpy.node
@@ -9,6 +10,20 @@ from .ROSParamServer import ROSParamServer
 from .ServiceNamespace import ServiceNamespace
 from .spin import run_main
 from .Time import TimeNode
+
+if TYPE_CHECKING:
+    import aiomonitor
+
+
+class AiomonitorConfig(TypedDict, total=False):
+    monitor_cls: "type[aiomonitor.Monitor]"
+    host: str
+    port: int
+    console_port: int
+    webui_port: int
+    console_enabled: bool
+    hook_task_factory: bool
+    max_termination_history: int | None
 
 
 class ArenaMixinNode(ROSParamServer, LifecycleClient, AsyncLifecycleClient, ServiceNamespace, AsyncNode, TimeNode, rclpy.node.Node):
@@ -35,7 +50,7 @@ class ArenaMixinNode(ROSParamServer, LifecycleClient, AsyncLifecycleClient, Serv
             return
         self._shutdown_requester(reason)
 
-    def aiomonitor_config(self) -> dict[str, object] | None:
+    def aiomonitor_config(self) -> AiomonitorConfig | None:
         """Override to customize aiomonitor.start_monitor kwargs, or return None to disable.
         Only consulted when run_main(aiomonitor=True). Default: empty dict (library defaults).
         """

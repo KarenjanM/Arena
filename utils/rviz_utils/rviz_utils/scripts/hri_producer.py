@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 
 import rclpy
+import rclpy.publisher
 from arena_people_msgs.msg import FaceView, Pedestrian, Pedestrians
 from arena_rclpy_mixins.lazy import LazyPublisher, LazySubscription
 from arena_rclpy_mixins.spin import create_executor, spin_node
@@ -82,11 +83,16 @@ class HriProducer(Node):
         self._body_prefix = f"{env_tag}_agent_"
 
         self.declare_parameter("max_bodies", 32)
-        max_bodies: int = self.get_parameter("max_bodies").value
+        max_bodies = self.get_parameter("max_bodies").value
+        assert isinstance(max_bodies, int)
         self.declare_parameter("view.fov_deg", 60.0)
         self.declare_parameter("view.clip_near", 0.15)
-        self._view_k = pinhole_k(math.radians(self.get_parameter("view.fov_deg").value), _VIEW_SIZE)
-        self._view_clip_near: float = self.get_parameter("view.clip_near").value
+        fov_deg = self.get_parameter("view.fov_deg").value
+        assert isinstance(fov_deg, float)
+        self._view_k = pinhole_k(math.radians(fov_deg), _VIEW_SIZE)
+        clip_near = self.get_parameter("view.clip_near").value
+        assert isinstance(clip_near, float)
+        self._view_clip_near: float = clip_near
         self._humans_ns = f"{self._ns}/humans"
 
         self._tf_pub: LazyPublisher[TFMessage] = LazyPublisher(self.create_publisher(TFMessage, f"{self._humans_ns}/tf", 100))
@@ -256,7 +262,7 @@ class HriProducer(Node):
                 js = JointState()
                 js.header = bare_js.header
                 js.name = [f"{n}_{bid}" for n in bare_js.name]
-                js.position = semantic_to_rig(bare_js.name, bare_js.position)
+                js.position = semantic_to_rig(list(bare_js.name), bare_js.position)
                 self._body_js_pub[bid].publish(js)
 
             view = self._face_view_pub[bid]

@@ -37,6 +37,7 @@ class ExternalAdapter(MobileAdapter):
         robot: RobotManager,
     ) -> None:
         assert isinstance(phase, GoToPhase), f"ExternalAdapter only accepts GOTO_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
+        assert phase.pose is not None
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
         if self.client.is_done() is False:
             self.client.cancel()
@@ -66,6 +67,7 @@ class ExternalAdapter(MobileAdapter):
         msg = geometry_msgs.msg.PoseStamped()
         msg.header.frame_id = "map"
         msg.header.stamp = robot.node.sim_time.to_msg()
+        assert phase.pose is not None
         msg.pose = phase.pose.to_msg()
         return msg
 

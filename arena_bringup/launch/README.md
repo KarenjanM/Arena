@@ -98,7 +98,12 @@ canonical set: `debug | info | warn | error | fatal` (no aliases).
 `SetGlobalLogLevelAction` is also invoked further down the launch tree (e.g. by
 `task_generator`'s robot launcher to silence nav2 nodes by default) - those
 later calls can use the merge form to layer rules on top of the user's spec
-without clobbering it.
+without clobbering it. With `fallback=True` a merge lands just above the first
+`**/*` catch-all instead, so it covers only nodes no earlier rule names. The
+env passes its active rule set to `task_generator_node` as the `log_level`
+parameter, and the robot launcher starts from it and adds its nav2 and moveit
+quiet rules as a fallback: `log_level:='{**/planner_server:info, warn}'` keeps
+`planner_server` at `info` while the other nav2 nodes stay at `error`.
 
 ## Simulator dispatch
 

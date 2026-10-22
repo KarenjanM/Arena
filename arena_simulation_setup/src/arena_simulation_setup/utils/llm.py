@@ -1,6 +1,11 @@
 """Lazy `genai` and `openai` client modules, redirected to the local endpoint in `LLM_API_ENDPOINT` when set."""
 
 import os
+import typing
+
+if typing.TYPE_CHECKING:
+    import openai as openai
+    from google import genai as genai
 
 DEFAULT_MODEL = os.environ.get("ARENA_PROMPT_LLM", "gemini-3.5-flash")
 
@@ -9,20 +14,22 @@ _ENDPOINT = os.environ.get("LLM_API_ENDPOINT")
 
 def _build_genai_shim() -> object:
     from google import genai as _genai
-    from google.genai import types as _types
+    from google.genai import types as genai_types
+    from google.genai.client import AsyncClient
+    from google.genai.models import AsyncModels, Models
 
     if not _ENDPOINT:
 
-        class _GenaiShim:
+        class _GenaiPassthroughShim:
             Client = _genai.Client
 
             def __getattr__(self, name: str) -> object:
                 return getattr(_genai, name)
 
-        return _GenaiShim()
+        return _GenaiPassthroughShim()
 
     class _LocalCache:
-        def __init__(self, name: str, system_instruction: object, contents: object, model: object) -> None:
+        def __init__(self, name: str, system_instruction: genai_types.ContentUnion | None, contents: genai_types.ContentListUnion | None, model: object) -> None:
             self.name = name
             self.system_instruction = system_instruction
             self.contents = contents
@@ -36,7 +43,7 @@ def _build_genai_shim() -> object:
         def create(self, *, model: object, config: object) -> _LocalCache:
             _cache_counter[0] += 1
             name = f"local-cache-{_cache_counter[0]}"
-            parsed = config if isinstance(config, _types.CreateCachedContentConfig) else _types.CreateCachedContentConfig.model_validate(config or {})
+            parsed = config if isinstance(config, genai_types.CreateCachedContentConfig) else genai_types.CreateCachedContentConfig.model_validate(config or {})
             cache = _LocalCache(
                 name=name,
                 system_instruction=parsed.system_instruction,
@@ -52,10 +59,13 @@ def _build_genai_shim() -> object:
         def delete(self, *, name: str) -> None:
             _cache_store.pop(name, None)
 
-    def _expand(contents: object, config: object) -> tuple[object, object]:
-        if not isinstance(config, _types.GenerateContentConfig) or config.cached_content not in _cache_store:
+    def _expand(contents: genai_types.ContentListUnionDict, config: genai_types.GenerateContentConfigOrDict | None) -> tuple[genai_types.ContentListUnionDict, genai_types.GenerateContentConfigOrDict | None]:
+        if not isinstance(config, genai_types.GenerateContentConfig):
             return contents, config
-        cache = _cache_store[config.cached_content]
+        cached = config.cached_content
+        if not cached or cached not in _cache_store:
+            return contents, config
+        cache = _cache_store[cached]
         new_config = config.model_copy(
             update={
                 "cached_content": None,
@@ -66,16 +76,16 @@ def _build_genai_shim() -> object:
         if not isinstance(prefix, list):
             prefix = [prefix]
         if isinstance(contents, list):
-            new_contents = prefix + contents
+            new_contents = [*prefix, *contents]
         else:
-            new_contents = prefix + [contents]
-        return new_contents, new_config
+            new_contents = [*prefix, contents]
+        return typing.cast(genai_types.ContentListUnionDict, new_contents), new_config
 
     class _LocalModels:
-        def __init__(self, real: object) -> None:
+        def __init__(self, real: Models) -> None:
             self._real = real
 
-        def generate_content(self, *, model: object, contents: object, config: object = None, **kw: object) -> object:
+        def generate_content(self, *, model: str, contents: genai_types.ContentListUnionDict, config: genai_types.GenerateContentConfigOrDict | None = None, **kw: object) -> genai_types.GenerateContentResponse:
             contents, config = _expand(contents, config)
             return self._real.generate_content(model=model, contents=contents, config=config, **kw)
 
@@ -83,10 +93,10 @@ def _build_genai_shim() -> object:
             return getattr(self._real, name)
 
     class _LocalAsyncModels:
-        def __init__(self, real: object) -> None:
+        def __init__(self, real: AsyncModels) -> None:
             self._real = real
 
-        async def generate_content(self, *, model: object, contents: object, config: object = None, **kw: object) -> object:
+        async def generate_content(self, *, model: str, contents: genai_types.ContentListUnionDict, config: genai_types.GenerateContentConfigOrDict | None = None, **kw: object) -> genai_types.GenerateContentResponse:
             contents, config = _expand(contents, config)
             return await self._real.generate_content(model=model, contents=contents, config=config, **kw)
 
@@ -94,7 +104,7 @@ def _build_genai_shim() -> object:
             return getattr(self._real, name)
 
     class _LocalAio:
-        def __init__(self, real: object) -> None:
+        def __init__(self, real: AsyncClient) -> None:
             self._real = real
             self._models = _LocalAsyncModels(real.models)
 
@@ -106,8 +116,8 @@ def _build_genai_shim() -> object:
             return getattr(self._real, name)
 
     class _LocalClient(_genai.Client):
-        def __init__(self, *, http_options: _types.HttpOptions | dict | None = None, **_kw: object) -> None:
-            options = http_options if isinstance(http_options, _types.HttpOptions) else _types.HttpOptions.model_validate(http_options or {})
+        def __init__(self, *, http_options: genai_types.HttpOptions | dict | None = None, **_kw: object) -> None:
+            options = http_options if isinstance(http_options, genai_types.HttpOptions) else genai_types.HttpOptions.model_validate(http_options or {})
             super().__init__(
                 api_key="sk-local",
                 http_options=options.model_copy(update={"base_url": _ENDPOINT, "api_version": "v1beta"}),
@@ -115,18 +125,6 @@ def _build_genai_shim() -> object:
             self.__dict__["_caches"] = _LocalCaches()
             self.__dict__["_models"] = _LocalModels(super().__getattribute__("models"))
             self.__dict__["_aio"] = _LocalAio(super().__getattribute__("aio"))
-
-        @property
-        def caches(self) -> _LocalCaches:
-            return self.__dict__["_caches"]
-
-        @property
-        def models(self) -> _LocalModels:
-            return self.__dict__["_models"]
-
-        @property
-        def aio(self) -> _LocalAio:
-            return self.__dict__["_aio"]
 
     class _GenaiShim:
         Client: type[_genai.Client] = _LocalClient

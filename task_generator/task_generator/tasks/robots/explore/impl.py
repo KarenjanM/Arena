@@ -1,8 +1,10 @@
 import math
+import typing
 
 from arena_rclpy_mixins.Time import Time
 
 from task_generator.shared import Orientation, Pose
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots.random.impl import TM_Random
 from task_generator.tasks.robots.request import GoToPhase, TaskRequest
 
@@ -44,5 +46,5 @@ class TM_Explore(TM_Random):
         self._reset_timeout(name)
         await self._ctx.robots[name].submit_task(TaskRequest(phases=[GoToPhase(pose=pose)]))
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)

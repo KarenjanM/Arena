@@ -39,7 +39,7 @@ class WorldGeneratorImpl(abc.ABC):
     Abstract base class for world generators.
     """
 
-    config: BaseConfiguration
+    Configuration: typing.ClassVar[type[BaseConfiguration]]
     rng: random.Random
     diagnostics: 'Diagnostics | None'
     warnings: list['Note']
@@ -124,18 +124,21 @@ class WorldGenerator:
         if generator not in self.__registry:
             raise ValueError(f"Generator {generator} has no implementation")
         rng = random.Random(seed if seed >= 0 else None)  # negative seed = nondeterministic
-        self._active: WorldGeneratorImpl = self.__registry[generator]()(configuration, rng)
+        self._active = self.__registry[generator]()(configuration, rng)
 
     def __init__(self, generator: WorldGeneratorType, configuration: dict, seed: int = -1):
         self.update_generator(generator, configuration, seed)
 
 
+class _PedestrianConfigured(typing.Protocol):
+    @property
+    def config(self) -> PedestrianConfiguration: ...
+
+
 class WithPedestrians(WorldGeneratorImpl):
     """A generator whose world carries a pedestrian count, bound as random dynamic obstacles."""
 
-    config: PedestrianConfiguration
-
-    def params(self) -> dict[str, typing.Any]:
+    def params(self: _PedestrianConfigured) -> dict[str, typing.Any]:
         count = self.config.pedestrians
         if count < 0:
             return {}

@@ -5,6 +5,7 @@ import typing
 import shapely
 import shapely.affinity
 import yaml
+from shapely.geometry.base import BaseGeometry
 
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.World import Level, World, Zone
@@ -20,6 +21,16 @@ _DIRS: list[Cell] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1),
 _CARDBOARD = MaterialIdentifier('Cardboard')
 
 
+class BarnConfiguration(BaseConfiguration):
+    width: float = 10.0
+    height: float = 10.0
+
+
+class _BarnConfigured(typing.Protocol):
+    @property
+    def config(self) -> BarnConfiguration: ...
+
+
 class BarnBase(WorldGeneratorImpl):
     """Shared scaffolding for BARN-style generators.
 
@@ -28,8 +39,6 @@ class BarnBase(WorldGeneratorImpl):
     """
 
     SCENARIO: typing.ClassVar[str]
-
-    config: BaseConfiguration
 
     def configure(self, configuration: dict):
         self.config = self.Configuration.model_validate(configuration)
@@ -50,11 +59,11 @@ class BarnBase(WorldGeneratorImpl):
     def _build(self):
         raise NotImplementedError
 
-    def _arena(self) -> tuple[shapely.Geometry, list]:
+    def _arena(self: _BarnConfigured) -> tuple[shapely.Polygon, list]:
         arena = shapely.box(0, 0, self.config.width, self.config.height)
         return arena, to_walls(arena.exterior)
 
-    def _set_level(self, name: str, arena: shapely.Geometry, walls: list, description: str):
+    def _set_level(self, name: str, arena: shapely.Polygon, walls: list, description: str):
         self._world = world_of(Level(zones=[Zone(name=name, polygon=to_corners(arena))], walls=walls), {name: description})
 
     def _set_scenario(self, start: tuple[float, float, float], goto: tuple[float, float, float]):
@@ -77,10 +86,7 @@ class WorldGeneratorBarn(BarnBase):
 
     SCENARIO = 'barn'
 
-    class Configuration(BaseConfiguration):
-        width: float = 10.0
-        height: float = 10.0
-
+    class Configuration(BarnConfiguration):
         box_size: float = 0.4  # cardboard box footprint (m)
         box_gap: float = 0.0  # spacing between boxes in a wall (m)
         passage_width: float = 1.0  # free lane width (m)
@@ -215,14 +221,14 @@ class WorldGeneratorBarn(BarnBase):
                     break
         return order
 
-    def _walls(self, corridor: shapely.Geometry) -> list:
+    def _walls(self, corridor: BaseGeometry) -> list:
         # the corridor boundary is the load-bearing seal at exactly passage_width;
         # rotated cardboard tiles ride it for the angled physical-course look
         walls = to_walls(corridor.boundary, material=_CARDBOARD)
         walls += self._tiles(corridor)
         return walls
 
-    def _tiles(self, corridor: shapely.Geometry) -> list:
+    def _tiles(self, corridor: BaseGeometry) -> list:
         c = self.config
         step = c.box_size + c.box_gap
         half = c.box_size / 2

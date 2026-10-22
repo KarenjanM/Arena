@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import os
+import typing
 
 import attrs
 
 from arena_simulation_setup.utils.llm import DEFAULT_MODEL
+
+if typing.TYPE_CHECKING:
+    from google import genai as genai_module
 
 
 class Unavailable(RuntimeError):
@@ -26,17 +30,12 @@ def prompt_sha256(*parts: str) -> str:
     return digest.hexdigest()[:16]
 
 
-def _client() -> object:
+def _require_llm() -> None:
     if not os.environ.get("LLM_API_ENDPOINT") and not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
         raise Unavailable("no LLM configured: set GEMINI_API_KEY (or GOOGLE_API_KEY) for the hosted API, or LLM_API_ENDPOINT to point at a local one")
-    try:
-        from arena_simulation_setup.utils.llm import genai
-    except ImportError as exc:
-        raise Unavailable(f"the genai client is not importable: {exc}") from exc
-    return genai
 
 
-_CLIENT: object | None = None
+_CLIENT: genai_module.Client | None = None
 
 TIMEOUT_MS = 120_000
 
@@ -52,7 +51,13 @@ def ask(system: str, user: str, *, model: str | None = None, temperature: float 
     global _CLIENT
     import httpx
 
-    genai = _client()
+    _require_llm()
+    try:
+        from google.genai import errors as genai_errors
+
+        from arena_simulation_setup.utils.llm import genai
+    except ImportError as exc:
+        raise Unavailable(f"the genai client is not importable: {exc}") from exc
     response = None
     for attempt in range(2):
         if _CLIENT is None:
@@ -67,10 +72,12 @@ def ask(system: str, user: str, *, model: str | None = None, temperature: float 
                 ),
             )
             break
-        except (genai.errors.APIError, genai.errors.UnknownApiResponseError, httpx.HTTPError) as exc:
+        except (genai_errors.APIError, genai_errors.UnknownApiResponseError, httpx.HTTPError) as exc:
             _CLIENT = None
             if attempt:
                 raise Unavailable(f"the model call failed: {type(exc).__name__}: {exc}") from exc
+    if response is None:
+        raise Unavailable("the model call returned nothing")
     text = response.text
     if not text:
         raise Unavailable("the model returned an empty response")

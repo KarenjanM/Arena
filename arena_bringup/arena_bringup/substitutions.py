@@ -42,8 +42,8 @@ class LaunchArgument(launch.actions.DeclareLaunchArgument):
         """
         cls._auto_append = target
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, name: str, *args: object, **kwargs: object) -> None:
+        super().__init__(name, *args, **kwargs)
         if self._auto_append is not None:
             self._auto_append.append(self)
 
@@ -218,7 +218,11 @@ class YAMLFileSubstitution(launch.Substitution):
         if self._substitute:
 
             def substitute(obj: dict | list, k: int | str) -> None:
-                if isinstance(obj[k], launch.Substitution):
+                if isinstance(obj, list):
+                    assert isinstance(k, int)
+                    if isinstance(obj[k], launch.Substitution):
+                        obj[k] = obj[k].perform(context)
+                elif isinstance(obj[k], launch.Substitution):
                     obj[k] = obj[k].perform(context)
 
             def substitute_recursive(obj: dict | list) -> dict | list:

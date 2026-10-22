@@ -4,6 +4,8 @@ import attrs
 import numpy as np
 from arena_humansim.core.agents import BUILTIN_AGENTS, AgentType, SampledParams, StepDef, sample_agent_type
 from arena_humansim.core.agents.loader import load_agent_type_from_file
+from arena_humansim_msgs.msg import AgentTemplate as AgentTemplateMsg
+from arena_humansim_msgs.msg import SinkAffinity as SinkAffinityMsg
 from arena_humansim_msgs.msg import Waypoints as WaypointsMsg
 
 from task_generator.shared import DynamicObstacle
@@ -41,6 +43,23 @@ def path_agent_type_name(agent_type: str) -> str | None:
     return definition.name if definition is not None else None
 
 
+def flow_agent_template(raw: dict, included_from: Path | None) -> AgentTemplateMsg:
+    """AddSource agent template of a source region's `agent:` block, speed and radius left 0 (the type's sample) when unset."""
+    tmpl = AgentTemplateMsg()
+    vel = raw.get("desired_velocity")
+    if isinstance(vel, dict):
+        tmpl.desired_velocity_min = float(vel.get("min", 1.0))
+        tmpl.desired_velocity_max = float(vel.get("max", 1.5))
+    elif vel is not None:
+        tmpl.desired_velocity_min = tmpl.desired_velocity_max = float(vel)
+    tmpl.agent_radius = float(raw.get("agent_radius", 0.0))
+    tmpl.behavior_tree = raw.get("behavior_tree", "default")
+    tmpl.agent_type = resolve_agent_type_path(raw.get("agent_type", "adult"), included_from)
+    for sa in raw.get("sink_affinity", []):
+        tmpl.sink_affinity.append(SinkAffinityMsg(sink_name=sa.get("sink", ""), weight=sa.get("weight", 1.0)))  # pyright: ignore[reportAttributeAccessIssue]
+    return tmpl
+
+
 _WAYPOINT_MODE_MAP = {
     "repeat": WaypointsMsg.MODE_REPEAT,
     "reverse": WaypointsMsg.MODE_REVERSE,
@@ -52,11 +71,11 @@ _WAYPOINT_MODE_MAP = {
 @attrs.define()
 class ArenaHumanDynamicObstacle:
     agent_type: str = "adult"
-    desired_velocity_min: float = 1.0
-    desired_velocity_max: float = 1.5
-    agent_radius: float = 0.35
+    desired_velocity_min: float | None = None
+    desired_velocity_max: float | None = None
+    agent_radius: float | None = None
     waypoint_mode: int = WaypointsMsg.MODE_REPEAT
-    _waypoints: list = attrs.Factory(list)
+    _waypoints: list = attrs.field(factory=list, alias="waypoints")
 
     @classmethod
     def from_dynamic_obstacle(cls, obs: DynamicObstacle) -> "ArenaHumanDynamicObstacle | None":
@@ -72,23 +91,24 @@ class ArenaHumanDynamicObstacle:
         if not isinstance(raw, dict):
             return None
 
-        vel = raw.get("desired_velocity", {})
+        vel = raw.get("desired_velocity")
         if isinstance(vel, dict):
-            vel_min = vel.get("min", 1.0)
-            vel_max = vel.get("max", 1.5)
+            vel_min = float(vel.get("min", 1.0))
+            vel_max = float(vel.get("max", 1.5))
         elif vel is not None:
             vel_min = vel_max = float(vel)
         else:
-            vel_min, vel_max = 1.0, 1.5
+            vel_min = vel_max = None
+        radius = raw.get("radius")
 
         agent_type = raw.get("agent_type", "adult")
         agent_type = cls._resolve_agent_type_path(agent_type, obs)
 
         return cls(
             agent_type=agent_type,
-            desired_velocity_min=float(vel_min),
-            desired_velocity_max=float(vel_max),
-            agent_radius=float(raw.get("radius", 0.35)),
+            desired_velocity_min=vel_min,
+            desired_velocity_max=vel_max,
+            agent_radius=None if radius is None else float(radius),
             waypoints=list(obs.waypoints),
             waypoint_mode=cls._parse_waypoint_mode(obs.waypoint_mode),
         )
@@ -109,9 +129,8 @@ class ArenaHumanDynamicObstacle:
         params = sample_agent_type(definition, rng)
 
         # Apply velocity/radius overrides
-        desired_velocity = float(rng.uniform(self.desired_velocity_min, self.desired_velocity_max))
-        return attrs.evolve(
-            params,
-            desired_velocity=desired_velocity,
-            agent_radius=self.agent_radius,
-        )
+        if self.desired_velocity_min is not None and self.desired_velocity_max is not None:
+            params = attrs.evolve(params, desired_velocity=float(rng.uniform(self.desired_velocity_min, self.desired_velocity_max)))
+        if self.agent_radius is not None:
+            params = attrs.evolve(params, agent_radius=self.agent_radius)
+        return params

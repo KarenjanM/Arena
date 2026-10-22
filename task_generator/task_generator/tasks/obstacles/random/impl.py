@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import functools
 import itertools
-from collections.abc import Callable, Iterator
+import typing
+from collections.abc import Callable, Iterable, Iterator
 
 import attrs
 import numpy as np
@@ -15,6 +16,7 @@ from typing_extensions import Self
 
 from task_generator.shared import DynamicObstacle, Obstacle, Orientation, Pose
 from task_generator.tasks import identifier_to_available
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 
 
@@ -50,8 +52,8 @@ class TM_Random(TM_Obstacles):
 
         class ModelList(dict[str, float]):
             @classmethod
-            def fromkeys(cls, *args: object, **kwargs: object) -> Self:
-                result = cls(super().fromkeys(*args, **kwargs))
+            def from_models(cls, models: Iterable[str], value: float, /) -> Self:
+                result = cls(dict.fromkeys(models, value))
                 if not len(result):
                     self._logger.warn('Empty model list passed. Defaulting to empty string.')
                     result[""] = 1.0
@@ -70,9 +72,9 @@ class TM_Random(TM_Obstacles):
             def __init__(self, *args: object, **kwargs: object) -> None:
                 super().__init__(*args, **kwargs)
 
-        MODELS_STATIC_OBSTACLES = ModelList.fromkeys(self._config.MODELS_STATIC_OBSTACLES.value, 1)
-        MODELS_INTERACTIVE_OBSTACLES = ModelList.fromkeys(self._config.MODELS_INTERACTIVE_OBSTACLES.value, 1)
-        MODELS_DYNAMIC_OBSTACLES = ModelList.fromkeys(self._config.MODELS_DYNAMIC_OBSTACLES.value, 1)
+        MODELS_STATIC_OBSTACLES = ModelList.from_models(self._config.MODELS_STATIC_OBSTACLES.value, 1)
+        MODELS_INTERACTIVE_OBSTACLES = ModelList.from_models(self._config.MODELS_INTERACTIVE_OBSTACLES.value, 1)
+        MODELS_DYNAMIC_OBSTACLES = ModelList.from_models(self._config.MODELS_DYNAMIC_OBSTACLES.value, 1)
 
         def indexer() -> Callable[..., int]:
             indices: dict[str, Iterator[int]] = dict()
@@ -158,7 +160,7 @@ class TM_Random(TM_Obstacles):
 
         return obstacles, dynamic_obstacles
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
 
         def param_to_tuple(v: list[object]) -> tuple[int, int]:

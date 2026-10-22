@@ -184,6 +184,8 @@ def _waypoint(value: object) -> object:
             point = _point(value['position'])
             level = value.get('level_id')
             if level:
+                if not isinstance(point, (list, Mapping)):
+                    raise TypeError(f'waypoint position must be a point, got {point!r}')
                 x, y, *z = point if isinstance(point, list) else [point['x'], point['y']]
                 return {'x': x, 'y': y, **({'z': z[0]} if z else {}), 'level': str(level)}
             return point

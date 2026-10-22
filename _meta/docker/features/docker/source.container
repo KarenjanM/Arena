@@ -13,4 +13,4 @@ export HOST_GID
 export arena_compose_sudo="sudo -E"
 source "$ARENA_DIR/_meta/docker/lib"
 
-source src/Arena/_meta/tools/source
+source "$ARENA_DIR/_meta/tools/source"

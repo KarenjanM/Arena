@@ -184,7 +184,7 @@ class ModelWrapper(Parseable, Serializable):
         """
 
     @overload
-    async def get(self, *, loader_args: dict | None = None, **kwargs: object) -> Model:
+    async def get(self, only: None = None, *, loader_args: dict | None = None, **kwargs: object) -> Model:
         """
         load any available model
         """

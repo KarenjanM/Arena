@@ -1,4 +1,5 @@
 import asyncio
+import typing
 
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
@@ -6,6 +7,7 @@ from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView
 
 from task_generator.shared import Region
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.obstacles._validation import make_is_valid
 from task_generator.tasks.registry import default_scenario
@@ -63,7 +65,7 @@ class TM_Scenario(TM_Obstacles):
         if missing:
             self._logger.warning(f"scenario {scenario_view.path.name}: animation clips not found, agents will skip them: {missing} (arena asset find animation <name>)")
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         TM_Obstacles.__init__(self, **kwargs)
         self.scenario: Scenario | None = None
 

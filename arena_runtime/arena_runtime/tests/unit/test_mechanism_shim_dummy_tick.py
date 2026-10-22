@@ -354,3 +354,72 @@ def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_d
         assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
 
     on_dummy_sim(body, jackal=True)
+
+
+def test_cabin_door_reports_to_the_human_simulator_only_when_it_turns_open_or_stops_being_open(shim, on_dummy_sim):
+    from arena_people_msgs.msg import Pedestrian, Pedestrians
+    from task_generator.constants import Constants
+    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
+    from task_generator.simulators.human.noop import NoopHumanSimulator
+
+    class DoorLog(NoopHumanSimulator):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.door_calls: list[dict[str, bool]] = []
+
+        async def _set_elevator_doors_impl(self, doors):
+            self.door_calls.append(dict(doors))
+            return True
+
+    def walker_at(x: float) -> Pedestrians:
+        walker = Pedestrian(name="walker")
+        walker.pose.position.x = x
+        walker.pose.orientation.w = 1.0
+        return Pedestrians(pedestrians=[walker])
+
+    async def body(sim):
+        acoustics = await AcousticsSimulatorRegistry.get(Constants.AcousticsSimulator.NONE, node=sim.node, namespace=sim._namespace)
+        human = DoorLog(node=sim.node, namespace=sim._namespace, simulator=sim, realizer=sim._realizer, acoustics=acoustics)
+        _elevator(shim, sim, "a", 0.0, "b")
+        human._on_arena_peds(walker_at(1.6))
+        for _ in range(3):
+            await shim._tick(sim, DT)
+        assert human.door_calls == []
+        for _ in range(3):
+            await shim._tick(sim, DT)
+        assert human.door_calls == [{"a": True}]
+        human._on_arena_peds(walker_at(20.0))
+        shim.reset_mechanisms(sim)
+        await shim._tick(sim, DT)
+        await shim._tick(sim, DT)
+        assert human.door_calls == [{"a": True}, {"a": False}]
+
+    on_dummy_sim(body)
+
+
+@pytest.mark.parametrize(("bystander_x", "departs"), [(1.8, True), (1.2, False)])
+def test_loaded_cabin_reopens_only_for_a_body_in_its_door_threshold(shim, on_dummy_sim, bystander_x: float, departs: bool):
+    from arena_people_msgs.msg import Pedestrian, Pedestrians
+    from task_generator.constants import Constants
+    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
+    from task_generator.simulators.human.noop import NoopHumanSimulator
+
+    def at(name: str, x: float, y: float) -> Pedestrian:
+        ped = Pedestrian(name=name)
+        ped.pose.position.x = x
+        ped.pose.position.y = y
+        ped.pose.orientation.w = 1.0
+        return ped
+
+    async def body(sim):
+        acoustics = await AcousticsSimulatorRegistry.get(Constants.AcousticsSimulator.NONE, node=sim.node, namespace=sim._namespace)
+        human = NoopHumanSimulator(node=sim.node, namespace=sim._namespace, simulator=sim, realizer=sim._realizer, acoustics=acoustics)
+        sim.attach_human_simulator(human)
+        human._on_arena_peds(Pedestrians(pedestrians=[at("rider", 0.5, 0.3), at("bystander", bystander_x, 0.0)]))
+        a, _ = _elevator(shim, sim, "a", 0.0, "b")
+        _elevator(shim, sim, "b", 10.0, "a")
+        await shim._tick(sim, DT)
+        await shim._tick(sim, DT)
+        assert a.dispatched == ({"rider"} if departs else set())
+
+    on_dummy_sim(body)

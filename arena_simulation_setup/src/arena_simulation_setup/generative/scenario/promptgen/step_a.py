@@ -91,7 +91,7 @@ def walks_from(agent: Mapping[str, Any]) -> bool:
         if isinstance(stop, str) or isinstance(start, str):
             if stop != start:
                 return True
-        elif math.dist((float(start[0]), float(start[1])), (float(stop[0]), float(stop[1]))) >= WALK_MIN_M:
+        elif start is not None and math.dist((float(start[0]), float(start[1])), (float(stop[0]), float(stop[1]))) >= WALK_MIN_M:
             return True
     return False
 

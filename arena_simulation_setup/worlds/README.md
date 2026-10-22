@@ -102,7 +102,7 @@ the result from `Level.all_walls`.
 | `door_side` | inferred | cabin face the door opens on (`+x`, `-x`, `+y`, `-y`), inferred from the nearest wall (<= 1 m) at load when absent, `+x` without one |
 | `material` | elevator default | `MaterialIdentifier` |
 | `destinations` | `[]` | names of the cabins a ride goes to, on any level. The runtime rides to the first |
-| `activation_distance` | `3.0` | metres |
+| `activation_distance` | `3.0` | metres, the reach of an outside call while the cabin is empty; a cabin with a rider aboard reopens only for a body within 0.6 m of its door |
 | `transition_time` | `1.0` | seconds |
 | `hold_time` | `2.0` | seconds |
 | `travel_time` | `3.0` | seconds between levels |
@@ -299,14 +299,15 @@ behavior (sequences, interactions, needs), see
 `humansim/arena_humansim/config/agent_types/README.md` and the
 `hospital_1/scenarios/showcase` scenario for a worked example.
 
-`objects` (`Obstacle`) also takes `light: {lit, light_on, level}` for the lights its
+`objects` (`Obstacle`) also takes `light: {lit, light_on, dim}` for the lights its
 object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: [x, y, z]` (default identity),
 `level` (multi-level worlds) and a `humansim:` block (`type`, `capacity`,
 `interaction_radius`, `formation`, `satisfies`, `seats`) that becomes its
 humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`), `waypoint_mode` (`repeat`, `reverse`, `once`,
 `random`), `level`, the humansim `agent:` block and a `hunav:` block for the
-HuNav backend. Any other key fails the load.
+HuNav backend. Any other key fails the load. A waypoint is `[x, y[, z]]`,
+`{x, y[, z][, level]}` or a zone name.
 
 `sounds` is a list of `Sound` entries, same schema as a world level's
 `sounds:` but episode-scoped (attached at reset, gone at the next one).
@@ -314,6 +315,14 @@ HuNav backend. Any other key fails the load.
 `lights` is a list of local `Light` fixtures, same schema as a world level's
 `lights:` but episode-scoped, with `attach` naming one of the scenario's
 own `objects`. `dome` and `sun` stay in the world.
+
+Every placed entry (object, human, waypoint, sound, light, robot `start`)
+sits on one floor by the same rule. A zone name as its `pose`, `position` or
+waypoint samples the zone wherever it lies, whatever the entry's `level`.
+Otherwise its point is local to its own `level`, else to the level of what
+holds it (a waypoint's human, an attached sound's or light's object), else to
+the sole level the env runs. Entries a world level lists sit on that level
+and take no `level`.
 
 `timeline` is a list of scripted `set` and `stimulus` actions fired on
 `at`/`every`/`when` triggers. See [AUTHORING.md, Scenario timelines](../AUTHORING.md#scenario-timelines).

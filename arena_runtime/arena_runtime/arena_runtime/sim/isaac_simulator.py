@@ -16,6 +16,7 @@ import attrs
 import geometry_msgs.msg
 import isaacsim_msgs.msg
 import launch
+import launch.event_handlers
 import launch_ros
 import std_msgs.msg
 import std_srvs.srv
@@ -54,10 +55,10 @@ from isaacsim_msgs.srv import (
     SpawnLights,
     SpawnPrims,
     SpawnUrdf,
-    SpawnUsd,
     SpawnWalls,
     StepSimulation,
 )
+from launch_ros.parameters_type import SomeParameterFile, SomeParametersDict
 from task_generator.shared import Ceiling as CeilingDefinition
 from task_generator.shared import (
     DynamicObstacle,
@@ -73,7 +74,7 @@ from task_generator.shared import Wall as WallDefinition
 from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 
 from arena_runtime._node import NodeInterface
-from arena_runtime.sim import BaseSim, SimLifecycle
+from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle
 from arena_runtime.sim._control import (
     effective_control_yaml,
     odom_relay_node,
@@ -165,9 +166,9 @@ def material_to_msg(material: arena_simulation_setup.tree.assets.Material.Materi
 class IsaacSimulator(BaseSim, NodeInterface):
     SIM_NAME = 'isaac'
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
         """Initialize IsaacSimulator"""
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         env_prefix = f"env_{self._env_id}"
         self._NS_PRIM = Namespace(env_prefix)('Obstacles')
@@ -194,7 +195,6 @@ class IsaacSimulator(BaseSim, NodeInterface):
             SpawnPedestrians=self.node.create_client_wrapper(SpawnPedestrians, "/isaac/SpawnPedestrians"),
             SpawnPrims=self.node.create_client_wrapper(SpawnPrims, "/isaac/SpawnPrims"),
             SpawnUrdf=self.node.create_client_wrapper(SpawnUrdf, "/isaac/SpawnUrdf"),
-            SpawnUsd=self.node.create_client_wrapper(SpawnUsd, "/isaac/SpawnUsd"),
             SpawnWalls=self.node.create_client_wrapper(SpawnWalls, "/isaac/SpawnWalls"),
         )
         self._peds_publisher = self.node.create_publisher(arena_people_msgs.msg.Pedestrians, "/isaac/arena_peds", 10)
@@ -214,6 +214,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
         }
         args.pop('resolved_assembly', None)
         if robot.resolved_assembly is not None:
+            assert robot_config.assembly is not None
             catalog = arena_robots.catalog.Catalog()
             args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
             args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
@@ -343,7 +344,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
                 else None
             )
 
-            cm_params: list[object] = [{'use_sim_time': True}]
+            cm_params: list[SomeParameterFile | SomeParametersDict] = [{'use_sim_time': True}]
             if rendered_yaml is not None:
                 cm_params.append(rendered_yaml)
 
@@ -600,10 +601,13 @@ class IsaacSimulator(BaseSim, NodeInterface):
     def _light_msg(self, light: LightDefinition) -> Light:
         spec = light.spec
         if spec.shape == 'dome':
+            assert light.lux is not None
             intensity = light.lux / math.pi
         elif spec.shape == 'distant':
+            assert light.lux is not None
             intensity = light.lux
         else:
+            assert light.lumens is not None
             intensity = light.lumens / (math.pi * spec.area)
             if spec.cone_deg < 180.0:
                 intensity /= math.sin(math.radians(spec.cone_deg) / 2.0) ** 2
@@ -619,7 +623,7 @@ class IsaacSimulator(BaseSim, NodeInterface):
             intensity=_ISAAC_EXPOSURE_GAIN * intensity,
             cct_k=light.cct_K,
             cast_shadows=light.cast_shadows,
-            level=0.0 if light.lit is False else light.level,
+            level=0.0 if light.lit is False else light.dim,
             alive=light.alive(light.dead_fraction),
             intrinsic=light.intrinsic,
             glow_prim=self._NS_PRIM(light.owner) if light.glow else '',
@@ -806,8 +810,8 @@ class IsaacSimulator(BaseSim, NodeInterface):
         self._logger.info("All service clients initialized and available.")
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, **kwargs: object) -> "IsaacSimulator":
-        self = cls(*args, namespace=namespace, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[SimKwargs]) -> "IsaacSimulator":
+        self = cls(**kwargs)
         self._logger.info("Creating IsaacSimulator instance...")
         await self.setup()
         return self

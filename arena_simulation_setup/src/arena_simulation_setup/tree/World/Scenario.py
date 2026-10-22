@@ -82,7 +82,10 @@ class StimulusAction(Serializable):
         agents = value.get("agents")
         if not isinstance(agents, list | tuple):
             raise ValueError(f"stimulus 'agents' must be a list of agent names, got {agents!r}")
-        return cls(agents=tuple(agents), need=value.get("need"), intensity=float(value.get("intensity", 1.0)))
+        need = value.get("need")
+        if not isinstance(need, str):
+            raise ValueError(f"stimulus 'need' must be a non-empty string, got {need!r}")
+        return cls(agents=tuple(agents), need=need, intensity=float(value.get("intensity", 1.0)))
 
     def serialize(self) -> dict:
         result: dict = {"agents": list(self.agents), "need": self.need}

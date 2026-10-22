@@ -25,8 +25,10 @@ from task_generator.shared import (
     Door,
     DynamicObstacle,
     Elevator,
+    Entity,
     Obstacle,
     Pose,
+    Position,
     Region,
     Robot,
     SemanticCfg,
@@ -35,6 +37,8 @@ from task_generator.shared import (
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
+
+EntityT = typing.TypeVar('EntityT', bound=Entity)
 
 
 def _kind_vocab(kind_cls: type) -> frozenset[str]:
@@ -66,7 +70,8 @@ def _realized_plate(realizer: Realizer, cfg: SemanticCfg, level_id: str) -> Sema
     """A plate cfg with its authored position in the map frame agents are tracked in and its driven door under its realized name."""
     params = dict(cfg.params)
     if 'position' in params:
-        params['position'] = list(realizer.realize_xy(*params['position'][:2], level_id))
+        x, y = params['position'][:2]
+        params['position'] = list(realizer.realize_xy(x, y, level_id))
     if params.get('drives'):
         params['drives'] = realizer.prefix(params['drives'], level_id)
     return attrs.evolve(cfg, params=params)
@@ -108,7 +113,7 @@ STAGE_AMBIENT_ENV = 'env_0'
 def stage_ambient(lights: Sequence[Light]) -> list[dict]:
     """The dome and sun lights of a world as comparable settings, sorted, names left out."""
     return sorted(
-        ({'fixture': light.fixture, 'lux': light.lux, 'cct_K': light.cct_K, 'direction': list(light.direction), 'level': light.level, 'lit': light.lit, 'light_on': light.light_on} for light in lights if light.spec.ambient),
+        ({'fixture': light.fixture, 'lux': light.lux, 'cct_K': light.cct_K, 'direction': list(light.direction), 'dim': light.dim, 'lit': light.lit, 'light_on': light.light_on} for light in lights if light.spec.ambient),
         key=json.dumps,
     )
 
@@ -150,7 +155,6 @@ class EnvironmentManager(NodeInterface):
         self._static_polygons = {}
         self._attached_semantic_entities: set[str] = set()
         self._world_light_names: set[str] = set()
-        self._world_level_ids: list[str] = []
         self._episode_lights: dict[str, dict[str, str]] = {}
         self._episode_light_owners: set[str] | None = None
         self._robot_lights: dict[str, list[Light]] = {}
@@ -199,7 +203,19 @@ class EnvironmentManager(NodeInterface):
         """optim.obstacles=none: silently skip all static obstacle spawns."""
         return obstacles_optim_level(self.node) >= ObstaclesOptim.NONE
 
-    def realize(self, target: object) -> object:
+    @typing.overload
+    def realize(self, target: str) -> str: ...
+
+    @typing.overload
+    def realize(self, target: Position) -> Position: ...
+
+    @typing.overload
+    def realize(self, target: Pose) -> Pose: ...
+
+    @typing.overload
+    def realize(self, target: EntityT) -> EntityT: ...
+
+    def realize(self, target: str | Position | Pose | Entity) -> str | Position | Pose | Entity:
         return self._realizer.realize(target)
 
     def ezilear(self, target: Pose) -> Pose:
@@ -278,7 +294,7 @@ class EnvironmentManager(NodeInterface):
         self._carried_lights.clear()
         self._episode_lights.clear()
         self._world_light_names.clear()
-        self._world_level_ids = [str(fid) for fid in _world.levels if _match_level_id(fid)]
+        self._realizer.reset_levels([str(fid) for fid in _world.levels if _match_level_id(fid)])
         self.node._clear_semantic_entities()
         # (kind, realized entity, cfgs, polygon) attaches deferred until geometry exists.
         pending: list[tuple[str, str, list[SemanticCfg], list[tuple[float, float]] | None]] = []
@@ -376,8 +392,7 @@ class EnvironmentManager(NodeInterface):
         if lintels:
             futures.append(self._simulator.spawn_walls(lintels, clear_existing=False))
         futures.append(self._human_simulator.spawn_obstacles(statics, layer=ObstacleLayer.WORLD))
-        if elevators:
-            futures.append(self._simulator.spawn_elevators(elevators))
+        futures.append(self._spawn_elevators(elevators))
 
         await asyncio.gather(*futures)
         if lights:
@@ -392,6 +407,12 @@ class EnvironmentManager(NodeInterface):
         for kind, entity, cfgs, polygon in pending:
             self._simulator.attach_semantics(kind, entity, cfgs, polygon=polygon)
             self._attached_semantic_entities.add(entity)
+
+    async def _spawn_elevators(self, elevators: Sequence[Elevator]) -> None:
+        """Hand the cabins to the human simulator, then to the physics sim."""
+        await self._human_simulator.spawn_elevators(elevators)
+        if elevators:
+            await self._simulator.spawn_elevators(elevators)
 
     async def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
         """
@@ -417,9 +438,9 @@ class EnvironmentManager(NodeInterface):
 
     async def spawn_mode_lights(self, lights: Sequence[Light]) -> None:
         """Spawn the lights the obstacle mode declares for this episode, replacing those of the episode before."""
-        await self._spawn_owned_lights([(MODE_LIGHT_OWNER, list(lights), None)])
+        await self._spawn_owned_lights([(MODE_LIGHT_OWNER, list(lights), "")])
 
-    async def _spawn_owned_lights(self, owned: Sequence[tuple[str, list[Light], str | None]]) -> None:
+    async def _spawn_owned_lights(self, owned: Sequence[tuple[str, list[Light], str]]) -> None:
         await self._remove_episode_lights([owner for owner, _, _ in owned if owner in self._episode_lights])
         lights: list[Light] = []
         for owner, owner_lights, level_id in owned:
@@ -427,7 +448,7 @@ class EnvironmentManager(NodeInterface):
                 self._episode_light_owners.add(owner)
             names: dict[str, str] = {}
             for light in self._admit(owner_lights, f'obstacle {owner!r}' if owner else 'the obstacle mode'):
-                realized = self._realizer.realize(light, level_id or (self._world_level_ids[0] if len(self._world_level_ids) == 1 else ""))
+                realized = self._realizer.realize(light, level_id)
                 self.node._register_semantic_entity(light.name, realized.name)
                 lights.append(realized)
                 names[light.name] = realized.name
@@ -584,6 +605,7 @@ class EnvironmentManager(NodeInterface):
 
     async def before_reset_episode(self) -> bool:
         await self._human_simulator.pause()
+        await self._human_simulator.remove_all_regions()
         result = await self._simulator.before_reset_episode()
         self._simulator.reset_semantics()
         self.node.reset_timeline()

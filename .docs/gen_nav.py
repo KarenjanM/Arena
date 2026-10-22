@@ -22,7 +22,7 @@ EXCLUDE_SEGMENTS = {
     "deps",
 }
 
-NAMED_DOCS = {"bringup.md", "driving.md", "authoring.md", "services.md"}
+NAMED_DOCS = {"bringup.md", "driving.md", "authoring.md", "services.md", "contributing.md"}
 
 
 def excluded(rel: Path) -> bool:
@@ -39,7 +39,7 @@ def included_markdown():
             yield rel
 
 
-included = sorted(included_markdown())
+included = sorted(included_markdown(), key=lambda rel: (rel != Path("README.md"), rel))
 included_set = set(included)
 documented = {rel.parent for rel in included if rel.name.lower() == "readme.md"}
 

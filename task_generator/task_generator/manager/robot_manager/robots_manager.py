@@ -11,6 +11,7 @@ import geometry_msgs.msg
 import rclpy
 import task_generator_msgs.msg
 from arena_rclpy_mixins.shared import Namespace
+from arena_robots.assembly import ResolvedAssembly
 from arena_runtime._node import NodeInterface
 
 from task_generator.manager.environment_manager import EnvironmentManager
@@ -110,7 +111,7 @@ def desugar_robot_entry(entry: str) -> dict:
     return result
 
 
-def _cap_instances(resolved: object | None, cap: str) -> list[tuple[str, str]]:
+def _cap_instances(resolved: ResolvedAssembly | None, cap: str) -> list[tuple[str, str]]:
     """(mount, variant) per placement of type `cap`, one empty pair when unplaced."""
     if resolved is not None:
         placed = [(p.mount.name, p.variant) for p in resolved.placements if p.type == cap]

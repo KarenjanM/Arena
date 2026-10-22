@@ -514,6 +514,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         if record is None:
             return
 
+        heartbeat_age = (self.wall_time - Time.from_msg(record.last_heartbeat)).to_seconds()
+        self.get_logger().warning(f"evicting env_{env_id} ({reason}), last heartbeat {heartbeat_age:.1f} s ago")
         self._publish_envs()
 
         await self._force_release_window(record.fqn)
@@ -598,7 +600,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         if request.action == arena_runtime_msgs.srv.LifecycleUnpauseWindow.Request.ACQUIRE:
             was_empty = self._windows.is_empty()
             self._windows.acquire(request.caller_id, _WINDOW_REASON)
-            if was_empty:
+            self._lockstep.wake()
+            if was_empty and not self._lockstep.running:
                 try:
                     unpaused = await self._lifecycle.unpause()
                 except Exception as e:
@@ -624,8 +627,9 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
                 response.error_msg = f"caller {request.caller_id} does not hold a window"
                 return response
             self._windows.release(request.caller_id, _WINDOW_REASON)
+            self._lockstep.wake()
             self.get_logger().debug(f"window - {request.caller_id}")
-            if self._windows.is_empty() and not self._holds.is_empty():
+            if self._windows.is_empty() and not self._holds.is_empty() and not self._lockstep.running:
                 await self._lifecycle.pause()
                 self.get_logger().info(f"sim paused (window {request.caller_id} closed, holds remain)")
             response.success = True
@@ -736,7 +740,8 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         if not self._windows.has(caller_id, _WINDOW_REASON):
             return
         self._windows.release_all(caller_id)
-        if self._windows.is_empty() and not self._holds.is_empty():
+        self._lockstep.wake()
+        if self._windows.is_empty() and not self._holds.is_empty() and not self._lockstep.running:
             await self._lifecycle.pause()
 
     async def _cb_cleanup_env(
