@@ -1,0 +1,29 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:x_west', props: {description: 'crosswalk cell, west side'}}
+- {id: 'room:xwalk', props: {description: north-south cart lane crossed at y 5-7}}
+- {id: 'room:x_east', props: {description: 'crosswalk cell, east side'}}
+- {id: 'room:r_lobby', props: {description: commuter lobby}}
+- {id: 'room:r_gate', props: {description: turnstile passage}}
+- {id: 'room:platform', props: {description: platform}}
+- {id: 'room:z_west', props: {description: 'zones cell, west'}}
+- {id: 'room:speed_hall', props: {description: speed-limited hall (max_speed 0.5)}}
+- {id: 'room:quiet_room', props: {description: quiet room}}
+- {id: 'room:lab', props: {description: restricted lab (shortcut)}}
+- {id: 'room:z_east', props: {description: 'zones cell, east'}}
+- {id: 'room:c_west', props: {description: 'cap cell, west'}}
+- {id: 'room:waiting_room', props: {description: 'waiting room, occupancy cap 4'}}
+- {id: 'room:c_detour', props: {description: corridor around the waiting room}}
+- {id: 'room:c_east', props: {description: 'cap cell, east'}}
+- {id: 'room:ward', props: {description: ward}}
+- {id: 'room:fire_corridor', props: {description: egress corridor}}
+- {id: 'room:assembly', props: {description: assembly area}}
+- {id: 'room:elev_r0_cabin', props: {description: 'footprint of elevator elev_r0 (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_r1_cabin', props: {description: 'footprint of elevator elev_r1 (condition target only, no floor/ceiling)'}}
+- {id: 'elevator:elev_r0'}
+- {id: 'elevator:elev_r1'}
+facts:
+- {subject: 'room:ward', verb: contains, object: 'elevator:elev_r0'}
+- {subject: 'room:assembly', verb: contains, object: 'elevator:elev_r1'}
+constraints: []

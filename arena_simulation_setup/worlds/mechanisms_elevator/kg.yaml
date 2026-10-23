@@ -1,0 +1,35 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:l0_lobby', props: {description: ground floor lobby}}
+- {id: 'room:annex', props: {description: 'annex, only reachable through the elev_s0/elev_s1 pair'}}
+- {id: 'room:elev_a_cabin', props: {description: 'footprint of elevator elev_a (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_b_cabin', props: {description: 'footprint of elevator elev_b (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_m_cabin', props: {description: 'footprint of elevator elev_m (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_s0_cabin', props: {description: 'footprint of elevator elev_s0 (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_s1_cabin', props: {description: 'footprint of elevator elev_s1 (condition target only, no floor/ceiling)'}}
+- {id: 'room:l1_lobby', props: {description: first floor lobby}}
+- {id: 'room:elev_a1_cabin', props: {description: 'footprint of elevator elev_a1 (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_b1_cabin', props: {description: 'footprint of elevator elev_b1 (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_m1_cabin', props: {description: 'footprint of elevator elev_m1 (condition target only, no floor/ceiling)'}}
+- {id: 'room:elev_m2_cabin', props: {description: 'footprint of elevator elev_m2 (condition target only, no floor/ceiling)'}}
+- {id: 'elevator:elev_a'}
+- {id: 'elevator:elev_b'}
+- {id: 'elevator:elev_m'}
+- {id: 'elevator:elev_s0'}
+- {id: 'elevator:elev_s1'}
+- {id: 'elevator:elev_a1'}
+- {id: 'elevator:elev_b1'}
+- {id: 'elevator:elev_m1'}
+- {id: 'elevator:elev_m2'}
+facts:
+- {subject: 'room:l0_lobby', verb: contains, object: 'elevator:elev_a'}
+- {subject: 'room:l0_lobby', verb: contains, object: 'elevator:elev_b'}
+- {subject: 'room:l0_lobby', verb: contains, object: 'elevator:elev_m'}
+- {subject: 'room:l0_lobby', verb: contains, object: 'elevator:elev_s0'}
+- {subject: 'room:annex', verb: contains, object: 'elevator:elev_s1'}
+- {subject: 'room:l1_lobby', verb: contains, object: 'elevator:elev_a1'}
+- {subject: 'room:l1_lobby', verb: contains, object: 'elevator:elev_b1'}
+- {subject: 'room:l1_lobby', verb: contains, object: 'elevator:elev_m1'}
+- {subject: 'room:l1_lobby', verb: contains, object: 'elevator:elev_m2'}
+constraints: []
