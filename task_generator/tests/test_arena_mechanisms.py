@@ -17,10 +17,11 @@ from arena_humansim_msgs.msg import AgentFrame
 from arena_humansim_msgs.msg import Waypoints as WaypointsMsg
 from arena_humansim_msgs.srv import SpawnAgents
 from task_generator.manager.realizer import Realizer
-from task_generator.shared import Door, DynamicObstacle, Pose, Position
+from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.arena_humansim.arena_humansim import _DEFERRED_ID_BASE, ArenaHumanSimulator
 from task_generator.simulators.human.itinerary import ItineraryDriver, Phase, Stop
+from task_generator.simulators.human.utils import KnownObstacles, ObstacleLayer
 
 ENV_X, ENV_Y = 100.0, 50.0
 
@@ -359,3 +360,65 @@ def test_doors_become_world_objects() -> None:
     assert list(sim._remove_world_objects_client.requests[1].object_ids) == ["door_a"]
     _run(sim._remove_doors_impl([door.name]))
     assert len(sim._remove_world_objects_client.requests) == 2, "an empty id list would remove every world object"
+
+
+class _Simulator:
+    async def obstacle_delete(self, obstacles: typing.Sequence[object]) -> list[bool]:
+        return [True] * len(obstacles)
+
+    async def pedestrian_delete(self, pedestrians: typing.Sequence[object]) -> list[bool]:
+        return [True] * len(pedestrians)
+
+
+def _removal_adapter(*obstacles: Obstacle) -> ArenaHumanSimulator:
+    sim = _adapter()
+    sim._remove_obstacles_client = _Client()
+    sim._known_obstacles = KnownObstacles()
+    sim._known_walls = KnownObstacles()
+    sim._known_doors = KnownObstacles()
+    sim._ped_bus_index = {}
+    sim._simulator = _Simulator()
+    for obstacle in obstacles:
+        sim._known_obstacles.create_or_get(name=obstacle.name, obstacle=obstacle, layer=ObstacleLayer.UNUSED)
+    return sim
+
+
+def _chair(name: str) -> Obstacle:
+    chair = Obstacle(name=name, model="chair", pose=Pose(Position(1.0, 1.0)))
+    chair.sim_path = f"env_0/{name}"
+    return chair
+
+
+def test_removed_static_obstacles_leave_the_engine_by_sim_path() -> None:
+    sim = _removal_adapter(_chair("chair_1"), _chair("chair_2"))
+    _run(sim.remove_obstacles(ObstacleLayer.UNUSED))
+    (removed,) = sim._remove_obstacles_client.requests
+    assert list(removed.names) == ["env_0/chair_1", "env_0/chair_2"]
+    (gone,) = sim._remove_world_objects_client.requests
+    assert list(gone.object_ids) == ["env_0/chair_1", "env_0/chair_2"]
+    assert dict(sim._known_obstacles.items()) == {}
+
+
+def test_unused_static_obstacles_leave_the_engine_by_sim_path() -> None:
+    sim = _removal_adapter(_chair("chair_1"))
+    sim._hearing = None
+    sim._possession = types.SimpleNamespace(clear=lambda: None)
+    sim._warned_unknown = set()
+    sim._warned_bad_joints = set()
+
+    async def no_pedestrians() -> bool:
+        return True
+
+    sim._remove_pedestrians_impl = no_pedestrians
+    _run(sim.unuse_obstacles())
+    (removed,) = sim._remove_obstacles_client.requests
+    assert list(removed.names) == ["env_0/chair_1"]
+    (gone,) = sim._remove_world_objects_client.requests
+    assert list(gone.object_ids) == ["env_0/chair_1"]
+
+
+def test_removing_no_static_obstacle_sends_no_filter() -> None:
+    sim = _removal_adapter()
+    _run(sim.remove_obstacles(ObstacleLayer.UNUSED))
+    assert sim._remove_obstacles_client.requests == []
+    assert sim._remove_world_objects_client.requests == []

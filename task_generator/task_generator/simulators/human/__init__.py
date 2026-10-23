@@ -820,15 +820,15 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if self._hearing is not None:
             self._hearing.clear()
 
-        obstacle_names = [name for name, known in self._known_obstacles.items() if not isinstance(known.obstacle, DynamicObstacle) and known.layer == ObstacleLayer.UNUSED]
+        unused = {name: known.obstacle for name, known in self._known_obstacles.items() if not isinstance(known.obstacle, DynamicObstacle) and known.layer == ObstacleLayer.UNUSED}
 
         await asyncio.gather(
             self._remove_pedestrians_impl(),
-            self._remove_obstacles_impl(obstacle_names),
+            self._remove_obstacles_impl(list(unused.values())),
         )
         self._ped_bus_index.clear()
 
-        for name in obstacle_names:
+        for name in unused:
             self._known_obstacles.forget(name)
 
         for obstacle in self._known_obstacles.values():
@@ -993,9 +993,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._ped_bus_index.pop(obstacle.name, None)
                 self._ped_bus_index.pop(obstacle.sim_path, None)
 
-        static_names = [o.name for o in static]
-        if static_names:
-            futures.append(self._remove_obstacles_impl(static_names))
+        if static:
+            futures.append(self._remove_obstacles_impl(static))
         futures.append(self._simulator.obstacle_delete(static))
         futures.append(self._simulator.pedestrian_delete(dynamic))
         await asyncio.gather(*futures)
@@ -1159,7 +1158,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     @abc.abstractmethod
     async def _remove_obstacles_impl(
         self,
-        names: Sequence[str],
+        obstacles: Sequence[Obstacle],
     ) -> bool: ...
 
     @abc.abstractmethod

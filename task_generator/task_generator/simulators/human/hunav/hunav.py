@@ -503,15 +503,15 @@ class HunavHumanSimulator(BaseHumanSimulator if typing.TYPE_CHECKING else NoopHu
         self._logger.debug(f"Removed {len(names)} wall segments, {len(self._wall_segments)} remaining")
         return True
 
-    async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
+    async def _remove_obstacles_impl(self, obstacles: Sequence[Obstacle]) -> bool:
         """Remove obstacle-derived wall segments by obstacle name."""
-        for name in names:
-            keys = [k for k in self._obstacle_wall_segments if k.startswith(f"{name}_wall_")]
+        for obstacle in obstacles:
+            keys = [k for k in self._obstacle_wall_segments if k.startswith(f"{obstacle.name}_wall_")]
             for k in keys:
                 self._obstacle_wall_segments.pop(k, None)
                 self._obstacle_wall_points.pop(k, None)
         self._rebuild_wall_cache()
-        self._logger.debug(f"Removed obstacle walls for {len(names)} obstacles, {len(self._wall_segments)} wall segments remaining")
+        self._logger.debug(f"Removed obstacle walls for {len(obstacles)} obstacles, {len(self._wall_segments)} wall segments remaining")
         return True
 
     async def _remove_pedestrians_impl(self) -> bool:

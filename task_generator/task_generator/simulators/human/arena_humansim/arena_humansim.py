@@ -1474,11 +1474,11 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"SetElevatorDoors failed: {response.message}")
         return response.success
 
-    async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
-        """Remove static obstacles (and their matching world objects) from arena_humansim."""
-        if not names:
+    async def _remove_obstacles_impl(self, obstacles: Sequence[Obstacle]) -> bool:
+        """Remove static obstacles and their world objects from arena_humansim, which keys both by sim_path."""
+        if not obstacles:
             return True
-        names_list = list(names)
+        names_list = [obstacle.sim_path for obstacle in obstacles]
         ok = True
         try:
             request = RemoveObstacles.Request()

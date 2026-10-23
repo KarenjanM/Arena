@@ -130,9 +130,9 @@ class DummyHumanSimulator(NoopHumanSimulator):
         self._publish_static_objects()
         return obstacles
 
-    async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
-        for name in names:
-            self._static_obstacles.pop(name, None)
+    async def _remove_obstacles_impl(self, obstacles: Sequence[Obstacle]) -> bool:
+        for obstacle in obstacles:
+            self._static_obstacles.pop(obstacle.name, None)
         self._publish_static_objects()
         return True
 

@@ -63,7 +63,7 @@ Every subclass must implement:
 | --- | --- |
 | `_spawn_obstacles_impl(obstacles)` | human-sim side: register or prepare static obstacles |
 | `_spawn_dynamic_obstacles_impl(obstacles)` | human-sim side: register pedestrian agents |
-| `_remove_obstacles_impl()` | human-sim side: signal removal of current episode's obstacles |
+| `_remove_obstacles_impl(obstacles)` | human-sim side: remove static obstacles, keyed the way the backend spawned them (arena_humansim by `sim_path`, hunav and dummy by `name`) |
 | `_spawn_walls_impl(walls)` | human-sim side: ingest wall geometry |
 | `_spawn_doors_impl(doors)` | human-sim side: ingest door geometry |
 | `_spawn_robot_impl(robots)` | human-sim side: register robots |
