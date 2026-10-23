@@ -74,7 +74,7 @@ def claims_of(pose: Pose, slots: Sequence[AffordanceSlot], seated: Iterable[tupl
     claims = AffordanceClaims(list(slots))
     for xy in seated:
         local = _local(pose, xy)
-        slot = min(slots, key=lambda candidate: (candidate.distance(local), math.dist(candidate.center, local)), default=None)
+        slot = min(slots, key=lambda candidate: candidate.rank(local), default=None)
         if slot is not None and slot.distance(local) <= _SEAT_MATCH and claims.blocking(slot) is None:
             claims.claim(slot)
     return claims

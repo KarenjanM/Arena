@@ -136,6 +136,10 @@ class AffordanceSlot:
         x, y = xy
         return math.hypot(max(x_min - x, 0.0, x - x_max), max(y_min - y, 0.0, y - y_max))
 
+    def rank(self, xy: tuple[float, float]) -> tuple[float, float]:
+        """Sort key toward an object-frame point: footprint distance, ties going to the nearer box center."""
+        return (self.distance(xy), math.dist(self.center, xy))
+
 
 def placed_slots(affordances: Affordances | Mapping[str, Iterable[typing.Any]]) -> list[AffordanceSlot]:
     """Placed slots of an annotation's affordances block, every kind."""
@@ -179,7 +183,7 @@ class AffordanceClaims:
 
     def closest(self, xy: tuple[float, float], kind: AffordanceKind | str | None = None) -> AffordanceSlot | None:
         """Available slot nearest to an object-frame point, ties going to the nearer box center."""
-        return min(self.available(kind), key=lambda slot: (slot.distance(xy), math.dist(slot.center, xy)), default=None)
+        return min(self.available(kind), key=lambda slot: slot.rank(xy), default=None)
 
     def claim(self, slot: AffordanceSlot) -> AffordanceSlot:
         if (blocker := self.blocking(slot)) is not None:

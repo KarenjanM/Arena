@@ -265,7 +265,7 @@ keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 | Key | Meaning |
 | --- | --- |
 | `type` | Object type string, matched against a behavior-tree step/action `target:` (falls back to the model's `annotation.yaml` name/desc if omitted). |
-| `capacity` | Max simultaneous occupants. Default `1`. |
+| `capacity` | Queue length at which a needs-driven agent looking for an object of this type passes this one over. Default `1`. |
 | `satisfies` | `{need: amount}` applied to an agent that completes an interaction here, same shape as an agent-type step's `satisfies:`. |
 | `interaction_radius` | Overrides the interaction kind's default approach radius for this object. |
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
@@ -390,7 +390,7 @@ World objects go to the engine with what the model annotation and the scenario e
 `hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its
 placed `affordances.sit` slots, each at its bbox center facing one of its yaws, drawn per object from the
 episode RNG. A scenario entry's `seats` (object-local poses in the `pose` grammar without zone names) override
-them, and an empty list clears them. Without a `capacity`, an object takes as many agents as the scenario's
+them, and an empty list clears them. Without a `capacity`, it is the count of the scenario's
 `seats`, else the most of its sit slots that can be occupied at once with no two overlapping, and at least one. Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
 ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
 the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its

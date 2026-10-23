@@ -7,13 +7,19 @@ import pytest
 from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
 from arena_humansim_msgs.msg import InteractionFrame
 
+from arena_simulation_setup.utils.affordance import placed_slots
+
 from task_generator.simulators.human.arena_humansim.arena_humansim import reach_radius, seat_capacity, seated_agents
 
-SOFA = [
-    {"bbox": [[-0.46, 0.48], [0.03, 0.72], [0.0, 0.47]], "yaw": "-y"},
-    {"bbox": [[-0.98, -0.48], [-0.50, 0.03], [0.0, 0.47]], "yaw": "+x"},
-    {"bbox": [[-1.30, -0.56], [-1.13, -0.26], [0.0, 0.47]], "yaw": ["+x", "-y"]},
-]
+SOFA = placed_slots(
+    {
+        "sit": [
+            {"bbox": [[-0.46, 0.48], [0.03, 0.72], [0.0, 0.47]], "yaw": "-y"},
+            {"bbox": [[-0.98, -0.48], [-0.50, 0.03], [0.0, 0.47]], "yaw": "+x"},
+            {"bbox": [[-1.30, -0.56], [-1.13, -0.26], [0.0, 0.47]], "yaw": ["+x", "-y"]},
+        ]
+    }
+)
 
 
 def test_capacity_counts_sit_slots_that_can_be_taken_together():
@@ -26,9 +32,8 @@ def test_capacity_prefers_the_scenario_capacity_then_its_seats():
     assert seat_capacity({"seats": []}, SOFA) == 1
 
 
-def test_capacity_is_one_without_usable_slots():
+def test_capacity_is_one_without_slots():
     assert seat_capacity({}, []) == 1
-    assert seat_capacity({}, [{"bbox": [[0.5, 0.0], [0.0, 0.5]], "yaw": 0}]) == 1
 
 
 def test_reach_radius_covers_the_footprint_from_beside_it():

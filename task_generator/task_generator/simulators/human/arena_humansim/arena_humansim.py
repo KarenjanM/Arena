@@ -90,7 +90,7 @@ from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.tree.World.model import elevator_doorway_pose
-from arena_simulation_setup.utils.affordance import AffordanceKind, max_occupancy, placed_slots
+from arena_simulation_setup.utils.affordance import AffordanceKind, AffordanceSlot, max_occupancy, placed_slots
 from geometry_msgs.msg import (
     Point,
     Point32,
@@ -123,16 +123,13 @@ from task_generator.simulators.human import PED_RADIUS, BaseHumanSimulator, Huma
 from .agent import ArenaHumanDynamicObstacle, agent_type_def, agent_type_stimuli, flow_agent_template, path_agent_type_name
 
 
-def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[Mapping[str, typing.Any]]) -> int:
+def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[AffordanceSlot]) -> int:
     """Agents an object takes: the scenario's capacity or seat count, else the most of its sit slots occupiable at once, at least 1."""
     if "capacity" in humansim:
         return int(humansim["capacity"])
     if "seats" in humansim:
         return max(1, len(humansim["seats"]))
-    try:
-        return max(1, max_occupancy(placed_slots({AffordanceKind.SIT: slots})))
-    except ValueError:
-        return 1
+    return max(1, max_occupancy(slots))
 
 
 def seated_agents(frame: InteractionFrameMsg) -> dict[str, list[int]]:
@@ -413,7 +410,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return msg
 
     def _interactions_callback(self, msg: InteractionFrameMsg) -> None:
-        seated = seated_agents(msg)
+        self.node.event_loop.call_soon_threadsafe(self._apply_seated, seated_agents(msg))
+
+    def _apply_seated(self, seated: dict[str, list[int]]) -> None:
         if seated != self._seated_ids:
             self._seated_ids = seated
             self._notify_seated()
@@ -763,7 +762,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         x, y = self._to_engine(placed.position.x, placed.position.y)
         return Pose2DMsg(x=x, y=y, theta=placed.orientation.to_yaw())
 
-    def _seat_poses(self, obstacle: Obstacle, slots: Sequence[Mapping[str, typing.Any]]) -> list[Pose2DMsg]:
+    def _seat_poses(self, obstacle: Obstacle, slots: Sequence[AffordanceSlot]) -> list[Pose2DMsg]:
         """Scenario seats override the annotation's sit slots, including an empty list. A bad seat costs the seats, not the object."""
         humansim = obstacle.humansim
         try:
@@ -771,7 +770,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 seats = [Pose.parse(seat) for seat in humansim["seats"]]
             else:
                 rng = self.node.conf.General.RNG.stream("humansim", "seats", obstacle.sim_path)
-                seats = [slot.pose(rng) for slot in placed_slots({AffordanceKind.SIT: slots})]
+                seats = [slot.pose(rng) for slot in slots]
             return [self._seat_pose(obstacle.pose, seat) for seat in seats]
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             self._logger.warning(f"Ignoring seats of '{obstacle.sim_path}': {e}")
@@ -1077,14 +1076,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 pose = self._engine_pose(obstacle.pose)
 
                 obstacle_type = ""
-                slots: list = []
+                raw_slots: list = []
                 bounding_box = None
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
                         annotation: dict = yaml.safe_load(f.read())
-                    slots = list((annotation.get("affordances") or {}).get("sit") or [])
+                    raw_slots = list((annotation.get("affordances") or {}).get("sit") or [])
                     bounding_box = annotation["bounding_box"]
                     (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounding_box
                     obstacle_type = annotation.get("name", "") or annotation.get("desc", "")
@@ -1103,6 +1102,11 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 except Exception as e:
                     self._logger.warning(f"Failed to build obstacle bbox for '{obstacle.sim_path}': {e}")
 
+                try:
+                    slots = placed_slots({AffordanceKind.SIT: raw_slots})
+                except ValueError as e:
+                    self._logger.warning(f"Ignoring the sit slots of '{obstacle.sim_path}': {e}")
+                    slots = []
                 humansim = obstacle.humansim
                 info = WorldObjectInfoMsg()
                 info.object_id = obstacle.sim_path
@@ -1398,6 +1402,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._curr_agent_states = None
             self._agent_gestures = {}
             self._agent_types = {}
+            self._apply_seated({})
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
             await self._publish_interpolated()
