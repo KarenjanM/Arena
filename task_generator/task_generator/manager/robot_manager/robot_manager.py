@@ -83,6 +83,18 @@ def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevel
     ]
 
 
+def footprint_radius(config: RobotView) -> float:
+    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint."""
+    mobile = config.mobile
+    if mobile is None:
+        raise ValueError(f"robot model {config.name!r} has no mobile cap, so no footprint radius")
+    if mobile.radius is not None:
+        return mobile.radius
+    if mobile.footprint:
+        return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
+    raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
+
+
 class RobotManager(NodeInterface):
     """Manages the goal and start position of a robot for all task modes."""
 
@@ -188,7 +200,7 @@ class RobotManager(NodeInterface):
 
         self._start_pos = Pose()
         self._goal_pos = Pose()
-        self._robot_radius = 0.25
+        self._robot_radius = footprint_radius(self._config)
 
         self._robot = robot
         self._robot.sim_path = self._environment_manager.realize(robot.name)
@@ -293,11 +305,6 @@ class RobotManager(NodeInterface):
         """Bring up the robot's navstack. Split from set_up_robot so callers can sequence the
         LaunchService run after spawn_world_obstacles (which it would otherwise starve)."""
         await self._launch_robot(node_names)
-
-        self._robot_radius = self.node.rosparam[float].get(
-            'robot_radius',
-            self._robot_radius,
-        )
 
     @property
     def radius(self) -> float:
