@@ -189,6 +189,8 @@ async def episode_reset(
         return last if last.outcome_state == running or last.outcome_state in _terminal() else None
 
     msg = await _until(started, timeout_s, f"no episode after {base} started", "episode_wait until=running keeps waiting, a world swap can take longer")
+    if msg.outcome_state == _state("fatal"):
+        raise ToolError(f"the reset failed: {msg.outcome_info}", hint=f"worlds_find {msg.world} shows what each resolver answers" if world else "episode_history shows the failed record")
     return record(msg)
 
 

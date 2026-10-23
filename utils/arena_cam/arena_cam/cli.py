@@ -191,13 +191,16 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as e:
         raise SystemExit(str(e)) from None
     if args.record is None:
-        cam.play()
+        if not cam.play():
+            raise SystemExit(1)
         return
     out = args.record or default_name(os.path.splitext(os.path.basename(args.name))[0] if is_path else args.name)
     try:
-        cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep)
+        ran = cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep)
     except FileNotFoundError as e:
         raise SystemExit(str(e)) from e
+    if not ran:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

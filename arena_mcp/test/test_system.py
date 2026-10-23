@@ -5,21 +5,15 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
 
 import pytest
 
 rclpy = pytest.importorskip("rclpy")
 
-from rclpy.executors import SingleThreadedExecutor
-from std_srvs.srv import Trigger
-
-from arena_mcp.core import JOBS, ROS, proc
+from arena_mcp.core import JOBS, proc
 from arena_mcp.core.errors import ToolError
 from arena_mcp.domains import system
-
-GIB = 2**20
 
 
 @pytest.fixture(autouse=True)
@@ -31,32 +25,6 @@ def isolated_data_dir(tmp_path):
         del os.environ["ARENA_DATA_DIR"]
     else:
         os.environ["ARENA_DATA_DIR"] = previous
-
-
-def write_meminfo(path, available_gib, swap_total_gib=8.0, swap_free_gib=8.0):
-    path.write_text(f"MemTotal:       {64 * GIB} kB\nMemFree:        {GIB} kB\nMemAvailable:   {int(available_gib * GIB)} kB\nSwapTotal:      {int(swap_total_gib * GIB)} kB\nSwapFree:       {int(swap_free_gib * GIB)} kB\nHugePages_Total:       0\n")
-    return path
-
-
-def test_meminfo_reads_the_live_proc_file():
-    info = system.meminfo()
-    assert info["MemAvailable"] > 0
-    assert "SwapTotal" in info
-
-
-def test_memory_guard_floors_per_sim_and_swap(tmp_path):
-    roomy = system.meminfo(write_meminfo(tmp_path / "roomy", 16.0))
-    assert system.memory_guard("isaac", roomy)["required_gib"] == 15.0
-    assert system.memory_guard("gazebo", roomy)["available_gib"] == 16.0
-    middle = system.meminfo(write_meminfo(tmp_path / "middle", 8.0))
-    assert system.memory_guard("dummy", middle)["required_gib"] == 6.0
-    with pytest.raises(ToolError, match="needs 15 GiB"):
-        system.memory_guard("isaac", middle)
-    with pytest.raises(ToolError, match="needs 6 GiB"):
-        system.memory_guard("flatsim", system.meminfo(write_meminfo(tmp_path / "short", 5.5)))
-    with pytest.raises(ToolError, match="swap in use"):
-        system.memory_guard("dummy", system.meminfo(write_meminfo(tmp_path / "swapping", 10.0, swap_free_gib=6.5)))
-    assert system.memory_guard("dummy", system.meminfo(write_meminfo(tmp_path / "shared_box", 80.0, swap_total_gib=16.0, swap_free_gib=5.0)))["swap_used_gib"] == 11.0
 
 
 def test_launch_tokens_never_start_rviz_and_refuse_owned_keys():
@@ -72,39 +40,19 @@ def test_launch_tokens_never_start_rviz_and_refuse_owned_keys():
         system.launch_tokens("dummy", env_n=0, world=None, robot=None, args=None, headless=True)
 
 
-def _registry_peer():
-    node = rclpy.create_node("arena_mcp_system_peer", namespace="/arena")
-    node.create_service(Trigger, "/arena/register_env", lambda request, response: response)
-    executor = SingleThreadedExecutor()
-    executor.add_node(node)
-    threading.Thread(target=executor.spin, daemon=True).start()
-    return node, executor
-
-
-def test_launch_is_refused_while_a_runtime_is_up_and_unknown_sims_are_listed():
+def test_launch_refuses_unknown_sims_listing_the_registered_ones():
     async def scenario():
-        await ROS.node()
-        try:
-            assert not await system.runtime_up(discovery_s=0.5)
-            with pytest.raises(ToolError) as unknown:
-                await system.system_launch("no_such_sim")
-            node, executor = _registry_peer()
-            try:
-                assert await system.runtime_up(discovery_s=10.0)
-                with pytest.raises(ToolError, match="already up") as refused:
-                    await system.system_launch("dummy")
-                with pytest.raises(ToolError, match="already up"):
-                    await system.system_runtime("dummy")
-            finally:
-                executor.shutdown()
-                node.destroy_node()
-        finally:
-            await ROS.shutdown()
-        return unknown.value, refused.value
+        with pytest.raises(ToolError) as launch:
+            await system.system_launch("no_such_sim")
+        with pytest.raises(ToolError) as runtime:
+            await system.system_runtime("no_such_sim")
+        return launch.value, runtime.value
 
-    unknown, refused = asyncio.run(scenario())
-    assert "dummy" in unknown.hint and "flatsim" in unknown.hint
-    assert "attach=True" in refused.hint
+    launch, runtime = asyncio.run(scenario())
+    for refused in (launch, runtime):
+        assert "unknown sim 'no_such_sim'" in str(refused)
+        assert "dummy" in refused.hint and "flatsim" in refused.hint
+    assert JOBS.list(kind="launch") == [] and JOBS.list(kind="runtime") == []
 
 
 GRACEFUL = """
@@ -151,18 +99,22 @@ def test_stop_sigints_the_launch_group_and_waits_for_the_whole_tree():
     assert stopped == {"job": job.id, "signal": "SIGINT", "stopped": True, "survivors": []}
 
 
-def test_stop_reports_orphans_and_escalates_on_the_next_call():
+def test_stop_reports_orphans_keeps_them_in_stacks_and_escalates_on_the_next_call():
     async def scenario():
         job, child = await _started("launch", ORPHANING)
         first = await system.system_stop(job.id, grace_s=2)
-        second = await system.system_stop(job.id, grace_s=10)
-        return child, first, second
+        await JOBS.wait(job.id, 10)
+        stacks = system.system_stacks()
+        second = await system.system_stop(grace_s=10)
+        return job, child, first, stacks, second, system.system_stacks()
 
-    child, first, second = asyncio.run(scenario())
+    job, child, first, stacks, second, after = asyncio.run(scenario())
     assert first["signal"] == "SIGINT" and not first["stopped"]
     assert [entry["pid"] for entry in first["survivors"]] == [child]
     assert "SIG_IGN" in first["survivors"][0]["cmdline"]
-    assert second["signal"] == "SIGTERM" and second["stopped"]
+    assert [(entry["id"], entry["state"], entry["processes"]) for entry in stacks["jobs"]] == [(job.id, "failed", 1)]
+    assert second["job"] == job.id and second["signal"] == "SIGTERM" and second["stopped"]
+    assert after["jobs"] == []
 
 
 def test_stop_without_a_launch_job_and_on_a_non_launch_job():

@@ -34,7 +34,9 @@ class NoneArmAdapter(Adapter):
         assert isinstance(phase, ReachPhase), f"NoneArmAdapter only accepts REACH_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
         goal = ReachPose.Goal()
         if phase.target is not None:
-            goal.target = phase.target
+            goal.target.header.frame_id = phase.frame or robot.base_frame
+            goal.target.header.stamp = robot.node.sim_time.to_msg()
+            goal.target.pose = phase.target.to_msg()
         if phase.named_target is not None:
             goal.named_target = phase.named_target
         goal.position_tolerance = float(phase.position_tolerance or 0.0)

@@ -131,6 +131,17 @@ class Rig:
         return self.loop.run_until_complete(coro)
 
 
+@pytest.fixture(autouse=True)
+def isolated_data_dir(tmp_path):
+    previous = os.environ.get("ARENA_DATA_DIR")
+    os.environ["ARENA_DATA_DIR"] = str(tmp_path / "data")
+    yield tmp_path
+    if previous is None:
+        del os.environ["ARENA_DATA_DIR"]
+    else:
+        os.environ["ARENA_DATA_DIR"] = previous
+
+
 @pytest.fixture(scope="module")
 def rig():
     from rclpy.executors import MultiThreadedExecutor
@@ -250,6 +261,8 @@ def test_record_films_a_lockstep_take_through_the_cam_cli(rig: Rig, tmp_path):
     async def scenario():
         with pytest.raises(ToolError, match="cannot play 'no_such_shot'"):
             await view.view_record("no_such_shot")
+        with pytest.raises(ToolError, match="no rviz viewport"):
+            await view.view_record("hold", {"duration": 0.2}, surface="rviz")
         captures = len(rig.arena.requests["capture"])
         job = await view.view_record("hold", {"duration": 0.2}, out=str(out))
         done = await JOBS.wait(job["id"], 120.0)

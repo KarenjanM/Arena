@@ -30,7 +30,7 @@ SIM = "/arena"
 HOLD = "/arena/sim_lifecycle/hold"
 STEP = "/arena/sim_lifecycle/step"
 LOCKSTEP = "/arena/state/lockstep"
-NO_VIEWPORT = "MuJoCo and Isaac serve /arena/viewport, Gazebo only while its GUI runs (launch without headless:=true), an env's rviz camera needs arena viz, view_available lists what is up"
+NO_VIEWPORT = "MuJoCo serves /arena/viewport, Isaac and Gazebo only while their GUI runs (launch without headless:=true), an env's rviz camera needs arena viz, view_available lists what is up"
 MAX_FRAMES = 8
 FPS = 30.0
 CHASE_EYE = (-3.0, 0.0, 2.0)
@@ -76,15 +76,21 @@ class _Reply(Protocol):
 _last: dict[str, _Shot] = {}
 
 
-async def _endpoint(surface: Surface, env_id: int | None) -> _Endpoint:
+async def _env_refs() -> dict[int, tuple[float, float]]:
     from arena_runtime_msgs.msg import EnvRegistry
 
     from arena_cam import surfaces
 
     try:
-        refs = surfaces.env_refs(await ROS.latest(EnvRegistry, surfaces.ENVS_TOPIC, qos=LATCHED, timeout=1.0))
+        return surfaces.env_refs(await ROS.latest(EnvRegistry, surfaces.ENVS_TOPIC, qos=LATCHED, timeout=1.0))
     except ToolError:
-        refs = {}
+        return {}
+
+
+async def _endpoint(surface: Surface, env_id: int | None) -> _Endpoint:
+    from arena_cam import surfaces
+
+    refs = await _env_refs()
     if env_id is not None and env_id not in refs:
         raise ToolError(f"no env {env_id}", hint=f"env_ids: {sorted(refs)}" if refs else "no Arena runtime is up")
     env = env_id if env_id is not None else next(iter(refs)) if len(refs) == 1 else None
@@ -309,6 +315,7 @@ async def view_record(
     from arena_cam import Camera, TargetSelection, load_shot
     from arena_cam.cli import _parse_params
     from arena_cam.record import default_name, resolve_path
+    from arena_cam.surfaces import find_targets
 
     tokens = [f"{key}={value}" for key, value in (params or {}).items()]
     is_path = name.endswith((".yaml", ".yml")) or "/" in name or os.path.exists(name)
@@ -321,6 +328,8 @@ async def view_record(
     except (ValueError, OSError, SystemExit) as exc:
         verbs, shots = _catalog()
         raise ToolError(f"arena cam cannot play {name!r}: {exc}", hint=f"verbs: {', '.join(verbs)}, shots: {', '.join(shots) or 'none'}") from exc
+    if not find_targets((await ROS.graph())["services"], targets, await _env_refs()):
+        raise ToolError(f"no {surface} viewport is up", hint=NO_VIEWPORT)
     target = out or default_name(Path(name).stem)
     path = resolve_path(target)
     args = ["cam", name, *tokens, "--record", target, "--fps", f"{FPS:g}", "--lockstep"]

@@ -42,7 +42,7 @@ LISTING_LIMIT = 500
 
 
 def _json(*args: str, check: bool = True) -> object:
-    done = cli.run(*args, check=check)
+    done = cli.run(*args, check=check, clip=None)
     try:
         return json.loads(done["stdout"])
     except json.JSONDecodeError as exc:

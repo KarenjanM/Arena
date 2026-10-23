@@ -38,7 +38,7 @@ from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.shared.judge import Sample, WallGrid, atom_holds, zone_polygons
-from arena_simulation_setup.shared.task import TaskRequest
+from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
@@ -1810,6 +1810,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = "task generator not initialized"
             return response
         try:
+            await arena_simulation_setup.tree.assets.Object.ObjectIdentifier.parse(request.model).resolve_path()
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.STATIC, request.model, pose)
             assert isinstance(obstacle, Obstacle)
@@ -1832,6 +1833,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = "task generator not initialized"
             return response
         try:
+            await arena_simulation_setup.tree.assets.Human.HumanIdentifier.parse(request.model).resolve_path()
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.DYNAMIC, request.model, pose)
             self._compromise(f"dynamic {request.model} spawned by hand")
@@ -1935,6 +1937,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             return response
         try:
             task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
+            if request.frame_id:
+                if not _is_map_frame(request.frame_id):
+                    raise ValueError(f"frame {request.frame_id!r} is neither the env map frame nor empty for scenario coordinates")
+                self._ezilear_phases(task.phases)
             async with self._reset_lock:
                 first = len(manager.runner.phases)
                 await manager.submit_task(task)
@@ -1944,6 +1950,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.success = False
             response.error_msg = str(e)
         return response
+
+    def _ezilear_phases(self, phases: Sequence[TaskPhase]) -> None:
+        """Shift map-frame goto poses into scenario coordinates in place."""
+        for phase in phases:
+            if isinstance(phase, GoToPhase) and phase.pose is not None:
+                phase.pose = self._realizer.ezilear(phase.pose)
+            elif isinstance(phase, LoopPhase):
+                self._ezilear_phases(phase.phases)
 
     async def _cb_require_map(
         self,

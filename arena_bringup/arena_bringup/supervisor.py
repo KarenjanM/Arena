@@ -27,6 +27,8 @@ VIZ_MANIFEST_SUFFIX = '/state/viz_manifest'
 GRACE_INT_S = float(os.environ.get('ARENA_SHUTDOWN_TIMEOUT', '30'))
 GRACE_TERM_S = 3.0
 GRACE_KILL_S = 5.0
+RUNTIME_DISCOVERY_QUIET_S = 3.0
+RUNTIME_DISCOVERY_MAX_S = 15.0
 _DEPRECATED_KNOBS = {'env_n': 'env.n'}
 
 
@@ -101,6 +103,21 @@ class Supervisor:
 
     def has_service(self, service: str) -> bool:
         return any(name == service for name, _ in self._node.get_service_names_and_types())
+
+    def discovers(self, service: str, quiet_s: float, within_s: float) -> bool:
+        """Whether service shows up before the ROS graph stops growing for quiet_s, waiting at most within_s."""
+        start = changed = time.monotonic()
+        count = -1
+        while True:
+            names = self._node.get_service_names_and_types()
+            if any(name == service for name, _ in names):
+                return True
+            now = time.monotonic()
+            if len(names) != count:
+                count, changed = len(names), now
+            if now - changed >= quiet_s or now - start >= within_s:
+                return False
+            time.sleep(0.1)
 
     def viz_namespaces(self) -> set[str]:
         return {name[: -len(VIZ_MANIFEST_SUFFIX)] for name, _ in self._node.get_topic_names_and_types() if name.endswith(VIZ_MANIFEST_SUFFIX)}
@@ -223,7 +240,7 @@ def preload_world(args: argparse.Namespace) -> None:
 
 
 def run(args: argparse.Namespace, sup: Supervisor) -> int:
-    if sup.has_service(REGISTER_ENV_SERVICE):
+    if sup.discovers(REGISTER_ENV_SERVICE, RUNTIME_DISCOVERY_QUIET_S, RUNTIME_DISCOVERY_MAX_S):
         if args.sim is not None:
             existing = sup.get_param_string('/arena', 'sim')
             if existing and existing != args.sim:

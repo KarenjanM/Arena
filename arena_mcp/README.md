@@ -64,7 +64,7 @@ Inside the container, `arena mcp` lists the installed domains, served or unavail
 
 The `system` domain runs the stack lifecycle through the arena CLI: `system_launch` (`arena launch`, envs and runtime), `system_runtime` (`arena runtime`), builds, rebuilds, tests, `arena deps` and `arena preload`, each as a process job that outlives the server.
 
-- A launch never starts rviz and is headless unless asked. It is refused with less than 6 GiB `MemAvailable` (15 GiB for isaac), or less than twice that while more than 1 GiB of swap is in use, while a runtime answers on `/arena/register_env` (unless `attach` adds envs to it the way `arena launch` does), and while another launch job of this server is still bringing its runtime up. The sim name is checked against the simulator registry.
+- A launch never starts rviz and is headless unless asked. Like `arena launch`, it adds its envs to a runtime that is already up. The sim name is checked against the simulator registry.
 - `system_stop` sends SIGINT to the launch job's process group and waits for its whole process tree, recorded before the signal. Survivors come back with their command lines, and each further call escalates: the `arena launch` supervisor turns a repeated SIGINT into SIGTERM and then SIGKILL for its children, and processes it left behind get SIGTERM, then SIGKILL.
 - `system_stacks` lists the running launch jobs and the outermost `ros2 launch`, `ros2 run` and supervisor processes this server did not start.
 - `system_logs` tails a job log, or the newest ROS log of a node under `$ROS_LOG_DIR` (else `$ROS_HOME/log`, else `~/.ros/log`), found by file name or by the node's logger in the file.

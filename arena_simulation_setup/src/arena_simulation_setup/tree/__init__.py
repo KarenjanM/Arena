@@ -205,7 +205,9 @@ for path, _, files in os.walk(root):
 """
 
     def _identify(self, relpath: Path, files: Iterable[str]) -> tuple[IdentifierT | None, list[IdentifierT]]:
-        """The directory itself as an asset, else the assets among the files it holds."""
+        """The directory itself as an asset, else the assets among the files it holds, hidden entries never."""
+        if any(part.startswith('.') for part in relpath.parts):
+            return None, []
         try:
             return self._IdentifierT.from_relpath(relpath), []
         except Exception:
@@ -213,7 +215,7 @@ for path, _, files in os.walk(root):
 
         found: list[IdentifierT] = []
         for file in files:
-            if file.lower() == 'readme.md':
+            if file.lower() == 'readme.md' or file.startswith('.'):
                 continue
             try:
                 found.append(self._IdentifierT.from_relpath(relpath / file))

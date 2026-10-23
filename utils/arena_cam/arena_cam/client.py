@@ -180,9 +180,10 @@ class CamNode(ArenaMixinNode):
         self._run_paused = False
         self._follower = False
         self._beat_pub = None
+        self.ran = False
 
     async def setup(self) -> None:
-        await self.take()
+        self.ran = await self.take()
         rclpy.try_shutdown()
 
     async def take(self) -> bool:

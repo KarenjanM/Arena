@@ -1,6 +1,7 @@
 # Submit a task to one robot, appended to the episode's phases.
 string robot              # robot name as in state/robots
 string task_yaml          # phases list or {phases, conditions}, scenario format
+string frame_id           # goto frame: map as rviz goals, empty = scenario
 ---
 bool success
 string error_msg          # empty on success

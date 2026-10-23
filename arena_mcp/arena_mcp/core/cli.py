@@ -32,13 +32,13 @@ def _env() -> dict[str, str]:
     return {**os.environ, "PYTHONPATH": f"{meta}:{path}" if path else meta}
 
 
-def run(*args: str, timeout: float = 600.0, check: bool = True, cwd: str | Path | None = None) -> dict[str, Any]:
-    """Run an arena CLI verb to completion and return its exit code and output."""
+def run(*args: str, timeout: float = 600.0, check: bool = True, cwd: str | Path | None = None, clip: int | None = 20000) -> dict[str, Any]:
+    """Run an arena CLI verb to completion and return its exit code and output, each stream cut to its last clip characters."""
     try:
         done = subprocess.run(argv(*args), capture_output=True, text=True, timeout=timeout, env=_env(), cwd=cwd or arena_dir().parent.parent, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"arena {' '.join(args)} did not finish within {timeout:.0f}s", hint="long verbs run as jobs") from exc
-    out = {"command": f"arena {' '.join(args)}", "exit_code": done.returncode, "stdout": done.stdout[-20000:], "stderr": done.stderr[-20000:]}
+    out = {"command": f"arena {' '.join(args)}", "exit_code": done.returncode, "stdout": done.stdout[-clip:] if clip else done.stdout, "stderr": done.stderr[-clip:] if clip else done.stderr}
     if check and done.returncode != 0:
         tail = (done.stderr or done.stdout).strip().splitlines()[-15:]
         raise ToolError(f"arena {' '.join(args)} failed with exit code {done.returncode}:\n" + "\n".join(tail))

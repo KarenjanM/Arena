@@ -8,6 +8,7 @@ ENV = 7
 PLAIN_ENV = 8
 ROBOT = "jackal_0"
 WORLDS = ["map_empty", "small_warehouse"]
+MISSING_WORLD = "no_such_world"
 SCENARIOS = {"map_empty": ["crowd", "default"], "small_warehouse": ["aisles"]}
 
 
@@ -165,7 +166,10 @@ def _peer_class():
                 self.pub_resetting.publish(Bool(data=True))
                 time.sleep(0.3)
                 self.pub_resetting.publish(Bool(data=False))
-                self.publish_record(EpisodeRecord.RUNNING, current + 1, seed=request.seed, world=request.world or "map_empty")
+                if request.world == MISSING_WORLD:
+                    self.publish_record(EpisodeRecord.FATAL, current + 1, seed=request.seed, world=request.world, info=f"FileNotFoundError(\"WorldIdentifier(name='{MISSING_WORLD}') not found\")")
+                else:
+                    self.publish_record(EpisodeRecord.RUNNING, current + 1, seed=request.seed, world=request.world or "map_empty")
 
             threading.Thread(target=finish, daemon=True).start()
             response.success = True

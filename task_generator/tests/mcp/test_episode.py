@@ -15,7 +15,7 @@ from task_generator_msgs.msg import EpisodeRecord
 from task_generator.constants.runtime import EPISODE_PARAMS
 from task_generator.mcp import entities, episode
 
-from tg_peer import ENV, PLAIN_ENV, ROBOT, SCENARIOS, WORLDS
+from tg_peer import ENV, MISSING_WORLD, PLAIN_ENV, ROBOT, SCENARIOS, WORLDS
 
 
 def test_reset_blocks_until_the_next_episode_runs_and_returns_its_record(run, peers):
@@ -37,6 +37,12 @@ def test_reset_blocks_until_the_next_episode_runs_and_returns_its_record(run, pe
     queued = run(episode.episode_reset(env_id=ENV, wait=False))
     assert queued == {"env": "/arena/env_7/task_generator_node", "requested": True, "previous_episode_id": before + 1}
     run(episode.episode_wait(env_id=ENV, until="running", timeout_s=10))
+
+
+def test_reset_onto_a_world_that_fails_to_load_raises_the_node_error(run, peers):
+    with pytest.raises(ToolError, match="FileNotFoundError") as failed:
+        run(episode.episode_reset(env_id=ENV, world=MISSING_WORLD))
+    assert MISSING_WORLD in failed.value.hint
 
 
 def test_env_id_is_required_when_several_envs_run(run):

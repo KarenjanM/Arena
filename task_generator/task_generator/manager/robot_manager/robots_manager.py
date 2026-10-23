@@ -264,8 +264,6 @@ class RobotsManager(NodeInterface):
 
             t = asyncio.create_task(task())
             yield t
-        except asyncio.CancelledError:
-            pass
         finally:
             if t and not t.done():
                 t.cancel()

@@ -10,50 +10,22 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from arena_mcp.core import JOBS, ROS, Domain, Job, ToolError, cli, proc
+from arena_mcp.core import JOBS, Domain, Job, ToolError, cli, proc
 
 domain = Domain(
     "system",
-    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, attach envs, stop gracefully, list stacks, read logs, build, test, install deps, preload worlds.
+    """Stack lifecycle through the arena CLI: launch a simulation or a bare runtime, stop gracefully, list stacks, read logs, build, test, install deps, preload worlds.
     Launches, builds and tests are process jobs (jobs_status, jobs_log), they keep running when the server exits.
-    A launch is always without rviz, headless by default, and refused when memory is short or a runtime is already up (attach=True adds envs to it).""",
+    A launch is always without rviz and headless by default, and like arena launch it adds envs to a runtime that is already up.""",
 )
 
-REGISTER_ENV = "/arena/register_env"
 LAUNCH_KINDS = ("launch", "runtime")
 COLCON_KINDS = ("build", "rebuild", "test")
-MIN_AVAILABLE_GIB = {"isaac": 15.0}
-DEFAULT_MIN_AVAILABLE_GIB = 6.0
-MAX_SWAP_USED_GIB = 1.0
 RESERVED_ARGS = ("sim", "env.n", "world", "robot", "headless", "viz")
 LAUNCH_RE = re.compile(r"arena_bringup[./]supervisor|(^|[/\s])ros2 (launch|run) ")
 ARG_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.\-]*")
 
 ArgValue = str | int | float | bool
-
-
-def meminfo(path: str | Path = "/proc/meminfo") -> dict[str, int]:
-    """The fields of /proc/meminfo in KiB."""
-    out: dict[str, int] = {}
-    for line in Path(path).read_text().splitlines():
-        key, _, rest = line.partition(":")
-        fields = rest.split()
-        if fields and fields[0].isdigit():
-            out[key] = int(fields[0])
-    return out
-
-
-def memory_guard(sim: str, info: dict[str, int]) -> dict[str, float]:
-    """Raise unless MemAvailable reaches the sim's floor, or twice the floor while more than 1 GiB of swap is in use."""
-    available = info["MemAvailable"] / 2**20
-    swap_used = (info.get("SwapTotal", 0) - info.get("SwapFree", 0)) / 2**20
-    floor = MIN_AVAILABLE_GIB.get(sim, DEFAULT_MIN_AVAILABLE_GIB)
-    state = {"available_gib": round(available, 1), "swap_used_gib": round(swap_used, 1), "required_gib": floor}
-    if swap_used > MAX_SWAP_USED_GIB and available < 2 * floor:
-        raise ToolError(f"{swap_used:.1f} GiB swap in use with {available:.1f} GiB available, sim:={sim} needs {2 * floor:.0f} GiB while swapping", hint="free memory first, system_stacks lists what runs")
-    if available < floor:
-        raise ToolError(f"{available:.1f} GiB available, sim:={sim} needs {floor:.0f} GiB", hint="stop other stacks first, system_stacks lists them")
-    return state
 
 
 def launch_tokens(sim: str, *, env_n: int | None, world: str | None, robot: str | None, args: dict[str, ArgValue] | None, headless: bool) -> list[str]:
@@ -98,31 +70,8 @@ async def _check_sim(sim: str) -> None:
         raise ToolError(f"unknown sim {sim!r}", hint=f"sims: {', '.join(sims)}")
 
 
-async def runtime_up(discovery_s: float = 2.0) -> bool:
-    """Whether /arena/register_env is in the ROS graph, giving discovery up to discovery_s."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + discovery_s
-    while True:
-        if REGISTER_ENV in (await ROS.graph())["services"]:
-            return True
-        if loop.time() >= deadline:
-            return False
-        await asyncio.sleep(0.2)
-
-
 def _running(kinds: tuple[str, ...]) -> list[Job]:
     return [job for kind in kinds for job in JOBS.list(kind=kind, state="running")]
-
-
-async def _launch_guards(sim: str, *, attach: bool) -> dict[str, float]:
-    await _check_sim(sim)
-    starting = _running(LAUNCH_KINDS)
-    up = await runtime_up()
-    if up and not attach:
-        raise ToolError("an Arena runtime is already up (/arena/register_env answers)", hint="pass attach=True to add envs to it, or system_stop it first")
-    if starting and not up:
-        raise ToolError(f"launch job {starting[0].id} is still bringing its runtime up", hint=f"wait for /arena/register_env, jobs_log {starting[0].id} shows progress")
-    return memory_guard(sim, meminfo())
 
 
 def _tail_result(lines: int = 40) -> Callable[[Job], dict[str, Any]]:
@@ -135,18 +84,17 @@ def _tail_result(lines: int = 40) -> Callable[[Job], dict[str, Any]]:
 @domain.tool(destructive=True)
 async def system_launch(
     sim: Annotated[str, Field(description="simulator backend, one of the registered sims (dummy, flatsim, gazebo, isaac, mujoco, ...)")],
-    env_n: Annotated[int, Field(description="envs to start, or to add with attach")] = 1,
+    env_n: Annotated[int, Field(description="envs to start, or to add to a runtime that is already up")] = 1,
     world: str | None = None,
     robot: str | None = None,
     args: Annotated[dict[str, ArgValue] | None, Field(description="further launch arguments as {name: value}, e.g. {'task.robots': 'random'}")] = None,
     headless: Annotated[bool, Field(description="hide the simulator GUI, rviz is never started")] = True,
-    attach: Annotated[bool, Field(description="add env_n envs to a runtime that is already up instead of refusing")] = False,
 ) -> dict[str, Any]:
-    """Start `arena launch` as a job, refused below 6 GiB MemAvailable (15 GiB for isaac, twice that while more than 1 GiB swap is in use), or while a runtime is up unless attach."""
-    memory = await _launch_guards(sim, attach=attach)
+    """Start `arena launch` as a job, which adds env_n envs to a runtime that is already up."""
+    await _check_sim(sim)
     tokens = launch_tokens(sim, env_n=env_n, world=world, robot=robot, args=args, headless=headless)
     job = await cli.job("launch", f"arena launch {' '.join(tokens)}", "launch", *tokens)
-    return {**job.as_dict(), "memory": memory}
+    return job.as_dict()
 
 
 @domain.tool(destructive=True)
@@ -156,11 +104,11 @@ async def system_runtime(
     args: Annotated[dict[str, ArgValue] | None, Field(description="further runtime launch arguments as {name: value}")] = None,
     headless: bool = True,
 ) -> dict[str, Any]:
-    """Start `arena runtime` (sim and arena_node, no envs) as a job, with the memory and runtime-up guards of system_launch."""
-    memory = await _launch_guards(sim, attach=False)
+    """Start `arena runtime` (sim and arena_node, no envs) as a job."""
+    await _check_sim(sim)
     tokens = launch_tokens(sim, env_n=None, world=world, robot=None, args=args, headless=headless)
     job = await cli.job("runtime", f"arena runtime {' '.join(tokens)}", "runtime", *tokens)
-    return {**job.as_dict(), "memory": memory}
+    return job.as_dict()
 
 
 def _children() -> dict[int, list[int]]:
@@ -201,13 +149,21 @@ def _signal_group(pid: int, sig: signal.Signals) -> bool:
     return True
 
 
+def _survivors(job: Job) -> list[int]:
+    return [pid for pid in job.progress.get("survivors", []) if proc.alive(pid)]
+
+
+def _stoppable() -> list[Job]:
+    return [job for kind in LAUNCH_KINDS for job in JOBS.list(kind=kind) if job.state == "running" or _survivors(job)]
+
+
 def _launch_job(job_id: str | None) -> Job:
     if job_id is not None:
         job = JOBS.get(job_id)
         if job.kind not in LAUNCH_KINDS or job.pid is None:
             raise ToolError(f"job {job_id} is a {job.kind} job, not a launch", hint="system_stacks lists the launch jobs")
         return job
-    running = _running(LAUNCH_KINDS)
+    running = _stoppable()
     if len(running) == 1:
         return running[0]
     if not running:
@@ -230,7 +186,7 @@ async def system_stop(
         targets = tree(job.pid)
         sent = signal.SIGINT if _signal_group(job.pid, signal.SIGINT) else None
     else:
-        targets = [pid for pid in job.progress.get("survivors", []) if proc.alive(pid)]
+        targets = _survivors(job)
         sent = signal.SIGTERM if attempt <= 2 else signal.SIGKILL
         delivered = [pid for pid in targets if _signal_group(pid, sent)]
         if not delivered:
@@ -266,11 +222,12 @@ def _foreign(exclude: set[int]) -> list[dict[str, Any]]:
 
 @domain.tool(read_only=True)
 def system_stacks() -> dict[str, Any]:
-    """Running launch jobs of this server with their process counts, plus outermost Arena launch processes (ros2 launch/run, the arena launch supervisor) it did not start."""
+    """Launch jobs of this server that still have processes, with their counts, plus outermost Arena launch processes (ros2 launch/run, the arena launch supervisor) it did not start."""
     jobs = []
     owned: set[int] = set(proc.ancestry())
-    for job in _running(LAUNCH_KINDS):
-        members = tree(job.pid) if job.pid is not None else []
+    for job in _stoppable():
+        roots = ([job.pid] if job.state == "running" and job.pid is not None else []) + _survivors(job)
+        members = list(dict.fromkeys(pid for root in roots for pid in tree(root)))
         owned.update(members)
         jobs.append({**job.as_dict(), "processes": len(members)})
     return {"jobs": jobs, "other": _foreign(owned)}

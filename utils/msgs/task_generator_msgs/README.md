@@ -20,7 +20,7 @@ Audio frames and sound detections live in `arena_robots_msgs`. Types of the aren
 | `MoveEntity.srv` | Move a runtime-spawned static obstacle or sound by the handle its spawn returned, or any robot by name, to a map-frame pose via `runtime/move`. The same path the rviz drag handles use. |
 | `DespawnRobot.srv` | Single fleet-removal surface: stages a live robot for teardown on the next reset, un-stages a queued despawn, or cancels a queued spawn (toggles `state/robots/pending`). |
 | `SetSemantic.srv` | Write one semantic field value on an entity via `semantics/set`; one of three writer paths into semantics state (timeline, modules, external). |
-| `SubmitTask.srv` | Hand one robot a task via `runtime/submit_task`: `task_yaml` is a `phases:` list or a `{phases, conditions}` mapping in the scenario format, parsed by `TaskRequest.parse` and passed to `RobotManager.submit_task`. Unfinished phases of the robot's previous request are dropped. Returns the episode-wide `phase_indices` the request was appended at, elevator legs included. |
+| `SubmitTask.srv` | Hand one robot a task via `runtime/submit_task`: `task_yaml` is a `phases:` list or a `{phases, conditions}` mapping in the scenario format, parsed by `TaskRequest.parse` and passed to `RobotManager.submit_task`, goto poses shifted from the map frame like rviz goals when `frame_id` names it. Unfinished phases of the robot's previous request are dropped. Returns the episode-wide `phase_indices` the request was appended at, elevator legs included. |
 
 ## Messages (`msg/`)
 

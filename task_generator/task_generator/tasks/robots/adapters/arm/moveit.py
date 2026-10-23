@@ -72,7 +72,9 @@ class MoveItArmAdapter(Adapter):
                 rng = robot.node.conf.General.RNG.stream("arm", robot.name)
                 goal.target = sample_reach_target(arm, robot.frame, rng)
             elif phase.target is not None:
-                goal.target = phase.target
+                goal.target.header.frame_id = phase.frame or robot.base_frame
+                goal.target.header.stamp = robot.node.sim_time.to_msg()
+                goal.target.pose = phase.target.to_msg()
             elif phase.named_target is not None:
                 goal.named_target = phase.named_target
             goal.position_tolerance = float(phase.position_tolerance or 0.0)

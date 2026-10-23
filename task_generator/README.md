@@ -103,11 +103,12 @@ keeps every field it is not given, `tm_modules` included, and types per-mode
 params by the node's declaration of `task.<mode>.<leaf>`. Task modes and
 parameter names come from the mode registry and `constants/runtime.py`:
 `episode_task_modes` reads the live env, or the registry with defaults when
-no env runs. Spawn poses are world-frame (authored coordinates), move and
-pedestrian poses map-frame. Pausing the sim is a runtime hold, not an episode
-tool.
+no env runs. Spawn, move and pedestrian poses are map-frame. Pausing the sim
+is a runtime hold, not an episode tool.
 
 `runtime/submit_task` (`task_generator_msgs/SubmitTask`) is the node service
-behind `episode_submit_task`: a `phases:` list or `{phases, conditions}`
-mapping in the scenario format, parsed by `TaskRequest.parse` and handed to
-`RobotManager.submit_task`, answering with the episode-wide phase indices.
+behind `episode_submit_task` and the goals of the `robots` domain: a `phases:`
+list or `{phases, conditions}` mapping in the scenario format, parsed by
+`TaskRequest.parse` and handed to `RobotManager.submit_task`, answering with the
+episode-wide phase indices. With `frame_id` set to the map frame, goto poses
+are shifted into scenario coordinates the way an rviz goal handle's are.

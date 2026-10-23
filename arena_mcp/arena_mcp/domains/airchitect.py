@@ -641,7 +641,7 @@ async def airchitect_ingest(world: Annotated[str, pydantic.Field(description="Ar
     try:
         data = await asyncio.to_thread(bundle, world)
     except FileNotFoundError as exc:
-        raise ToolError(f"no world {world!r}", hint="worlds_list shows the resolvable worlds") from exc
+        raise ToolError(f"world {world!r} does not load: {exc}", hint="worlds_list shows the resolvable worlds") from exc
     status, raw = await asyncio.to_thread(http, "POST", "world/ingest", data=data, content_type="application/zip", timeout=120.0)
     if status != 200:
         raise ToolError(f"world/ingest answered HTTP {status}: {raw.decode(errors='replace')[:2000]}")
