@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 import attrs
 import numpy as np
 import yaml
+from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
 from arena_humansim_msgs.msg import (
     AgentFrame as AgentFrameMsg,
 )
@@ -30,6 +31,9 @@ from arena_humansim_msgs.msg import (
 )
 from arena_humansim_msgs.msg import (
     Gesture as EngineGestureMsg,
+)
+from arena_humansim_msgs.msg import (
+    InteractionFrame as InteractionFrameMsg,
 )
 from arena_humansim_msgs.msg import (
     ObstacleConfig as ObstacleConfigMsg,
@@ -87,6 +91,7 @@ from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.tree.World.model import elevator_doorway_pose
+from arena_simulation_setup.utils.affordance import AffordanceClaims, AffordanceKind, AffordanceSlot, SlotOccupied, conflicts, max_occupancy, placed_slots
 from geometry_msgs.msg import (
     Point,
     Point32,
@@ -154,6 +159,58 @@ class PedMechanics:
             return None
         stops = [Stop.from_dict({**meta, "x": x, "y": y}) for meta, (x, y) in zip(self.itinerary, points, strict=True)]
         return stops if any(stop.holds for stop in stops) else None
+
+
+def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[AffordanceSlot]) -> int:
+    """Queue length at which needs-driven agents pass the object over: the scenario's capacity or seat count, else the most of its sit slots held together, at least 1."""
+    if "capacity" in humansim:
+        return int(humansim["capacity"])
+    if "seats" in humansim:
+        return max(1, len(humansim["seats"]))
+    return max(1, max_occupancy(slots))
+
+
+def held_seats(frame: InteractionFrameMsg) -> dict[str, list[int]]:
+    """Seat indices the participants of sit and lie interactions hold, by object."""
+    held: dict[str, list[int]] = {}
+    objects, offsets, seats, roles = list(frame.object_id), list(frame.member_offset), list(frame.member_seat), list(frame.member_role)
+    for index, kind in enumerate(frame.interaction_type):
+        if kind not in (InteractionType.SIT_ON, InteractionType.LIE_ON) or not objects[index]:
+            continue
+        held.setdefault(objects[index], []).extend(int(seats[m]) for m in range(offsets[index], offsets[index + 1]) if roles[m] == MembershipRole.PARTICIPANT and seats[m] >= 0)
+    return held
+
+
+def seat_violation(slots_by_object: Mapping[str, Sequence[AffordanceSlot]], held: Mapping[str, Sequence[int]]) -> str | None:
+    """The first object whose held seats overlap or fall outside its slots, None when every held set fits."""
+    for object_id, seats in sorted(held.items()):
+        slots = slots_by_object.get(object_id)
+        if slots is None:
+            continue
+        claims = AffordanceClaims(list(slots))
+        for seat in seats:
+            if not 0 <= seat < len(slots):
+                return f"affordance invariant: {object_id} holds seat {seat} of {len(slots)}"
+            try:
+                claims.claim(slots[seat])
+            except SlotOccupied as e:
+                return f"affordance invariant: {object_id}: {e}"
+    return None
+
+
+def conflict_offsets(slots: Sequence[AffordanceSlot]) -> tuple[list[int], list[int]]:
+    """Per-slot overlap lists flattened into offsets and indices for WorldObjectInfo."""
+    offsets, flat = [0], []
+    for overlapping in conflicts(slots):
+        flat.extend(overlapping)
+        offsets.append(len(flat))
+    return offsets, flat
+
+
+def reach_radius(bounding_box: Sequence[Sequence[float]]) -> float:
+    """Distance from the object origin within which an agent standing beside it reaches any point of its footprint."""
+    (x_min, x_max), (y_min, y_max) = bounding_box[0], bounding_box[1]
+    return max(math.hypot(x, y) for x in (x_min, x_max) for y in (y_min, y_max)) + PED_RADIUS
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -351,6 +408,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             10,
         )
 
+        self._held_seats: dict[str, list[int]] = {}
+        self._seat_slots: dict[str, list[AffordanceSlot]] = {}
+        self._seat_violation_reported = False
+        self.node.create_subscription(
+            InteractionFrameMsg,
+            self.node.service_namespace("interactions"),
+            self._interactions_callback,
+            QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL),
+        )
+
         self._debug_markers_sub = LazySubscription(
             self.node,
             self._marker_publisher,
@@ -416,6 +483,21 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             marker.pose.position.x += cfg.x
             marker.pose.position.y += cfg.y
         return msg
+
+    def _interactions_callback(self, msg: InteractionFrameMsg) -> None:
+        self.node.event_loop.call_soon_threadsafe(self._apply_held_seats, held_seats(msg))
+
+    def _apply_held_seats(self, held: dict[str, list[int]]) -> None:
+        if held == self._held_seats:
+            return
+        self._held_seats = held
+        if not self._seat_violation_reported and (violation := seat_violation(self._seat_slots, held)) is not None:
+            self._seat_violation_reported = True
+            self._report_incident(violation)
+        self._notify_held_seats()
+
+    def held_seats(self) -> dict[str, list[int]]:
+        return {object_id: seats for object_id, seats in self._held_seats.items() if object_id in self._seat_slots}
 
     def _agent_states_callback(self, msg: AgentFrameMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
@@ -749,24 +831,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         x, y = self._to_engine(pose.position.x, pose.position.y)
         return Pose2DMsg(x=x, y=y, theta=pose.orientation.to_yaw())
 
-    def _seat_pose(self, object_pose: Pose, seat: Mapping[str, float]) -> Pose2DMsg:
-        """An object-local seat (``{x, y[, yaw]}``, the pose grammar) from the model annotation or the scenario, in the engine frame."""
-        keys = set(seat)
-        if not {"x", "y"} <= keys or not keys <= {"x", "y", "yaw"}:
-            raise ValueError(f"seat must have keys x, y[, yaw], got {dict(seat)}")
-        yaw = object_pose.orientation.to_yaw()
-        sx, sy, syaw = float(seat["x"]), float(seat["y"]), float(seat.get("yaw", 0.0))
-        wx = object_pose.position.x + math.cos(yaw) * sx - math.sin(yaw) * sy
-        wy = object_pose.position.y + math.sin(yaw) * sx + math.cos(yaw) * sy
-        x, y = self._to_engine(wx, wy)
-        return Pose2DMsg(x=x, y=y, theta=yaw + syaw)
+    def _seat_pose(self, object_pose: Pose, seat: Pose) -> Pose2DMsg:
+        """An object-local seat pose in the engine frame."""
+        placed = object_pose * seat
+        x, y = self._to_engine(placed.position.x, placed.position.y)
+        return Pose2DMsg(x=x, y=y, theta=placed.orientation.to_yaw())
 
-    def _seat_poses(self, obstacle: Obstacle, annotated: Sequence[Mapping[str, float]]) -> list[Pose2DMsg]:
-        """Scenario seats override the annotation's, including an empty list. A bad seat costs the seats, not the object."""
+    def _seat_poses(self, obstacle: Obstacle, slots: Sequence[AffordanceSlot]) -> list[Pose2DMsg]:
+        """Scenario seats override the annotation's sit slots, including an empty list. A bad seat costs the seats, not the object."""
         humansim = obstacle.humansim
-        raw = humansim["seats"] if "seats" in humansim else annotated
         try:
-            return [self._seat_pose(obstacle.pose, seat) for seat in raw]
+            if "seats" in humansim:
+                seats = [Pose.parse(seat) for seat in humansim["seats"]]
+            else:
+                rng = self.node.conf.General.RNG.stream("humansim", "seats", obstacle.sim_path)
+                seats = [slot.pose(rng) for slot in slots]
+            return [self._seat_pose(obstacle.pose, seat) for seat in seats]
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             self._logger.warning(f"Ignoring seats of '{obstacle.sim_path}': {e}")
             return []
@@ -1075,14 +1155,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 pose = self._engine_pose(obstacle.pose)
 
                 obstacle_type = ""
-                seats: list = []
+                raw_slots: list = []
+                bounding_box = None
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
                         annotation: dict = yaml.safe_load(f.read())
-                    seats = list(annotation.get("seats") or [])
-                    (x_min, x_max), (y_min, y_max), (z_min, z_max) = annotation["bounding_box"]
+                    raw_slots = list((annotation.get("affordances") or {}).get("sit") or [])
+                    bounding_box = annotation["bounding_box"]
+                    (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounding_box
                     obstacle_type = annotation.get("name", "") or annotation.get("desc", "")
                     msg = ObstacleConfigMsg()
                     msg.name = obstacle.sim_path
@@ -1099,18 +1181,30 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 except Exception as e:
                     self._logger.warning(f"Failed to build obstacle bbox for '{obstacle.sim_path}': {e}")
 
+                try:
+                    slots = placed_slots({AffordanceKind.SIT: raw_slots})
+                except (TypeError, ValueError) as e:
+                    self._logger.warning(f"Ignoring the sit slots of '{obstacle.sim_path}': {e}")
+                    slots = []
                 humansim = obstacle.humansim
                 info = WorldObjectInfoMsg()
                 info.object_id = obstacle.sim_path
                 info.type = str(humansim.get("type", obstacle_type))
                 info.pose = pose
-                info.capacity = int(humansim.get("capacity", 1))
+                info.capacity = seat_capacity(humansim, slots)
                 satisfies: dict = humansim.get("satisfies") or {}
                 info.satisfies_keys = list(satisfies.keys())
                 info.satisfies_values = [float(v) for v in satisfies.values()]
+                info.seats = self._seat_poses(obstacle, slots)
+                if "seats" not in humansim and slots and len(info.seats) == len(slots):
+                    info.seat_conflict_offset, info.seat_conflicts = conflict_offsets(slots)
+                    self._seat_slots[obstacle.sim_path] = slots
+                else:
+                    self._seat_slots.pop(obstacle.sim_path, None)
                 interaction_radius = humansim.get("interaction_radius")
+                if interaction_radius is None and info.seats and bounding_box is not None:
+                    interaction_radius = reach_radius(bounding_box)
                 info.interaction_radius = float(interaction_radius) if interaction_radius is not None else 0.0
-                info.seats = self._seat_poses(obstacle, seats)
                 formation: dict = humansim.get("formation") or {}
                 formation_type = formation.get("type", "")
                 if formation_type:
@@ -1438,6 +1532,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._curr_agent_states = None
             self._agent_gestures = {}
             self._agent_types = {}
+            self._seat_violation_reported = False
+            self._apply_held_seats({})
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
             await self._publish_interpolated()

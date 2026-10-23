@@ -268,7 +268,7 @@ keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 | Key | Meaning |
 | --- | --- |
 | `type` | Object type string, matched against a behavior-tree step/action `target:` (falls back to the model's `annotation.yaml` name/desc if omitted). |
-| `capacity` | Max simultaneous occupants. Default `1`. |
+| `capacity` | Queue length at which a needs-driven agent looking for an object of this type passes this one over. Default the count of the entry's `seats`, else the most of the annotated sit slots that can be held together, at least `1`. |
 | `satisfies` | `{need: amount}` applied to an agent that completes an interaction here, same shape as an agent-type step's `satisfies:`. |
 | `interaction_radius` | Overrides the interaction kind's default approach radius for this object. |
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
@@ -410,12 +410,22 @@ are un-shifted going in, agent poses, gesture targets, flow agents and the engin
 coming out. Nothing engine-side knows the env.
 
 World objects go to the engine with what the model annotation and the scenario entry say: `bounding_box`,
-`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and `seats` (object-local `{x, y}` with an
-optional `yaw`, the same grammar as `pose`, from the annotation or overridden per scenario entry, and an empty
-list clears the annotation's). Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
+`hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its
+placed `affordances.sit` slots, each at its bbox center facing one of its yaws, drawn per object from the
+episode RNG. A scenario entry's `seats` (object-local poses in the `pose` grammar without zone names) override
+them, and an empty list clears them. Without a `capacity`, it is the count of the scenario's
+`seats`, else the most of its sit slots that can be occupied at once with no two overlapping, and at least one. Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
 ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
-the object's origin, not its seat, so an object whose seats sit outside `interaction_radius` needs that radius
-widened to cover the object or the ped never gets close enough to sit.
+the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its
+whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius. Annotated
+seats also go out with their conflicts, the pairs of sit slots that overlap, so the engine never lets two agents
+hold overlapping seats and seats as many sitters as fit together.
+
+The adapter follows the engine's latched `interactions` frame and reports the seat indices the participants of
+every `SIT_ON` and `LIE_ON` hold on an object with annotated seats through `held_seats()`, by object sim path,
+notifying `on_held_seats_change` listeners when they change. Two held seats that overlap compromise the episode
+once through the incident callback the node sets with `set_incident_callback`. The base class reports no held
+seats.
 
 Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
 realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the

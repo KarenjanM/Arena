@@ -211,3 +211,29 @@ def test_custom_dynamic_obstacle_parse_rejects_unknown_fields():
         CustomDynamicObstacle.parse(data)
     cdo = CustomDynamicObstacle(name="cdo", pose=Pose(), model="p", extra={"custom_field": "hello"})
     assert cdo.custom_field == "hello"
+
+
+@pytest.fixture
+def bench_assets(tmp_path):
+    from arena_simulation_setup.tree import DynamicPaths
+
+    bench = tmp_path / "Hospital" / "Object" / "TestBench"
+    bench.mkdir(parents=True)
+    (bench / "annotation.yaml").write_text("bounding_box: [[-0.5, 0.5], [0.0, 0.4], [0.0, 0.8]]\naffordances:\n  sit:\n    - {bbox: [[-0.5, 0.5], [0.0, 0.4], [0.0, 0.45]], yaw: -y}\n")
+    previous = DynamicPaths.ARENA.path
+    DynamicPaths.ARENA.path = tmp_path
+    yield tmp_path
+    DynamicPaths.ARENA.path = previous
+
+
+def test_obstacle_affordance_slots_read_the_asset_annotation(bench_assets):
+    import asyncio
+
+    slots = asyncio.run(Obstacle.parse({"name": "bench", "model": "Hospital/TestBench", "pose": [1.0, 2.0, 0.0]}).affordance_slots())
+    assert [(slot.kind, slot.index, slot.bbox[2]) for slot in slots] == [("sit", 0, (0.0, 0.45))]
+
+
+def test_obstacle_affordance_slots_are_empty_for_an_unresolvable_model(bench_assets):
+    import asyncio
+
+    assert asyncio.run(Obstacle.parse({"name": "ghost", "model": "Hospital/TestMissingSeat", "pose": [0.0, 0.0, 0.0]}).affordance_slots()) == []
