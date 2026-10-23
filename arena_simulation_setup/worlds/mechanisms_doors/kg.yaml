@@ -1,0 +1,25 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:sliding_a', props: {description: 'sliding door, 1.0 m activation'}}
+- {id: 'room:sliding_gap', props: {description: threshold of door_sliding}}
+- {id: 'room:slidingtop_a', props: {description: 'sliding_top door (slab lifts), 1.0 m activation'}}
+- {id: 'room:slidingtop_gap', props: {description: threshold of door_slidingtop}}
+- {id: 'room:hinged_a', props: {description: 'hinged door (swing_direction +1), 1.0 m activation'}}
+- {id: 'room:hinged_gap', props: {description: threshold of door_hinged}}
+- {id: 'room:teleport_a', props: {description: 'teleport door (slab vanishes), 1.0 m activation'}}
+- {id: 'room:teleport_gap', props: {description: threshold of door_teleport}}
+- {id: 'room:shorthold_a', props: {description: sliding door that closes 0.3 s after the trigger clears}}
+- {id: 'room:shorthold_gap', props: {description: threshold of door_shorthold}}
+- {id: 'room:gate_a', props: {description: gate authorizing the robot (jackal) only}}
+- {id: 'room:gate_gap', props: {description: threshold of door_gate}}
+- {id: 'room:airlock_a', props: {description: 'airlock: outer door (proximity) + inner door opened only by a plate in the chamber'}}
+- {id: 'room:airlock_gap', props: {description: airlock chamber}}
+- {id: 'room:dz_west', props: {description: 'dead end: door with activation_distance 0 never opens'}}
+- {id: 'room:dz_low', props: {description: short route through the door}}
+- {id: 'room:dz_up', props: {description: door-free detour}}
+- {id: 'room:dl_west', props: {description: 'dead end: gate (spawns unlocked, scenarios lock it)'}}
+- {id: 'room:dl_low', props: {description: short route through the door}}
+- {id: 'room:dl_up', props: {description: door-free detour}}
+facts: []
+constraints: []

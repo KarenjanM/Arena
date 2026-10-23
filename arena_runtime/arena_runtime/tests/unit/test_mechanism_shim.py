@@ -18,6 +18,7 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     DOOR_INSET,
     WALL_THICKNESS,
     _advance_state,
+    _Arrival,
     _compute_teleport_destinations,
     _door_geometry,
     _door_open_pose,
@@ -293,8 +294,7 @@ def test_arrival_opens_door_regardless_of_accept_outside_calls():
     """Scheduled arrival always opens the door, even with accept_outside_calls=False."""
     elev = _elevator(name="b", destination="a", accept_outside_calls=False)
     b = _elev_runtime(elev, door_name="b/door")
-    b.arriving_eta = 10.0
-    b.pending_occupants = (("r", (5.0, 0.0)),)
+    b.queue_arrival(_Arrival(eta=10.0, source="a", occupants=(("r", (5.0, 0.0)),)))
     dr = _door_runtime(_door(name="b/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
     result = _step_elevator(b, dr, None, occupants=[], outside_trigger=False, now=10.0)
@@ -404,7 +404,7 @@ def test_departing_missing_destination_reverts():
 def test_arriving_before_eta_suppresses_door():
     """In-transit teleport suppresses all door triggers."""
     a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
-    a.arriving_eta = 10.0
+    a.queue_arrival(_Arrival(eta=10.0, source="b", occupants=()))
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.last_trigger_sim_time = -100.0
     _step_elevator(a, dr, None, occupants=[], outside_trigger=True, now=5.0)
@@ -415,8 +415,7 @@ def test_arriving_before_eta_suppresses_door():
 def test_arriving_at_eta_fires_teleport_and_opens_door():
     """ETA reached: teleport job created, door opened, arriving_eta cleared."""
     a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
-    a.arriving_eta = 10.0
-    a.pending_occupants = (("r", (5.0, 0.5)),)
+    a.queue_arrival(_Arrival(eta=10.0, source="b", occupants=(("r", (5.0, 0.5)),)))
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     result = _step_elevator(a, dr, None, occupants=[], outside_trigger=False, now=10.0)
     assert a.arriving_eta == -math.inf
@@ -905,8 +904,7 @@ def test_tick_accept_outside_calls_false_still_receives_arrival():
     # Instead test directly: inject departing + pending.
     runtimes2, doors2 = _prime_pair(accept_outside_calls_b=False)
     b2 = runtimes2["b"]
-    b2.arriving_eta = 5.0
-    b2.pending_occupants = (("r1", (9.5, 0.0)),)
+    b2.queue_arrival(_Arrival(eta=5.0, source="a", occupants=(("r1", (9.5, 0.0)),)))
     dr_b2 = doors2["b/door"]
     dr_b2.last_trigger_sim_time = -100.0
     result = _step_elevator(b2, dr_b2, None, occupants=[], outside_trigger=False, now=5.0)
@@ -1123,8 +1121,7 @@ def test_reset_mechanisms_resets_bare_elevator_and_cabin_door():
     """A bare elevator resets its runtime fields and its paired cabin door."""
     mech = _Mech()
     er = _elev_runtime(_elevator(name="e", destination="other"), door_name="e/door", destination="other")
-    er.arriving_eta = 8.0
-    er.pending_occupants = (("r", (1.0, 2.0)),)
+    er.queue_arrival(_Arrival(eta=8.0, source="other", occupants=(("r", (1.0, 2.0)),)))
     er.just_arrived = {"r": True}
     er.departing = True
     er.dispatched = {"r"}
@@ -1295,9 +1292,13 @@ def test_wire_blocked_close_publishes_no_closing_and_no_flap():
     for t, c in state_events:
         if c.current in ("closing", "closed"):
             assert t > clear_time
-    hold_window = [(t, c) for t, c in events if 1.2 < t <= clear_time]
+    hold_window = [(t, c) for t, c in events if 1.2 < t <= clear_time and c.field != "blocked_close"]
     assert hold_window == []
     assert mech._door_runtime["d"].state == _DoorState.CLOSED
+    blocked = [(t, c.current) for t, c in events if c.field == "blocked_close"]
+    assert [v for _, v in blocked] == ["false", "true", "false"]
+    assert 1.9 < blocked[1][0] <= 2.1
+    assert blocked[2][0] > clear_time
 
 
 def test_wire_ride_events_are_deduplicated_and_bounded():

@@ -45,6 +45,7 @@ class TM_Scenario(TM_Robots):
     _config: ROSParamT[str]
     _linger_after_completion: ROSParamT[bool]
     _idle_robots: set[str]
+    _mechanism_map: ROSParamT[bool]
 
     async def reset(self) -> None:
         await super().reset()
@@ -90,6 +91,13 @@ class TM_Scenario(TM_Robots):
                 self._idle_robots.add(robot.name)
             self._ctx.world_manager.forbid(forbidden)
 
+        agents = [name for robot in managed_robots for name in (robot.name, robot.robot.sim_path) if name]
+        self._ctx.world_manager.set_mechanism_map(bool(self._mechanism_map.value), agents)
+
+    async def teardown(self) -> None:
+        self._ctx.world_manager.set_mechanism_map(False, [])
+        await super().teardown()
+
     @property
     async def done(self) -> bool:
         """Treat empty scenario phase lists as parked, not completed, robots."""
@@ -111,3 +119,4 @@ class TM_Scenario(TM_Robots):
             self.namespace('linger_after_completion'),
             False,
         )
+        self._mechanism_map = self.node.ROSParam[bool](self.namespace('mechanism_map'), False)

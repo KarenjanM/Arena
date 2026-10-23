@@ -91,9 +91,37 @@ The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 | `pedestrian_teleport` | `(Mapping[str, tuple[float, float]]) -> bool` (async) |
 | `elevator_doors_changed` | `(Mapping[str, bool]) -> None` (async, cabin name to door open) |
 
+Optional, looked up with `getattr` so human sims without it keep working:
+
+| Method | Signature |
+| --- | --- |
+| `set_mechanism_walls` | `(key: str, segments: list[((x0, y0), (x1, y1))] \| None) -> None` (map frame, `None` removes the set) |
+
+The shim calls it with `elevator:<name>` (back and side cabin walls) at elevator spawn and `None` at removal,
+and with `door:<name>` (the door segment) only when a door changes between "cannot open for pedestrians"
+(gate effectively locked with no authorized agent near, or `activation_distance <= 0` with no pressed plate
+driving it) and "can open".
+
 The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../task_generator/task_generator/simulators/human/README.md)). Without an attached human-sim, the shim still drives doors against `robot_discs` alone and logs a no-op for ped teleports.
 
 Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as an occupant, and when the cabin door has closed behind it the ride hands the destinations to `pedestrian_teleport`. An empty cabin opens for a robot or ped outside within `activation_distance` of its door, a cabin with an occupant only for one within `CABIN_DOOR_THRESHOLD` (0.6 m), so riders queuing for the next trip do not hold a loaded cabin. The shim also tells the human-sim which cabin doors are passable: each tick it collects the cabins whose door turned `open` or left `open` since the last report, starting from closed at spawn and including the close an episode reset causes, and sends them in one `elevator_doors_changed` call, nothing on ticks without a change.
+
+#### Shim behaviour
+
+- Door kinds: `sliding` (slides along start->end), `sliding_top` (lifts), `teleport` (drops away) and
+  `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`). Sliding and hinged slabs are tested
+  against agent discs: an opening step holds when the slab would enter an agent (the swing arc of a hinged
+  door, the wall pocket past the end of a sliding one), so an agent pressed against a half-open sliding slab
+  does not stop it, and a blocked close re-triggers the door and sets `close_blocked` (semantic
+  `blocked_close`) until the remaining path is clear.
+- Elevators: `destination` may hold several realized cabin names (comma separated). Each departure goes to
+  `_ElevatorRuntime.current_destination()`: the written `target` if set, else round-robin (one step per
+  departure). Arrivals are a per-cabin queue (`arrivals`, ordered by eta), so several cabins can dispatch to
+  the same destination. `capacity` (live occupants) suppresses outside calls when full.
+  `call_mode: edge` makes outside calls edge-triggered (newcomer in the call radius, or a shut idle cabin),
+  so agents waiting in the lobby do not hold the door open; `level` (default) re-fires every tick.
+- Failed rides: a refused/raising robot or ped teleport releases the riders at once (source unsealed, the
+  destination stops waiting). A silent failure is released after `TELEPORT_GRACE` (10 s sim time) with a warning.
 
 ### `SimLifecycle`
 

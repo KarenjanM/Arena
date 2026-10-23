@@ -37,6 +37,9 @@ human-sim `_*_impl` methods:
 | `tracked_robots()` | every spawned robot as a `TrackedRobot`: map-frame pose from the `map` to base-frame TF and the velocity between its last two TF stamps |
 | `notify_stimulus(agent, stimulus, intensity)` | stimulus seam, returns False by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) and by scenario timeline `stimulus` actions. `agent` is an engine id or a spawned agent's name or `sim_path` |
 | `check_stimuli(scenario, humans, timeline)` | raise `ValueError` at scenario load for any timeline stimulus on a backend whose `TAKES_STIMULI` is False (only arena sets it), and for one whose target's agent type does not act on it, judged by `stimuli_taken(obstacle)` (None by default, arena: the type's needs and autonomous step `until` events) |
+| `notify_semantic_change(entity, field, value)` | sync, called by the node for every discrete/predicate `SemanticChange` (authored entity name). Delivered in order, in the background, as the broadcast stimuli `<entity>.<field>==<old>` at 0 and `<entity>.<field>==<new>` at 1, so it is inert on backends without stimuli |
+| `set_mechanism_walls(key, segments)` | sync, no-op by default. Named wall set for pedestrian navigation (map frame), `None` removes it. Called by the mechanism runtime with `elevator:<name>` (cabin back and side walls) and `door:<name>` (doorway while the door cannot open for peds) |
+| `authored_name(realized)` | env prefix and trailing `/<level_id>` stripped |
 
 ### `HumanSimulator` Protocol surface
 
@@ -48,7 +51,7 @@ specialized teleport semantics (e.g. resetting an internal agent list).
 | --- | --- |
 | `pedestrian_discs()` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, reads `_ped_positions_xy`, radius is `PED_RADIUS`) |
 | `pedestrian_clips()` | `() -> Mapping[str, frozenset[str]]` (sync, the gesture clips each ped is playing, from the same `arena_peds` message) |
-| `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`, `ArenaHumanSimulator` teleports in the engine instead) |
+| `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`, `ArenaHumanSimulator` teleports in the engine instead, then sends each moved ped its next itinerary leg and the `teleported` stimulus) |
 | `elevator_doors_changed(doors)` | `(Mapping[str, bool]) -> None` (async) |
 | `configure(params)` | `(Sequence[rcl_interfaces.msg.Parameter]) -> list[Parameter]` (async). It runs at every episode reset with `QueueEpisode.human_params`. It strips the prefix from the names under `PARAM_NAMESPACE`, sorts them, and hands them to `_configure_impl`, also when there are none. It returns the accepted ones. |
 
@@ -380,6 +383,26 @@ out of `EpisodeRecord.human_params`, and the episode continues.
 A new backend with episode-level params adds its namespace to `Constants.HUMAN_PARAM_NAMESPACES`, sets
 `PARAM_NAMESPACE` from it, and implements `_configure_impl`. The `human.` prefix is reserved for params every
 backend honors. None are defined, so `queue_episode` rejects it.
+
+World mechanisms (doors, elevators, see `arena_simulation_setup/AUTHORING.md`, Pedestrians and world
+mechanisms):
+
+- `pedestrian_teleport` moves the engine agents through `teleport_agents` (see the elevator cabins below),
+  then hands an itinerary ped its next leg and sends every moved ped the stimulus `teleported`.
+- `set_mechanism_walls` keeps one named engine wall set per key (`__mech/<key>/<i>`), applied in the
+  background in call order, the latest state per key wins. An `elevator:<name>` set also registers two
+  world objects: `<name>` (type `elevator`, cabin centre, facing out of the door) and `<name>/queue`
+  (type `elevator_queue`, in the doorway, line formation growing into the lobby). Every world door is a
+  world object `<name>` of type `door` at the doorway centre. Names are authored (env and level stripped).
+- `notify_semantic_change` also feeds per-ped aliases: a `dynamic:` entry with
+  `semantic_alias: {elevator: elev_a}` receives `elevator.<field>==<value>` for `elev_a`, replayed from
+  the current values when the ped spawns.
+- `spawn_delay` holds a scenario ped out of the engine (and so out of the roster and the physics sim)
+  until that many sim seconds after the spawn call. Its engine id is taken from a range above `1 << 24`.
+- A ped whose waypoints carry `dwell` or `{elevator: <name>}` rides (`extra["itinerary"]`, written by the
+  scenario task) gets its waypoints one leg at a time (`itinerary.py`): up to the next dwell stop, where it
+  stands for `dwell` seconds, or up to the named cabin, where it selects its destination and waits until the
+  elevator teleports it. Other cross-level legs are left to the engine's own cabin routing.
 
 The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
 the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses

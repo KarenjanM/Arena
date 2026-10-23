@@ -1,0 +1,37 @@
+format: arena-scenario/2
+robots:
+- start: [3.0, 18.0, 0.0]
+  phases:
+  - {goto: [19.0, 18.0, 0.0]}
+regions:
+  commuters:
+    type: source
+    polygon:
+    - {x: 1.0, y: 13.0}
+    - {x: 5.0, y: 13.0}
+    - {x: 5.0, y: 23.0}
+    - {x: 1.0, y: 23.0}
+    config:
+      rate_profile:
+      - {t: 0.0, rate: 0.0}
+      - {t: 10.0, rate: 1.4}
+      max_concurrent: 16
+      max_total: 64
+      agent: {agent_type: adult, desired_velocity: {min: 1.0, max: 1.4}, sink_affinity: [{sink: platform_sink, weight: 1.0}]}
+  platform_sink:
+    type: sink
+    polygon:
+    - {x: 18.0, y: 13.0}
+    - {x: 21.5, y: 13.0}
+    - {x: 21.5, y: 23.0}
+    - {x: 18.0, y: 23.0}
+    config: {capacity: -1}
+timeline:
+- {at: 0.0, set: [{entity: turnstile, field: locked, value: 'true'}]}
+- {at: 10.0, set: [{entity: rush_hour, field: active, value: 'true'}]}
+conditions:
+- {op: eventually, p: robot in platform, text: Get through the turnstile.}
+- op: never_during
+  p: robot in r_gate
+  q: turnstile/0.state == closing
+  text: Never stand in the turnstile while it is closing.

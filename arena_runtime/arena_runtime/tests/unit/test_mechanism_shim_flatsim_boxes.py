@@ -74,8 +74,9 @@ def test_spawned_doors_become_boxes_with_runtimes_and_a_running_loop(on_flatsim)
         assert _ours(world) == {"slide", "swing"}
         assert sim._box_sizes == {"slide": (2.0, 0.1, 2.0), "swing": (2.0, 0.1, 2.0)}
         assert sim._door_primitives == {"slide": ["slide"], "swing": ["swing"]}
-        assert {name: rt.effective_kind for name, rt in sim._door_runtime.items()} == {"slide": "sliding", "swing": "teleport"}
-        assert sim._door_runtime["swing"].open_pose.position.z == pytest.approx(sim._door_runtime["swing"].closed_pose.position.z - 100.0)
+        assert {name: rt.effective_kind for name, rt in sim._door_runtime.items()} == {"slide": "sliding", "swing": "hinged"}
+        swing = sim._door_runtime["swing"]
+        assert (swing.open_pose.position.x, swing.open_pose.position.y, swing.open_pose.position.z) == pytest.approx((0.0, 1.0, swing.closed_pose.position.z))
         assert sim._mechanism_loop_task is not None and not sim._mechanism_loop_task.done()
 
     on_flatsim(body)

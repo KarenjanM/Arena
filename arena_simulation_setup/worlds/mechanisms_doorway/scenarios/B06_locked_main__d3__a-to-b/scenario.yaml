@@ -1,0 +1,83 @@
+format: arena-scenario/2
+humans:
+- name: walker_1
+  model: casual_female_caucasian_young
+  pose: [22.0, 2.0, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.0, 2.0], [3.0, 2.0]]
+  waypoint_mode: reverse
+- name: walker_2
+  model: worker_male_caucasian_young
+  pose: [22.9, 2.0, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.9, 2.0], [3.0, 2.0]]
+  waypoint_mode: reverse
+- name: walker_3
+  model: Office/office_female_caucasian_young
+  pose: [23.8, 2.0, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[23.8, 2.0], [3.0, 2.0]]
+  waypoint_mode: reverse
+- name: walker_4
+  model: male_adult_medical_01
+  pose: [22.0, 3.6, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.0, 3.6], [3.0, 3.6]]
+  waypoint_mode: reverse
+- name: walker_5
+  model: female_adult_medical_01
+  pose: [22.9, 3.6, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.9, 3.6], [3.0, 3.6]]
+  waypoint_mode: reverse
+- name: walker_6
+  model: worker_male_asian_middleage
+  pose: [23.8, 3.6, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[23.8, 3.6], [3.0, 3.6]]
+  waypoint_mode: reverse
+- name: walker_7
+  model: casual_female_caucasian_young
+  pose: [22.0, 5.2, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.0, 5.2], [3.0, 5.2]]
+  waypoint_mode: reverse
+- name: walker_8
+  model: worker_male_caucasian_young
+  pose: [22.9, 5.2, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.9, 5.2], [3.0, 5.2]]
+  waypoint_mode: reverse
+- name: walker_9
+  model: Office/office_female_caucasian_young
+  pose: [23.8, 5.2, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[23.8, 5.2], [3.0, 5.2]]
+  waypoint_mode: reverse
+- name: walker_10
+  model: male_adult_medical_01
+  pose: [22.0, 6.8, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.0, 6.8], [3.0, 6.8]]
+  waypoint_mode: reverse
+- name: walker_11
+  model: female_adult_medical_01
+  pose: [22.9, 6.8, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[22.9, 6.8], [3.0, 6.8]]
+  waypoint_mode: reverse
+- name: walker_12
+  model: worker_male_asian_middleage
+  pose: [23.8, 6.8, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[23.8, 6.8], [3.0, 6.8]]
+  waypoint_mode: reverse
+robots:
+- start: [3.0, 6.0, 0.0]
+  phases:
+  - {goto: [23.0, 9.0, 0.0]}
+timeline:
+- {at: 0.0, set: [{entity: main_door, field: locked, value: 'true'}]}
+conditions:
+- {op: eventually, p: robot in east_north, text: Reach the far hall.}
+- {op: eventually, p: robot in dw_side, text: Use the side door.}

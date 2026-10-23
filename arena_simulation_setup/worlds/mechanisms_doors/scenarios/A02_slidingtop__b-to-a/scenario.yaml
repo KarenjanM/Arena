@@ -1,0 +1,11 @@
+format: arena-scenario/2
+robots:
+- start: [14.0, 3.75, 3.1416]
+  phases:
+  - {goto: [2.0, 3.75, 3.1416]}
+conditions:
+- {op: eventually, p: robot in slidingtop_a, text: Reach the far side of the door.}
+- op: never_during
+  p: robot in slidingtop_gap
+  q: door_slidingtop/0.state == closing
+  text: Never stand in the threshold while the door is closing.

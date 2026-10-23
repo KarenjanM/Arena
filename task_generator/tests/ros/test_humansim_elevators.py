@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("rclpy")
 
-from arena_humansim_msgs.srv import SetElevatorDoors, SetElevators, TeleportAgents
+from arena_humansim_msgs.srv import NotifyStimulus, SetElevatorDoors, SetElevators, TeleportAgents
 from arena_simulation_setup.shared import Elevator
 from arena_simulation_setup.tree.World.model import Level, World
 from arena_simulation_setup.tree.World.view import _ring_free_cabins
@@ -85,15 +85,17 @@ class _Bridge(ArenaHumanSimulator):
 
 
 class _Engine:
-    """In-process stand-in for the engine's elevator and teleport services, recording every request."""
+    """In-process stand-in for the engine's elevator, teleport and stimulus services, recording every request."""
 
     def __init__(self, node: typing.Any) -> None:
         self.elevators: list[list[str]] = []
         self.doors: list[dict[str, bool]] = []
         self.teleports: list[TeleportAgents.Request] = []
+        self.stimuli: list[tuple[int, str, float]] = []
         node.create_service(SetElevators, str(node.service_namespace(ArenaHumanSimulator.SERVICE_SET_ELEVATORS)), self._set_elevators)
         node.create_service(SetElevatorDoors, str(node.service_namespace(ArenaHumanSimulator.SERVICE_SET_ELEVATOR_DOORS)), self._set_doors)
         node.create_service(TeleportAgents, str(node.service_namespace(ArenaHumanSimulator.SERVICE_TELEPORT_AGENTS)), self._teleport)
+        node.create_service(NotifyStimulus, str(node.service_namespace(ArenaHumanSimulator.SERVICE_NOTIFY_STIMULUS)), self._notify)
 
     def _set_elevators(self, request: SetElevators.Request, response: SetElevators.Response) -> SetElevators.Response:
         self.elevators.append([elevator.name for elevator in request.elevators])
@@ -107,6 +109,11 @@ class _Engine:
 
     def _teleport(self, request: TeleportAgents.Request, response: TeleportAgents.Response) -> TeleportAgents.Response:
         self.teleports.append(request)
+        response.success = True
+        return response
+
+    def _notify(self, request: NotifyStimulus.Request, response: NotifyStimulus.Response) -> NotifyStimulus.Response:
+        self.stimuli.append((request.agent_id, request.stimulus, request.intensity))
         response.success = True
         return response
 
@@ -133,7 +140,7 @@ def _on_bridge(body: typing.Callable[[ArenaHumanSimulator, _Engine], typing.Awai
         thread = threading.Thread(target=executor.spin, daemon=True)
         thread.start()
         try:
-            for client in (bridge._set_elevators_client, bridge._set_elevator_doors_client, bridge._teleport_agents_client):
+            for client in (bridge._set_elevators_client, bridge._set_elevator_doors_client, bridge._teleport_agents_client, bridge._notify_stimulus_client):
                 assert await client.ensure(timeout_sec=5.0)
             await body(bridge, engine)
         finally:
@@ -162,6 +169,7 @@ def test_teleport_reaches_the_engine_by_agent_id_in_the_engine_frame() -> None:
         assert [(pose.x, pose.y) for pose in request.pose] == pytest.approx([(31.0, 2.0), (0.5, -1.0)])
         assert [pose.theta for pose in request.pose] == pytest.approx([math.pi / 2, 0.0])
         assert set(bridge._teleport_stamps) == {7, 12}
+        assert engine.stimuli == [(7, "teleported", 1.0), (12, "teleported", 1.0)]
 
     _on_bridge(body)
 

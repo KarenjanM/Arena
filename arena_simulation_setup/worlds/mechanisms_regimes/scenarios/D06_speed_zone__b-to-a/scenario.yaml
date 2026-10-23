@@ -1,0 +1,8 @@
+format: arena-scenario/2
+robots:
+- start: [19.0, 26.0, 3.1416]
+  phases:
+  - {goto: [3.0, 26.0, 3.1416]}
+conditions:
+- {op: eventually, p: robot in z_west, text: Reach the other side.}
+- {op: never, p: robot in lab, text: Stay out of the restricted lab.}

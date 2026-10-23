@@ -241,6 +241,14 @@ class Realizer:
             ring.append((realized.x, realized.y))
         return ring
 
+    def realize_reference(self, reference: str, level_id: str = "") -> str:
+        """Realized name of an authored entity reference, `<level_id>.<name>` for another registered level, else a name on `level_id`."""
+        if '.' in reference:
+            ref_level_id, ref_name = reference.split('.', 1)
+            if ref_level_id in self._level_origins or ref_level_id == level_id:
+                return self._prefix(ref_name, ref_level_id)
+        return self._prefix(reference, level_id)
+
     def realize_xy(self, x: float, y: float, level_id: str = "") -> tuple[float, float]:
         """Env-realized xy of a world point, for semantic params authored in world coordinates."""
         realized = self._realize_position(Position(x=x, y=y, z=0.0), level_id)

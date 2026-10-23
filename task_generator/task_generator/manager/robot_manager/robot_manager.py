@@ -41,7 +41,7 @@ if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.judge import Sample, Zones
 
     from task_generator.tasks.robots.adapters import Adapter, ResetContext
-    from task_generator.tasks.robots.request import GoToPhase, TaskKind, TaskPhase, TaskRequest
+    from task_generator.tasks.robots.request import ElevatorRidePhase, GoToPhase, TaskKind, TaskPhase, TaskRequest
 
 
 _NAV2_QUIET_NODES = (
@@ -81,6 +81,18 @@ def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevel
         NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES, fallback=True),
         NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES, fallback=True),
     ]
+
+
+def footprint_radius(config: RobotView) -> float:
+    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint."""
+    mobile = config.mobile
+    if mobile is None:
+        raise ValueError(f"robot model {config.name!r} has no mobile cap, so no footprint radius")
+    if mobile.radius is not None:
+        return mobile.radius
+    if mobile.footprint:
+        return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
+    raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
 
 
 class RobotManager(NodeInterface):
@@ -188,7 +200,7 @@ class RobotManager(NodeInterface):
 
         self._start_pos = Pose()
         self._goal_pos = Pose()
-        self._robot_radius = 0.25
+        self._robot_radius = footprint_radius(self._config)
 
         self._robot = robot
         self._robot.sim_path = self._environment_manager.realize(robot.name)
@@ -255,6 +267,7 @@ class RobotManager(NodeInterface):
         self._placed = False
         self._unsupported_kinds_logged = set()
         self._abort_episode = None
+        self._cabin_to_clear = ""
 
     def bind_abort(self, fn: Callable[[str], None]) -> None:
         self._abort_episode = fn
@@ -293,11 +306,6 @@ class RobotManager(NodeInterface):
         """Bring up the robot's navstack. Split from set_up_robot so callers can sequence the
         LaunchService run after spawn_world_obstacles (which it would otherwise starve)."""
         await self._launch_robot(node_names)
-
-        self._robot_radius = self.node.rosparam[float].get(
-            'robot_radius',
-            self._robot_radius,
-        )
 
     @property
     def radius(self) -> float:
@@ -369,6 +377,7 @@ class RobotManager(NodeInterface):
     def begin_episode(self) -> None:
         self._runner.begin_episode()
         self._placed = False
+        self._cabin_to_clear = ""
 
     @property
     def placed(self) -> bool:
@@ -403,7 +412,7 @@ class RobotManager(NodeInterface):
     async def _dispatch(self, state_index: int) -> None:
         """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state."""
         from task_generator.tasks.robots.adapters.mobile import MobileAdapter
-        from task_generator.tasks.robots.request import GoToPhase, kind_of
+        from task_generator.tasks.robots.request import ElevatorRidePhase, GoToPhase, kind_of
 
         state = self._runner.phases[state_index]
         phase = state.phase
@@ -416,6 +425,8 @@ class RobotManager(NodeInterface):
             state.monitor.phase = phase
             self.node.on_task_submitted(self)
         state.dispatched = True
+        if isinstance(phase, ElevatorRidePhase):
+            self._set_elevator_target(phase)
         kind = kind_of(phase)
         adapter = self._adapters.get(kind)
         if adapter is None:
@@ -445,11 +456,12 @@ class RobotManager(NodeInterface):
 
     async def tick(self, sample: Sample, zones: Zones) -> Transition:
         """Judge the active phase on one tick, applying its outcome and dispatching the next phase."""
-        from task_generator.tasks.robots.request import GoToPhase, kind_of
+        from task_generator.tasks.robots.request import ElevatorRidePhase, GoToPhase, kind_of
 
         state = self._runner.active_state
         if not self._placed:
             return Transition()
+        await self._clear_on_cabin_open()
         if state is None:
             return self._runner.step(sample, zones, None, (None, None))
         if not state.dispatched:
@@ -466,7 +478,15 @@ class RobotManager(NodeInterface):
             dispatched = self.active_dispatch_phase()
             if dispatched is not None:
                 adapter.on_phase_tick(dispatched, self)
-            transition = self._runner.step(sample, zones, action_done, self._outcome_for_phase(state.phase), adapter.signal)
+            ride = state.phase if isinstance(state.phase, ElevatorRidePhase) else None
+            boarded = state.monitor.held
+            transition = self._runner.step(sample, zones, action_done, (None, None) if ride is not None else self._outcome_for_phase(state.phase), adapter.signal)
+            if ride is not None and transition.ended is state:
+                self._set_elevator_target(ride, release=True)
+                if state.outcome == "met":
+                    self._cabin_to_clear = ride.exit_cabin
+            elif ride is not None and state.monitor.held and not boarded:
+                self._set_elevator_target(ride)
         return await self._settle(transition)
 
     async def _settle(self, transition: Transition) -> Transition:
@@ -486,6 +506,24 @@ class RobotManager(NodeInterface):
         if state is not None and not state.dispatched:
             await self._dispatch(state.index)
         return transition
+
+    async def _clear_on_cabin_open(self) -> None:
+        """Run the adapters' `on_cabin_open` once the cabin that delivered the robot reports its door open."""
+        if not self._cabin_to_clear or self.node._semantic_value(self._cabin_to_clear, "cabin_door") != "open":
+            return
+        self._cabin_to_clear = ""
+        results = await asyncio.gather(*(a.on_cabin_open(self) for a in self._adapter_instances), return_exceptions=True)
+        for adapter, result in zip(self._adapter_instances, results, strict=True):
+            if isinstance(result, BaseException):
+                self._logger.error(f"adapter {adapter.kind!r} on_cabin_open failed: {result!r}")
+
+    def _set_elevator_target(self, phase: ElevatorRidePhase, *, release: bool = False) -> None:
+        """Point a multi-destination boarding elevator at the ride's destination, `release` writes '' to hand it back."""
+        if not phase.destination or not phase.target:
+            return
+        value = '' if release else phase.destination
+        if self.node._set_semantic(phase.target, 'target', value):
+            self._logger.debug(f"robot {self.name!r}: elevator {phase.target!r} target -> {value!r}")
 
     @property
     async def is_done(self) -> bool:
@@ -521,6 +559,7 @@ class RobotManager(NodeInterface):
 
     async def submit_task(self, request: TaskRequest, start: Pose | None = None, pedestrians: Iterable[str] = ()) -> None:
         """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted, `pedestrians` names the episode's declared pedestrians that are not spawned yet."""
+        from task_generator.manager.robot_manager.elevator_routing import route_phases
         from task_generator.tasks.robots.request import GoToPhase, LoopPhase, kind_of, leaf_phases
 
         if not request.phases:
@@ -530,28 +569,22 @@ class RobotManager(NodeInterface):
         if start is None:
             observed = self.pose
             start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
-        current_level = world_manager.level_of_point(start.position.x, start.position.y)
-        boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
 
-        def route(phase: TaskPhase) -> list[TaskPhase]:
-            nonlocal current_level
+        def resolve(phase: TaskPhase) -> TaskPhase:
             if isinstance(phase, LoopPhase):
-                return [attrs.evolve(phase, phases=[routed for inner in phase.phases for routed in route(inner)])]
-            if not isinstance(phase, GoToPhase):
-                return [phase]
-            phase = self._resolve_target(phase)
-            routed_phases: list[TaskPhase] = []
-            if phase.pose is not None:
-                goal_level = world_manager.level_of_point(phase.pose.position.x, phase.pose.position.y)
-                if current_level and goal_level and goal_level != current_level:
-                    for elevator_position, boarding_radius in world_manager.elevator_route(current_level, goal_level, self.radius):
-                        routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_radius=min(boarding_tolerance, boarding_radius), tolerance_angle=math.pi))
-                    current_level = goal_level
-            routed_phases.append(phase)
-            return routed_phases
+                return attrs.evolve(phase, phases=[resolve(inner) for inner in phase.phases])
+            return self._resolve_target(phase) if isinstance(phase, GoToPhase) else phase
+
+        routed_phases = route_phases(
+            [resolve(phase) for phase in request.phases],
+            start.position,
+            world_manager,
+            robot_radius=self.radius,
+            goal_tolerance=float(self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value),
+        )
 
         self.node._known_subjects.update(pedestrians)
-        phases = [self._with_defaults(routed) for phase in request.phases for routed in route(phase)]
+        phases = [self._with_defaults(phase) for phase in routed_phases]
         for phase in leaf_phases(phases):
             if isinstance(phase, GoToPhase) and phase.signal:
                 adapter = self._adapters.get(kind_of(phase))
