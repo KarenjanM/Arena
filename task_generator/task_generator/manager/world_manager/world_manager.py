@@ -19,7 +19,12 @@ from .utils import MultiLevelMap, WorldMap, WorldOccupancy
 _UNKNOWN_FOOTPRINT_RADIUS = 1.0
 _CABIN_BACK_CLEARANCE = 0.45
 _CABIN_DOOR_STANDOFF = 1.2
+_CABIN_ROBOT_MARGIN = 0.1
 _DOOR_OUTWARD = {'+x': (1.0, 0.0), '-x': (-1.0, 0.0), '+y': (0.0, 1.0), '-y': (0.0, -1.0)}
+
+
+def _door_standoff(robot_radius: float) -> float:
+    return max(_CABIN_DOOR_STANDOFF, robot_radius + _CABIN_ROBOT_MARGIN)
 
 
 @attrs.frozen
@@ -34,9 +39,18 @@ class ElevatorHop:
     dest_position: Position | None
     target: str  # authored destination token for the boarding elevator's `target` field, '' for single-destination elevators
     radius: float  # inscribed cabin radius: the robot centre within it counts as inside the cabin
-    board_target: Position | None = None  # drive goal near the boarding cabin's back wall, None = board_position
-    board_approach: Position | None = None  # straight out from the boarding cabin's door
-    dest_exit: Position | None = None  # straight out from the destination cabin's door
+
+
+@attrs.frozen
+class ElevatorRide:
+    """Map-frame drive geometry of one hop for a robot disc of a given radius."""
+
+    hop: ElevatorHop
+    board_target: Position  # near the boarding cabin's back wall, the robot's disc inside the cabin
+    board_approach: Position  # straight out from the boarding cabin's door
+    dest_exit: Position | None  # straight out from the destination cabin's door
+    door_standoff: float  # distance of the approach and exit points beyond their door face
+    boarding_radius: float  # Elevator.boarding_radius of the boarding cabin for that robot radius
 
 
 def _occupancy_to_available(occupancy: np.ndarray, safe_dist_cells: float) -> np.ndarray:
@@ -197,29 +211,39 @@ class WorldManager(NodeInterface):
             dest_position=self._elevator_position(dest_level, dest_name),
             target=token if n_destinations > 1 else '',
             radius=min(elevator.size[0], elevator.size[1]) / 2.0,
-            board_target=self._cabin_back_target(elevator, board_position),
-            board_approach=self._cabin_door_standoff(elevator, board_position),
-            dest_exit=self._dest_exit(dest_level, dest_name),
         )
 
-    def _dest_exit(self, level_id: str, name: str) -> Position | None:
-        found = self.find_elevator(f'{level_id}.{name}')
-        centre = self._elevator_position(level_id, name)
-        return None if found is None or centre is None else self._cabin_door_standoff(found[1], centre)
+    def _level_elevator(self, level_id: str, name: str) -> Elevator | None:
+        level = self._world.get_level(level_id)
+        return None if level is None else next((elevator for elevator in level.all_elevators if elevator.name == name), None)
+
+    def elevator_ride(self, hop: ElevatorHop, robot_radius: float) -> ElevatorRide:
+        """Ride target, door legs and boarding radius of `hop` for a robot disc of `robot_radius`."""
+        board = self._level_elevator(hop.board_level, hop.board_name)
+        assert board is not None
+        dest = self._level_elevator(hop.dest_level, hop.dest_name)
+        return ElevatorRide(
+            hop=hop,
+            board_target=self._cabin_back_target(board, hop.board_position, robot_radius),
+            board_approach=self._cabin_door_standoff(board, hop.board_position, robot_radius),
+            dest_exit=None if dest is None or hop.dest_position is None else self._cabin_door_standoff(dest, hop.dest_position, robot_radius),
+            boarding_radius=board.boarding_radius(robot_radius),
+            door_standoff=_door_standoff(robot_radius),
+        )
 
     @staticmethod
-    def _cabin_door_standoff(elevator: Elevator, centre: Position) -> Position:
-        """Point `_CABIN_DOOR_STANDOFF` straight out from the cabin's door face."""
+    def _cabin_door_standoff(elevator: Elevator, centre: Position, robot_radius: float) -> Position:
+        """Point straight out from the cabin's door face, `_CABIN_DOOR_STANDOFF` or the robot radius plus a margin away."""
         ox, oy = _DOOR_OUTWARD.get(str(elevator.door_side), (1.0, 0.0))
-        out = (elevator.size[0] if ox else elevator.size[1]) / 2.0 + _CABIN_DOOR_STANDOFF
+        out = (elevator.size[0] if ox else elevator.size[1]) / 2.0 + _door_standoff(robot_radius)
         return Position(x=centre.x + ox * out, y=centre.y + oy * out, z=centre.z)
 
     @staticmethod
-    def _cabin_back_target(elevator: Elevator, centre: Position) -> Position:
-        """Point inside the cabin, `_CABIN_BACK_CLEARANCE` in front of the wall opposite the door."""
+    def _cabin_back_target(elevator: Elevator, centre: Position, robot_radius: float) -> Position:
+        """Point on the door axis, `_CABIN_BACK_CLEARANCE` or the robot radius plus a margin in front of the back wall, never past the centre."""
         ox, oy = _DOOR_OUTWARD.get(str(elevator.door_side), (1.0, 0.0))
         half_depth = (elevator.size[0] if ox else elevator.size[1]) / 2.0
-        inset = max(0.0, half_depth - _CABIN_BACK_CLEARANCE)
+        inset = max(0.0, half_depth - max(_CABIN_BACK_CLEARANCE, robot_radius + _CABIN_ROBOT_MARGIN))
         return Position(x=centre.x - ox * inset, y=centre.y - oy * inset, z=centre.z)
 
     def elevator_hops(self, from_level: str, to_level: str) -> list[ElevatorHop]:

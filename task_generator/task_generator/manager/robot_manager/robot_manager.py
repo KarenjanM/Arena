@@ -267,6 +267,7 @@ class RobotManager(NodeInterface):
         self._placed = False
         self._unsupported_kinds_logged = set()
         self._abort_episode = None
+        self._cabin_to_clear = ""
 
     def bind_abort(self, fn: Callable[[str], None]) -> None:
         self._abort_episode = fn
@@ -376,6 +377,7 @@ class RobotManager(NodeInterface):
     def begin_episode(self) -> None:
         self._runner.begin_episode()
         self._placed = False
+        self._cabin_to_clear = ""
 
     @property
     def placed(self) -> bool:
@@ -459,6 +461,7 @@ class RobotManager(NodeInterface):
         state = self._runner.active_state
         if not self._placed:
             return Transition()
+        await self._clear_on_cabin_open()
         if state is None:
             return self._runner.step(sample, zones, None, (None, None))
         if not state.dispatched:
@@ -480,6 +483,8 @@ class RobotManager(NodeInterface):
             transition = self._runner.step(sample, zones, action_done, (None, None) if ride is not None else self._outcome_for_phase(state.phase), adapter.signal)
             if ride is not None and transition.ended is state:
                 self._set_elevator_target(ride, release=True)
+                if state.outcome == "met":
+                    self._cabin_to_clear = ride.exit_cabin
             elif ride is not None and state.monitor.held and not boarded:
                 self._set_elevator_target(ride)
         return await self._settle(transition)
@@ -501,6 +506,16 @@ class RobotManager(NodeInterface):
         if state is not None and not state.dispatched:
             await self._dispatch(state.index)
         return transition
+
+    async def _clear_on_cabin_open(self) -> None:
+        """Run the adapters' `on_cabin_open` once the cabin that delivered the robot reports its door open."""
+        if not self._cabin_to_clear or self.node._semantic_value(self._cabin_to_clear, "cabin_door") != "open":
+            return
+        self._cabin_to_clear = ""
+        results = await asyncio.gather(*(a.on_cabin_open(self) for a in self._adapter_instances), return_exceptions=True)
+        for adapter, result in zip(self._adapter_instances, results, strict=True):
+            if isinstance(result, BaseException):
+                self._logger.error(f"adapter {adapter.kind!r} on_cabin_open failed: {result!r}")
 
     def _set_elevator_target(self, phase: ElevatorRidePhase, *, release: bool = False) -> None:
         """Point a multi-destination boarding elevator at the ride's destination, `release` writes '' to hand it back."""
@@ -560,7 +575,13 @@ class RobotManager(NodeInterface):
                 return attrs.evolve(phase, phases=[resolve(inner) for inner in phase.phases])
             return self._resolve_target(phase) if isinstance(phase, GoToPhase) else phase
 
-        routed_phases = route_phases([resolve(phase) for phase in request.phases], start.position, world_manager)
+        routed_phases = route_phases(
+            [resolve(phase) for phase in request.phases],
+            start.position,
+            world_manager,
+            robot_radius=self.radius,
+            goal_tolerance=float(self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value),
+        )
 
         self.node._known_subjects.update(pedestrians)
         phases = [self._with_defaults(phase) for phase in routed_phases]

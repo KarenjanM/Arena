@@ -18,7 +18,7 @@ try:
     from arena_simulation_setup.utils.geometry import Orientation, Pose
     from arena_simulation_setup.utils.geometry import Position as GeoPosition
 
-    from task_generator.manager.robot_manager.elevator_routing import parse_via, ride_phase, route_phases
+    from task_generator.manager.robot_manager.elevator_routing import MIN_RIDE_TOLERANCE, parse_via, ride_phase, route_phases
     from task_generator.manager.robot_manager.task_runner import TaskRunner
     from task_generator.manager.world_manager.utils import WorldLayers, WorldMap, WorldOccupancy
     from task_generator.manager.world_manager.world_manager import WorldManager
@@ -79,6 +79,9 @@ def _two_storey(origin1: tuple[float, float] = (50.0, 0.0)) -> WorldManager:
         },
         origins={"0": (0.0, 0.0), "1": origin1},
     )
+
+
+_JACKAL = {"robot_radius": 0.3, "goal_tolerance": 1.0}
 
 
 def _pose(x: float, y: float) -> Pose:
@@ -169,17 +172,102 @@ def test_level_of_point_is_in_the_abstract_flattened_frame():
 
 def test_via_expands_into_ride_then_goal():
     wm = _open_world()
-    phases = route_phases([GoToPhase(pose=_pose(20.0, 20.0), via=("elevator_ground",))], Position(2.0, 2.0), wm)
+    phases = route_phases([GoToPhase(pose=_pose(20.0, 20.0), via=("elevator_ground",))], Position(2.0, 2.0), wm, **_JACKAL)
     assert [type(p) for p in phases] == [ElevatorLegPhase, ElevatorRidePhase, ElevatorLegPhase, GoToPhase]
     approach, ride, exit_leg, goal = phases
     assert (approach.pose.position.x, approach.pose.position.y) == (pytest.approx(33.2), 5.0)
     assert (exit_leg.pose.position.x, exit_leg.pose.position.y) == (pytest.approx(33.2), 18.0)
-    assert approach.tolerance_radius == exit_leg.tolerance_radius == pytest.approx(1.6)
+    assert approach.tolerance_radius == pytest.approx(1.6)
+    assert exit_leg.tolerance_radius == pytest.approx(1.1)
     assert (ride.pose.position.x, ride.pose.position.y) == (pytest.approx(30.45), 5.0)
     assert (ride.target, ride.until, ride.destination) == ("elevator_ground", "robot in elevator_top", "")
     assert ride.tolerance_angle == pytest.approx(math.pi)
+    assert ride.tolerance_radius == pytest.approx(0.625)
     assert approach.hold_time == ride.hold_time == exit_leg.hold_time == 0.0
     assert goal.via == () and (goal.pose.position.x, goal.pose.position.y) == (20.0, 20.0)
+
+
+_DOOR_AXIS = {None: (1.0, 0.0), "+x": (1.0, 0.0), "-x": (-1.0, 0.0), "+y": (0.0, 1.0), "-y": (0.0, -1.0)}
+
+
+def _sized_pair(size: float, door_side: str | None) -> WorldManager:
+    cabins = [
+        Elevator(name="lift_a", position=GeoPosition(12.0, 12.0, 0.0), destinations=["lift_b"], size=[size, size, 2.0], door_side=door_side),
+        Elevator(name="lift_b", position=GeoPosition(12.0, 30.0, 0.0), destinations=["lift_a"], size=[size, size, 2.0], door_side=door_side),
+    ]
+    return _wm({"0": [_zone("hall", 0, 0, 40, 40, cabins)]})
+
+
+def _along_and_across(point: Position, centre: Position, door_side: str | None) -> tuple[float, float]:
+    ox, oy = _DOOR_AXIS[door_side]
+    dx, dy = point.x - centre.x, point.y - centre.y
+    return dx * ox + dy * oy, abs(dx * oy - dy * ox)
+
+
+@pytest.mark.parametrize(("robot_radius", "size", "door_side"), [(0.2, 2.0, None), (0.7, 2.0, "+y"), (1.4, 4.0, "-x")])
+def test_ride_geometry_fits_small_and_large_robots(robot_radius, size, door_side):
+    wm = _sized_pair(size, door_side)
+    phases = route_phases([GoToPhase(pose=_pose(30.0, 35.0), via=("lift_a",))], Position(2.0, 2.0), wm, robot_radius=robot_radius, goal_tolerance=1.0)
+    approach, ride, exit_leg, _goal = phases
+    board, dest = Position(12.0, 12.0), Position(12.0, 30.0)
+    half_depth = size / 2.0
+    along, across = _along_and_across(ride.pose.position, board, door_side)
+    assert along <= 0.0 and across == pytest.approx(0.0)
+    assert half_depth + along >= robot_radius
+    boarding_radius = wm.find_elevator("lift_a")[1].boarding_radius(robot_radius)
+    assert 0.0 < ride.tolerance_radius <= boarding_radius
+    assert ride.tolerance_radius <= 1.0
+    for leg, centre in ((approach, board), (exit_leg, dest)):
+        along, across = _along_and_across(leg.pose.position, centre, door_side)
+        assert across == pytest.approx(0.0)
+        assert along - half_depth >= robot_radius
+
+
+def test_ride_tolerance_is_clamped_for_a_robot_that_barely_fits():
+    wm = _sized_pair(2.0, None)
+    phases = route_phases([GoToPhase(pose=_pose(30.0, 35.0), via=("lift_a",))], Position(2.0, 2.0), wm, robot_radius=1.0, goal_tolerance=1.0)
+    ride = phases[1]
+    assert wm.find_elevator("lift_a")[1].boarding_radius(1.0) <= 0.0
+    assert ride.tolerance_radius == pytest.approx(MIN_RIDE_TOLERANCE)
+    assert (ride.pose.position.x, ride.pose.position.y) == (pytest.approx(12.0), pytest.approx(12.0))
+
+
+def _three_storey_chain() -> WorldManager:
+    def storey(level: str, dest: str) -> list:
+        return [_zone(f"{level}_flat", 0, 0, 8, 4, [Elevator(name=f"{level}_elevator", position=GeoPosition(5.0, 0.0, 0.0), door_side="+y", destinations=[f"{dest}_elevator"])])]
+
+    return _wm({"1": storey("1", "2"), "2": storey("2", "3"), "3": storey("3", "1")}, origins={"1": (0.0, 0.0), "2": (0.0, -11.0), "3": (0.0, -22.0)})
+
+
+def test_chained_rides_leave_the_delivering_cabin_before_reboarding():
+    wm = _three_storey_chain()
+    phases = route_phases([GoToPhase(pose=_pose(7.0, -20.4))], Position(6.0, 2.4), wm, **_JACKAL)
+    assert [type(p) for p in phases] == [ElevatorLegPhase, ElevatorRidePhase, ElevatorLegPhase, ElevatorLegPhase, ElevatorRidePhase, ElevatorLegPhase, GoToPhase]
+    assert [(p.target, p.until) for p in phases if isinstance(p, ElevatorRidePhase)] == [("1_elevator", "robot in 2_elevator"), ("2_elevator", "robot in 3_elevator")]
+    exit_leg = phases[2]
+    assert (exit_leg.pose.position.x, exit_leg.pose.position.y) == (pytest.approx(5.0), pytest.approx(-8.8))
+    assert exit_leg.pose.position.y - exit_leg.tolerance_radius > -11.0 + 1.0
+    zones = zone_polygons(wm.world_compacted())
+    monitor = PhaseMonitor(exit_leg, "jackal")
+    assert monitor.step(_at(0.0, 5.32, -10.34), zones) is False
+    assert monitor.step(_at(1.0, 5.0, -9.85), zones) is True
+
+
+def test_cross_level_goal_via_single_destination_elevator_ends_on_goal_level():
+    wm = _two_storey()
+    goal = _pose(60.0, 10.0)
+    phases = route_phases([GoToPhase(pose=goal)], Position(2.0, 2.0), wm, **_JACKAL)
+    rides = [p for p in phases if isinstance(p, ElevatorRidePhase)]
+    assert len(rides) == 1
+    (ride,) = rides
+    assert (ride.target, ride.until, ride.destination) == ("e0", "robot in e1", "")
+    goal_level = wm.level_of_point(goal.position.x, goal.position.y)
+    assert goal_level == "1"
+    assert wm.find_elevator("e1")[0] == goal_level
+    exit_leg = phases[phases.index(ride) + 1]
+    assert isinstance(exit_leg, ElevatorLegPhase)
+    assert wm.level_of_point(exit_leg.pose.position.x, exit_leg.pose.position.y) == goal_level
+    assert phases[-1].pose == goal
 
 
 def test_via_dict_destination_syntax_roundtrip():
@@ -191,12 +279,12 @@ def test_no_via_same_level_is_unchanged():
     wm = _open_world()
     goal = GoToPhase(pose=_pose(20.0, 20.0))
     gesture = PlayGesturePhase(gesture="wave")
-    assert route_phases([goal, gesture], Position(2.0, 2.0), wm) == [goal, gesture]
+    assert route_phases([goal, gesture], Position(2.0, 2.0), wm, **_JACKAL) == [goal, gesture]
 
 
 def test_cross_level_goal_gets_ride_phase():
     wm = _two_storey()
-    phases = route_phases([GoToPhase(pose=_pose(60.0, 10.0))], Position(2.0, 2.0), wm)
+    phases = route_phases([GoToPhase(pose=_pose(60.0, 10.0))], Position(2.0, 2.0), wm, **_JACKAL)
     assert [type(p) for p in phases] == [ElevatorLegPhase, ElevatorRidePhase, ElevatorLegPhase, GoToPhase]
     assert (phases[1].target, phases[1].until) == ("e0", "robot in e1")
 
@@ -209,7 +297,7 @@ def test_via_on_other_level_is_reached_by_auto_route():
         },
         origins={"0": (0.0, 0.0), "1": (50.0, 0.0)},
     )
-    phases = route_phases([GoToPhase(pose=_pose(85.0, 15.0), via=("shuttle_a",))], Position(2.0, 2.0), wm)
+    phases = route_phases([GoToPhase(pose=_pose(85.0, 15.0), via=("shuttle_a",))], Position(2.0, 2.0), wm, **_JACKAL)
     assert [p.target for p in phases if isinstance(p, ElevatorRidePhase)] == ["e0", "shuttle_a"]
     assert isinstance(phases[-1], GoToPhase) and not isinstance(phases[-1], ElevatorRidePhase)
 
@@ -218,13 +306,13 @@ def test_routing_uses_start_level_not_stale_pose():
     """Reset flows submit before the robot is moved: the start level must come from the request start."""
     wm = _two_storey()
     goal = [GoToPhase(pose=_pose(60.0, 10.0))]
-    assert len(route_phases(goal, Position(55.0, 15.0), wm)) == 1
-    assert len(route_phases(goal, Position(2.0, 2.0), wm)) == 4
+    assert len(route_phases(goal, Position(55.0, 15.0), wm, **_JACKAL)) == 1
+    assert len(route_phases(goal, Position(2.0, 2.0), wm, **_JACKAL)) == 4
 
 
 def test_unknown_via_raises():
     with pytest.raises(ValueError):
-        route_phases([GoToPhase(pose=_pose(1.0, 1.0), via=("ghost",))], Position(2.0, 2.0), _open_world())
+        route_phases([GoToPhase(pose=_pose(1.0, 1.0), via=("ghost",))], Position(2.0, 2.0), _open_world(), **_JACKAL)
 
 
 # ride phase completion
@@ -237,7 +325,7 @@ def _at(t: float, x: float, y: float) -> Sample:
 def test_ride_phase_completes_only_after_boarding_and_arrival():
     wm = _open_world()
     zones = zone_polygons(wm.world_compacted())
-    monitor = PhaseMonitor(ride_phase(wm.elevator_hop("elevator_ground"), Orientation.from_yaw(0.0)), "jackal")
+    monitor = PhaseMonitor(ride_phase(wm.elevator_ride(wm.elevator_hop("elevator_ground"), 0.3), Orientation.from_yaw(0.0), 1.0), "jackal")
     assert monitor.step(_at(0.0, 31.0, 18.0), zones) is False
     assert monitor.held is False
     assert monitor.step(_at(1.0, 31.2, 5.1), zones) is False
@@ -249,7 +337,7 @@ def test_ride_phase_completes_only_after_boarding_and_arrival():
 def test_ride_phase_survives_the_recorded_form():
     wm = _open_world()
     zones = zone_polygons(wm.world_compacted())
-    replayed = TaskPhase.parse(ride_phase(wm.elevator_hop("elevator_ground"), Orientation.from_yaw(0.0)).serialize())
+    replayed = TaskPhase.parse(ride_phase(wm.elevator_ride(wm.elevator_hop("elevator_ground"), 0.3), Orientation.from_yaw(0.0), 1.0).serialize())
     monitor = PhaseMonitor(replayed, "jackal")
     assert monitor.step(_at(0.0, 31.0, 18.0), zones) is False
     assert monitor.step(_at(1.0, 31.2, 5.1), zones) is False
@@ -265,9 +353,13 @@ class _FakeAdapter:
 
     def __init__(self):
         self.dispatched: list = []
+        self.cabin_opens = 0
 
     async def dispatch_phase(self, phase, robot):
         self.dispatched.append(phase)
+
+    async def on_cabin_open(self, robot):
+        self.cabin_opens += 1
 
     def on_phase_tick(self, phase, robot):
         pass
@@ -295,9 +387,12 @@ def _robot_manager(wm: WorldManager, env_offset: tuple[float, float] = (100.0, 0
         GOAL_HOLD_TIME=SimpleNamespace(value=0.0),
         GOAL_SIGNAL=SimpleNamespace(value=""),
     )
+    doors: dict[str, str] = {}
     node = SimpleNamespace(
         _world_manager=wm,
         _set_semantic=lambda entity, field, value: writes.append((entity, field, value)) or True,
+        _semantic_value=lambda entity, field: doors.get(entity, "closed") if field == "cabin_door" else None,
+        doors=doors,
         get_logger=lambda: _Logger(),
         on_task_submitted=lambda manager: None,
         ped_names=lambda: [],
@@ -324,9 +419,11 @@ def _robot_manager(wm: WorldManager, env_offset: tuple[float, float] = (100.0, 0
     rm._placed = True
     rm._unsupported_kinds_logged = set()
     rm._abort_episode = None
+    rm._cabin_to_clear = ""
     rm._publish_goal_task = None
     rm._watchers = []
     rm._robot = SimpleNamespace(name="jackal")
+    rm._robot_radius = 0.3
     rm._pose = None
     return rm, adapter, writes
 
@@ -395,6 +492,44 @@ def test_ride_sets_elevator_target_and_waits_for_teleport():
     assert rm._runner.active == 3 and adapter.dispatched[-1].pose.position.y == pytest.approx(30.0)
     _tick(rm, 7.0, 6.0, 30.0)
     assert asyncio.run(rm.is_done) is True
+
+
+def test_costmap_clear_runs_once_per_ride_after_the_delivering_door_opens():
+    wm = _wm(
+        {"0": [_zone("hall", 0, 0, 40, 40, [_elev("hub", 5, 5, "east", "west"), _elev("east", 35, 5, "hub"), _elev("west", 5, 35, "hub")])]},
+    )
+    rm, adapter, _ = _robot_manager(wm, env_offset=(0.0, 0.0))
+    doors = rm.node.doors
+    _set_pose(rm, 2.0, 2.0)
+    asyncio.run(rm.submit_task(TaskRequest(phases=[GoToPhase(pose=_pose(6.0, 12.0), via=("hub>west", "west"))]), _pose(2.0, 2.0)))
+    assert [type(state.phase) for state in rm._runner.phases] == [ElevatorLegPhase, ElevatorRidePhase, ElevatorLegPhase, ElevatorLegPhase, ElevatorRidePhase, ElevatorLegPhase, GoToPhase]
+    doors["hub"] = "open"
+    _tick(rm, 1.0, 7.2, 5.0)
+    _tick(rm, 2.0, 6.2, 5.0)
+    _tick(rm, 3.0, 5.1, 5.0)
+    doors["hub"] = "closed"
+    _tick(rm, 4.0, 5.0, 35.2)
+    assert rm._runner.active == 2 and adapter.cabin_opens == 0
+    doors["west"] = "opening"
+    _tick(rm, 5.0, 5.0, 35.2)
+    assert adapter.cabin_opens == 0
+    doors["west"] = "open"
+    _tick(rm, 6.0, 5.0, 35.2)
+    assert adapter.cabin_opens == 1
+    _tick(rm, 7.0, 7.2, 35.0)
+    _tick(rm, 8.0, 7.2, 35.0)
+    assert rm._runner.active == 4 and adapter.cabin_opens == 1
+    _tick(rm, 9.0, 6.2, 35.0)
+    _tick(rm, 10.0, 5.1, 35.0)
+    doors["west"] = "closed"
+    _tick(rm, 11.0, 5.0, 5.2)
+    assert rm._runner.active == 5 and adapter.cabin_opens == 1
+    _tick(rm, 12.0, 5.0, 5.2)
+    assert adapter.cabin_opens == 1
+    doors["hub"] = "open"
+    _tick(rm, 13.0, 5.0, 5.2)
+    _tick(rm, 14.0, 7.2, 5.0)
+    assert adapter.cabin_opens == 2
 
 
 def test_ride_outcome_ignores_the_adapter_status():
@@ -468,7 +603,7 @@ def test_ride_goal_sits_inside_cabin_beyond_goal_tolerance():
     centre = Position(x=3.0, y=11.0, z=0.0)
     for side, expect in [('-y', (3.0, 11.55)), ('+y', (3.0, 10.45)), ('+x', (2.45, 11.0)), ('-x', (3.55, 11.0))]:
         elevator = types.SimpleNamespace(door_side=side, size=(2.0, 2.0, 2.0))
-        target = WorldManager._cabin_back_target(elevator, centre)
+        target = WorldManager._cabin_back_target(elevator, centre, 0.3)
         assert (round(target.x, 6), round(target.y, 6)) == expect
         ox, oy = {'+x': (1, 0), '-x': (-1, 0), '+y': (0, 1), '-y': (0, -1)}[side]
         stop = (target.x + ox * 1.0, target.y + oy * 1.0)

@@ -28,6 +28,7 @@ class ElevatorRidePhase(GoToPhase):
     """Board the `target` cabin and stay until the elevator delivers the robot, `until` names the destination cabin."""
 
     destination: str = attrs.field(default="", kw_only=True)
+    exit_cabin: str = attrs.field(default="", kw_only=True)
 
 
 @attrs.define

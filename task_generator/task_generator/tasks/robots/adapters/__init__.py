@@ -291,6 +291,10 @@ class Adapter(ABC):
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
         return None
 
+    async def on_cabin_open(self, robot: RobotManager) -> None:
+        """Called once per elevator ride, when the cabin that delivered the robot reports its door open."""
+        return None
+
     async def on_controllers_active(self, robot: RobotManager) -> None:
         """Called once per robot bring-up after every spawned controller reports active."""
         return None
