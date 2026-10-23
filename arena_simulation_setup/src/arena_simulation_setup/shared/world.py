@@ -20,11 +20,38 @@ CABIN_DOOR_WIDTH = 0.05
 CABIN_DOOR_THRESHOLD = 0.6
 
 
-def _activation_distance_converter(x: float | typing.Sequence[float]) -> tuple[float, float]:
+ActivationDistance = typing.NewType('ActivationDistance', tuple[float, float])
+
+
+def _activation_distance_converter(x: float | typing.Sequence[float]) -> ActivationDistance:
     if isinstance(x, (int, float)):
-        return (float(x), float(x))
+        return ActivationDistance((float(x), float(x)))
     a, b = x
-    return (float(a), float(b))
+    return ActivationDistance((float(a), float(b)))
+
+
+converter.register_structure_hook(ActivationDistance, lambda value, _: _activation_distance_converter(value))
+
+
+def _call_mode_validator(_instance: object, _attribute: object, value: str) -> None:
+    if value not in ('level', 'edge'):
+        raise ValueError(f"elevator call_mode must be 'level' or 'edge', got {value!r}")
+
+
+def _optional_capacity(value: object) -> int | None:
+    if value is None:
+        return None
+    capacity = int(value)  # type: ignore[call-overload]
+    if capacity < 1:
+        raise ValueError(f'elevator capacity must be >= 1 or null, got {value!r}')
+    return capacity
+
+
+def _swing_direction_converter(value: object) -> int:
+    direction = int(value)  # type: ignore[call-overload]
+    if direction not in (1, -1):
+        raise ValueError(f'door swing_direction must be 1 or -1, got {value!r}')
+    return direction
 
 
 @attrs.define
@@ -41,6 +68,9 @@ class Elevator(Named):
     travel_time: float = 3.0
     accept_outside_calls: bool = True
     recall_on: str | None = None
+    # None = unlimited
+    capacity: int | None = attrs.field(default=None, converter=_optional_capacity)
+    call_mode: typing.Literal['level', 'edge'] = attrs.field(default='level', validator=_call_mode_validator)
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
     @property
@@ -71,12 +101,14 @@ class Door(Named):
     width: float = 0.1
     height: float = attrs.field(default=2.0)
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('door'))
-    activation_distance: tuple[float, float] = attrs.field(
+    activation_distance: ActivationDistance = attrs.field(
         converter=_activation_distance_converter,
-        default=(3.0, 3.0),
+        default=ActivationDistance((3.0, 3.0)),
     )
     transition_time: float = 1.0
     hold_time: float = 2.0
+    # hinged only: +1 swings towards the left normal of start->end, -1 towards the right.
+    swing_direction: int = attrs.field(default=1, converter=_swing_direction_converter)
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
     @classmethod
@@ -137,9 +169,36 @@ class Schedule(Named):
 
 @attrs.define
 class Signal(Named):
-    """Standalone cycling-phase semantic entity (kind = signal), no geometry."""
+    """Standalone cycling-phase semantic entity (kind = signal), no geometry, optional stop-line params `position` and `radius`."""
 
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+    def __attrs_post_init__(self) -> None:
+        position = self._param('position')
+        if position is not None:
+            if not isinstance(position, (list, tuple)) or len(position) != 2 or not all(isinstance(v, (int, float)) for v in position):
+                raise ValueError(f"signal {self.name!r} position must be [x, y], got {position!r}")
+        radius = self._param('radius')
+        if radius is not None and float(radius) <= 0.0:
+            raise ValueError(f"signal {self.name!r} radius must be positive, got {radius!r}")
+
+    def _param(self, key: str) -> typing.Any:  # noqa: ANN401 - untyped YAML semantics params
+        for cfg in self.semantics:
+            if key in cfg.params:
+                return cfg.params[key]
+        return None
+
+    @property
+    def stop_position(self) -> tuple[float, float] | None:
+        """Stop-line position, None when not given."""
+        position = self._param('position')
+        return None if position is None else (float(position[0]), float(position[1]))
+
+    @property
+    def stop_radius(self) -> float | None:
+        """Stop-line radius, None when not given."""
+        radius = self._param('radius')
+        return None if radius is None else float(radius)
 
 
 def _optional_position(value: object) -> Position | None:
