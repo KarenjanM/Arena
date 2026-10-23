@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 
+import attrs
 from arena_robots.task_kinds import TaskKind
 from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, PlayGesturePhase, ReachPhase, TaskPhase, TaskRequest
 
@@ -22,11 +23,25 @@ def leaf_phases(phases: Iterable[TaskPhase]) -> Iterator[TaskPhase]:
             yield phase
 
 
+@attrs.define
+class ElevatorRidePhase(GoToPhase):
+    """Board the `target` cabin and stay until the elevator delivers the robot, `until` names the destination cabin."""
+
+    destination: str = attrs.field(default="", kw_only=True)
+
+
+@attrs.define
+class ElevatorLegPhase(GoToPhase):
+    """Door-aligned approach or exit waypoint around an elevator ride."""
+
+
 __all__ = [
     "TaskKind",
     "TaskPhase",
     "GoToPhase",
     "LoopPhase",
+    "ElevatorRidePhase",
+    "ElevatorLegPhase",
     "ReachPhase",
     "PlayGesturePhase",
     "TaskRequest",
