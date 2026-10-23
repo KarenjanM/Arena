@@ -831,8 +831,8 @@ class RobotManager(NodeInterface):
             ready_timeout = self.node.conf.Robot.READY_TIMEOUT.value
             await asyncio.gather(*(a.await_ready(self, node_paths, ready_timeout) for a in self._adapter_instances))
             await self.bring_up_controllers()
-        for adapter in self._adapter_instances:
-            await adapter.on_controllers_active(self)
+            for adapter in self._adapter_instances:
+                await adapter.on_controllers_active(self)
 
     async def bring_up_controllers(self) -> None:
         """Drive this robot's controllers to active inside the caller's unpause window, raising only on a refusal that outlasts the manager's startup grace."""
