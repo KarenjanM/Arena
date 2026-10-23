@@ -1,0 +1,28 @@
+format: arena-scenario/2
+humans:
+- name: mate_1
+  model: casual_female_caucasian_young
+  pose: [6.5, 3.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 6.5, y: 3.0, level: '1'}
+  - {x: 4.0, y: 6.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: mate_2
+  model: worker_male_caucasian_young
+  pose: [9.5, 3.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 9.5, y: 3.0, level: '1'}
+  - {x: 12.0, y: 6.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '1'
+  goal_level: '0'
+conditions:
+- {op: eventually, p: robot in l0_lobby, text: Arrive on the other floor.}

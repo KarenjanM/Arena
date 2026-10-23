@@ -1,0 +1,33 @@
+format: arena-scenario/2
+robots:
+- start: [3.0, 6.0, 0.0]
+  phases:
+  - {goto: [23.0, 9.0, 0.0]}
+regions:
+  east_source:
+    type: source
+    polygon:
+    - {x: 22.0, y: 7.5}
+    - {x: 25.0, y: 7.5}
+    - {x: 25.0, y: 11.0}
+    - {x: 22.0, y: 11.0}
+    config:
+      rate_profile:
+      - {t: 0.0, rate: 0.3}
+      max_concurrent: 4
+      max_total: 12
+      agent: {agent_type: adult, desired_velocity: {min: 1.0, max: 1.4}, sink_affinity: [{sink: west_sink, weight: 1.0}]}
+  west_sink:
+    type: sink
+    polygon:
+    - {x: 1.0, y: 4.0}
+    - {x: 4.0, y: 4.0}
+    - {x: 4.0, y: 8.0}
+    - {x: 1.0, y: 8.0}
+    config: {capacity: -1}
+conditions:
+- {op: eventually, p: robot in east_north, text: Reach the far hall.}
+- op: never_during
+  p: robot in dw_main
+  q: main_door/0.state == closing
+  text: Never stand in the doorway while the door is closing.

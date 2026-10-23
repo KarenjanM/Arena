@@ -1,0 +1,32 @@
+format: arena-scenario/2
+humans:
+- name: rider_m1
+  model: casual_female_caucasian_young
+  pose: [11.0, 8.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 11.0, y: 8.0, level: '1'}
+  - {elevator: elev_m1}
+  - {x: 5.0, y: 3.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: rider_m2
+  model: worker_male_caucasian_young
+  pose: [13.0, 1.5, -1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 13.0, y: 1.5, level: '1'}
+  - {elevator: elev_m2}
+  - {x: 12.0, y: 3.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '1'
+  goal_level: '0'
+conditions:
+- {op: eventually, p: robot in l0_lobby, text: Robot arrives on the ground floor.}
+- {op: eventually, p: rider_m1 in l0_lobby, text: Rider from elev_m1 is not stranded.}
+- {op: eventually, p: rider_m2 in l0_lobby, text: Rider from elev_m2 is not stranded.}

@@ -1,0 +1,23 @@
+name: customer
+extends: adult
+mode: behavior_tree
+desired_velocity:
+  mean: 1.0
+  std: 0.1
+  clip_low: 0.8
+  clip_high: 1.2
+sequences:
+  queue:
+    steps:
+      be_served:
+        target: counter
+        interaction: USE
+        duration:
+          mean: 20.0
+          std: 5.0
+          clip_low: 10.0
+          clip_high: 30.0
+        patience:
+          mean: 900.0
+    then: queue
+initial_sequence: queue

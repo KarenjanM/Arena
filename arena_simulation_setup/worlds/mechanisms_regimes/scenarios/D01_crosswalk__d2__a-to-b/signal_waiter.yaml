@@ -1,0 +1,35 @@
+name: signal_waiter
+extends: adult
+mode: behavior_tree
+needs:
+  xwalk_signal.state==go:
+    initial:
+      mean: 0.0
+      clip_low: 0.0
+      clip_high: 0.0
+    decay_rate:
+      mean: 0.0
+      clip_low: 0.0
+      clip_high: 0.0
+sequences:
+  default:
+    steps:
+      wait:
+        duration:
+          mean: 3600.0
+    then: default
+    transitions:
+    - when:
+        xwalk_signal.state==go:
+          above: 50.0
+      goto: go
+  go:
+    steps:
+      leave:
+        kind: go_to
+        target: far_curb_e
+      stay:
+        duration:
+          mean: 3600.0
+    then: go
+initial_sequence: default

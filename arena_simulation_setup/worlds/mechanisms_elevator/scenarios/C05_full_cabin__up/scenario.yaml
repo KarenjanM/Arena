@@ -1,0 +1,38 @@
+format: arena-scenario/2
+humans:
+- name: rider_1
+  model: casual_female_caucasian_young
+  pose: [2.3, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 2.3, y: 8.4, level: '0'}
+  - {x: 6.0, y: 4.0, level: '1'}
+  waypoint_mode: once
+  level: '0'
+- name: rider_2
+  model: worker_male_caucasian_young
+  pose: [3.0, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.0, y: 8.4, level: '0'}
+  - {x: 7.0, y: 4.0, level: '1'}
+  waypoint_mode: once
+  level: '0'
+- name: rider_3
+  model: Office/office_female_caucasian_young
+  pose: [3.7, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.7, y: 8.4, level: '0'}
+  - {x: 8.0, y: 4.0, level: '1'}
+  waypoint_mode: once
+  level: '0'
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '0'
+  goal_level: '1'
+conditions:
+- {op: eventually, p: robot in l1_lobby, text: Arrive on the other floor.}
+- {op: never, p: elev_a/0.live_occupants == 4, text: Never be the fourth person in a cabin for three.}

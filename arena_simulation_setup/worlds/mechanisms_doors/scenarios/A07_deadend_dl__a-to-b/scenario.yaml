@@ -1,0 +1,10 @@
+format: arena-scenario/2
+robots:
+- start: [2.0, 24.75, 0.0]
+  phases:
+  - {goto: [14.0, 24.75, 0.0]}
+timeline:
+- {at: 0.0, set: [{entity: door_dl, field: locked, value: 'true'}]}
+conditions:
+- {op: eventually, p: robot in dl_east, text: Reach the other room.}
+- {op: eventually, p: robot in dl_up, text: Take the door-free detour.}
