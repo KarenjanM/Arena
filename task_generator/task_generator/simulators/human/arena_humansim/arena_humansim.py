@@ -162,7 +162,7 @@ class PedMechanics:
 
 
 def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[AffordanceSlot]) -> int:
-    """Agents an object takes: the scenario's capacity or seat count, else the most of its sit slots occupiable at once, at least 1."""
+    """Queue length at which needs-driven agents pass the object over: the scenario's capacity or seat count, else the most of its sit slots held together, at least 1."""
     if "capacity" in humansim:
         return int(humansim["capacity"])
     if "seats" in humansim:
@@ -1183,7 +1183,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
                 try:
                     slots = placed_slots({AffordanceKind.SIT: raw_slots})
-                except ValueError as e:
+                except (TypeError, ValueError) as e:
                     self._logger.warning(f"Ignoring the sit slots of '{obstacle.sim_path}': {e}")
                     slots = []
                 humansim = obstacle.humansim

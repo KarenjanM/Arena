@@ -268,7 +268,7 @@ keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 | Key | Meaning |
 | --- | --- |
 | `type` | Object type string, matched against a behavior-tree step/action `target:` (falls back to the model's `annotation.yaml` name/desc if omitted). |
-| `capacity` | Queue length at which a needs-driven agent looking for an object of this type passes this one over. Default `1`. |
+| `capacity` | Queue length at which a needs-driven agent looking for an object of this type passes this one over. Default the count of the entry's `seats`, else the most of the annotated sit slots that can be held together, at least `1`. |
 | `satisfies` | `{need: amount}` applied to an agent that completes an interaction here, same shape as an agent-type step's `satisfies:`. |
 | `interaction_radius` | Overrides the interaction kind's default approach radius for this object. |
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |

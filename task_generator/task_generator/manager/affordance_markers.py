@@ -63,11 +63,12 @@ def deleteall_markers() -> list[Marker]:
 
 
 def claims_of(slots: Sequence[AffordanceSlot], held: Iterable[int]) -> AffordanceClaims:
-    """Claims on the held slot indices, a held slot overlapping an earlier claim left out."""
+    """Claims on the held indices into the sit slots, a held slot overlapping an earlier claim left out."""
     claims = AffordanceClaims(list(slots))
+    sit = [slot for slot in slots if slot.kind is AffordanceKind.SIT]
     for index in held:
-        if 0 <= index < len(slots) and claims.blocking(slots[index]) is None:
-            claims.claim(slots[index])
+        if 0 <= index < len(sit) and claims.blocking(sit[index]) is None:
+            claims.claim(sit[index])
     return claims
 
 

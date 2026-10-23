@@ -149,7 +149,7 @@ It also publishes the latched `affordance_markers` MarkerArray
 ([`affordance_markers.py`](affordance_markers.py)) with the placed affordance
 slots of every spawned static obstacle, world and episode alike: per slot its
 box with the top diagonals and an arrow from the box edge for each allowed
-facing, one marker namespace per kind (`sit`). A slot an agent sits on is pink
+facing, one marker namespace per kind (`sit`). A slot an agent holds, walking up or seated, is pink
 and the slots overlapping it grey, from `AffordanceClaims` over the seats the
 human simulator reports held on the object (`held_seats()`). It is republished
 whenever obstacles spawn or are removed and whenever the held seats change, and
