@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import typing
 
 import ament_index_python.packages
@@ -88,6 +89,24 @@ class ManagedEnv:
             await node._shutdown_pg(self.env_id, self.popen, grace_seconds=grace_seconds)
         if self.tee_thread is not None:
             await asyncio.get_running_loop().run_in_executor(None, self.tee_thread.join, 5.0)
+
+
+def _group_alive(popen: subprocess.Popen) -> bool:
+    popen.poll()
+    try:
+        os.killpg(popen.pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+async def _group_gone(popen: subprocess.Popen, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while _group_alive(popen):
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(0.2)
+    return True
 
 
 _WINDOW_REASON = "unpause_window"
@@ -799,33 +818,26 @@ class ArenaNode(ArenaMixinNode, rclpy.lifecycle.LifecycleNode):
         *,
         grace_seconds: float,
     ) -> None:
-        """Reap a wrapper-python pgid: optional grace, SIGTERM-pgid, SIGKILL-pgid.
+        """Reap a wrapper-python pgid, members outliving the wrapper included: optional grace, SIGTERM-pgid, SIGKILL-pgid.
 
         The wrapper is started with start_new_session=True so killpg targets its
         own group, not arena_node's.
         """
-        loop = asyncio.get_running_loop()
-        if popen.poll() is not None:
+        if await _group_gone(popen, grace_seconds):
             return
         if grace_seconds > 0:
-            try:
-                await asyncio.wait_for(loop.run_in_executor(None, popen.wait), timeout=grace_seconds)
-                return
-            except TimeoutError:
-                self.get_logger().warning(f"env_{env_id} did not exit within {grace_seconds:.1f}s, sending SIGTERM")
+            self.get_logger().warning(f"env_{env_id} did not exit within {grace_seconds:.1f}s, sending SIGTERM")
         try:
-            os.killpg(os.getpgid(popen.pid), signal.SIGTERM)
+            os.killpg(popen.pid, signal.SIGTERM)
         except ProcessLookupError:
             return
         except Exception as e:
             self.get_logger().warning(f"SIGTERM env_{env_id} failed: {e!r}")
-        try:
-            await asyncio.wait_for(loop.run_in_executor(None, popen.wait), timeout=2.0)
+        if await _group_gone(popen, 2.0):
             return
-        except TimeoutError:
-            self.get_logger().warning(f"env_{env_id} did not exit after SIGTERM, sending SIGKILL")
+        self.get_logger().warning(f"env_{env_id} did not exit after SIGTERM, sending SIGKILL")
         try:
-            os.killpg(os.getpgid(popen.pid), signal.SIGKILL)
+            os.killpg(popen.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         except Exception as e:
