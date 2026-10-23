@@ -32,7 +32,7 @@ from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.material import MdlUtil
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from geometry_msgs.msg import Pose as RosPose
-from gz.msgs10 import light_pb2, material_color_pb2
+from gz.msgs10 import light_pb2, material_color_pb2, world_stats_pb2
 from launch import LaunchDescription
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from ros_gz_interfaces.msg import Entity as EntityMsg
@@ -86,6 +86,9 @@ _RTF_BOOST = 1e6
 _SET_PHYSICS_TIMEOUT_MS = 5000
 _SET_PHYSICS_ATTEMPTS = 3
 _CLEANUP_ATTEMPTS = 5
+_WORLD_STATS_TOPIC = '/world/default/stats'
+_BATCH_STALL_S = 5.0
+_BATCH_POLL_S = 0.05
 
 _LATCHED_QOS = QoSProfile(
     depth=1,
@@ -130,6 +133,12 @@ class GazeboHost(SimLifecycle):
         self._logger = logger
         self._dt = physics_dt
         self._rtf_boosted = False
+        self._stats: world_stats_pb2.WorldStatistics | None = None
+        self._gz_node = gz.transport13.Node()
+        self._gz_node.subscribe(world_stats_pb2.WorldStatistics, _WORLD_STATS_TOPIC, self._on_stats)
+
+    def _on_stats(self, msg: world_stats_pb2.WorldStatistics) -> None:
+        self._stats = msg
 
     async def ensure_ready(self) -> None:
         await self._node.do_launch(
@@ -252,7 +261,25 @@ class GazeboHost(SimLifecycle):
             chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
             await self._send_multi_step(chunk, seconds)
             await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
+        await self._await_batches_done(target)
         return n * self._dt
+
+    async def _await_batches_done(self, target: Time) -> None:
+        """Wait until gz paused at or past target: an unpause sent while a multi_step batch is pending is undone when the batch ends."""
+        target_s = target.to_seconds()
+        last_sim = -1.0
+        stalled_since = time.monotonic()
+        while True:
+            stats = self._stats
+            sim = stats.sim_time.sec + stats.sim_time.nsec * 1e-9 if stats is not None else -1.0
+            if stats is not None and stats.paused and sim >= target_s:
+                return
+            if sim > last_sim:
+                last_sim, stalled_since = sim, time.monotonic()
+            elif time.monotonic() - stalled_since > _BATCH_STALL_S:
+                self._logger.warning(f"gz did not report a finished step batch within {_BATCH_STALL_S:.0f}s of stalling (sim {sim:.3f}s, target {target_s:.3f}s)")
+                return
+            await asyncio.sleep(_BATCH_POLL_S)
 
     async def _send_multi_step(self, n: int, seconds: float) -> None:
         async with self._semaphore:
