@@ -6,9 +6,11 @@ from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier
 from arena_simulation_setup.tree.World import WorldIdentifier, anchor_light
 from arena_simulation_setup.tree.World.Scenario import Scenario, ScenarioView
 
-from task_generator.shared import Region
+from task_generator.shared import DynamicObstacle, Position, Region
+from task_generator.simulators.human.itinerary import Stop
 from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
+from task_generator.tasks.obstacles._itinerary import attach_itinerary
 from task_generator.tasks.obstacles._validation import make_is_valid
 from task_generator.tasks.registry import default_scenario
 
@@ -51,7 +53,32 @@ class TM_Scenario(TM_Obstacles):
         self.node.register_timeline(scenario.timeline, seed)
         self.node.register_conditions(scenario.conditions)
 
-        return scenario.objects, scenario.humans
+        return scenario.objects, [self._with_itinerary(obstacle) for obstacle in scenario.humans]
+
+    def _with_itinerary(self, obstacle: DynamicObstacle) -> DynamicObstacle:
+        """Attach waypoint dwell and explicit elevator rides."""
+        wm = self._ctx.world_manager
+        realizer = self.node._realizer
+
+        def elevator_ride(name: str, toward: Position | None) -> Stop | None:
+            try:
+                hop = wm.elevator_hop(name, toward=toward)
+            except ValueError as e:
+                self._logger.warning(f"{obstacle.name}: {e}")
+                return None
+            return Stop(x=hop.board_position.x, y=hop.board_position.y, ride=True, elevator=hop.board_name, target=hop.target)
+
+        try:
+            return attach_itinerary(
+                obstacle,
+                level_origin=realizer.get_level_origin,
+                placement=lambda zone, level: realizer.placement_level(zone, level, obstacle.level),
+                elevator_ride=elevator_ride,
+                warn=self._logger.warning,
+            )
+        except (KeyError, ValueError) as e:
+            self._logger.error(f"{obstacle.name}: itinerary ignored: {e}")
+            return obstacle
 
     async def _check_clips(self, scenario_view: ScenarioView, scenario: Scenario) -> None:
         """Resolve the clips the scenario's agents play and warn about the ones that will not."""
