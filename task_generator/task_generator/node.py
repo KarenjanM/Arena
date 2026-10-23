@@ -607,6 +607,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             acoustics=self._acoustics_simulator,
             robots_visible=self.conf.Human.ROBOTS_VISIBLE.value,
         )
+        self._human_simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up environment manager")
         self._environment_manager = EnvironmentManager(

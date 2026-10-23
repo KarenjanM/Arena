@@ -7,9 +7,9 @@ import pytest
 from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
 from arena_humansim_msgs.msg import InteractionFrame
 
-from arena_simulation_setup.utils.affordance import placed_slots
+from arena_simulation_setup.utils.affordance import conflicts, placed_slots
 
-from task_generator.simulators.human.arena_humansim.arena_humansim import reach_radius, seat_capacity, seated_agents
+from task_generator.simulators.human.arena_humansim.arena_humansim import conflict_offsets, held_seats, reach_radius, seat_capacity, seat_violation
 
 SOFA = placed_slots(
     {
@@ -41,14 +41,33 @@ def test_reach_radius_covers_the_footprint_from_beside_it():
     assert reach_radius([[0.0, 2.0], [-0.5, 0.0], [0.0, 0.5]]) == pytest.approx(math.hypot(2.0, 0.5) + 0.3)
 
 
-def test_seated_agents_lists_participants_of_held_sit_interactions_only():
+def test_held_seats_lists_the_seats_of_sit_and_lie_participants_only():
     frame = InteractionFrame(
-        interaction_id=[1, 2, 3],
-        interaction_type=[InteractionType.SIT_ON, InteractionType.SIT_ON, InteractionType.QUEUE_USE],
-        object_id=["env_0/sofa", "env_0/bench", "env_0/desk"],
-        holding=[True, False, True],
-        member_offset=[0, 2, 3, 4],
-        member_id=[7, 8, 9, 10],
-        member_role=[MembershipRole.PARTICIPANT, MembershipRole.QUEUED, MembershipRole.PARTICIPANT, MembershipRole.PARTICIPANT],
+        interaction_id=[1, 2, 3, 4],
+        interaction_type=[InteractionType.SIT_ON, InteractionType.LIE_ON, InteractionType.SIT_ON, InteractionType.QUEUE_USE],
+        object_id=["env_0/sofa", "env_0/sofa", "env_0/bench", "env_0/desk"],
+        holding=[True, False, True, True],
+        member_offset=[0, 2, 3, 4, 5],
+        member_id=[7, 8, 9, 10, 11],
+        member_role=[MembershipRole.PARTICIPANT, MembershipRole.QUEUED, MembershipRole.PARTICIPANT, MembershipRole.PARTICIPANT, MembershipRole.PARTICIPANT],
+        member_seat=[0, -1, 2, -1, 3],
     )
-    assert seated_agents(frame) == {"env_0/sofa": [7]}
+    assert held_seats(frame) == {"env_0/sofa": [0, 2], "env_0/bench": []}
+
+
+def test_conflicts_pair_the_overlapping_slots_both_ways():
+    assert conflicts(SOFA) == [[], [2], [1]]
+    assert conflict_offsets(SOFA) == ([0, 0, 1, 2], [2, 1])
+
+
+def test_seat_violation_names_overlapping_held_seats():
+    assert seat_violation({"env_0/sofa": SOFA}, {"env_0/sofa": [0, 1]}) is None
+    assert "env_0/sofa" in (seat_violation({"env_0/sofa": SOFA}, {"env_0/sofa": [1, 2]}) or "")
+
+
+def test_seat_violation_names_a_seat_outside_the_slots():
+    assert "seat 5 of 3" in (seat_violation({"env_0/sofa": SOFA}, {"env_0/sofa": [5]}) or "")
+
+
+def test_seat_violation_ignores_objects_without_annotated_slots():
+    assert seat_violation({}, {"env_0/bench": [0, 0]}) is None

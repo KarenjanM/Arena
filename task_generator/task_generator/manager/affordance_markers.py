@@ -14,7 +14,6 @@ from task_generator.shared import Pose, Position
 
 _FRAME = "map"
 _ARROW_LENGTH = 0.25
-_SEAT_MATCH = 0.75
 
 _KIND_COLORS = {AffordanceKind.SIT: ColorRGBA(r=0.1, g=0.75, b=0.8, a=0.9)}
 _OCCUPIED_COLOR = ColorRGBA(r=1.0, g=0.35, b=0.7, a=0.95)
@@ -63,20 +62,12 @@ def deleteall_markers() -> list[Marker]:
     return markers
 
 
-def _local(pose: Pose, xy: tuple[float, float]) -> tuple[float, float]:
-    yaw = pose.orientation.to_yaw()
-    dx, dy = xy[0] - pose.position.x, xy[1] - pose.position.y
-    return (math.cos(yaw) * dx + math.sin(yaw) * dy, -math.sin(yaw) * dx + math.cos(yaw) * dy)
-
-
-def claims_of(pose: Pose, slots: Sequence[AffordanceSlot], seated: Iterable[tuple[float, float]]) -> AffordanceClaims:
-    """Claims on the slots each map-frame seated position sits on, the nearest within reach."""
+def claims_of(slots: Sequence[AffordanceSlot], held: Iterable[int]) -> AffordanceClaims:
+    """Claims on the held slot indices, a held slot overlapping an earlier claim left out."""
     claims = AffordanceClaims(list(slots))
-    for xy in seated:
-        local = _local(pose, xy)
-        slot = min(slots, key=lambda candidate: candidate.rank(local), default=None)
-        if slot is not None and slot.distance(local) <= _SEAT_MATCH and claims.blocking(slot) is None:
-            claims.claim(slot)
+    for index in held:
+        if 0 <= index < len(slots) and claims.blocking(slots[index]) is None:
+            claims.claim(slots[index])
     return claims
 
 
@@ -103,11 +94,11 @@ def slot_markers(name: str, pose: Pose, slot: AffordanceSlot, stamp: Time, color
     return markers
 
 
-def affordance_markers(objects: Iterable[tuple[str, Pose, Sequence[AffordanceSlot], Sequence[tuple[float, float]]]], stamp: Time) -> list[Marker]:
+def affordance_markers(objects: Iterable[tuple[str, Pose, Sequence[AffordanceSlot], Sequence[int]]], stamp: Time) -> list[Marker]:
     """The latched overlay: a clear of every kind, then every slot of every object, occupied ones and those overlapping them recolored."""
     markers = deleteall_markers()
-    for name, pose, slots, seated in objects:
-        claims = claims_of(pose, slots, seated)
+    for name, pose, slots, held in objects:
+        claims = claims_of(slots, held)
         occupied = claims.occupied()
         for slot in slots:
             color = _OCCUPIED_COLOR if slot in occupied else _BLOCKED_COLOR if claims.blocking(slot) is not None else None

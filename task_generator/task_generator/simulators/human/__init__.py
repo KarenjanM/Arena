@@ -180,7 +180,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ),
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
-        self._seated_listeners: list[typing.Callable[[], None]] = []
+        self._held_seats_listeners: list[typing.Callable[[], None]] = []
+        self._incident_callback: typing.Callable[[str], None] | None = None
         self._ped_orientations: dict[str, QuaternionMsg] = {}
         self._ped_clips: dict[str, frozenset[str]] = {}
         self._gait = AnimationManager(logger=self._logger, fps=20.0)
@@ -343,16 +344,25 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()
 
-    def seated(self) -> dict[str, list[tuple[float, float]]]:
-        """Map-frame positions of the agents sitting on each object, by object sim path."""
+    def held_seats(self) -> dict[str, list[int]]:
+        """Indices into each object's annotated sit slots that agents hold, by object sim path."""
         return {}
 
-    def on_seated_change(self, callback: typing.Callable[[], None]) -> None:
-        self._seated_listeners.append(callback)
+    def on_held_seats_change(self, callback: typing.Callable[[], None]) -> None:
+        self._held_seats_listeners.append(callback)
 
-    def _notify_seated(self) -> None:
-        for callback in self._seated_listeners:
+    def _notify_held_seats(self) -> None:
+        for callback in self._held_seats_listeners:
             callback()
+
+    def set_incident_callback(self, callback: typing.Callable[[str], None]) -> None:
+        """Receives the reason whenever the backend finds the episode compromised."""
+        self._incident_callback = callback
+
+    def _report_incident(self, reason: str) -> None:
+        self._logger.error(reason)
+        if self._incident_callback is not None:
+            self._incident_callback(reason)
 
     def publish_markers(self, markers: MarkerArray) -> None:
         """Publish a transient debug-overlay MarkerArray on `pedestrian_markers/extra`."""

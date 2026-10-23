@@ -46,7 +46,7 @@ def test_marker_ids_are_stable_per_object_and_slot():
     assert not set(first) & set(other)
 
 
-def test_seated_agent_marks_its_slot_occupied_and_overlapping_slots_blocked():
+def test_held_seat_marks_its_slot_occupied_and_overlapping_slots_blocked():
     slots = placed_slots(
         {
             "sit": [
@@ -56,11 +56,10 @@ def test_seated_agent_marks_its_slot_occupied_and_overlapping_slots_blocked():
             ]
         }
     )
-    seated_on_first = (2.0 - 0.25, 1.0 + 0.25)
-    boxes = [marker for marker in affordance_markers([("bench", TURNED, slots, [seated_on_first])], Time()) if marker.type == Marker.LINE_LIST]
+    boxes = [marker for marker in affordance_markers([("bench", TURNED, slots, [0])], Time()) if marker.type == Marker.LINE_LIST]
     assert [box.color for box in boxes] == [_OCCUPIED_COLOR, _BLOCKED_COLOR, _KIND_COLORS["sit"]]
 
 
-def test_seated_agent_far_from_every_slot_claims_nothing():
-    boxes = [marker for marker in affordance_markers([("sofa", TURNED, SLOTS, [(9.0, 9.0)])], Time()) if marker.type == Marker.LINE_LIST]
+def test_held_seat_outside_the_slots_claims_nothing():
+    boxes = [marker for marker in affordance_markers([("sofa", TURNED, SLOTS, [9])], Time()) if marker.type == Marker.LINE_LIST]
     assert all(box.color == _KIND_COLORS["sit"] for box in boxes)

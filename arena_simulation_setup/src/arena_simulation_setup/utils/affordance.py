@@ -154,6 +154,11 @@ def max_occupancy(slots: Sequence[AffordanceSlot]) -> int:
     return max(max_occupancy(rest), 1 + max_occupancy([slot for slot in rest if not slot.overlaps(first)]))
 
 
+def conflicts(slots: Sequence[AffordanceSlot]) -> list[list[int]]:
+    """Per slot, the indices of the other slots it overlaps."""
+    return [[j for j, other in enumerate(slots) if j != i and slot.overlaps(other)] for i, slot in enumerate(slots)]
+
+
 class SlotOccupied(ValueError):
     pass
 

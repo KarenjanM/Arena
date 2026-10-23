@@ -394,11 +394,15 @@ them, and an empty list clears them. Without a `capacity`, it is the count of th
 `seats`, else the most of its sit slots that can be occupied at once with no two overlapping, and at least one. Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
 ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
 the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its
-whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius.
+whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius. Annotated
+seats also go out with their conflicts, the pairs of sit slots that overlap, so the engine never lets two agents
+hold overlapping seats and seats as many sitters as fit together.
 
-The adapter follows the engine's latched `interactions` frame and reports the participants of every held `SIT_ON`
-by object through `seated()`, map-frame positions from the latest agent states, notifying `on_seated_change`
-listeners when the set changes. The base class reports nobody seated.
+The adapter follows the engine's latched `interactions` frame and reports the seat indices the participants of
+every `SIT_ON` and `LIE_ON` hold on an object with annotated seats through `held_seats()`, by object sim path,
+notifying `on_held_seats_change` listeners when they change. Two held seats that overlap compromise the episode
+once through the incident callback the node sets with `set_incident_callback`. The base class reports no held
+seats.
 
 Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
 realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the
