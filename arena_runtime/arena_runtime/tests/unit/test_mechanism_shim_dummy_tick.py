@@ -181,7 +181,7 @@ def test_departure_to_an_unknown_cabin_reopens_the_door(shim, on_dummy_sim):
     on_dummy_sim(body)
 
 
-def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_dummy_sim):
+def test_robot_ride_releases_its_rider_when_the_teleport_fails(shim, on_dummy_sim):
     async def body(sim, jackal):
         reasons: list[str] = []
         sim.set_incident_callback(reasons.append)
@@ -193,9 +193,9 @@ def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_d
         assert a_door.state == shim._DoorState.CLOSED
         await shim._tick(sim, DT)
         assert not a.departing
-        assert a.dispatched == {"jackal"}
+        assert a.dispatched == set()
         assert b.pending_occupants == ()
-        assert b.just_arrived == {"jackal": False}
+        assert b.just_arrived == {}
         assert b_door.last_trigger_sim_time == 0.0
         assert b_door.state == shim._DoorState.OPENING
         assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
@@ -206,8 +206,7 @@ def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_d
 def test_arrival_from_an_unknown_cabin_teleports_nobody_and_finishes_the_tick(shim, on_dummy_sim):
     async def body(sim):
         b, b_door = _elevator(shim, sim, "b", 10.0, "ghost")
-        b.arriving_eta = 0.0
-        b.pending_occupants = (("rider", (0.0, 0.0)),)
+        b.queue_arrival(shim._Arrival(eta=0.0, source="ghost", occupants=(("rider", (0.0, 0.0)),)))
         _spawn_lamp(sim)
         await shim._tick(sim, DT)
         assert b.just_arrived == {"rider": False}
@@ -221,11 +220,10 @@ def test_failed_teleport_of_an_untracked_rider_does_not_abort_the_tick(shim, on_
     async def body(sim):
         b, _ = _elevator(shim, sim, "b", 10.0, "a")
         _elevator(shim, sim, "a", 0.0, "b")
-        b.arriving_eta = 0.0
-        b.pending_occupants = (("rider", (0.5, 0.0)),)
+        b.queue_arrival(shim._Arrival(eta=0.0, source="a", occupants=(("rider", (0.5, 0.0)),)))
         _spawn_lamp(sim)
         await shim._tick(sim, DT)
-        assert b.just_arrived == {"rider": False}
+        assert b.just_arrived == {}
         assert sim._light_outputs == {"lamp": (1.0, 0.0)}
 
     on_dummy_sim(body)
@@ -238,7 +236,7 @@ def test_failed_teleport_without_an_incident_callback_only_logs(shim, on_dummy_s
         _place(sim, jackal, 0.0, 0.0)
         await shim._tick(sim, DT)
         await shim._tick(sim, DT)
-        assert b.just_arrived == {"jackal": False}
+        assert b.just_arrived == {}
 
     on_dummy_sim(body, jackal=True)
 
@@ -318,7 +316,8 @@ def test_reset_restores_an_elevator_without_a_cabin_door(shim, on_dummy_sim):
 
     async def body(sim):
         elevator = Elevator(name="e", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["f"])
-        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", arriving_eta=3.0, pending_occupants=(("r", (0.0, 0.0)),), just_arrived={"r": True}, departing=True, dispatched={"r"})
+        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", just_arrived={"r": True}, departing=True, dispatched={"r"})
+        runtime.queue_arrival(shim._Arrival(eta=3.0, source="f", occupants=(("r", (0.0, 0.0)),)))
         sim._elevator_runtime["e"] = runtime
         shim.reset_mechanisms(sim)
         assert (runtime.arriving_eta, runtime.pending_occupants, runtime.just_arrived, runtime.departing, runtime.dispatched) == (-math.inf, (), {}, False, set())
@@ -348,9 +347,78 @@ def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_d
         b, _ = _elevator(shim, sim, "b", 10.0, "a")
         await shim._tick(sim, DT)
         await shim._tick(sim, DT)
-        assert a.dispatched == {"walker", "jackal"}
-        assert b.just_arrived == {"walker": False, "jackal": False}
+        assert a.dispatched == {"walker"}
+        assert b.just_arrived == {"walker": False}
         assert {name: xy for name, xy, _ in human.pedestrian_discs()} == {"walker": pytest.approx((10.5, 0.3))}
         assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
 
     on_dummy_sim(body, jackal=True)
+
+
+def test_cabin_door_reports_to_the_human_simulator_only_when_it_turns_open_or_stops_being_open(shim, on_dummy_sim):
+    from arena_people_msgs.msg import Pedestrian, Pedestrians
+    from task_generator.constants import Constants
+    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
+    from task_generator.simulators.human.noop import NoopHumanSimulator
+
+    class DoorLog(NoopHumanSimulator):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.door_calls: list[dict[str, bool]] = []
+
+        async def _set_elevator_doors_impl(self, doors):
+            self.door_calls.append(dict(doors))
+            return True
+
+    def walker_at(x: float) -> Pedestrians:
+        walker = Pedestrian(name="walker")
+        walker.pose.position.x = x
+        walker.pose.orientation.w = 1.0
+        return Pedestrians(pedestrians=[walker])
+
+    async def body(sim):
+        acoustics = await AcousticsSimulatorRegistry.get(Constants.AcousticsSimulator.NONE, node=sim.node, namespace=sim._namespace)
+        human = DoorLog(node=sim.node, namespace=sim._namespace, simulator=sim, realizer=sim._realizer, acoustics=acoustics)
+        _elevator(shim, sim, "a", 0.0, "b")
+        human._on_arena_peds(walker_at(1.6))
+        for _ in range(3):
+            await shim._tick(sim, DT)
+        assert human.door_calls == []
+        for _ in range(3):
+            await shim._tick(sim, DT)
+        assert human.door_calls == [{"a": True}]
+        human._on_arena_peds(walker_at(20.0))
+        shim.reset_mechanisms(sim)
+        await shim._tick(sim, DT)
+        await shim._tick(sim, DT)
+        assert human.door_calls == [{"a": True}, {"a": False}]
+
+    on_dummy_sim(body)
+
+
+@pytest.mark.parametrize(("bystander_x", "departs"), [(1.8, True), (1.2, False)])
+def test_loaded_cabin_reopens_only_for_a_body_in_its_door_threshold(shim, on_dummy_sim, bystander_x: float, departs: bool):
+    from arena_people_msgs.msg import Pedestrian, Pedestrians
+    from task_generator.constants import Constants
+    from task_generator.simulators.acoustics import AcousticsSimulatorRegistry
+    from task_generator.simulators.human.noop import NoopHumanSimulator
+
+    def at(name: str, x: float, y: float) -> Pedestrian:
+        ped = Pedestrian(name=name)
+        ped.pose.position.x = x
+        ped.pose.position.y = y
+        ped.pose.orientation.w = 1.0
+        return ped
+
+    async def body(sim):
+        acoustics = await AcousticsSimulatorRegistry.get(Constants.AcousticsSimulator.NONE, node=sim.node, namespace=sim._namespace)
+        human = NoopHumanSimulator(node=sim.node, namespace=sim._namespace, simulator=sim, realizer=sim._realizer, acoustics=acoustics)
+        sim.attach_human_simulator(human)
+        human._on_arena_peds(Pedestrians(pedestrians=[at("rider", 0.5, 0.3), at("bystander", bystander_x, 0.0)]))
+        a, _ = _elevator(shim, sim, "a", 0.0, "b")
+        _elevator(shim, sim, "b", 10.0, "a")
+        await shim._tick(sim, DT)
+        await shim._tick(sim, DT)
+        assert a.dispatched == ({"rider"} if departs else set())
+
+    on_dummy_sim(body)

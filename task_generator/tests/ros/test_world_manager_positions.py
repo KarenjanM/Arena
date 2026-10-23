@@ -349,8 +349,8 @@ class TestStaticFootprints:
         assert (c0, c1) == (10, 20)
 
 
-class TestElevatorRoute:
-    """elevator_route rides cabin to cabin over the world's elevator destinations."""
+class TestElevatorHops:
+    """elevator_hops rides cabin to cabin over the world's elevator destinations."""
 
     @staticmethod
     def make_wm(world: World, level_origins: dict[str, tuple[float, float]]) -> WorldManager:
@@ -375,20 +375,20 @@ class TestElevatorRoute:
 
     def test_route_boards_each_shaft_on_its_source_level(self):
         wm = self.make_wm(self.stacked(), {"0": (0.0, 0.0), "1": (20.0, 0.0), "2": (40.0, 0.0)})
-        stops = wm.elevator_route("0", "2", agent_radius=0.3)
-        assert [(p.x, p.y) for p, _ in stops] == [(1.0, 1.0), (25.0, 1.0)]
-        assert all(radius == pytest.approx(1.0 - 0.05 - 0.025 - 0.3) for _, radius in stops)
+        hops = wm.elevator_hops("0", "2")
+        assert [(h.board_position.x, h.board_position.y) for h in hops] == [(1.0, 1.0), (25.0, 1.0)]
+        assert all(wm.elevator_ride(h, 0.3).boarding_radius == pytest.approx(1.0 - 0.05 - 0.025 - 0.3) for h in hops)
 
     def test_route_is_empty_on_the_same_level_or_without_a_shaft(self):
         wm = self.make_wm(self.stacked(), {"0": (0.0, 0.0), "1": (20.0, 0.0), "2": (40.0, 0.0)})
-        assert wm.elevator_route("1", "1", agent_radius=0.3) == []
-        assert wm.elevator_route("0", "3", agent_radius=0.3) == []
+        assert wm.elevator_hops("1", "1") == []
+        assert wm.elevator_hops("0", "3") == []
 
     def test_destination_on_an_unloaded_level_is_no_route(self):
         world = self.stacked()
         del world.levels["2"]
         wm = self.make_wm(world, {"0": (0.0, 0.0), "1": (20.0, 0.0)})
-        assert wm.elevator_route("1", "2", agent_radius=0.3) == []
+        assert wm.elevator_hops("1", "2") == []
 
 
 class TestLevelOfPoint:

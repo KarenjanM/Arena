@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import collections
 import copy
 import itertools
 import math
@@ -35,10 +36,11 @@ from visualization_msgs.msg import MarkerArray
 
 from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
-from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
+from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
 from task_generator.simulators.human.utils import (
@@ -48,9 +50,13 @@ from task_generator.simulators.human.utils import (
 )
 
 if typing.TYPE_CHECKING:
+    from arena_simulation_setup.tree.World.Scenario import TimelineEntry
+
     from task_generator.simulators.acoustics import BaseAcousticsSimulator, PedestrianHearing
 
 PED_RADIUS = 0.3
+
+Segment = tuple[tuple[float, float], tuple[float, float]]
 
 _STREAM_QOS = rclpy.qos.QoSProfile(
     reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
@@ -109,6 +115,7 @@ class HumanSimulatorOptions(typing.TypedDict):
 
 class BaseHumanSimulator(NodeInterface, abc.ABC):
     PARAM_NAMESPACE: typing.ClassVar[str | None] = None
+    TAKES_STIMULI: typing.ClassVar[bool] = False
 
     _arena_peds_publisher: rclpy.publisher.Publisher
     _marker_publisher: LazyPublisher[MarkerArray]
@@ -148,6 +155,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._known_doors = KnownObstacles[Door]()
         self._wall_counter = itertools.count()
         self._known_regions: dict[str, Region] = {}
+        self._known_elevators: tuple[Elevator, ...] = ()
         self._robots: dict[str, TrackedRobot] = {}
         self._warned_unresolved_models: set[str] = set()
         self._ped_model_uris: dict[str, str] = {}
@@ -176,6 +184,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ),
         )
         self._ped_positions_xy: dict[str, tuple[float, float]] = {}
+        self._held_seats_listeners: list[typing.Callable[[], None]] = []
+        self._incident_callback: typing.Callable[[str], None] | None = None
         self._ped_orientations: dict[str, QuaternionMsg] = {}
         self._ped_clips: dict[str, frozenset[str]] = {}
         self._gait = AnimationManager(logger=self._logger, fps=20.0)
@@ -212,6 +222,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
 
         self._hearing: PedestrianHearing | None = acoustics.pedestrian_hearing(self)
+
+        self._semantic_values: dict[tuple[str, str], str] = {}
+        self._semantic_backlog: collections.deque[tuple[str, str, str | None, str]] = collections.deque()
+        self._semantic_draining = False
 
         self._simulator.attach_human_simulator(self)
 
@@ -338,6 +352,26 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._logger.warning(f"agent type {agent_type!r} pose profile rejected ({e}), using the default")
             return default_profile()
 
+    def held_seats(self) -> dict[str, list[int]]:
+        """Indices into each object's annotated sit slots that agents hold, by object sim path."""
+        return {}
+
+    def on_held_seats_change(self, callback: typing.Callable[[], None]) -> None:
+        self._held_seats_listeners.append(callback)
+
+    def _notify_held_seats(self) -> None:
+        for callback in self._held_seats_listeners:
+            callback()
+
+    def set_incident_callback(self, callback: typing.Callable[[str], None]) -> None:
+        """Receives the reason whenever the backend finds the episode compromised."""
+        self._incident_callback = callback
+
+    def _report_incident(self, reason: str) -> None:
+        self._logger.error(reason)
+        if self._incident_callback is not None:
+            self._incident_callback(reason)
+
     def publish_markers(self, markers: MarkerArray) -> None:
         """Publish a transient debug-overlay MarkerArray on `pedestrian_markers/extra`."""
         self._marker_publisher.publish(lambda: markers)
@@ -377,6 +411,56 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._ped_positions_xy[name] = (x, y)
         results = await self.relay_pedestrian_update(peds_msg)
         return all(results)
+
+    # world mechanisms
+
+    def authored_name(self, realized: str) -> str:
+        """Strip the env prefix and a trailing `/<level_id>` from a realized entity name."""
+        prefix = self._realizer.prefix()
+        name = realized[len(prefix) + 1 :] if prefix and realized.startswith(f"{prefix}/") else realized
+        head, sep, tail = name.rpartition("/")
+        if sep and head and tail in self._realizer._level_origins:
+            return head
+        return name
+
+    def set_mechanism_walls(self, key: str, segments: Sequence[Segment] | None) -> None:
+        """Replace the named wall set seen by pedestrian navigation; None removes it. Map frame."""
+
+    async def _clear_mechanism_walls(self) -> None:
+        """Drop every mechanism wall set (world teardown)."""
+
+    def notify_semantic_change(self, entity: str, field: str, value: str) -> None:
+        """Broadcast `<entity>.<field>==<previous>` at intensity 0 and `<entity>.<field>==<value>` at intensity 1, in order."""
+        previous = self._semantic_values.get((entity, field))
+        self._semantic_values[(entity, field)] = value
+        self._semantic_backlog.append((entity, field, previous, value))
+        if not self._semantic_draining:
+            self._semantic_draining = True
+            self._in_background(self._drain_semantic_backlog())
+
+    def _in_background(self, coro: typing.Coroutine[typing.Any, typing.Any, None]) -> None:
+        """Run a coroutine on the node loop from sync code, inside or outside the loop."""
+        try:
+            asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            loop = self.node.event_loop
+            loop.call_soon_threadsafe(lambda: loop.create_task(coro))
+
+    async def _drain_semantic_backlog(self) -> None:
+        try:
+            while self._semantic_backlog:
+                entity, field, previous, value = self._semantic_backlog.popleft()
+                try:
+                    await self._apply_semantic_change(entity, field, previous, value)
+                except Exception as e:
+                    self._logger.warning(f"semantic change {semantic_atom(entity, field, value)!r} not delivered: {e!r}")
+        finally:
+            self._semantic_draining = False
+
+    async def _apply_semantic_change(self, entity: str, field: str, previous: str | None, value: str) -> None:
+        if previous is not None and previous != value:
+            await self.notify_stimulus(-1, semantic_atom(entity, field, previous), 0.0)
+        await self.notify_stimulus(-1, semantic_atom(entity, field, value), 1.0)
 
     # possession
 
@@ -674,6 +758,17 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._spawn_doors_impl(door_map),
         )
 
+    async def spawn_elevators(self, elevators: Sequence[Elevator]) -> bool:
+        """Hand the realized elevator cabins of the world to the human simulator, replacing those of the world before."""
+        if not elevators and not self._known_elevators:
+            return True
+        self._known_elevators = tuple(elevators)
+        return await self._set_elevators_impl(self._known_elevators)
+
+    async def elevator_doors_changed(self, doors: Mapping[str, bool]) -> None:
+        """Cabin doors by realized cabin name that turned open (True) or stopped being open (False)."""
+        await self._set_elevator_doors_impl(doors)
+
     @staticmethod
     def _door_wall_name(door_name: str) -> str:
         return f"__door_{door_name}"
@@ -866,7 +961,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if purge >= ObstacleLayer.WORLD:
             await self._simulator.remove_mechanisms()
             await self._simulator.remove_lights()
+            await self._clear_mechanism_walls()
+            self._semantic_values.clear()
             futures.append(self._simulator.remove_world())
+            if self._known_elevators:
+                self._known_elevators = ()
+                futures.append(self._set_elevators_impl(()))
 
         if stale_walls:
             futures.append(self._remove_walls_impl(stale_walls))
@@ -1006,8 +1106,32 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     async def unpause(self):
         pass
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
-        pass
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        """True when the engine took the stimulus for `agent`, an engine agent id or a spawned agent's name or ``sim_path``."""
+        return False
+
+    def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:
+        """The agent type of `obstacle` and the stimulus names it acts on, None when the backend cannot tell."""
+        del obstacle
+        return None
+
+    def check_stimuli(self, scenario: str, humans: Sequence[DynamicObstacle], timeline: Sequence[TimelineEntry]) -> None:
+        """Raise ValueError naming `scenario` for a timeline stimulus this backend drops or the agent type of its target ignores."""
+        stimuli = [stimulus for entry in timeline for stimulus in entry.stimulus]
+        if stimuli and not self.TAKES_STIMULI:
+            raise ValueError(f"scenario {scenario!r} has timeline stimulus entries, which only the arena human backend acts on, run it with human:=arena")
+        by_name = {human.name: human for human in humans}
+        for stimulus in stimuli:
+            for agent in stimulus.agents:
+                taken = self.stimuli_taken(by_name[agent])
+                if taken is not None and stimulus.need not in taken[1]:
+                    raise ValueError(f"scenario {scenario!r}: stimulus {stimulus.need!r} for {agent!r} is neither a need nor a step `until` event of its agent type {taken[0]!r}, which acts on {sorted(taken[1])}")
+
+    async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
+        return True
+
+    async def _set_elevator_doors_impl(self, doors: Mapping[str, bool]) -> bool:
+        return True
 
     async def configure_contact(self, mode: str, standing_distance: float) -> None:
         """Contact interactions touch (`enabled`) or hold at `standing_distance` (`locomotion_only`)."""

@@ -192,6 +192,60 @@ the names of the cabins a ride goes to, on any level, so a shaft is one cabin
 per level linking the others and two cabins on one level make a teleporting
 pair. Full field reference: [Elevator fields](worlds/README.md#elevator-fields).
 
+A cabin with several `destinations` goes to the one in its writable semantic
+field `target` (a cabin name, e.g. set by a robot task or a scenario
+timeline). With `target` empty it cycles round-robin over the list, one step
+per departure. A written `target` stays until rewritten, writing `""` returns
+to round-robin. A single-destination elevator publishes `target: ""`.
+
+Elevator `capacity: <int>` (default `null` = unlimited) caps the cabin: while
+the agents inside (robots plus pedestrians) are at or above it, outside calls
+are ignored, so the door closes after `hold_time` and the cabin departs with
+whoever is inside. Departures from several cabins to the same destination queue
+up and arrive in order. A rider whose teleport fails (refused by the sim, or
+not seen to move within 10 s sim time) is released: the source cabin unseals
+and retries the ride, the destination stops holding its door for them.
+
+Elevator `call_mode: level | edge` (default `level`) sets how agents outside
+the cabin call it. `level`: any agent within `activation_distance` of the hall
+door calls every tick, so the door stays open (and a pending departure is
+cancelled) for as long as anyone waits there. `edge`: a call only (re)opens the
+door when an agent newly enters the call radius, or when the door is shut and
+no departure is pending (nobody new inside). Agents merely standing in the
+lobby no longer hold the door: it closes after `hold_time` (the slab safety
+reopen still applies) and the cabin departs. Use `edge` for crowded lobbies.
+
+A door's `activation_distance` takes a scalar or a pair `[a, b]` (the larger
+value is the trigger radius).
+
+Door `kind` is one of `sliding` (default, slab slides along the span),
+`sliding_top` (slab lifts), `teleport` (slab vanishes) and `hinged`: the slab
+rotates about the first span point by up to 90 deg over `transition_time`.
+`swing_direction: 1` (default) opens towards the left normal of the span,
+`swing_direction: -1` towards the right. Like sliding doors, a hinged slab
+never moves into an agent: an opening step that would hit someone in the swept
+arc holds, a close with anyone in the remaining arc is refused and the door
+re-opens (`blocked_close`).
+
+```yaml
+doors:
+- name: office_door
+  span: [[2.0, 0.0], [2.9, 0.0]]
+  kind: hinged
+  swing_direction: -1
+elevators:
+- name: hub
+  position: [5.0, 0.0]
+  destinations: [elev_a, elev_b]
+  capacity: 4
+  call_mode: edge
+```
+
+Pedestrians see mechanisms as walls where they cannot pass: cabin back and
+side walls always, and a door's segment while it cannot open for them (a
+gate effectively locked with no authorized agent near, or
+`activation_distance <= 0` with no pressed plate driving it).
+
 ### Microphones
 
 A level's optional `microphones:` list places audio listeners for the
@@ -201,9 +255,15 @@ acoustics pipeline. Full field reference:
 ### Semantic annotations
 
 Door and elevator state is intrinsic: every spawned door/elevator publishes
-its full vocabulary (`state`/`progress`/`open`/... for a door; `arriving_eta`,
-`occupants`, `cabin_door`, `cabin_door_progress`, ... for an elevator) with no
-annotation needed. `semantics:` on a `doors:`/`elevators:` entry is only for
+its full vocabulary with no annotation needed:
+
+| kind | discrete | continuous | predicates | members |
+| --- | --- | --- | --- | --- |
+| door | `state` | `progress` | `open`, `in_transit`, `triggered`, `blocked_close` (a close is refused because an agent is in the slab path) | agents within the activation radius |
+| elevator | `cabin_door`, `target` (writable, see above) | `arriving_eta`, `occupants` (riders committed to a ride), `cabin_door_progress`, `live_occupants` (agents inside now), `capacity` (-1 = unlimited) | `departing`, `in_transit`, `dispatched`, `just_arrived`, `full` | agents inside the cabin now |
+
+Agents are named as the runtime tracks them: robots by sim path, pedestrians
+by their ped name. `semantics:` on a `doors:`/`elevators:` entry is only for
 attaching a *scripted* kind (`gate`, `pressure_plate`) to that entry. Zones
 accept an optional `semantics:` list of literal state/predicate primitives:
 
@@ -256,7 +316,7 @@ facts:
   `light:<light>`, `sound:<sound>`, `elevator:<cabin>`, `floor:<level id>`.
   Those must name something in `world.yaml`, except an `obj` with
   `placed: false` (an object a generator asked for but never placed). Roles,
-  regions, agents, profiles and materials live only here.
+  regions, agents, profiles, purposes and materials live only here.
 - The KG carries no geometry (`boundary`, `line`, `pose`, `model`, ...):
   `world.yaml` owns it.
 - Membership is `contains` (a thing may sit in several zones), connectivity
@@ -275,6 +335,11 @@ facts:
   name is part of this world, `floor:<id>` follows the level's new id, and
   this world's own KG wins every conflict. Saving writes only this
   world's own part back.
+- What people use a zone for is `room has_purpose purpose:<work|break|transit|private|unknown>`
+  (package `space@1`). The scenario generator places its crowds by it, a
+  `params: {by: llm, ...}` marks a model's proposal that a human has not
+  reviewed, see
+  [generative/scenario](src/arena_simulation_setup/generative/scenario/README.md#zone-roles).
 - Nothing in the KG drives the runtime. Mechanism semantics (presets,
   `light_on`, `recall_on`, zone states) stay in `world.yaml`.
 
@@ -287,13 +352,13 @@ serialize when empty):
 
 | kind | attaches to | preset expansion | `params` keys |
 | --- | --- | --- | --- |
-| `signal` | a world `signals:` entry | `state`, `phase_remaining`, `stop` | `phases` (list of `{name, duration}`), `stop_phases`, `regime` |
+| `signal` | a world `signals:` entry | `state`, `phase_remaining`, `stop` | `phases` (list of `{name, duration}`), `stop_phases`, `regime`, optional stop line `position` (`[x, y]`, level frame) and `radius` (evaluation only, `ran_red_signal`) |
 | `schedule` | a world `schedules:` entry | `state`, `active`, `window_remaining` | `windows` (list of `{start, end, value}`), `default`, `regime` |
-| `gate` | a `doors:` entry | `locked`, `blocked` | `authorized` (sim_paths/robot names), `unlock_on`, `locked` (initial value) |
-| `pressure_plate` | a `doors:`/`elevators:` entry (own `position`) | `pressed` | `position` (`[x, y]`), `radius`, `drives`, `latch`, `press_on`, `regime` |
+| `gate` | a `doors:` entry | `locked`, `blocked` | `authorized` (sim_paths/robot names), `unlock_on`, `locked` (initial value, default `true`: a gate authored without it starts locked and logs so) |
+| `pressure_plate` | a `doors:`/`elevators:` entry (own `position`) | `pressed` | `position` (`[x, y]`, level frame like all geometry), `radius`, `drives` (a door name, `<level_id>.<name>` for a door on another level), `latch`, `press_on`, `regime` |
 | `occupancy_cap` | a `zones:` entry | `occupancy`, `cap`, `over_cap` | `cap` |
 | `sound` | a `sounds:` entry (level or scenario) | `sounding`, `volume_db` | `sound_on`, `regime`, `sounding`/`volume_db` (initial values) |
-| `light` | every `lights:` entry and every zone ceiling rig, attached from the light's own fields | `lit`, `level`, `dead_fraction` (rigs only) | `light_on` |
+| `light` | every `lights:` entry and every zone ceiling rig, attached from the light's own fields | `lit`, `dim`, `dead_fraction` (rigs only) | `light_on` |
 
 `signal` and `schedule` have no geometry, so they sit at world scope beside
 `levels:`. A `sound` needs a placement: exactly one of `position`, `attach`
@@ -338,7 +403,7 @@ may also name one of the scenario's own `objects:`.
 #### Lights
 
 A light is one fixture, an ambient light, or a zone's ceiling rig. Each is a
-`light` semantic entity with `lit` (on/off), `level` (dimming in 0..1) and,
+`light` semantic entity with `lit` (on/off), `dim` (dimming in 0..1) and,
 for rigs, `dead_fraction` (share of dead fixtures), all writable through
 `semantics/set` and the scenario timeline and recorded with every other kind.
 Worlds that declare no light render as before. A world that declares any
@@ -353,16 +418,16 @@ adds its light on top of the default lighting.
 | level `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | exactly one of `pose`, `attach` or `frame`, the latter two with an `offset` |
 | zone `ceiling: {lights: ...}` | `panel`, `tube`, `downlight`, `spot`, `bulb` | a grid at `spacing` metres over the zone polygon, just below the ceiling |
 | object `annotation.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `pose` in the object frame, moved, turned and scaled with every placement |
-| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:` |
+| scenario `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | as for level `lights:`, `attach` names one of the scenario's `objects:`, `level` the floor of a literal `pose` |
 | robot `model_params.yaml` `lights:` | `panel`, `tube`, `downlight`, `spot`, `bulb` | `frame` of the robot plus `offset`, see [robots/README.md](../arena_robots/arena_robots/robots/README.md#model_paramsyaml) |
 
 `Light` fields: `name`, `fixture`, `lumens` (local fixtures, per fixture for a
 rig) or `lux` (`dome`, `sun`), `cct_K` (default 6500), `cast_shadows` (default
 false), `cone_deg` (`spot` only, default 40), and one
 of `light_on` (a regime, `!` negates) or `lit` (initial value, default true),
-plus `level` (default 1.0). A ceiling rig takes `fixture` (default
+plus `dim` (default 1.0). A ceiling rig takes `fixture` (default
 `panel`), `spacing` (default 2.4), `lumens`, `cct_K`, `cast_shadows`,
-`light_on`/`lit`, `level` and `dead_fraction`, needs a ceiling, and is
+`light_on`/`lit`, `dim` and `dead_fraction`, needs a ceiling, and is
 named after the zone. The same fixtures of a rig die at the same
 `dead_fraction` in every run, and raising it only adds dead ones.
 
@@ -405,18 +470,18 @@ An object's `annotation.yaml` can carry `lights:` entries with `name` (default
 source model contains lights (hand-written entries win, and the built models
 carry no light themselves). `glow` names the material that glows with the
 light, a lamp shade for instance: Isaac, Gazebo and MuJoCo make it emit the
-light's color scaled by its level, and it is dark while the light is off. Every
+light's color scaled by its dim, and it is dark while the light is off. Every
 placement of the object, in a level's `objects:`, a scenario's `objects:` or
 by an obstacle mode, then gets the light `<entity>_<name>` for as long as the
 placement exists, and a `light:` key on the placement sets its `lit`,
-`light_on` or `level`:
+`light_on` or `dim`:
 
 ```yaml
 objects:
 - {name: desk_lamp, model: Residential/Desk_Lamp, pose: {x: 2, y: 1, z: 0.75}, light: {light_on: "!daylight"}}
 ```
 
-A scenario dims the hall with `{entity: central_hallway, field: level, value:
+A scenario dims the hall with `{entity: central_hallway, field: dim, value:
 "0.3..1.0"}` in its timeline. Isaac renders every fixture as an area light, and
 shades asset materials that only emit a texture by that texture, so they
 darken with the lights.
@@ -474,14 +539,27 @@ published state. See the fire-alarm worked example below.
 
 ### Scenario timelines
 
-`scenario.yaml` accepts an optional `timeline:` list. Each entry fires a `set`
-action list of `{entity, field, value}` writes against exactly one trigger:
+`scenario.yaml` accepts an optional `timeline:` list. Each entry fires its
+actions against exactly one trigger and needs at least one action:
 
 | trigger | meaning |
 | --- | --- |
 | `at: <seconds>` | fire once at episode second `t` |
 | `every: <seconds>` | fire at `offset` (default: one period in), then each period, optional `until` |
 | `when: {entity, field, is}` | fire on the false-to-true edge of a semantic value |
+| `when: "<atom>"` | fire on the false-to-true edge of a condition atom (see [Add a scenario](#4-add-a-scenario)) |
+
+In a `when` atom the subject `robot` stands for every robot of the env: the
+atom holds while it holds for at least one of them, so
+`not robot within 3 of 2,2` holds while some robot is farther than 3 m from
+`(2, 2)`. A robot's own name (anonymous robots are named after their model,
+e.g. `jackal`) judges only that robot. Without a placed robot such an atom
+does not hold.
+
+| action | meaning |
+| --- | --- |
+| `set: [{entity, field, value}]` | write semantic values |
+| `stimulus: [{agents, need, intensity}]` | raise `need` on each pedestrian named in `agents` through humansim's `notify_stimulus`, `intensity` 1 by default (humansim sets the need to 100 x `intensity`) |
 
 ```yaml
 timeline:
@@ -502,6 +580,33 @@ holds its cabin door open, all as pure regime consults with no per-effect
 timeline entry. See
 [worlds/three_storied_residential/scenarios/fire_alarm/scenario.yaml](worlds/three_storied_residential/scenarios/fire_alarm/scenario.yaml)
 for the reference timeline.
+
+A `stimulus` drives behavior-tree agents whose agent type declares the need
+and a transition on it, as for [pedestrian stimuli](#pedestrian-stimuli). Here
+`edge_0` waits until the robot comes within 4.2 m of `(12.1, 4.0)` and the
+`d_*` group switches at `t=8s`:
+
+```yaml
+timeline:
+- when: "robot within 4.2 of 12.1,4.0"
+  stimulus: [{agents: [edge_0], need: go, intensity: 1.0}]
+- at: 8.0
+  stimulus: [{agents: [d_1, d_2, d_3], need: form}]
+```
+
+Every agent of a stimulus is one of the scenario's `humans`, loading fails on
+any other name. With the `arena` human backend loading also fails when the
+agent type of an agent (its `agent.agent_type`) neither declares the need nor
+waits for it as the `until` event of an autonomous step. A stimulus the human
+simulator does not take at runtime is logged and skipped, the other agents
+still get theirs. Only the `arena` human backend acts on stimuli: under any
+other backend a scenario with `stimulus` entries fails to load with an error
+naming `human:=arena`.
+
+Every semantic snapshot of the env carries a `timeline` entity (kind
+`timeline`). Its discrete field `stimulus.<agent>.<need>` holds the sim time
+in seconds of the tick on which that stimulus was first taken by the human
+simulator in the episode, and a stimulus that never landed has no field.
 
 ## 3. Generate the map
 
@@ -604,8 +709,10 @@ Atoms are the `conditions:` grammar of [worlds/README.md](worlds/README.md):
 `<entity>.<field> == <value>`, `<subject> in <zone>`, `<subject> within <r> of
 <subject>`, `<subject> sees <subject> [within <r>]` (in range, default 12 m, with
 no wall of the rendered wall grid between them), `<ped> plays <clip>` and `not
-<atom>`. A goto to a pedestrian by name is judged by `tolerance_radius` around
-the pedestrian.
+<atom>`. Either `within` subject may also be a point `x,y` (no spaces), in the
+frame of a scenario pose without `level`, so `robot within 4.2 of 12.1,4.0`.
+A goto to a pedestrian by name is judged by `tolerance_radius` around the
+pedestrian.
 
 Add static obstacles under `objects:` and pedestrians under `humans:`, with
 the same schema as a world level's lists plus `level` (the level an entry
@@ -639,6 +746,163 @@ lights count as declared, like the world's, and go at the next reset, and so
 do its regions. See
 [worlds/README.md](worlds/README.md) for the full key list of every
 top-level key.
+
+### Robots: floors, elevator rides, mechanism map
+
+Robot poses are level-local when the robot entry carries `level` /
+`goal_level` (the level ids of a multi-level world): `start` is shifted by
+`level`'s origin, every `goto` by `goal_level`'s. A pose given as a
+zone/door/elevator name is resolved on the merged world and is never shifted.
+When a `goto` lies on another level than the robot, elevator rides are inserted
+automatically (shortest ride sequence over every elevator's `destinations`).
+
+`via:` on a `goto` phase lists elevators to ride explicitly, in order, before heading for the pose. This is how a robot
+rides a same-level pair such as `elevator_ground` -> `elevator_top`. An entry is
+an elevator name, or `{elevator: <name>, to: <destination>}` to pick
+one destination of a multi-destination elevator (default: the destination
+cabin closest to where the robot heads next).
+
+```yaml
+robots:
+  - start: [2.0, 5.0, 0.0]
+    phases:
+      - {goto: [31.0, 22.0, 0.0], via: [elevator_ground]}
+  - start: lobby
+    level: "0"
+    goal_level: "2"
+    phases:
+      - goto: [4.0, 4.0, 0.0]
+        via: [{elevator: hub, to: east_lift}]
+```
+
+Each ride is its own phase: the robot drives into the boarding cabin, stays
+there until the elevator teleports it, and continues once it stands in the
+destination cabin. The ride is judged like any other `goto`, with the boarding
+cabin as its target and `robot in <destination cabin>` as its `until` atom, and
+a robot waiting in the cabin does not count as stalled. For a multi-destination elevator the robot writes the
+elevator's `target` field (the destination cabin, e.g. `east_lift`) when the
+ride starts and again when it boards, and writes `""`
+(back to round-robin) when it arrives. Single-destination elevators are never
+written.
+
+The planner map is blind to door state by default: doors and elevators are
+painted free and a closed door is only seen by the robot's sensors. Setting
+the scenario task param `mechanism_map: true` (suite stage
+`config: {scenario: {mechanism_map: true}}`) serves the robot's planners a map
+in which every door the robot cannot open right now is occupied, through the
+env's normal `map_server` (`LoadMap`, same topic as the static map). A door
+counts as unopenable when its `activation_distance` is `<= 0`, or when it
+carries a `gate` that is effectively locked and does not list the robot (robot
+name or sim path, as in the gate's `authorized`) and it is not open or opening
+at the moment (a plate, regime or authorized pedestrian may hold it open). It
+is freed again as soon as that changes. With several robots in one env, one
+authorized robot frees the door for all. Benchmarks keep the default (`false`)
+unless the suite is about mechanism-aware planning.
+
+### Pedestrians and world mechanisms
+
+Everything in this section needs the humansim backend (`human:=arena`); other
+backends ignore the extra keys and walk the plain waypoint list.
+
+**Waypoints.** A `humans:` waypoint is a pose list (`[x, y]`, `[x, y, z]`), a
+zone/door/elevator name, or a dict with exactly one of `zone:`, `elevator:` or
+flat `x`/`y`[/`z`], plus optional `level:` (the coordinates are then
+level-local) and `dwell:` (seconds to stand there before walking on). `{elevator: <name>}` is a ride: the ped walks
+to the cabin centre, waits inside until the elevator teleports it, then
+continues with the next waypoint. When two consecutive waypoints (or the
+ped's start and its first waypoint) lie on different levels, the boarding
+cabins of the shortest elevator route are inserted as rides automatically.
+For a multi-destination elevator the boarding ped writes the elevator's
+`target` (the destination toward its next waypoint) when it reaches the
+cabin centre. A ped holding for a ride never sees the next level's waypoint,
+so it stays in the cabin however long the elevator takes. `waypoint_mode:
+reverse` becomes an explicit round trip with rides both ways, `repeat` also
+routes the way back to the first waypoint, `random` with dwell or rides walks
+the list in order.
+
+```yaml
+humans:
+- name: commuter
+  model: arenian
+  pose: [2.0, 3.0, 0.0]
+  agent: {agent_type: adult}
+  spawn_delay: 4.0                          # appears 4 s into the episode
+  waypoint_mode: once
+  waypoints:
+  - {x: 6.0, y: 3.0, dwell: 5.0}            # wait at the board for 5 s
+  - {elevator: elev_ground}                 # same-level pair: explicit ride
+  - {x: 4.0, y: 4.0, level: "2"}            # other level: rides inserted
+```
+
+`spawn_delay: <s>` (default 0) keeps the ped out of the simulation (engine,
+roster, physics sim) until that many sim seconds after the episode's spawn.
+
+**Mechanism state as stimuli.** Every discrete or predicate change of a door,
+elevator, signal, schedule, gate, pressure plate or sound reaches every ped as
+the stimuli `<entity>.<field>==<old>` at 0 and `<entity>.<field>==<new>` at 1,
+after each ped's sampled `reaction_time`. Entity names are authored (no env
+prefix, no level suffix), the atom is the `conditions:` atom without spaces:
+`elev_a.cabin_door==open`, `door_a.state==closed`, `gate_1.locked==true`,
+`sig_1.state==red`. Continuous fields (progress, eta, occupants) are not sent.
+An agent type reads one as a need pinned at 0 (it then holds 100 while the
+state lasts) and waits on it with a transition. A ped spawned later starts
+from the current values. `until:` on an autonomous step can name the same
+atom, it fires when the state is entered.
+
+```yaml
+needs:
+  "elev_a.cabin_door==open":
+    initial: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+    decay_rate: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+sequences:
+  wait:
+    steps: {stand: {duration: {mean: 3600.0}}}
+    then: wait
+    transitions:
+    - when: {"elev_a.cabin_door==open": {above: 50.0}}
+      goto: board
+```
+
+To reuse one agent type for several elevators, give the `humans:` entry
+`semantic_alias: {elevator: elev_a}`: that ped also receives
+`elevator.<field>==<value>` for `elev_a`, and the agent type keys on
+`"elevator.cabin_door==open"`. A ped an elevator teleports receives the
+stimulus `teleported` at 1 (declare it with a fast `decay_rate` for a pulse).
+
+**World objects.** Every door is a world object named after it with type
+`door` at the doorway centre. Every elevator is a world object named after it
+with type `elevator` at the cabin centre, plus `<name>/queue` of type
+`elevator_queue` in the cabin doorway with a line formation that grows out
+into the lobby (first slot 0.7 m outside the door, 0.8 m apart). A `go_to` or
+`QUEUE_USE` step targets them by name or, by type, the nearest one.
+
+**Shipped agent types** (`configs/agent_types/mechanisms/`, from a scenario
+directory `../../../../configs/agent_types/mechanisms/<file>`):
+
+- `elevator_rider.yaml`: `QUEUE_USE` on the nearest `elevator_queue`, board
+  the nearest `elevator` when `elevator.cabin_door==open` (needs
+  `semantic_alias: {elevator: <name>}`), back into the line if the door
+  closes first (20 s patience), wait in the cabin, after `teleported` walk to
+  the nearest marker of type `elevator_exit`. The whole line is
+  released at once when the door opens.
+- `door_holder.yaml`: walk to the nearest `door`, stand in the doorway for
+  about 8 s (4 to 14), then walk to the nearest marker of type
+  `door_holder_exit`.
+
+```yaml
+humans:
+- name: rider_1
+  model: arenian
+  pose: [2.0, 3.0, 0.0]
+  semantic_alias: {elevator: elev_a}
+  agent: {agent_type: ../../../../configs/agent_types/mechanisms/elevator_rider.yaml}
+objects:
+- {name: exit_a2, model: Common/Object/painting_1, pose: [21.0, 5.5, 0.0], humansim: {type: elevator_exit}}
+```
+
+A marker is any `objects:` entry with a `humansim: {type: ...}` block (a wall
+painting, as the `exit` of the fire-alarm scenario). Peds walk to its pose, so put it in
+reach.
 
 ## 5. Add world-local assets (optional)
 

@@ -11,8 +11,8 @@ import yaml
 from arena_mcp.core import ROS, Domain, ToolError, media, tg
 
 if TYPE_CHECKING:
+    from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
     from arena_simulation_setup.tree.World import World
-    from arena_simulation_setup.utils.generative import WorldGenerator, WorldGeneratorType
 
 domain = Domain(
     "worldgen",
@@ -39,7 +39,7 @@ def world_name(name: str) -> str:
 
 
 def _generator(name: str) -> WorldGeneratorType:
-    from arena_simulation_setup.utils.generative import WorldGenerator, WorldGeneratorType
+    from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
 
     try:
         generator = WorldGeneratorType(name)
@@ -51,7 +51,7 @@ def _generator(name: str) -> WorldGeneratorType:
 
 
 def _configuration(generator: WorldGeneratorType, config: dict[str, object] | None, sketch: str | None) -> dict[str, object]:
-    from arena_simulation_setup.utils.generative import WorldGenerator
+    from arena_simulation_setup.generative.world import WorldGenerator
 
     model = WorldGenerator.config_model(generator)
     merged = dict(config or {})
@@ -70,8 +70,8 @@ def _configuration(generator: WorldGeneratorType, config: dict[str, object] | No
 
 
 def _compute(generator: str, config: dict[str, object] | None, sketch: str | None, seed: int) -> tuple[WorldGenerator, World, dict[str, object]]:
-    from arena_simulation_setup.utils.generative import WorldGenerator
-    from arena_simulation_setup.utils.generative.layout import diagnostics_of
+    from arena_simulation_setup.generative.world import WorldGenerator
+    from arena_simulation_setup.generative.world.layout import diagnostics_of
 
     kind = _generator(generator)
     configuration = _configuration(kind, config, sketch)
@@ -108,7 +108,7 @@ def _compute(generator: str, config: dict[str, object] | None, sketch: str | Non
 @domain.tool(read_only=True)
 def worldgen_generators() -> list[dict[str, object]]:
     """Every registered generator with its configuration JSON schema and the episode binding its defaults pin."""
-    from arena_simulation_setup.utils.generative import PedestrianConfiguration, WorldGenerator
+    from arena_simulation_setup.generative.world import PedestrianConfiguration, WorldGenerator
 
     out: list[dict[str, object]] = []
     for kind in WorldGenerator.available():
@@ -141,8 +141,8 @@ def worldgen_preview(generator: GeneratorName, config: Config = None, sketch: Sk
 @domain.tool(destructive=True)
 def worldgen_save(name: WorldName, generator: GeneratorName, config: Config = None, sketch: Sketch = None, seed: Seed = 0, overwrite: bool = False) -> dict[str, object]:
     """Generate and save a world under the writable world root. The result carries the path, diagnostics and the episode binding for worldgen_queue."""
+    from arena_simulation_setup.generative.world.world_generator import save_generated
     from arena_simulation_setup.tree.World import WorldIdentifier
-    from arena_simulation_setup.utils.generative.world_generator import save_generated
 
     view = WorldIdentifier(world_name(name)).resolve_write_sync()
     target = Path(view.path)
@@ -161,8 +161,8 @@ def worldgen_save(name: WorldName, generator: GeneratorName, config: Config = No
 @domain.tool(read_only=True)
 def worldgen_alphabet() -> dict[str, object]:
     """The sketch glyph table as arm weights per direction, the ASCII and fill aliases and the void characters."""
-    from arena_simulation_setup.utils.generative import alphabet
-    from arena_simulation_setup.utils.generative.sketch import WEIGHTS
+    from arena_simulation_setup.generative.world import alphabet
+    from arena_simulation_setup.generative.world.sketch import WEIGHTS
 
     names = {alphabet.NONE: "none", **{value: key for key, value in WEIGHTS.items()}}
 
@@ -181,8 +181,8 @@ def worldgen_alphabet() -> dict[str, object]:
 @domain.tool(read_only=True)
 def worldgen_normalize(sketch: str) -> dict[str, object]:
     """A sketch rewritten into canonical glyphs, plus the grid cells holding characters that are neither glyphs nor legend symbols."""
-    from arena_simulation_setup.utils.generative import alphabet
-    from arena_simulation_setup.utils.generative.sketch import normalize, split_sketch
+    from arena_simulation_setup.generative.world import alphabet
+    from arena_simulation_setup.generative.world.sketch import normalize, split_sketch
 
     try:
         directives, rows = split_sketch(sketch)

@@ -121,7 +121,7 @@ def _uninstalled_robots(arena: Path) -> set[str]:
     from arena_cli.features import robots
 
     status = robots.submodule_status(arena)
-    return {name for name, paths in robots.robot_submodules(arena).items() if any(status.get(p) == "uninit" for p in paths)}
+    return {name for name, paths in robots.robot_submodules(arena).items() if not all(status.get(p) == "init" for p in paths)}
 
 
 def _installed_planners(arena: Path) -> list[str]:
@@ -129,7 +129,7 @@ def _installed_planners(arena: Path) -> list[str]:
 
     paths = registry.submodule_paths(arena)
     status = registry.submodule_status(arena)
-    return [n for n in registry.all_planners(arena) if not any(status.get(p) == "uninit" for p in paths.get(n, []))]
+    return [n for n in registry.all_planners(arena) if all(status.get(p) == "init" for p in paths.get(n, []))]
 
 
 def build(ws: str) -> dict:

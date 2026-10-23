@@ -11,7 +11,7 @@ import yaml
 from arena_simulation_setup.shared import CeilingLights, Light, Obstacle
 from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
 from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldFormatError, WorldView, Zone, ZoneCeiling, parse_world, write_world
-from arena_simulation_setup.tree.World.model import AUTO_CEILING_LIGHTS
+from arena_simulation_setup.tree.World.model import AUTO_CEILING_LIGHTS, anchor_light
 from arena_simulation_setup.tree.World.write import dump_level
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position
@@ -139,7 +139,7 @@ def test_ceiling_rig_grid_on_rectangular_zone():
 
 
 def test_ceiling_rig_is_one_rig_light_named_after_the_zone():
-    cfg = CeilingLights(fixture='tube', spacing=3.0, lumens=2000.0, cct_K=3000.0, cast_shadows=True, light_on='!blackout', level=0.8, dead_fraction=0.25)
+    cfg = CeilingLights(fixture='tube', spacing=3.0, lumens=2000.0, cct_K=3000.0, cast_shadows=True, light_on='!blackout', dim=0.8, dead_fraction=0.25)
     rig = _only_light(_lit_zone(name='central_hallway', ceiling_height=2.5, ceiling_lights=cfg))
     assert rig.name == 'central_hallway'
     assert rig.rig is True
@@ -150,13 +150,13 @@ def test_ceiling_rig_is_one_rig_light_named_after_the_zone():
     assert rig.cast_shadows is True
     assert rig.light_on == '!blackout'
     assert rig.lit is None
-    assert rig.level == pytest.approx(0.8)
+    assert rig.dim == pytest.approx(0.8)
     assert rig.dead_fraction == pytest.approx(0.25)
     assert rig.pose is None
     assert rig.attach == ''
     assert rig.frame == ''
     assert len(rig.fixture_ranks) == len(rig.fixtures)
-    assert [(entry.role, entry.name) for entry in rig.semantics] == [('predicate', 'lit'), ('state', 'level'), ('state', 'dead_fraction')]
+    assert [(entry.role, entry.name) for entry in rig.semantics] == [('predicate', 'lit'), ('state', 'dim'), ('state', 'dead_fraction')]
 
 
 def test_ceiling_rig_carries_lit_false():
@@ -577,9 +577,9 @@ def test_object_lights_follow_their_entity_pose_and_scale(world_assets: Path) ->
 
 
 def test_object_lights_take_the_placement_settings(world_assets: Path) -> None:
-    lamp = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [2.0, 1.0, 0.7]}, 'light': {'light_on': '!daylight', 'level': 0.5}}
+    lamp = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [2.0, 1.0, 0.7]}, 'light': {'light_on': '!daylight', 'dim': 0.5}}
     lights = asyncio.run(_lamp_level(lamp).all_lights())
-    assert [(light.light_on, light.level) for light in lights] == [('!daylight', 0.5), ('!daylight', 0.5)]
+    assert [(light.light_on, light.dim) for light in lights] == [('!daylight', 0.5), ('!daylight', 0.5)]
 
 
 def test_objects_without_annotated_lights_add_none(world_assets: Path) -> None:
@@ -714,3 +714,17 @@ def test_auto_lighting_skips_a_zone_holding_an_anchored_level_light() -> None:
     lamp = Light(name='lamp', fixture='downlight', attach='crate', lumens=400.0)
     level = Level(zones=[_zone('held', _rect(4.0, 4.0))], lights=[lamp], objects=[_desk('crate', x=2.0)])
     assert level.with_lighting('auto').zones[0].ceiling.lights is None
+
+
+def test_light_names_its_floor_apart_from_its_dim():
+    raw = {'name': 'lobby', 'fixture': 'panel', 'pose': {'x': 4.0, 'y': 2.5, 'z': 2.6}, 'lumens': 3600, 'level': '1', 'dim': 0.6}
+    light = converter.structure(raw, Light)
+    assert (light.level, light.dim) == ('1', 0.6)
+
+
+def test_light_attached_to_an_entity_sits_on_its_level_and_zone():
+    lamp = Light(name='desk_lamp', fixture='bulb', attach='desk', offset=Pose(position=Position(0.0, 0.0, 1.0)), lumens=400.0)
+    desk = Obstacle(name='desk', pose=Pose(Position(4.0, 2.0, 0.0), Orientation.from_yaw(0.0)), model=ObjectIdentifier('test_model'), level='1')
+    assert anchor_light(lamp, [desk]).level == '1'
+    zoned = Obstacle(name='desk', pose=Pose(Position(4.0, 2.0, 0.0), Orientation.from_yaw(0.0)), model=ObjectIdentifier('test_model'), extra={'placement_zone': 'office'})
+    assert anchor_light(lamp, [zoned]).placement_zone == 'office'

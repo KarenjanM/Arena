@@ -129,7 +129,7 @@ def test_field_defaults_are_omitted() -> None:
             doors=[{'name': 'd', 'span': [[1, 0], [2, 0]], 'kind': 'sliding', 'width': 0.1, 'height': 2.0, 'activation_distance': 3.0}],
             objects=[{'name': 'o', 'model': 'Desk', 'pose': [1, 1]}],
             sounds=[{'name': 's', 'asset_id': 'alarm', 'position': [1, 1], 'loop': True, 'reference_distance_m': 1.0}],
-            lights=[{'name': 'l', 'fixture': 'bulb', 'lumens': 10, 'pose': {'x': 1, 'y': 1, 'z': 2}, 'cct_K': 6500, 'level': 1.0}],
+            lights=[{'name': 'l', 'fixture': 'bulb', 'lumens': 10, 'pose': {'x': 1, 'y': 1, 'z': 2}, 'cct_K': 6500, 'dim': 1.0}],
         )
     )['levels'][0]
     assert level['zones'] == [{'name': 'z', 'polygon': [[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]]}]
@@ -174,9 +174,9 @@ def test_shorthands_for_outline_walls_and_absent_floor_ceiling_and_pedestrian_wa
     assert written['levels'][1]['zones'][0]['walls'] == 'outline'
 
 
-def test_light_dimming_level_survives_the_round_trip() -> None:
-    world = _one_level(lights=[{'name': 'dim', 'fixture': 'bulb', 'lumens': 100, 'pose': {'x': 1, 'y': 1, 'z': 2}, 'level': 0.5}])
-    assert _written(world)['levels'][0]['lights'][0]['level'] == 0.5
+def test_light_dim_survives_the_round_trip() -> None:
+    world = _one_level(lights=[{'name': 'dim', 'fixture': 'bulb', 'lumens': 100, 'pose': {'x': 1, 'y': 1, 'z': 2}, 'dim': 0.5}])
+    assert _written(world)['levels'][0]['lights'][0]['dim'] == 0.5
     assert parse_world(_written(world)) == world
 
 

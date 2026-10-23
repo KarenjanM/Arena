@@ -35,7 +35,7 @@ from arena_simulation_setup.shared.semantics import parse_semantics
 from arena_simulation_setup.tree import Identifier
 from arena_simulation_setup.tree.assets.Material import Material, MaterialIdentifier
 from arena_simulation_setup.utils.cattrs import ArenaConverter, converter
-from arena_simulation_setup.utils.geometry import PointResolver, Pose, Position
+from arena_simulation_setup.utils.geometry import Orientation, PointResolver, Pose, Position
 
 from .Map import Map
 from .Scenario import RegionAssignment
@@ -156,7 +156,7 @@ def _open_ring(points: list[Position]) -> list[Position]:
 
 
 def _place_on(light: Light, entity: Obstacle) -> Light:
-    """Place a light at its offset on a static entity, the offset scaled and carried by the entity pose."""
+    """Place a light at its offset on a static entity, the offset scaled and carried by the entity pose, on the entity's level or zone."""
     offset = light.offset
     scale = entity.scale
     if scale is not None:
@@ -168,6 +168,8 @@ def _place_on(light: Light, entity: Obstacle) -> Light:
         owner=entity.name,
         pose=placed if light.spec.directed else Pose(position=placed.position),
         offset=Pose(),
+        level=entity.level,
+        extra={**light.extra, 'placement_zone': entity.placement_zone} if entity.placement_zone else dict(light.extra),
     )
 
 
@@ -517,7 +519,7 @@ class Level:
             cast_shadows=cfg.cast_shadows,
             light_on=cfg.light_on,
             lit=cfg.lit,
-            level=cfg.level,
+            dim=cfg.dim,
             dead_fraction=cfg.dead_fraction,
             rig=True,
             fixtures=fixtures,
@@ -623,6 +625,11 @@ class Level:
             height = zone.ceiling.height if zone.ceiling is not None else None
             if placement == 'ceiling' and height is not None and not math.isclose(microphone.position.z, height, abs_tol=MICROPHONE_PLACEMENT_TOLERANCE_M):
                 raise ValueError(f'microphone {listener_id!r} z={microphone.position.z} does not match ceiling height {height}')
+
+    def validate_levels(self) -> None:
+        for entity in (*self.objects, *self.humans, *self.lights, *self.sounds):
+            if entity.level:
+                raise ValueError(f'{entity.name!r} sits on the level that lists it and takes no level')
 
     def validate_lights(self) -> None:
         names: set[str] = set()
@@ -905,6 +912,7 @@ class World:
         microphone_ids: set[str] = set()
         for level in self.all_levels:
             level.validate_microphones()
+            level.validate_levels()
             level.validate_lights()
             zone_names = {zone.name for zone in level.zones}
             for zone in level.zones:
@@ -1051,6 +1059,17 @@ def elevator_doorway_corners(elevator: Elevator) -> list[Position]:
         Position(outer_cx + tangent[0] * tan_extent, outer_cy + tangent[1] * tan_extent),
         Position(inner_cx + tangent[0] * tan_extent, inner_cy + tangent[1] * tan_extent),
     ]
+
+
+def elevator_doorway_pose(elevator: Elevator, standoff: float = 0.0) -> Pose:
+    """Pose facing the cabin on the outer edge of its doorway, moved `standoff` further out along the door normal."""
+    outward, _tangent = _door_axis(elevator.door_side or '+x')
+    out_extent = elevator.size[0] / 2.0 if outward[0] != 0 else elevator.size[1] / 2.0
+    reach = out_extent + _ELEVATOR_DOORWAY_DEPTH + standoff
+    return Pose(
+        position=Position(elevator.position.x + outward[0] * reach, elevator.position.y + outward[1] * reach, elevator.position.z),
+        orientation=Orientation.from_yaw(math.atan2(-outward[1], -outward[0])),
+    )
 
 
 def render_door_polygons(door: Door) -> list:

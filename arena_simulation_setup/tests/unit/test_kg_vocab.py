@@ -5,8 +5,15 @@ import pytest
 from arena_simulation_setup.kg import ANY, LITERAL, PACKAGES_DIR, Vocabulary, load_package
 
 
-def test_shipped_packages_are_the_five_known_versions():
-    assert sorted(p.stem for p in PACKAGES_DIR.glob("*.toml")) == ["access@1", "core@1", "core@2", "robot@1", "social@1"]
+def test_shipped_packages_are_the_six_known_versions():
+    assert sorted(p.stem for p in PACKAGES_DIR.glob("*.toml")) == ["access@1", "core@1", "core@2", "robot@1", "social@1", "space@1"]
+
+
+def test_space_states_a_room_purpose():
+    vocab = Vocabulary(["core@2", "space@1"])
+    assert vocab.verbs["has_purpose"] == {"from": ["room"], "to": ["purpose"]}
+    assert vocab.is_auto("purpose")
+    assert vocab.is_propless("purpose")
 
 
 def test_core2_adds_placeable_kinds_and_placed_prop():

@@ -281,11 +281,31 @@ def _domain(fork: str) -> int:
     return int(pathlib.Path(_root(), fork, "domain").read_text())
 
 
+def _dds_domains() -> set[int]:
+    """ROS domains with a bound RTPS port (7400 + 250 * domain + offset) in this network namespace, below the ephemeral port range."""
+    try:
+        ephemeral = int(pathlib.Path("/proc/sys/net/ipv4/ip_local_port_range").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        ephemeral = 32768
+    domains: set[int] = set()
+    for table in ("/proc/net/udp", "/proc/net/udp6"):
+        try:
+            rows = pathlib.Path(table).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            port = int(row.split()[1].rsplit(":", 1)[1], 16)
+            if 7400 <= port < ephemeral:
+                domains.add((port - 7400) // 250)
+    return domains
+
+
 def _free_domain() -> int:
-    """Lowest ROS domain from ARENA_FORK_DOMAIN_BASE up that no fork holds and no running container uses."""
+    """Lowest ROS domain from ARENA_FORK_DOMAIN_BASE up that no fork holds, no running container uses and no ROS process has bound."""
     root = _root()
     held = {_domain(name) for name in os.listdir(root) if os.path.isfile(os.path.join(root, name, "domain"))} if os.path.isdir(root) else set()
     held |= {int(d) for d in _used_domains() if d.isdigit()}
+    held |= _dds_domains()
     domain = int(os.environ.get("ARENA_FORK_DOMAIN_BASE", "20"))
     while domain in held:
         domain += 1
@@ -406,7 +426,8 @@ def new(argv: list[str]) -> None:
     fork is the dev image over an overlay of a hardlinked snapshot of the built
     dev tree, so its edits, builds and commits land in build/.forks/<fork>
     without touching the dev tree. It has its own hostname, gz partition and
-    the lowest ROS domain free from ARENA_FORK_DOMAIN_BASE (default 20) up, and
+    the lowest ROS domain from ARENA_FORK_DOMAIN_BASE (default 20) up that no
+    fork holds and no running container or ROS process uses, and
     ARENA_FORK_CPUS and ARENA_FORK_MEM in .env cap it. It stays until
     `arena fork down <fork>` names it.
     """

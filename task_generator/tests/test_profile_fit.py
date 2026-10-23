@@ -17,7 +17,7 @@ from task_generator.simulators.human.profile import DEFAULT_WALK, JOINT_NAMES, L
 
 _WALKING = 1
 FPS = 20.0
-WIDE = {"l_r_hip": [-0.5, 0.7], "r_r_hip": [-0.5, 0.7], "l_knee": [-2.5, 0.1], "r_knee": [-2.5, 0.1]}
+WIDE = {"l_r_hip": [-0.5, 0.7], "r_r_hip": [-0.5, 0.7], "l_knee": [-2.5, 0.1], "r_knee": [-2.5, 0.1], "l_ankle": [-0.9, 1.0], "r_ankle": [-0.9, 1.0]}
 OPTIONS = ("CLIP.npy", "-o", "--output", "--fps", "--harmonics", "--speed", "--report", "--name")
 
 

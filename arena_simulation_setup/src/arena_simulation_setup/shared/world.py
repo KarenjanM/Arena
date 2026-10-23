@@ -17,13 +17,41 @@ from .semantics import SemanticCfg, parse_semantics
 
 CABIN_DOOR_INSET = 0.05
 CABIN_DOOR_WIDTH = 0.05
+CABIN_DOOR_THRESHOLD = 0.6
 
 
-def _activation_distance_converter(x: float | typing.Sequence[float]) -> tuple[float, float]:
+ActivationDistance = typing.NewType('ActivationDistance', tuple[float, float])
+
+
+def _activation_distance_converter(x: float | typing.Sequence[float]) -> ActivationDistance:
     if isinstance(x, (int, float)):
-        return (float(x), float(x))
+        return ActivationDistance((float(x), float(x)))
     a, b = x
-    return (float(a), float(b))
+    return ActivationDistance((float(a), float(b)))
+
+
+converter.register_structure_hook(ActivationDistance, lambda value, _: _activation_distance_converter(value))
+
+
+def _call_mode_validator(_instance: object, _attribute: object, value: str) -> None:
+    if value not in ('level', 'edge'):
+        raise ValueError(f"elevator call_mode must be 'level' or 'edge', got {value!r}")
+
+
+def _optional_capacity(value: object) -> int | None:
+    if value is None:
+        return None
+    capacity = int(value)  # type: ignore[call-overload]
+    if capacity < 1:
+        raise ValueError(f'elevator capacity must be >= 1 or null, got {value!r}')
+    return capacity
+
+
+def _swing_direction_converter(value: object) -> int:
+    direction = int(value)  # type: ignore[call-overload]
+    if direction not in (1, -1):
+        raise ValueError(f'door swing_direction must be 1 or -1, got {value!r}')
+    return direction
 
 
 @attrs.define
@@ -40,6 +68,9 @@ class Elevator(Named):
     travel_time: float = 3.0
     accept_outside_calls: bool = True
     recall_on: str | None = None
+    # None = unlimited
+    capacity: int | None = attrs.field(default=None, converter=_optional_capacity)
+    call_mode: typing.Literal['level', 'edge'] = attrs.field(default='level', validator=_call_mode_validator)
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
     @property
@@ -70,12 +101,14 @@ class Door(Named):
     width: float = 0.1
     height: float = attrs.field(default=2.0)
     material: MaterialIdentifier = attrs.field(converter=MaterialIdentifier.converter, default=Material.default('door'))
-    activation_distance: tuple[float, float] = attrs.field(
+    activation_distance: ActivationDistance = attrs.field(
         converter=_activation_distance_converter,
-        default=(3.0, 3.0),
+        default=ActivationDistance((3.0, 3.0)),
     )
     transition_time: float = 1.0
     hold_time: float = 2.0
+    # hinged only: +1 swings towards the left normal of start->end, -1 towards the right.
+    swing_direction: int = attrs.field(default=1, converter=_swing_direction_converter)
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
 
     @classmethod
@@ -136,9 +169,36 @@ class Schedule(Named):
 
 @attrs.define
 class Signal(Named):
-    """Standalone cycling-phase semantic entity (kind = signal), no geometry."""
+    """Standalone cycling-phase semantic entity (kind = signal), no geometry, optional stop-line params `position` and `radius`."""
 
     semantics: list[SemanticCfg] = attrs.field(factory=list, converter=parse_semantics)
+
+    def __attrs_post_init__(self) -> None:
+        position = self._param('position')
+        if position is not None:
+            if not isinstance(position, (list, tuple)) or len(position) != 2 or not all(isinstance(v, (int, float)) for v in position):
+                raise ValueError(f"signal {self.name!r} position must be [x, y], got {position!r}")
+        radius = self._param('radius')
+        if radius is not None and float(radius) <= 0.0:
+            raise ValueError(f"signal {self.name!r} radius must be positive, got {radius!r}")
+
+    def _param(self, key: str) -> typing.Any:  # noqa: ANN401 - untyped YAML semantics params
+        for cfg in self.semantics:
+            if key in cfg.params:
+                return cfg.params[key]
+        return None
+
+    @property
+    def stop_position(self) -> tuple[float, float] | None:
+        """Stop-line position, None when not given."""
+        position = self._param('position')
+        return None if position is None else (float(position[0]), float(position[1]))
+
+    @property
+    def stop_radius(self) -> float | None:
+        """Stop-line radius, None when not given."""
+        radius = self._param('radius')
+        return None if radius is None else float(radius)
 
 
 def _optional_position(value: object) -> Position | None:
@@ -270,8 +330,9 @@ class Light(Named):
     cast_shadows: bool = False
     light_on: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     lit: bool | None = None
-    level: float = attrs.field(converter=float, default=1.0)
+    dim: float = attrs.field(converter=float, default=1.0)
     dead_fraction: float = attrs.field(converter=float, default=0.0)
+    level: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     intrinsic: bool = False
     owner: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     glow: str = attrs.field(converter=lambda value: str(value).strip(), default='')
@@ -322,7 +383,7 @@ class Light(Named):
             raise ValueError(f'light {self.name!r} ({self.fixture}) takes no orientation')
         if self.cone_deg is not None and (self.fixture != 'spot' or not 0.0 < self.cone_deg < 180.0):
             raise ValueError(f'light {self.name!r} takes cone_deg only as a spot, within 0..180 exclusive')
-        check_light_state(f'light {self.name!r}', self.cct_K, self.level, self.dead_fraction, self.light_on, self.lit)
+        check_light_state(f'light {self.name!r}', self.cct_K, self.dim, self.dead_fraction, self.light_on, self.lit)
         if self.dead_fraction and not self.rig:
             raise ValueError(f'light {self.name!r} takes dead_fraction only as a rig')
 
@@ -351,7 +412,7 @@ class Light(Named):
         lit = None if self.light_on else (True if self.lit is None else self.lit)
         result = [
             SemanticCfg(role='predicate', name='lit', value=lit, params={'light_on': self.light_on} if self.light_on else {}),
-            SemanticCfg(role='state', name='level', value=self.level),
+            SemanticCfg(role='state', name='dim', value=self.dim),
         ]
         if self.rig:
             result.append(SemanticCfg(role='state', name='dead_fraction', value=self.dead_fraction))
@@ -385,7 +446,7 @@ def object_light(owner: str, entry: dict, settings: ObjectLightSettings | None) 
         cone_deg=entry.get('cone_deg') if fixture == 'spot' else None,
         light_on=settings.light_on,
         lit=settings.lit,
-        level=settings.level,
+        dim=settings.dim,
         intrinsic=True,
         glow=entry.get('glow') or '',
     )
@@ -402,7 +463,7 @@ class CeilingLights(Parseable, Serializable):
     cast_shadows: bool = False
     light_on: str = attrs.field(converter=lambda value: str(value).strip(), default='')
     lit: bool | None = None
-    level: float = attrs.field(converter=float, default=1.0)
+    dim: float = attrs.field(converter=float, default=1.0)
     dead_fraction: float = attrs.field(converter=float, default=0.0)
 
     def __attrs_post_init__(self) -> None:
@@ -412,7 +473,7 @@ class CeilingLights(Parseable, Serializable):
             raise ValueError('ceiling_lights spacing must be positive')
         if not self.lumens >= 0.0:
             raise ValueError('ceiling_lights requires lumens >= 0')
-        check_light_state('ceiling_lights', self.cct_K, self.level, self.dead_fraction, self.light_on, self.lit)
+        check_light_state('ceiling_lights', self.cct_K, self.dim, self.dead_fraction, self.light_on, self.lit)
 
     def serialize(self) -> dict:
         return cattrs.gen.make_dict_unstructure_fn(type(self), converter, _cattrs_omit_if_default=True)(self)

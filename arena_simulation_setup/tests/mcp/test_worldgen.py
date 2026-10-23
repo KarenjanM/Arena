@@ -14,7 +14,7 @@ pytest.importorskip("arena_mcp")
 from arena_mcp.core.errors import ToolError
 from arena_simulation_setup.mcp import worldgen
 from arena_simulation_setup.tree.World import WorldView
-from arena_simulation_setup.utils.generative import WorldGenerator
+from arena_simulation_setup.generative.world import WorldGenerator
 from mcp.server.mcpserver import MCPServer
 
 SKETCH = "\u250c\u2500\u252c\u2500\u2510\n\u2502 \u2502 \u2502\n\u2514\u2500\u2534\u2500\u2518"

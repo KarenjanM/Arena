@@ -21,6 +21,25 @@ def _optional_float(value: object) -> float | None:
     return float(value)
 
 
+def via_list(value: object) -> list[str]:
+    """`via:` elevator entries normalized to `"<name>"` or `"<name>><destination>"`."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    out: list[str] = []
+    for entry in typing.cast("Sequence[object]", value):
+        if isinstance(entry, Mapping):
+            unknown = set(entry) - {"elevator", "to"}
+            if "elevator" not in entry or unknown:
+                raise ValueError(f"via entry must be an elevator name or {{elevator, to}}; got {dict(entry)}")
+            to = str(entry.get("to", "") or "")
+            out.append(f"{entry['elevator']}>{to}" if to else str(entry["elevator"]))
+        else:
+            out.append(str(entry))
+    return out
+
+
 def _pose_dict(pose: Pose) -> list[float]:
     x, y, yaw = pose.to_2d()
     return [float(x), float(y), float(yaw)]
@@ -99,6 +118,8 @@ class GoToPhase(TaskPhase):
     tolerance_angle: float | None = None
     hold_time: float | None = None
     signal: str | None = None
+    pose_zone: str = ""
+    via: tuple[str, ...] = attrs.field(default=(), converter=tuple, kw_only=True)
 
     @property
     def hold(self) -> bool:
@@ -109,11 +130,13 @@ class GoToPhase(TaskPhase):
         goto = data.pop("goto", None)
         pose: Pose | None = None
         target: str | None = None
+        pose_zone = ""
         if isinstance(goto, str):
             target = goto
             dispatch = data.pop("pose", None)
             if dispatch is not None:
                 pose = Pose.parse(dispatch)
+                pose_zone = dispatch if isinstance(dispatch, str) else ""
         elif goto is not None:
             pose = Pose.parse(goto)
         return cls(
@@ -123,6 +146,8 @@ class GoToPhase(TaskPhase):
             tolerance_angle=_optional_float(data.pop("tolerance_angle", None)),
             hold_time=_optional_float(data.pop("hold_time", None)),
             signal=None if data.get("signal") is None else str(data.pop("signal")),
+            pose_zone=pose_zone,
+            via=via_list(data.pop("via", None)),
             **common,
         )
 
@@ -140,6 +165,8 @@ class GoToPhase(TaskPhase):
                 result[key] = value
         if self.signal:
             result["signal"] = self.signal
+        if self.via:
+            result["via"] = list(self.via)
         return result
 
 
@@ -297,4 +324,5 @@ __all__ = [
     "ReachPhase",
     "TaskPhase",
     "TaskRequest",
+    "via_list",
 ]

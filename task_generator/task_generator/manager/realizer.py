@@ -28,6 +28,7 @@ class Realizer:
     _config: _Configuration
     _level_origins: dict[str, tuple[float, float]]
     _elevator_levels: dict[str, str]
+    _levels: list[str]
 
     @typing.overload
     def __init__(self, config: "Realizer._Configuration", level_origins: None = None): ...
@@ -40,6 +41,7 @@ class Realizer:
         self._config = config if config is not None else Realizer._Configuration()
         self._level_origins = level_origins if level_origins is not None else {}
         self._elevator_levels = {}
+        self._levels = []
 
     def set_origin(self, x: float, y: float, level_id: str = "") -> None:
         if level_id == "":
@@ -56,6 +58,16 @@ class Realizer:
     def reset_elevator_levels(self, levels: typing.Mapping[str, str]) -> None:
         """Replace the level of every elevator cabin by cabin name, dropping those of a prior world."""
         self._elevator_levels = {str(cabin): str(level_id) for cabin, level_id in levels.items()}
+
+    def reset_levels(self, level_ids: typing.Sequence[str]) -> None:
+        """Replace the levels the env runs, dropping those of a prior world."""
+        self._levels = [str(level_id) for level_id in level_ids]
+
+    def placement_level(self, zone: str, level: str, listing: str = "") -> str:
+        """The level a placed pose is local to: none when drawn from a zone, else its own, the one listing or holding it, or the sole level the env runs."""
+        if zone:
+            return ""
+        return level or listing or (self._levels[0] if len(self._levels) == 1 else "")
 
     def get_config(self) -> "Realizer._Configuration":
         return self._config
@@ -118,14 +130,14 @@ class Realizer:
     def _realize_entity(self, entity: EntityPropsT, level_id: str = "") -> EntityPropsT:
         return attrs.evolve(
             entity,
-            pose=self._realize_pose(entity.pose, level_id),
+            pose=self._realize_pose(entity.pose, self.placement_level(entity.placement_zone, entity.level, level_id)),
         )
 
     def _realize_dynamic_obstacle(self, obstacle: DynamicObstacle, level_id: str = "") -> DynamicObstacle:
         return attrs.evolve(
             obstacle,
-            pose=self._realize_pose(obstacle.pose, level_id),
-            waypoints=[self._realize_position(w.position, w.level) for w in obstacle.waypoints],
+            pose=self._realize_pose(obstacle.pose, self.placement_level(obstacle.placement_zone, obstacle.level, level_id)),
+            waypoints=[self._realize_position(w.position, self.placement_level(w.zone, w.level, obstacle.level or level_id)) for w in obstacle.waypoints],
         )
 
     @typing.overload
@@ -207,6 +219,9 @@ class Realizer:
 
     def _realize_light(self, light: Light, level_id: str = "") -> Light:
         env = self._prefix().strip("/")
+        placed = None if light.spec.ambient else light.pose
+        if placed is not None:
+            level_id = self.placement_level(light.placement_zone, light.level, level_id)
         frame = light.frame
         if frame and env and frame != env and not frame.startswith(f"{env}/"):
             frame = f"{env}/{frame}"
@@ -214,7 +229,7 @@ class Realizer:
             light,
             name=self._prefix(light.name, level_id),
             frame=frame,
-            pose=self._realize_pose(light.pose, level_id) if light.pose is not None and not light.spec.ambient else light.pose,
+            pose=light.pose if placed is None else self._realize_pose(placed, level_id),
             fixtures=[self._realize_position(fixture, level_id) for fixture in light.fixtures],
         )
 
@@ -225,6 +240,14 @@ class Realizer:
             realized = self._realize_position(corner, level_id)
             ring.append((realized.x, realized.y))
         return ring
+
+    def realize_reference(self, reference: str, level_id: str = "") -> str:
+        """Realized name of an authored entity reference, `<level_id>.<name>` for another registered level, else a name on `level_id`."""
+        if '.' in reference:
+            ref_level_id, ref_name = reference.split('.', 1)
+            if ref_level_id in self._level_origins or ref_level_id == level_id:
+                return self._prefix(ref_name, ref_level_id)
+        return self._prefix(reference, level_id)
 
     def realize_xy(self, x: float, y: float, level_id: str = "") -> tuple[float, float]:
         """Env-realized xy of a world point, for semantic params authored in world coordinates."""

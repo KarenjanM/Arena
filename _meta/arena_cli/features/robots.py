@@ -43,22 +43,15 @@ SCAN_EXTS = {".urdf", ".xacro", ".yaml", ".xml", ".launch", ".py", ".sdf", ".wor
 
 
 def submodule_status(arena: Path) -> dict[str, str]:
-    """{path: 'init'|'uninit'} for each submodule (recursive, paths relative to Arena)."""
-    out = subprocess.run(
-        ["git", "submodule", "status", "--recursive"],
-        cwd=arena,
-        text=True,
-        capture_output=True,
-        check=False,
-    ).stdout
+    """{path: 'init'|'uninit'} per arena_robots/.gitmodules entry (relative to Arena), 'init' when the path holds a `.git`."""
+    cfg = configparser.ConfigParser()
+    cfg.read(arena / _SDK_SUBDIR / ".gitmodules")
     status: dict[str, str] = {}
-    for line in out.splitlines():
-        if not line:
-            continue
-        parts = line[1:].split()
-        if len(parts) < 2:
-            continue
-        status[parts[1]] = "uninit" if line[0] == "-" else "init"
+    for section in cfg.sections():
+        path = cfg[section].get("path", "").strip()
+        if section.startswith("submodule ") and path:
+            rel = f"{_SDK_SUBDIR}/{path}"
+            status[rel] = "init" if (arena / rel / ".git").exists() else "uninit"
     return status
 
 
@@ -211,7 +204,7 @@ def cmd_ls(arena: Path, _args: argparse.Namespace) -> int:
     status = submodule_status(arena)
     components = component_families(arena) | {n for n in subs if "/" in n}
     for name in all_robots(arena) + sorted(components):
-        pending = any(status.get(p) == "uninit" for p in subs.get(name, []))
+        pending = not all(status.get(p) == "init" for p in subs.get(name, []))
         print(f"{'[ ]' if pending else '[x]'} {name}")
     return 0
 
@@ -424,7 +417,7 @@ def _ready_robots(arena: Path) -> list[str]:
     status = submodule_status(arena)
     ready: list[str] = []
     for robot in all_robots(arena):
-        if any(status.get(p) == "uninit" for p in subs.get(robot, [])):
+        if not all(status.get(p) == "init" for p in subs.get(robot, [])):
             continue
         ready.append(robot)
     return ready

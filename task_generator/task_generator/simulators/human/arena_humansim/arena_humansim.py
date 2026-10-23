@@ -7,8 +7,10 @@ import traceback
 import typing
 from collections.abc import Mapping, Sequence
 
+import attrs
 import numpy as np
 import yaml
+from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
 from arena_humansim_msgs.msg import (
     AgentFrame as AgentFrameMsg,
 )
@@ -25,7 +27,13 @@ from arena_humansim_msgs.msg import (
     AgentStates as AgentStatesMsg,
 )
 from arena_humansim_msgs.msg import (
+    Elevator as ElevatorMsg,
+)
+from arena_humansim_msgs.msg import (
     Gesture as EngineGestureMsg,
+)
+from arena_humansim_msgs.msg import (
+    InteractionFrame as InteractionFrameMsg,
 )
 from arena_humansim_msgs.msg import (
     ObstacleConfig as ObstacleConfigMsg,
@@ -67,9 +75,12 @@ from arena_humansim_msgs.srv import (
     RemoveWalls,
     RemoveWorldObjects,
     ResetSimulation,
+    SetElevatorDoors,
+    SetElevators,
     SetFlow,
     SetWaypoints,
     SpawnAgents,
+    TeleportAgents,
     UpdateRobot,
 )
 from arena_people_msgs.msg import Gesture as GestureMsg
@@ -77,7 +88,10 @@ from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.lazy import LazySubscription
 from arena_runtime_msgs.msg import LockstepChannel
+from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
+from arena_simulation_setup.tree.World.model import elevator_doorway_pose
+from arena_simulation_setup.utils.affordance import AffordanceClaims, AffordanceKind, AffordanceSlot, SlotOccupied, conflicts, max_occupancy, placed_slots
 from geometry_msgs.msg import (
     Point,
     Point32,
@@ -104,10 +118,99 @@ from visualization_msgs.msg import MarkerArray
 from task_generator.constants import Constants
 from task_generator.constants.rng import stable_int
 from task_generator.manager.realizer import Realizer
-from task_generator.shared import Door, DynamicObstacle, Obstacle, Pose, Position, Region, Robot, Wall
-from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorOptions
+from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
+from task_generator.simulators.human import PED_RADIUS, BaseHumanSimulator, HumanSimulatorOptions, Segment
+from task_generator.simulators.human.itinerary import STIMULUS_TELEPORTED, ItineraryDriver, Stop, semantic_atom
 
-from .agent import ArenaHumanDynamicObstacle, agent_type_def, flow_agent_template, path_agent_type_name
+from .agent import ArenaHumanDynamicObstacle, agent_type_def, agent_type_stimuli, flow_agent_template, path_agent_type_name
+
+_DEFERRED_ID_BASE = 1 << 24
+
+_QUEUE_FRONT_OFFSET = 0.7
+_QUEUE_STEP = 0.8
+
+
+@attrs.frozen
+class PedMechanics:
+    """Scenario fields of a `dynamic:` entry that the arena adapter acts on besides the agent block."""
+
+    spawn_delay: float = 0.0
+    # alias -> authored entity
+    semantic_alias: dict[str, str] = attrs.Factory(dict)
+    # aligned with the waypoint list
+    itinerary: list[dict] = attrs.Factory(list)
+
+    @classmethod
+    def from_dynamic_obstacle(cls, obs: DynamicObstacle) -> "PedMechanics":
+        delay = float(obs.spawn_delay)
+        if delay < 0.0 or delay != delay:
+            raise ValueError(f"{obs.name}: spawn_delay must be >= 0, got {obs.spawn_delay!r}")
+        alias = obs.semantic_alias or {}
+        if not isinstance(alias, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in alias.items()):
+            raise ValueError(f"{obs.name}: semantic_alias must map alias names to entity names, got {alias!r}")
+        itinerary = obs.extra.get("itinerary") or []
+        if not isinstance(itinerary, list):
+            raise ValueError(f"{obs.name}: itinerary must be a list")
+        return cls(spawn_delay=delay, semantic_alias=dict(alias), itinerary=list(itinerary))
+
+    def stops(self, points: list[tuple[float, float]]) -> list[Stop] | None:
+        """Itinerary stops at the given (engine-frame) waypoint positions, None when nothing holds the ped."""
+        if not self.itinerary or len(self.itinerary) != len(points):
+            return None
+        stops = [Stop.from_dict({**meta, "x": x, "y": y}) for meta, (x, y) in zip(self.itinerary, points, strict=True)]
+        return stops if any(stop.holds for stop in stops) else None
+
+
+def seat_capacity(humansim: Mapping[str, typing.Any], slots: Sequence[AffordanceSlot]) -> int:
+    """Queue length at which needs-driven agents pass the object over: the scenario's capacity or seat count, else the most of its sit slots held together, at least 1."""
+    if "capacity" in humansim:
+        return int(humansim["capacity"])
+    if "seats" in humansim:
+        return max(1, len(humansim["seats"]))
+    return max(1, max_occupancy(slots))
+
+
+def held_seats(frame: InteractionFrameMsg) -> dict[str, list[int]]:
+    """Seat indices the participants of sit and lie interactions hold, by object."""
+    held: dict[str, list[int]] = {}
+    objects, offsets, seats, roles = list(frame.object_id), list(frame.member_offset), list(frame.member_seat), list(frame.member_role)
+    for index, kind in enumerate(frame.interaction_type):
+        if kind not in (InteractionType.SIT_ON, InteractionType.LIE_ON) or not objects[index]:
+            continue
+        held.setdefault(objects[index], []).extend(int(seats[m]) for m in range(offsets[index], offsets[index + 1]) if roles[m] == MembershipRole.PARTICIPANT and seats[m] >= 0)
+    return held
+
+
+def seat_violation(slots_by_object: Mapping[str, Sequence[AffordanceSlot]], held: Mapping[str, Sequence[int]]) -> str | None:
+    """The first object whose held seats overlap or fall outside its slots, None when every held set fits."""
+    for object_id, seats in sorted(held.items()):
+        slots = slots_by_object.get(object_id)
+        if slots is None:
+            continue
+        claims = AffordanceClaims(list(slots))
+        for seat in seats:
+            if not 0 <= seat < len(slots):
+                return f"affordance invariant: {object_id} holds seat {seat} of {len(slots)}"
+            try:
+                claims.claim(slots[seat])
+            except SlotOccupied as e:
+                return f"affordance invariant: {object_id}: {e}"
+    return None
+
+
+def conflict_offsets(slots: Sequence[AffordanceSlot]) -> tuple[list[int], list[int]]:
+    """Per-slot overlap lists flattened into offsets and indices for WorldObjectInfo."""
+    offsets, flat = [0], []
+    for overlapping in conflicts(slots):
+        flat.extend(overlapping)
+        offsets.append(len(flat))
+    return offsets, flat
+
+
+def reach_radius(bounding_box: Sequence[Sequence[float]]) -> float:
+    """Distance from the object origin within which an agent standing beside it reaches any point of its footprint."""
+    (x_min, x_max), (y_min, y_max) = bounding_box[0], bounding_box[1]
+    return max(math.hypot(x, y) for x in (x_min, x_max) for y in (y_min, y_max)) + PED_RADIUS
 
 
 class ArenaHumanSimulator(BaseHumanSimulator):
@@ -143,6 +246,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     SERVICE_GET_PROFILE = "get_profile"
     SERVICE_FEEDBACK = "feedback"
     SERVICE_NOTIFY_STIMULUS = "notify_stimulus"
+    SERVICE_SET_ELEVATORS = "set_elevators"
+    SERVICE_SET_ELEVATOR_DOORS = "set_elevator_doors"
+    SERVICE_TELEPORT_AGENTS = "teleport_agents"
+    TAKES_STIMULI = True
 
     def __init__(self, **kwargs: typing.Unpack[HumanSimulatorOptions]) -> None:
         super().__init__(**kwargs)
@@ -234,6 +341,18 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             NotifyStimulus,
             self.node.service_namespace(self.SERVICE_NOTIFY_STIMULUS),
         )
+        self._set_elevators_client: ClientWrapper = self.node.create_client_wrapper(
+            SetElevators,
+            self.node.service_namespace(self.SERVICE_SET_ELEVATORS),
+        )
+        self._set_elevator_doors_client: ClientWrapper = self.node.create_client_wrapper(
+            SetElevatorDoors,
+            self.node.service_namespace(self.SERVICE_SET_ELEVATOR_DOORS),
+        )
+        self._teleport_agents_client: ClientWrapper = self.node.create_client_wrapper(
+            TeleportAgents,
+            self.node.service_namespace(self.SERVICE_TELEPORT_AGENTS),
+        )
 
         self._spawns_in_flight: int = 0
         self._contact_config: tuple[str, float] = ("enabled", 1.2)
@@ -258,10 +377,21 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._warned_untagged_types: set[str] = set()
         # agent_id → human-readable name (scenario YAML name or flow source label)
         self._agent_names: dict[int, str] = {}
+        self._teleport_stamps: dict[int, int] = {}
 
         self._tick_loop_task: asyncio.Task | None = None
         self._update_loop_task: asyncio.Task | None = None
         self._feedback_loop_task: asyncio.Task | None = None
+
+        # world mechanisms
+        self._deferred_spawns: list[tuple[float, AgentStateMsg, dict[str, str]]] = []
+        self._next_deferred_id = _DEFERRED_ID_BASE
+        self._itineraries: dict[int, ItineraryDriver] = {}
+        self._semantic_aliases: dict[int, dict[str, str]] = {}
+        self._mech_walls_desired: dict[str, list[Segment] | None] = {}
+        self._mech_walls_applied: dict[str, list[str]] = {}
+        self._mech_objects: dict[str, list[str]] = {}
+        self._mech_walls_syncing = False
 
         # Publish robot poses on world_state topic (consumed by arena_humansim)
         self._world_state_pub = self.node.create_publisher(
@@ -276,6 +406,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self.node.service_namespace("agent_states"),
             self._agent_states_callback,
             10,
+        )
+
+        self._held_seats: dict[str, list[int]] = {}
+        self._seat_slots: dict[str, list[AffordanceSlot]] = {}
+        self._seat_violation_reported = False
+        self.node.create_subscription(
+            InteractionFrameMsg,
+            self.node.service_namespace("interactions"),
+            self._interactions_callback,
+            QoSProfile(depth=10, reliability=QoSReliabilityPolicy.RELIABLE, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL),
         )
 
         self._debug_markers_sub = LazySubscription(
@@ -343,6 +483,21 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             marker.pose.position.x += cfg.x
             marker.pose.position.y += cfg.y
         return msg
+
+    def _interactions_callback(self, msg: InteractionFrameMsg) -> None:
+        self.node.event_loop.call_soon_threadsafe(self._apply_held_seats, held_seats(msg))
+
+    def _apply_held_seats(self, held: dict[str, list[int]]) -> None:
+        if held == self._held_seats:
+            return
+        self._held_seats = held
+        if not self._seat_violation_reported and (violation := seat_violation(self._seat_slots, held)) is not None:
+            self._seat_violation_reported = True
+            self._report_incident(violation)
+        self._notify_held_seats()
+
+    def held_seats(self) -> dict[str, list[int]]:
+        return {object_id: seats for object_id, seats in self._held_seats.items() if object_id in self._seat_slots}
 
     def _agent_states_callback(self, msg: AgentFrameMsg):
         """Cache prev/curr snapshots from arena_humansim for local interpolation."""
@@ -437,6 +592,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         alpha = max(0.0, min(1.0, (now_ns - prev_ns) / dt_ns))
         inv = 1.0 - alpha
         _, ci, pi = np.intersect1d(np.asarray(curr.agent_id), np.asarray(prev.agent_id), assume_unique=True, return_indices=True)
+        if self._teleport_stamps:
+            self._teleport_stamps = {agent_id: stamp for agent_id, stamp in self._teleport_stamps.items() if prev_ns < stamp}
+            keep = ~np.isin(np.asarray(curr.agent_id)[ci], list(self._teleport_stamps))
+            ci, pi = ci[keep], pi[keep]
 
         # stamp with the time the lerped pose corresponds to, receivers dead-reckon from it
         pose_ns = prev_ns + int(alpha * dt_ns)
@@ -538,6 +697,9 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     self._get_profile_client,
                     self._feedback_client,
                     self._notify_stimulus_client,
+                    self._set_elevators_client,
+                    self._set_elevator_doors_client,
+                    self._teleport_agents_client,
                     self._set_params_client,
                 )
             )
@@ -669,24 +831,22 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         x, y = self._to_engine(pose.position.x, pose.position.y)
         return Pose2DMsg(x=x, y=y, theta=pose.orientation.to_yaw())
 
-    def _seat_pose(self, object_pose: Pose, seat: Mapping[str, float]) -> Pose2DMsg:
-        """An object-local seat (``{x, y[, yaw]}``, the pose grammar) from the model annotation or the scenario, in the engine frame."""
-        keys = set(seat)
-        if not {"x", "y"} <= keys or not keys <= {"x", "y", "yaw"}:
-            raise ValueError(f"seat must have keys x, y[, yaw], got {dict(seat)}")
-        yaw = object_pose.orientation.to_yaw()
-        sx, sy, syaw = float(seat["x"]), float(seat["y"]), float(seat.get("yaw", 0.0))
-        wx = object_pose.position.x + math.cos(yaw) * sx - math.sin(yaw) * sy
-        wy = object_pose.position.y + math.sin(yaw) * sx + math.cos(yaw) * sy
-        x, y = self._to_engine(wx, wy)
-        return Pose2DMsg(x=x, y=y, theta=yaw + syaw)
+    def _seat_pose(self, object_pose: Pose, seat: Pose) -> Pose2DMsg:
+        """An object-local seat pose in the engine frame."""
+        placed = object_pose * seat
+        x, y = self._to_engine(placed.position.x, placed.position.y)
+        return Pose2DMsg(x=x, y=y, theta=placed.orientation.to_yaw())
 
-    def _seat_poses(self, obstacle: Obstacle, annotated: Sequence[Mapping[str, float]]) -> list[Pose2DMsg]:
-        """Scenario seats override the annotation's, including an empty list. A bad seat costs the seats, not the object."""
+    def _seat_poses(self, obstacle: Obstacle, slots: Sequence[AffordanceSlot]) -> list[Pose2DMsg]:
+        """Scenario seats override the annotation's sit slots, including an empty list. A bad seat costs the seats, not the object."""
         humansim = obstacle.humansim
-        raw = humansim["seats"] if "seats" in humansim else annotated
         try:
-            return [self._seat_pose(obstacle.pose, seat) for seat in raw]
+            if "seats" in humansim:
+                seats = [Pose.parse(seat) for seat in humansim["seats"]]
+            else:
+                rng = self.node.conf.General.RNG.stream("humansim", "seats", obstacle.sim_path)
+                seats = [slot.pose(rng) for slot in slots]
+            return [self._seat_pose(obstacle.pose, seat) for seat in seats]
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             self._logger.warning(f"Ignoring seats of '{obstacle.sim_path}': {e}")
             return []
@@ -745,12 +905,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._logger.error(f"Error in pedestrian update loop: {e}\n{traceback.format_exc()}")
 
     async def _feedback_loop(self):
-        """Publish robot and possessed pedestrian states on world_state topic."""
+        """Publish dirty robot and possessed pedestrian poses on world_state topic, step delayed spawns and itineraries."""
         try:
             with self.node.sim_time_rate(self.FEEDBACK_RATE) as (done, rate):
                 while not done.is_set():
                     await rate.get()
                     self._publish_world_state()
+                    try:
+                        await self._step_peds(self._now_s())
+                    except Exception as e:
+                        self._logger.error(f"ped mechanics step failed: {e!r}")
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -776,10 +940,10 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             a.velocity.x, a.velocity.y = tracked.velocity
             a.radius = 0.3
             msg.agents.append(a)  # pyright: ignore[reportAttributeAccessIssue]
-        name_to_aid = {agent_name: aid for aid, agent_name in self._agent_names.items()}
+        ids = self._agent_ids()
         for name, ped in possessed.items():
             a = AgentStateMsg()
-            aid = name_to_aid.get(name)
+            aid = self._agent_id(name, ids)
             a.agent_id = aid if aid is not None else stable_int(name) & 0x7FFFFFFF
             a.name = name
             a.pose = self._engine_pose(Pose.from_msg(ped.pose))
@@ -991,14 +1155,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 pose = self._engine_pose(obstacle.pose)
 
                 obstacle_type = ""
-                seats: list = []
+                raw_slots: list = []
+                bounding_box = None
                 try:
                     if isinstance(resolved, BaseException):
                         raise resolved
                     with open(resolved / "annotation.yaml") as f:
                         annotation: dict = yaml.safe_load(f.read())
-                    seats = list(annotation.get("seats") or [])
-                    (x_min, x_max), (y_min, y_max), (z_min, z_max) = annotation["bounding_box"]
+                    raw_slots = list((annotation.get("affordances") or {}).get("sit") or [])
+                    bounding_box = annotation["bounding_box"]
+                    (x_min, x_max), (y_min, y_max), (z_min, z_max) = bounding_box
                     obstacle_type = annotation.get("name", "") or annotation.get("desc", "")
                     msg = ObstacleConfigMsg()
                     msg.name = obstacle.sim_path
@@ -1015,18 +1181,30 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 except Exception as e:
                     self._logger.warning(f"Failed to build obstacle bbox for '{obstacle.sim_path}': {e}")
 
+                try:
+                    slots = placed_slots({AffordanceKind.SIT: raw_slots})
+                except (TypeError, ValueError) as e:
+                    self._logger.warning(f"Ignoring the sit slots of '{obstacle.sim_path}': {e}")
+                    slots = []
                 humansim = obstacle.humansim
                 info = WorldObjectInfoMsg()
                 info.object_id = obstacle.sim_path
                 info.type = str(humansim.get("type", obstacle_type))
                 info.pose = pose
-                info.capacity = int(humansim.get("capacity", 1))
+                info.capacity = seat_capacity(humansim, slots)
                 satisfies: dict = humansim.get("satisfies") or {}
                 info.satisfies_keys = list(satisfies.keys())
                 info.satisfies_values = [float(v) for v in satisfies.values()]
+                info.seats = self._seat_poses(obstacle, slots)
+                if "seats" not in humansim and slots and len(info.seats) == len(slots):
+                    info.seat_conflict_offset, info.seat_conflicts = conflict_offsets(slots)
+                    self._seat_slots[obstacle.sim_path] = slots
+                else:
+                    self._seat_slots.pop(obstacle.sim_path, None)
                 interaction_radius = humansim.get("interaction_radius")
+                if interaction_radius is None and info.seats and bounding_box is not None:
+                    interaction_radius = reach_radius(bounding_box)
                 info.interaction_radius = float(interaction_radius) if interaction_radius is not None else 0.0
-                info.seats = self._seat_poses(obstacle, seats)
                 formation: dict = humansim.get("formation") or {}
                 formation_type = formation.get("type", "")
                 if formation_type:
@@ -1068,8 +1246,20 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             return obstacles
 
         request = SpawnAgents.Request()
+        immediate: list[tuple[DynamicObstacle, ItineraryDriver | None, dict[str, str]]] = []
+        now = self._now_s()
         for obstacle in obstacles:
+            try:
+                mechanics = PedMechanics.from_dynamic_obstacle(obstacle)
+            except ValueError as e:
+                self._logger.error(f"ignoring spawn_delay/semantic_alias/itinerary: {e}")
+                mechanics = PedMechanics()
             agent_msg = AgentStateMsg()
+            if mechanics.spawn_delay > 0.0:
+                agent_msg.agent_id = self._next_deferred_id
+                self._next_deferred_id += 1
+                self._bridge_agent_ids.add(agent_msg.agent_id)
+                self._agent_names[agent_msg.agent_id] = obstacle.sim_path
             agent_msg.name = obstacle.sim_path
 
             agent_msg.pose = self._engine_pose(obstacle.pose)
@@ -1103,12 +1293,29 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
             wp_msg = WaypointsMsg()
             wp_msg.mode = parsed.waypoint_mode if parsed is not None else WaypointsMsg.MODE_REPEAT
-            for wp in obstacle.waypoints:
-                wx, wy = self._to_engine(wp.x, wp.y)
+            points = [self._to_engine(wp.x, wp.y) for wp in obstacle.waypoints]
+            stops = mechanics.stops(points)
+            if mechanics.itinerary and stops is None and len(mechanics.itinerary) != len(points):
+                self._logger.warning(f"{obstacle.name}: itinerary does not match its {len(points)} waypoints, ignoring dwell/rides")
+            driver: ItineraryDriver | None = None
+            if stops is not None:
+                mode = obstacle.waypoint_mode
+                driver = ItineraryDriver(stops, mode)
+                points = driver.start()
+                wp_msg.mode = WaypointsMsg.MODE_ONCE
+            for wx, wy in points:
                 wp_msg.points.append(WaypointMsg(pose=Pose2DMsg(x=wx, y=wy, theta=0.0)))  # pyright: ignore[reportAttributeAccessIssue]
             agent_msg.waypoints = wp_msg
+            if mechanics.spawn_delay > 0.0:
+                if driver is not None:
+                    self._itineraries[agent_msg.agent_id] = driver
+                self._deferred_spawns.append((now + mechanics.spawn_delay, agent_msg, mechanics.semantic_alias))
+                continue
+            immediate.append((obstacle, driver, mechanics.semantic_alias))
             request.agents.append(agent_msg)  # pyright: ignore[reportAttributeAccessIssue]
 
+        if not request.agents:
+            return obstacles
         self._spawns_in_flight += 1
         try:
             response = await self._spawn_client.call_timeout(request)
@@ -1116,10 +1323,16 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                 self._logger.error("SpawnAgents timed out")
                 return [None] * len(obstacles)
             if response.success:
-                for agent_id, obstacle in zip(response.spawned_ids, obstacles, strict=True):
+                aliases: dict[int, dict[str, str]] = {}
+                for agent_id, (obstacle, driver, alias) in zip(response.spawned_ids, immediate, strict=True):
                     self._bridge_agent_ids.add(agent_id)
                     self._agent_names[agent_id] = obstacle.sim_path
+                    if driver is not None:
+                        self._itineraries[agent_id] = driver
+                    if alias:
+                        aliases[agent_id] = alias
                 self._logger.info(f"Spawned {len(response.spawned_ids)} agents")
+                await self._bind_aliases(aliases)
                 return obstacles
             else:
                 self._logger.error(f"SpawnAgents failed: {response.message}")
@@ -1130,18 +1343,136 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         finally:
             self._spawns_in_flight -= 1
 
-    async def notify_stimulus(self, agent_id: int, stimulus: str, intensity: float) -> None:
+    def _agent_ids(self) -> dict[str, int]:
+        """Engine id of every spawned agent by ``sim_path``."""
+        return {name: aid for aid, name in self._agent_names.items()}
+
+    def _agent_id(self, agent: str, ids: Mapping[str, int] | None = None) -> int | None:
+        """Engine id of a spawned agent by name or ``sim_path``, looked up in `ids` (an `_agent_ids()` result) when given."""
+        known = self._known_obstacles.get(agent)
+        sim_path = known.obstacle.sim_path if known is not None else agent
+        return (self._agent_ids() if ids is None else ids).get(sim_path)
+
+    async def notify_stimulus(self, agent: int | str, stimulus: str, intensity: float) -> bool:
+        if isinstance(agent, str):
+            agent_id = self._agent_id(agent)
+            if agent_id is None:
+                self._logger.warning(f"NotifyStimulus: {agent!r} is not a known agent")
+                return False
+            agent = agent_id
         request = NotifyStimulus.Request()
-        request.agent_id = agent_id
+        request.agent_id = agent
         request.stimulus = stimulus
         request.intensity = intensity
         try:
             response = await self._notify_stimulus_client.call_timeout(request)
         except Exception as e:
             self._logger.error(f"NotifyStimulus call failed: {e}")
-            return
-        if response is not None and not response.success:
+            return False
+        if response is None:
+            self._logger.error("NotifyStimulus timed out")
+            return False
+        if not response.success:
             self._logger.error(f"NotifyStimulus failed: {response.message}")
+        return bool(response.success)
+
+    def stimuli_taken(self, obstacle: DynamicObstacle) -> tuple[str, frozenset[str]] | None:
+        parsed = ArenaHumanDynamicObstacle.from_dynamic_obstacle(obstacle)
+        definition = agent_type_def(parsed.agent_type) if parsed is not None else None
+        if parsed is None or definition is None:
+            return None
+        return parsed.agent_type, agent_type_stimuli(definition)
+
+    async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool:
+        """Teleport pedestrians by published name to (x, y) in the engine, keeping their facing."""
+        if not destinations:
+            return True
+        agent_ids = {name: agent_id for agent_id, name in self._agent_names.items()}
+        request = TeleportAgents.Request()
+        unknown: list[str] = []
+        for name, (x, y) in destinations.items():
+            agent_id = agent_ids.get(name, int(name) if name.isdigit() else None)
+            if agent_id is None:
+                unknown.append(name)
+                continue
+            orientation = self._ped_orientations.get(name)
+            ex, ey = self._to_engine(x, y)
+            request.agent_id.append(agent_id)  # pyright: ignore[reportAttributeAccessIssue]
+            request.pose.append(Pose2DMsg(x=ex, y=ey, theta=Orientation.from_msg(orientation).to_yaw() if orientation is not None else 0.0))  # pyright: ignore[reportAttributeAccessIssue]
+        if unknown:
+            self._logger.error(f"TeleportAgents: no engine agent for {unknown}")
+        if not request.agent_id:
+            return False
+        try:
+            response = await self._teleport_agents_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"TeleportAgents call failed: {e}")
+            return False
+        if response is None:
+            self._logger.error("TeleportAgents timed out")
+            return False
+        if not response.success:
+            self._logger.error(f"TeleportAgents failed: {response.message}")
+            return False
+        now = self.node.sim_time
+        stamp = now.sec * int(1e9) + now.nanosec
+        for agent_id in request.agent_id:
+            self._teleport_stamps[agent_id] = stamp
+        for agent_id in request.agent_id:
+            driver = self._itineraries.get(agent_id)
+            if driver is not None:
+                step = driver.on_teleport()
+                if step.waypoints is not None:
+                    await self._send_leg(agent_id, step.waypoints)
+            await self.notify_stimulus(agent_id, STIMULUS_TELEPORTED, 1.0)
+        return not unknown
+
+    def _elevator_msg(self, elevator: Elevator) -> ElevatorMsg:
+        """A realized cabin in the engine frame, its riders queuing clear of the door threshold and holding inside facing the door."""
+        doorway = elevator_doorway_pose(elevator, standoff=PED_RADIUS / 2.0)
+        queue = elevator_doorway_pose(elevator, standoff=CABIN_DOOR_THRESHOLD + PED_RADIUS)
+        facing_in = doorway.orientation.to_yaw()
+        cx, cy = self._to_engine(elevator.position.x, elevator.position.y)
+        dx, dy = self._to_engine(doorway.position.x, doorway.position.y)
+        qx, qy = self._to_engine(queue.position.x, queue.position.y)
+        footprint = [Point32(x=x, y=y, z=0.0) for corner in elevator.cabin_corners() for x, y in (self._to_engine(corner.x, corner.y),)]
+        return ElevatorMsg(
+            name=elevator.name,
+            destination=elevator.destination,
+            boarding=Pose2DMsg(x=cx, y=cy, theta=math.remainder(facing_in + math.pi, math.tau)),
+            doorway=Pose2DMsg(x=dx, y=dy, theta=facing_in),
+            queue=Pose2DMsg(x=qx, y=qy, theta=facing_in),
+            footprint=footprint,
+            door_open=False,
+        )
+
+    async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
+        request = SetElevators.Request(elevators=[self._elevator_msg(elevator) for elevator in elevators])
+        try:
+            response = await self._set_elevators_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"SetElevators call failed: {e}")
+            return False
+        if response is None:
+            self._logger.error("SetElevators timed out")
+            return False
+        if not response.success:
+            self._logger.error(f"SetElevators failed: {response.message}")
+        return response.success
+
+    async def _set_elevator_doors_impl(self, doors: Mapping[str, bool]) -> bool:
+        request = SetElevatorDoors.Request(name=list(doors), open=list(doors.values()))
+        try:
+            response = await self._set_elevator_doors_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"SetElevatorDoors call failed: {e}")
+            return False
+        if response is None:
+            self._logger.error("SetElevatorDoors timed out")
+            return False
+        if not response.success:
+            self._logger.error(f"SetElevatorDoors failed: {response.message}")
+        return response.success
 
     async def _remove_obstacles_impl(self, names: Sequence[str]) -> bool:
         """Remove static obstacles (and their matching world objects) from arena_humansim."""
@@ -1186,16 +1517,23 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
         try:
             response = await self._remove_client.call_timeout(request)
+            self._next_deferred_id = _DEFERRED_ID_BASE
+            self._deferred_spawns.clear()
+            self._itineraries.clear()
+            self._semantic_aliases.clear()
             self._bridge_agent_ids.clear()
             self._flow_agent_ids.clear()
             self._flow_meta_wait.clear()
             self._tagged_models.clear()
             self._agent_names.clear()
+            self._teleport_stamps.clear()
             self._ped_model_uris.clear()
             self._prev_agent_states = None
             self._curr_agent_states = None
             self._agent_gestures = {}
             self._agent_types = {}
+            self._seat_violation_reported = False
+            self._apply_held_seats({})
             self._arena_pedestrians = Pedestrians()
             self._arena_pedestrians.header.frame_id = "map"
             await self._publish_interpolated()
@@ -1216,14 +1554,18 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         return await self._add_walls(walls)
 
     async def _spawn_doors_impl(self, doors: Mapping[str, Door]) -> bool:
-        # doors stay passable, update_doors closes them with __door_ walls
-        return True
+        objects = [self._door_object(door) for door in doors.values()]
+        await self._remove_world_objects([obj.object_id for obj in objects])
+        for door, obj in zip(doors.values(), objects, strict=True):
+            self._mech_objects[f"door_object:{door.name}"] = [obj.object_id]
+        return await self._add_world_objects(objects)
 
     async def _remove_walls_impl(self, names: Sequence[str]) -> bool:
         return await self._remove_walls(names)
 
     async def _remove_doors_impl(self, names: Sequence[str]) -> bool:
-        return True
+        ids = [oid for name in names for oid in self._mech_objects.pop(f"door_object:{name}", [])]
+        return await self._remove_world_objects(ids)
 
     async def _add_walls(self, walls: Mapping[str, Wall]) -> bool:
         """Send wall/door segments to arena_humansim via AddWalls."""
@@ -1282,3 +1624,172 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
     async def _move_robot_impl(self, robots: Sequence[Robot]) -> Sequence[bool]:
         return (True,) * len(robots)
+
+    # world mechanisms
+
+    async def _step_peds(self, now: float) -> None:
+        """Release delayed scenario peds that are due and advance itineraries on the latest engine states."""
+        due = [entry for entry in self._deferred_spawns if entry[0] <= now]
+        if due:
+            self._deferred_spawns = [entry for entry in self._deferred_spawns if entry[0] > now]
+            request = SpawnAgents.Request()
+            request.agents = [msg for _, msg, _ in due]
+            response = await self._spawn_client.call_timeout(request)
+            if response is not None and response.success:
+                await self._bind_aliases({msg.agent_id: alias for _, msg, alias in due if alias})
+            else:
+                self._logger.error(f"delayed SpawnAgents failed: {response.message if response is not None else 'no response'}")
+        states = self._curr_agent_states
+        if not self._itineraries or states is None:
+            return
+        for aid, x, y in zip(states.agent_id, states.x, states.y, strict=True):
+            driver = self._itineraries.get(aid)
+            if driver is None:
+                continue
+            step = driver.update((x, y), now)
+            if step.boarded is not None and step.boarded.target:
+                self._write_elevator_target(step.boarded)
+            if step.waypoints is not None:
+                await self._send_leg(aid, step.waypoints)
+
+    def _write_elevator_target(self, stop: Stop) -> None:
+        """Press the button: a ped boarding a multi-destination elevator selects its destination."""
+        if stop.elevator:
+            self.node._set_semantic(stop.elevator, "target", stop.target)
+
+    async def _send_leg(self, aid: int, points: Sequence[tuple[float, float]]) -> None:
+        request = SetWaypoints.Request()
+        request.agent_id = aid
+        request.waypoints = WaypointsMsg(mode=WaypointsMsg.MODE_ONCE, points=[WaypointMsg(pose=Pose2DMsg(x=float(x), y=float(y), theta=0.0)) for x, y in points])
+        try:
+            response = await self._set_waypoints_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"SetWaypoints call failed: {e}")
+            return
+        if response is not None and not response.success:
+            self._logger.error(f"SetWaypoints failed: {response.message}")
+
+    async def _bind_aliases(self, aliases: Mapping[int, Mapping[str, str]]) -> None:
+        """Register per-ped semantic aliases and replay the current value of each aliased entity's fields."""
+        for aid, alias in aliases.items():
+            self._semantic_aliases[aid] = dict(alias)
+            for name, entity in alias.items():
+                for (known, field), value in list(self._semantic_values.items()):
+                    if known == entity:
+                        await self.notify_stimulus(aid, semantic_atom(name, field, value), 1.0)
+
+    async def _apply_semantic_change(self, entity: str, field: str, previous: str | None, value: str) -> None:
+        await super()._apply_semantic_change(entity, field, previous, value)
+        for aid, aliases in list(self._semantic_aliases.items()):
+            for name, target in aliases.items():
+                if target != entity:
+                    continue
+                if previous is not None and previous != value:
+                    await self.notify_stimulus(aid, semantic_atom(name, field, previous), 0.0)
+                await self.notify_stimulus(aid, semantic_atom(name, field, value), 1.0)
+
+    def set_mechanism_walls(self, key: str, segments: Sequence[Segment] | None) -> None:
+        """Named engine wall set (`__mech/<key>/<i>`), applied in the background, latest call wins."""
+        self._mech_walls_desired[key] = None if segments is None else [((float(a[0]), float(a[1])), (float(b[0]), float(b[1]))) for a, b in segments]
+        if not self._mech_walls_syncing:
+            self._mech_walls_syncing = True
+            self._in_background(self._sync_mechanism_walls())
+
+    async def _sync_mechanism_walls(self) -> None:
+        try:
+            while self._mech_walls_desired:
+                key, segments = next(iter(self._mech_walls_desired.items()))
+                del self._mech_walls_desired[key]
+                await self._apply_mechanism_walls(key, segments)
+        except Exception as e:
+            self._logger.error(f"mechanism walls sync failed: {e!r}")
+        finally:
+            self._mech_walls_syncing = False
+
+    async def _apply_mechanism_walls(self, key: str, segments: Sequence[Segment] | None) -> None:
+        old = self._mech_walls_applied.pop(key, [])
+        if old:
+            await self._remove_walls(old)
+        if key.startswith("elevator:"):
+            await self._remove_world_objects(self._mech_objects.pop(key, []))
+        if not segments:
+            return
+        walls = {f"__mech/{key}/{i}": Wall(start=Position(a[0], a[1]), end=Position(b[0], b[1])) for i, (a, b) in enumerate(segments)}
+        if await self._add_walls(walls):
+            self._mech_walls_applied[key] = list(walls)
+        if key.startswith("elevator:") and len(segments) == 3:
+            objects = self._elevator_objects(key.removeprefix("elevator:"), segments)
+            self._mech_objects[key] = [obj.object_id for obj in objects]
+            await self._add_world_objects(objects)
+
+    async def _clear_mechanism_walls(self) -> None:
+        self._mech_walls_desired.clear()
+        names = [name for names in self._mech_walls_applied.values() for name in names]
+        self._mech_walls_applied.clear()
+        ids = [oid for key, oids in self._mech_objects.items() if key.startswith("elevator:") for oid in oids]
+        self._mech_objects = {k: v for k, v in self._mech_objects.items() if not k.startswith("elevator:")}
+        await asyncio.gather(self._remove_walls(names), self._remove_world_objects(ids))
+
+    def _elevator_objects(self, realized: str, segments: Sequence[Segment]) -> list[WorldObjectInfoMsg]:
+        """`elevator` object at the cabin centre and `elevator_queue` object in the doorway, from the [back, side, side] cabin walls."""
+        back, side_a, side_b = segments
+        bx, by = self._to_engine((back[0][0] + back[1][0]) / 2.0, (back[0][1] + back[1][1]) / 2.0)
+        ax, ay = self._to_engine((side_a[0][0] + side_a[1][0]) / 2.0, (side_a[0][1] + side_a[1][1]) / 2.0)
+        sx, sy = self._to_engine((side_b[0][0] + side_b[1][0]) / 2.0, (side_b[0][1] + side_b[1][1]) / 2.0)
+        cx, cy = (ax + sx) / 2.0, (ay + sy) / 2.0
+        outward = math.atan2(cy - by, cx - bx)
+        half_depth = math.hypot(cx - bx, cy - by)
+        name = self.authored_name(realized)
+
+        cabin = WorldObjectInfoMsg()
+        cabin.object_id = name
+        cabin.type = "elevator"
+        cabin.pose = Pose2DMsg(x=cx, y=cy, theta=outward)
+        cabin.capacity = 0
+
+        queue = WorldObjectInfoMsg()
+        queue.object_id = f"{name}/queue"
+        queue.type = "elevator_queue"
+        queue.pose = Pose2DMsg(x=cx + half_depth * math.cos(outward), y=cy + half_depth * math.sin(outward), theta=outward + math.pi)
+        queue.capacity = 0
+        queue.formation_type = "line"
+        queue.formation_param_keys = ["front_offset", "base_step"]
+        queue.formation_param_values = [_QUEUE_FRONT_OFFSET, _QUEUE_STEP]
+        return [cabin, queue]
+
+    def _door_object(self, door: Door) -> WorldObjectInfoMsg:
+        sx, sy = self._to_engine(door.start.x, door.start.y)
+        ex, ey = self._to_engine(door.end.x, door.end.y)
+        info = WorldObjectInfoMsg()
+        info.object_id = self.authored_name(door.name)
+        info.type = "door"
+        info.pose = Pose2DMsg(x=(sx + ex) / 2.0, y=(sy + ey) / 2.0, theta=math.atan2(ey - sy, ex - sx) + math.pi / 2.0)
+        info.capacity = 0
+        return info
+
+    async def _add_world_objects(self, objects: Sequence[WorldObjectInfoMsg]) -> bool:
+        if not objects:
+            return True
+        request = AddWorldObjects.Request()
+        request.objects = list(objects)
+        try:
+            response = await self._add_world_objects_client.call_timeout(request)
+        except Exception as e:
+            self._logger.error(f"AddWorldObjects call failed: {e}")
+            return False
+        if response is None or not response.success:
+            self._logger.error(f"AddWorldObjects failed: {response.message if response is not None else 'no response'}")
+            return False
+        return True
+
+    async def _remove_world_objects(self, ids: Sequence[str]) -> bool:
+        if not ids:
+            return True
+        request = RemoveWorldObjects.Request()
+        request.object_ids = list(ids)
+        try:
+            response = await self._remove_world_objects_client.call_timeout(request)
+        except Exception as e:
+            self._logger.warning(f"RemoveWorldObjects call failed: {e}")
+            return False
+        return response is not None and response.success

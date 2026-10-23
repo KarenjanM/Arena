@@ -30,6 +30,8 @@ from task_generator.tasks.modules.sounds import REMOVE_SOUND, SPAWN_SOUND
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.tree.assets.sound_catalog import SoundAsset
 
+    from task_generator.manager.realizer import Realizer
+
 
 def _index_static_entities(world: World, scenario_objects: Sequence[Obstacle] = ()) -> dict[str, list[tuple[str, Obstacle]]]:
     """Every static entity (world levels plus the episode's scenario), keyed by bare name, alongside its level."""
@@ -44,11 +46,11 @@ def _index_static_entities(world: World, scenario_objects: Sequence[Obstacle] = 
 
 def _resolve_sound_placement(
     sound: Sound,
-    world: World,
+    realizer: Realizer,
     indexed_entities: dict[str, list[tuple[str, Obstacle]]],
-    context_level_id: str | None,
+    listing_level_id: str,
 ) -> tuple[Position, float, str]:
-    """Level-local (position, yaw, level_id) for a Sound: context_level_id pins a world-embedded sound to its structural level, None falls back to sound.level or the world's sole level."""
+    """Level-local (position, yaw, level_id) for a Sound, on the level of the entity it is attached to or else its own."""
     if sound.attach:
         matches = indexed_entities.get(sound.attach, [])
         if not matches:
@@ -64,21 +66,11 @@ def _resolve_sound_placement(
             y=entity.pose.position.y + sin_yaw * sound.offset.x + cos_yaw * sound.offset.y,
             z=entity.pose.position.z + sound.offset.z,
         )
-        return position, yaw, level_id
+        return position, yaw, realizer.placement_level(entity.placement_zone, entity.level, level_id)
 
     if sound.position is None:
         raise RuntimeError("validated sound has no position")
-    if context_level_id is not None:
-        level_id = context_level_id
-    else:
-        level_id = sound.level
-        if not level_id:
-            if len(world.levels) != 1:
-                raise ValueError(f"sound {sound.name!r} requires level in a multi-level world")
-            level_id = next(iter(world.levels))
-    if level_id not in world.levels:
-        raise ValueError(f"sound {sound.name!r} references unknown level {level_id!r}")
-    return sound.position + sound.offset, 0.0, level_id
+    return sound.position + sound.offset, 0.0, realizer.placement_level(sound.placement_zone, sound.level, listing_level_id)
 
 
 def _merge_params(cfgs: Sequence[SemanticCfg]) -> dict:
@@ -199,7 +191,7 @@ class Mod_Sounds(TM_Module):
             for snd in level.all_sounds:
                 realized_name = self.node._realizer.realize(snd, level_id).name
                 self._warn_if_inert(snd, realized_name)
-                built = self._resolve_and_build(snd, world, indexed_entities, level_id, realized_name)
+                built = self._resolve_and_build(snd, indexed_entities, level_id, realized_name)
                 if built is not None:
                     resolved[realized_name] = built
 
@@ -208,7 +200,7 @@ class Mod_Sounds(TM_Module):
         for snd in [*episode_sounds, *self._configured_sounds()]:
             realized_name = self.node._realizer.realize(snd).name
             self._warn_if_inert(snd, realized_name)
-            built = self._resolve_and_build(snd, world, indexed_entities, None, realized_name)
+            built = self._resolve_and_build(snd, indexed_entities, "", realized_name)
             if built is not None:
                 resolved[realized_name] = built
             self.node._simulator.attach_semantics("sound", realized_name, snd.semantics)
@@ -228,9 +220,8 @@ class Mod_Sounds(TM_Module):
     def _resolve_and_build(
         self,
         snd: Sound,
-        world: World,
         indexed_entities: dict[str, list[tuple[str, Obstacle]]],
-        context_level_id: str | None,
+        listing_level_id: str,
         realized_name: str,
     ) -> _ResolvedSound | None:
         """None when the sound's asset does not resolve, logged as an error."""
@@ -242,7 +233,7 @@ class Mod_Sounds(TM_Module):
         if snd.frame:
             frame_id = _realize_frame(self.node._realizer.realize(), snd.frame)
             return self._build_resolved(snd, asset, realized_name, snd.offset.to_msg(), 0.0, frame_id)
-        position, yaw, level_id = _resolve_sound_placement(snd, world, indexed_entities, context_level_id)
+        position, yaw, level_id = _resolve_sound_placement(snd, self.node._realizer, indexed_entities, listing_level_id)
         map_position = self.node._realizer.realize(position, level_id)
         return self._build_resolved(snd, asset, realized_name, map_position.to_msg(), yaw, "map")
 

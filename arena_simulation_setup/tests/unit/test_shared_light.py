@@ -89,7 +89,7 @@ def test_light_parses_local_fixture(fixture):
     assert light.cast_shadows is False
     assert light.light_on == ''
     assert light.lit is None
-    assert light.level == 1.0
+    assert light.dim == 1.0
     assert light.dead_fraction == 0.0
     assert light.rig is False
     assert light.fixtures == []
@@ -178,12 +178,12 @@ def test_light_parses_frame_with_offset():
 
 
 def test_light_parses_state_fields():
-    raw = {'name': 'lamp', 'fixture': 'panel', 'pose': {'x': 0, 'y': 0, 'z': 2.4}, 'lumens': 3600, 'cct_K': 2700, 'cast_shadows': True, 'lit': False, 'level': 0.4}
+    raw = {'name': 'lamp', 'fixture': 'panel', 'pose': {'x': 0, 'y': 0, 'z': 2.4}, 'lumens': 3600, 'cct_K': 2700, 'cast_shadows': True, 'lit': False, 'dim': 0.4}
     light = converter.structure(raw, Light)
     assert light.cct_K == 2700.0
     assert light.cast_shadows is True
     assert light.lit is False
-    assert light.level == pytest.approx(0.4)
+    assert light.dim == pytest.approx(0.4)
 
 
 def test_light_on_is_stripped():
@@ -224,8 +224,8 @@ def test_light_evolve_keeps_validated_state():
         ({'fixture': 'spot', 'pose': Pose(position=Position(1.0, 2.0, 2.4), orientation=Orientation(0.0, 0.0, 0.0, 0.0))}, 'unit quaternion'),
         ({'cct_K': 0.0}, 'cct_K must be positive'),
         ({'cct_K': -2700.0}, 'cct_K must be positive'),
-        ({'level': 1.5}, 'level must be within 0..1'),
-        ({'level': -0.1}, 'level must be within 0..1'),
+        ({'dim': 1.5}, 'dim must be within 0..1'),
+        ({'dim': -0.1}, 'dim must be within 0..1'),
         ({'dead_fraction': 1.5}, 'dead_fraction must be within 0..1'),
         ({'dead_fraction': -0.1}, 'dead_fraction must be within 0..1'),
         ({'dead_fraction': 0.2}, 'dead_fraction only as a rig'),
@@ -313,36 +313,36 @@ def test_light_structure_rejects_invalid(raw):
         converter.structure(raw, Light)
 
 
-def test_light_semantics_plain_light_is_lit_at_full_level():
+def test_light_semantics_plain_light_is_lit_and_undimmed():
     assert _panel().semantics == [
         SemanticCfg(role='predicate', name='lit', value=True),
-        SemanticCfg(role='state', name='level', value=1.0),
+        SemanticCfg(role='state', name='dim', value=1.0),
     ]
 
 
 def test_light_semantics_light_on_leaves_lit_to_the_regime():
-    assert _panel(light_on='!blackout', level=0.5).semantics == [
+    assert _panel(light_on='!blackout', dim=0.5).semantics == [
         SemanticCfg(role='predicate', name='lit', value=None, params={'light_on': '!blackout'}),
-        SemanticCfg(role='state', name='level', value=0.5),
+        SemanticCfg(role='state', name='dim', value=0.5),
     ]
 
 
 def test_light_semantics_lit_false():
-    lit, level = _panel(lit=False).semantics
+    lit, dim = _panel(lit=False).semantics
     assert lit == SemanticCfg(role='predicate', name='lit', value=False)
     assert lit.params == {}
-    assert level == SemanticCfg(role='state', name='level', value=1.0)
+    assert dim == SemanticCfg(role='state', name='dim', value=1.0)
 
 
 def test_light_semantics_ambient_has_no_dead_fraction():
     light = Light(name='ambient', fixture='dome', lux=50.0)
-    assert [(cfg.role, cfg.name) for cfg in light.semantics] == [('predicate', 'lit'), ('state', 'level')]
+    assert [(cfg.role, cfg.name) for cfg in light.semantics] == [('predicate', 'lit'), ('state', 'dim')]
 
 
 def test_light_semantics_rig_adds_dead_fraction():
     assert _rig(dead_fraction=0.25, light_on='!blackout').semantics == [
         SemanticCfg(role='predicate', name='lit', value=None, params={'light_on': '!blackout'}),
-        SemanticCfg(role='state', name='level', value=1.0),
+        SemanticCfg(role='state', name='dim', value=1.0),
         SemanticCfg(role='state', name='dead_fraction', value=0.25),
     ]
 
@@ -411,14 +411,14 @@ def test_ceiling_lights_defaults():
     assert cfg.cast_shadows is False
     assert cfg.light_on == ''
     assert cfg.lit is None
-    assert cfg.level == 1.0
+    assert cfg.dim == 1.0
     assert cfg.dead_fraction == 0.0
 
 
 def test_ceiling_lights_structure_from_mapping():
-    raw = {'fixture': 'tube', 'spacing': 3, 'lumens': 2000, 'cct_K': 3000, 'cast_shadows': True, 'light_on': '!blackout', 'level': 0.8, 'dead_fraction': 0.1}
+    raw = {'fixture': 'tube', 'spacing': 3, 'lumens': 2000, 'cct_K': 3000, 'cast_shadows': True, 'light_on': '!blackout', 'dim': 0.8, 'dead_fraction': 0.1}
     cfg = converter.structure(raw, CeilingLights)
-    assert cfg == CeilingLights(fixture='tube', spacing=3.0, lumens=2000.0, cct_K=3000.0, cast_shadows=True, light_on='!blackout', level=0.8, dead_fraction=0.1)
+    assert cfg == CeilingLights(fixture='tube', spacing=3.0, lumens=2000.0, cct_K=3000.0, cast_shadows=True, light_on='!blackout', dim=0.8, dead_fraction=0.1)
     assert isinstance(cfg.spacing, float)
     assert isinstance(cfg.lumens, float)
 
@@ -442,8 +442,8 @@ def test_ceiling_lights_structure_rejects_unknown_key():
         ({'spacing': -1.0}, 'spacing must be positive'),
         ({'lumens': -1.0}, 'requires lumens >= 0'),
         ({'cct_K': 0.0}, 'cct_K must be positive'),
-        ({'level': 2.0}, 'level must be within 0..1'),
-        ({'level': -0.5}, 'level must be within 0..1'),
+        ({'dim': 2.0}, 'dim must be within 0..1'),
+        ({'dim': -0.5}, 'dim must be within 0..1'),
         ({'dead_fraction': 1.2}, 'dead_fraction must be within 0..1'),
         ({'dead_fraction': -0.1}, 'dead_fraction must be within 0..1'),
         ({'lit': True, 'light_on': 'blackout'}, 'either lit or light_on'),
@@ -461,7 +461,7 @@ def test_ceiling_lights_serialize_omits_defaults():
 
 
 def test_ceiling_lights_round_trip():
-    cfg = CeilingLights(fixture='downlight', spacing=1.2, lumens=800.0, cct_K=3000.0, lit=False, level=0.5, dead_fraction=0.2)
+    cfg = CeilingLights(fixture='downlight', spacing=1.2, lumens=800.0, cct_K=3000.0, lit=False, dim=0.5, dead_fraction=0.2)
     assert converter.structure(yaml.safe_load(yaml.safe_dump(converter.unstructure(cfg))), CeilingLights) == cfg
 
 
@@ -487,7 +487,7 @@ def test_explicit_light_round_trips_through_yaml():
         'cct_K': 3000,
         'cast_shadows': True,
         'lit': False,
-        'level': 0.6,
+        'dim': 0.6,
     }
     light = converter.structure(raw, Light)
     reparsed = converter.structure(yaml.safe_load(yaml.safe_dump(converter.unstructure(light))), Light)
@@ -499,7 +499,7 @@ def test_explicit_light_round_trips_through_yaml():
     assert reparsed.cct_K == 3000.0
     assert reparsed.cast_shadows is True
     assert reparsed.lit is False
-    assert reparsed.level == pytest.approx(0.6)
+    assert reparsed.dim == pytest.approx(0.6)
     assert reparsed.rig is False
     assert reparsed.semantics == light.semantics
 
@@ -553,7 +553,7 @@ def test_object_light_is_named_after_its_entity_and_anchored_on_it():
     assert light.cct_K == 2700.0
     assert light.lit is None
     assert light.light_on == ''
-    assert light.level == 1.0
+    assert light.dim == 1.0
 
 
 def test_object_light_defaults_to_a_bulb_named_light():
@@ -593,9 +593,9 @@ def test_object_light_rejects_the_keys_of_no_pose():
 
 
 def test_object_light_takes_per_placement_settings():
-    settings = ObjectLightSettings(light_on='!blackout', level=0.4)
+    settings = ObjectLightSettings(light_on='!blackout', dim=0.4)
     light = object_light('lamp', {'lumens': 400.0}, settings)
-    assert (light.light_on, light.level, light.lit) == ('!blackout', 0.4, None)
+    assert (light.light_on, light.dim, light.lit) == ('!blackout', 0.4, None)
     assert object_light('lamp', {'lumens': 400.0}, ObjectLightSettings(lit=False)).semantics[0].value is False
 
 
@@ -616,7 +616,7 @@ def test_object_light_rejects_invalid_entries(entry, message):
 @pytest.mark.parametrize(
     ('kwargs', 'message'),
     [
-        ({'level': 1.5}, 'level must be within 0..1'),
+        ({'dim': 1.5}, 'dim must be within 0..1'),
         ({'lit': True, 'light_on': 'blackout'}, 'either lit or light_on'),
         ({'light_on': '!'}, "regime name after '!'"),
     ],
@@ -627,7 +627,7 @@ def test_object_light_settings_reject_invalid(kwargs, message):
 
 
 def test_obstacle_structures_its_light_settings():
-    raw = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [1.0, 2.0, 0.0]}, 'light': {'light_on': 'evening', 'level': 0.5}}
+    raw = {'name': 'desk_lamp', 'model': 'Common/Desk_Lamp', 'pose': {'position': [1.0, 2.0, 0.0]}, 'light': {'light_on': 'evening', 'dim': 0.5}}
     obstacle = converter.structure(raw, Obstacle)
-    assert obstacle.light == ObjectLightSettings(light_on='evening', level=0.5)
+    assert obstacle.light == ObjectLightSettings(light_on='evening', dim=0.5)
     assert converter.structure({key: value for key, value in raw.items() if key != 'light'}, Obstacle).light is None

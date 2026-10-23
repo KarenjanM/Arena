@@ -2,7 +2,7 @@ from pathlib import Path
 
 import attrs
 import numpy as np
-from arena_humansim.core.agents import BUILTIN_AGENTS, AgentType, SampledParams, sample_agent_type
+from arena_humansim.core.agents import BUILTIN_AGENTS, AgentType, SampledParams, StepDef, sample_agent_type
 from arena_humansim.core.agents.loader import load_agent_type_from_file
 from arena_humansim_msgs.msg import AgentTemplate as AgentTemplateMsg
 from arena_humansim_msgs.msg import SinkAffinity as SinkAffinityMsg
@@ -27,6 +27,12 @@ def agent_type_def(agent_type: str) -> AgentType | None:
         path = Path(agent_type)
         return load_agent_type_from_file(path) if path.is_file() else None
     return BUILTIN_AGENTS.get(agent_type)
+
+
+def agent_type_stimuli(definition: AgentType) -> frozenset[str]:
+    """Stimulus names an agent type acts on: its needs and the events its autonomous steps run `until`."""
+    events = {step.until for sequence in definition.sequences.values() for step in sequence.steps.values() if isinstance(step, StepDef) and step.until}
+    return frozenset(definition.needs) | frozenset(events)
 
 
 def path_agent_type_name(agent_type: str) -> str | None:

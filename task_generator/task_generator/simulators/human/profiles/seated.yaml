@@ -8,10 +8,11 @@ limits:
   spine: [-0.1, 0.8000562266257168]
   l_p_collar: [-0.6446165076476263, 0.6]
   r_p_collar: [-0.6394399044404971, 0.6]
-  l_y_hip: [-0.30429633478704204, 0.6]
+  l_y_hip: [-0.2318, 0.6]
   l_r_hip: [-0.4, 2.0]
   r_r_hip: [-0.4, 2.0]
-  r_ankle: [-0.9, 0.6563729765295316]
+  l_ankle: [-0.9, 1.0]
+  r_ankle: [-0.9, 1.0103]
 signals:
   r_waist: {mean: -0.027047132291965172}
   y_waist: {mean: 0.04198412917454706}
@@ -37,18 +38,18 @@ signals:
   r_p_shoulder: {mean: 0.9394835462737796}
   r_r_shoulder: {mean: -1.2071931204442152}
   r_elbow: {mean: 0.5314605355243214}
-  l_y_hip: {mean: -0.30429633478704204}
-  l_p_hip: {mean: -0.038475354873649656}
-  l_r_hip: {mean: 1.4211244138595862}
-  l_knee: {mean: -1.5753996126985368}
-  r_y_hip: {mean: 0.27138144899511923}
-  r_p_hip: {mean: -0.05417743700136585}
-  r_r_hip: {mean: 1.411763785966415}
-  r_knee: {mean: -1.6450226497833422}
-  l_y_ankle: {mean: -0.21701921400948074}
-  l_ankle: {mean: 0.5716714948077319}
-  r_y_ankle: {mean: 0.2067574486092747}
-  r_ankle: {mean: 0.6563729765295316}
+  l_y_hip: {mean: -0.2318}
+  l_p_hip: {mean: -0.23}
+  l_r_hip: {mean: 1.4543}
+  l_knee: {mean: -1.9511}
+  r_y_hip: {mean: 0.2177}
+  r_p_hip: {mean: -0.2341}
+  r_r_hip: {mean: 1.3975}
+  r_knee: {mean: -1.9073}
+  l_y_ankle: {mean: -0.4113}
+  l_ankle: {mean: 1.0}
+  r_y_ankle: {mean: 0.3912}
+  r_ankle: {mean: 1.0103}
   l_r_wrist: {mean: 0.0}
   l_wrist: {mean: 0.0}
   r_r_wrist: {mean: 0.0}

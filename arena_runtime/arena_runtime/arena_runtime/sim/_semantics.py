@@ -10,7 +10,7 @@ from typing import ClassVar
 
 import attrs
 
-from ._mechanism_shim import _DoorState, _near_door_segment, _reset_door
+from ._mechanism_shim import _DoorState, _near_door_segment, _reset_door, _reset_elevator
 
 if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.semantics import SemanticCfg
@@ -188,7 +188,7 @@ class DoorSemantics(SemanticKind):
 
     DISCRETE = ('state',)
     CONTINUOUS = ('progress',)
-    PREDICATES = ('open', 'in_transit', 'triggered')
+    PREDICATES = ('open', 'in_transit', 'triggered', 'blocked_close')
     QUANTA = {'progress': 0.1}
 
     def __init__(
@@ -198,16 +198,26 @@ class DoorSemantics(SemanticKind):
         discrete: tuple[str, ...],
         continuous: tuple[str, ...],
         predicates: tuple[str, ...],
+        mech: MechanismITF | None = None,
     ) -> None:
         super().__init__(entity, discrete, continuous, predicates)
         self._runtime = runtime
+        self._mech = mech
 
     @classmethod
     def attach(cls, mech: MechanismITF, entity: str, cfgs: Sequence[SemanticCfg], *, polygon: Sequence[tuple[float, float]] | None = None) -> SemanticKind:
-        return cls(entity, mech._door_runtime[entity], cls.DISCRETE, cls.CONTINUOUS, cls.PREDICATES)
+        return cls(entity, mech._door_runtime[entity], cls.DISCRETE, cls.CONTINUOUS, cls.PREDICATES, mech)
 
     def reset(self) -> None:
         _reset_door(self._runtime)
+
+    def _members(self) -> list[str]:
+        """Agents (robots and peds) within the door's activation radius of its segment."""
+        door = self._runtime.door
+        radius = max(door.activation_distance)
+        if self._mech is None or radius <= 0.0:
+            return []
+        return [name for name, xy in _agents_xy(self._mech) if _near_door_segment(door, [xy], radius)]
 
     def snapshot(self) -> SemanticEntitySnapshot:
         rt = self._runtime
@@ -224,17 +234,20 @@ class DoorSemantics(SemanticKind):
             predicates['in_transit'] = rt.state in (_DoorState.OPENING, _DoorState.CLOSING)
         if 'triggered' in self._predicates:
             predicates['triggered'] = (self._now - rt.last_trigger_sim_time) <= rt.door.hold_time
-        return SemanticEntitySnapshot(self._entity, self.KIND, discrete, continuous, predicates)
+        if 'blocked_close' in self._predicates:
+            predicates['blocked_close'] = rt.close_blocked
+        return SemanticEntitySnapshot(self._entity, self.KIND, discrete, continuous, predicates, self._members())
 
 
 @semantic_kind('elevator')
 class ElevatorSemantics(SemanticKind):
     SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'flatsim'})
 
-    DISCRETE = ('cabin_door',)
-    CONTINUOUS = ('arriving_eta', 'occupants', 'cabin_door_progress')
-    PREDICATES = ('departing', 'in_transit', 'dispatched', 'just_arrived')
+    DISCRETE = ('cabin_door', 'target')
+    CONTINUOUS = ('arriving_eta', 'occupants', 'cabin_door_progress', 'live_occupants', 'capacity')
+    PREDICATES = ('departing', 'in_transit', 'dispatched', 'just_arrived', 'full')
     QUANTA = {'cabin_door_progress': 0.1}
+    WRITABLE = frozenset({'target'})
 
     def __init__(
         self,
@@ -255,19 +268,26 @@ class ElevatorSemantics(SemanticKind):
         return cls(entity, mech._elevator_runtime[entity], cabin, cls.DISCRETE, cls.CONTINUOUS, cls.PREDICATES)
 
     def reset(self) -> None:
-        rt = self._runtime
-        rt.arriving_eta = -math.inf
-        rt.pending_occupants = ()
-        rt.just_arrived = {}
-        rt.departing = False
-        rt.dispatched = set()
+        _reset_elevator(self._runtime)
         cabin = self._cabin_door
         if cabin is not None:
             _reset_door(cabin)
 
     def _members(self) -> list[str]:
+        """Live occupants: agents (robots and peds) inside the cabin footprint at the last step."""
+        return list(self._runtime.live_occupants)
+
+    def _target(self) -> str:
         rt = self._runtime
-        return [*rt.dispatched, *(name for name, _ in rt.pending_occupants), *rt.just_arrived]
+        return rt.current_destination() if len(rt.destinations) > 1 else ''
+
+    def set_value(self, field: str, value: str) -> None:
+        """Write `target`: an authored or realized destination name of this elevator, '' = round-robin."""
+        if field not in self.WRITABLE:
+            raise ValueError('field not writable')
+        token = str(_coerce(self, field, value)).strip()
+        rt = self._runtime
+        rt.target_override = rt.resolve_target(token) if token else None
 
     def snapshot(self) -> SemanticEntitySnapshot:
         rt = self._runtime
@@ -286,6 +306,14 @@ class ElevatorSemantics(SemanticKind):
             predicates['dispatched'] = bool(rt.dispatched)
         if 'just_arrived' in self._predicates:
             predicates['just_arrived'] = bool(rt.just_arrived)
+        if 'live_occupants' in self._continuous:
+            continuous['live_occupants'] = float(len(rt.live_occupants))
+        if 'capacity' in self._continuous:
+            continuous['capacity'] = float(rt.elevator.capacity) if rt.elevator.capacity is not None else -1.0
+        if 'full' in self._predicates:
+            predicates['full'] = rt.full
+        if 'target' in self._discrete:
+            discrete['target'] = self._target()
         cabin = self._cabin_door
         if 'cabin_door' in self._discrete:
             discrete['cabin_door'] = cabin.state.value if cabin is not None else _DoorState.CLOSED.value
@@ -509,6 +537,9 @@ class ScheduleSemantics(SemanticKind):
         return SemanticEntitySnapshot(self._entity, self.KIND, discrete, continuous, predicates)
 
 
+_GATE_DEFAULT_LOGGED: set[str] = set()
+
+
 @semantic_kind('gate')
 class GateSemantics(SemanticKind):
     SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'flatsim'})
@@ -541,10 +572,15 @@ class GateSemantics(SemanticKind):
         discrete, continuous, predicates = cls._classify(cfgs)
         params = _merge_params(cfgs)
         authorized = frozenset(str(a) for a in params.get('authorized', []))
-        initial = True
+        initial: bool | None = None
         for cfg in cfgs:
             if cfg.name == 'locked' and cfg.value is not None:
                 initial = bool(cfg.value)
+        if initial is None:
+            initial = True
+            if entity not in _GATE_DEFAULT_LOGGED:
+                _GATE_DEFAULT_LOGGED.add(entity)
+                mech.node.get_logger().info(f"gate {entity!r} authored without `locked`, starting locked (default). Set params.locked to be explicit.")
         runtime = mech._door_runtime.get(entity)
         if runtime is None:
             raise SemanticAttachError(f"gate {entity!r} has no door runtime")
@@ -622,6 +658,7 @@ class PressurePlateSemantics(SemanticKind):
         self._last_contact = -math.inf
         self._forced = False
         self._pressed = False
+        self._warned_missing = False
 
     @classmethod
     def attach(cls, mech: MechanismITF, entity: str, cfgs: Sequence[SemanticCfg], *, polygon: Sequence[tuple[float, float]] | None = None) -> SemanticKind:
@@ -675,6 +712,13 @@ class PressurePlateSemantics(SemanticKind):
         driven = mech._door_runtime.get(self._drives)
         if driven is not None:
             driven.last_trigger_sim_time = now
+        elif not self._warned_missing:
+            self._warned_missing = True
+            mech.node.get_logger().warning(f"pressure_plate {self._entity!r}: drives {self._drives!r} matches no spawned door")
+
+    def drives_door(self, door_name: str) -> bool:
+        """True while pressed and driving door_name."""
+        return self._pressed and self._drives == door_name
 
     def reset(self) -> None:
         self._last_contact = -math.inf
@@ -800,11 +844,11 @@ class SoundSemantics(SemanticKind):
 class LightSemantics(SemanticKind):
     SUPPORTED_SIMS = frozenset({'gazebo', 'isaac', 'mujoco', 'dummy'})
 
-    CONTINUOUS = ('level', 'dead_fraction')
+    CONTINUOUS = ('dim', 'dead_fraction')
     PREDICATES = ('lit',)
-    QUANTA = {'level': 0.01, 'dead_fraction': 0.01}
-    WRITABLE = frozenset({'lit', 'level', 'dead_fraction'})
-    RANGES = {'level': (0.0, 1.0), 'dead_fraction': (0.0, 1.0)}
+    QUANTA = {'dim': 0.01, 'dead_fraction': 0.01}
+    WRITABLE = frozenset({'lit', 'dim', 'dead_fraction'})
+    RANGES = {'dim': (0.0, 1.0), 'dead_fraction': (0.0, 1.0)}
 
     def __init__(
         self,
@@ -812,7 +856,7 @@ class LightSemantics(SemanticKind):
         entity: str,
         light_on: str | None,
         initial_lit: bool,
-        initial_level: float,
+        initial_dim: float,
         initial_dead_fraction: float,
         discrete: tuple[str, ...],
         continuous: tuple[str, ...],
@@ -822,9 +866,9 @@ class LightSemantics(SemanticKind):
         self._mech = mech
         self._light_on = light_on
         self._initial_lit = initial_lit
-        self._initial_level = initial_level
+        self._initial_dim = initial_dim
         self._initial_dead_fraction = initial_dead_fraction
-        self._level = initial_level
+        self._dim = initial_dim
         self._dead_fraction = initial_dead_fraction
         self._override_lit: bool | None = None
         self._last_natural_lit = self._natural()
@@ -835,20 +879,20 @@ class LightSemantics(SemanticKind):
         params = _merge_params(cfgs)
         light_on = params.get('light_on')
         initial_lit = True
-        initial_level = 1.0
+        initial_dim = 1.0
         initial_dead_fraction = 0.0
         for cfg in cfgs:
             if cfg.value is None:
                 continue
-            if cfg.name == 'level':
-                initial_level = float(cfg.value)
+            if cfg.name == 'dim':
+                initial_dim = float(cfg.value)
             elif cfg.name == 'dead_fraction':
                 initial_dead_fraction = float(cfg.value)
             elif cfg.name == 'lit':
                 if light_on is not None:
                     raise ValueError(f"light {entity!r}: lit value and light_on are exclusive")
                 initial_lit = bool(cfg.value)
-        return cls(mech, entity, light_on, initial_lit, initial_level, initial_dead_fraction, discrete, continuous, predicates)
+        return cls(mech, entity, light_on, initial_lit, initial_dim, initial_dead_fraction, discrete, continuous, predicates)
 
     def _natural(self) -> bool:
         return self._mech._semantics.regime(self._light_on) if self._light_on is not None else self._initial_lit
@@ -865,7 +909,7 @@ class LightSemantics(SemanticKind):
     def reset(self) -> None:
         self._override_lit = None
         self._last_natural_lit = self._natural()
-        self._level = self._initial_level
+        self._dim = self._initial_dim
         self._dead_fraction = self._initial_dead_fraction
 
     def set_value(self, field: str, value: str) -> None:
@@ -881,24 +925,24 @@ class LightSemantics(SemanticKind):
         low, high = self.RANGES[field]
         if not low <= fraction <= high:
             raise ValueError('malformed value')
-        if field == 'level':
-            self._level = fraction
+        if field == 'dim':
+            self._dim = fraction
         else:
             self._dead_fraction = fraction
 
     def output(self) -> tuple[float, float]:
-        """Rendered (level, dead fraction), level 0.0 while unlit."""
-        level = self._level if self._live_lit() else 0.0
+        """Rendered (dim, dead fraction), dim 0.0 while unlit."""
+        dim = self._dim if self._live_lit() else 0.0
         dead_fraction = self._dead_fraction if 'dead_fraction' in self._continuous else 0.0
-        return level, dead_fraction
+        return dim, dead_fraction
 
     def snapshot(self) -> SemanticEntitySnapshot:
         continuous: dict[str, float] = {}
         predicates: dict[str, bool] = {}
         if 'lit' in self._predicates:
             predicates['lit'] = self._live_lit()
-        if 'level' in self._continuous:
-            continuous['level'] = self._level
+        if 'dim' in self._continuous:
+            continuous['dim'] = self._dim
         if 'dead_fraction' in self._continuous:
             continuous['dead_fraction'] = self._dead_fraction
         return SemanticEntitySnapshot(self._entity, self.KIND, {}, continuous, predicates)
@@ -969,7 +1013,7 @@ def _diff(prev: SemanticEntitySnapshot | None, snap: SemanticEntitySnapshot, qua
     changes: list[SemanticChange] = []
     for name, value in snap.discrete.items():
         old = prev_discrete.get(name)
-        if old != value:
+        if old != value and _stringify(old) != _stringify(value):
             changes.append(SemanticChange(snap.entity, snap.kind, 'state', name, _stringify(old), _stringify(value)))
     for name, fvalue in snap.continuous.items():
         fold = prev_continuous.get(name)
@@ -1108,6 +1152,10 @@ class SemanticsManager:
             for instance in instances:
                 if isinstance(instance, PressurePlateSemantics):
                     instance.apply_drive(self._mech, now)
+
+    def door_driven(self, door_name: str) -> bool:
+        """True while any pressed plate drives door_name."""
+        return any(instance.drives_door(door_name) for instances in self._instances.values() for instance in instances if isinstance(instance, PressurePlateSemantics))
 
     def elevator_recalled(self, elev_name: str, now: float) -> bool:
         """HOOK-C: True when a recall regime registered for this elevator currently asserts."""

@@ -1,0 +1,36 @@
+format: arena-scenario/2
+humans:
+- name: rider_1
+  model: casual_male_asian_middleage_wheelchair
+  pose: [9.0, 30.0, -1.5708]
+  agent: {agent_type: wheelchair_manual}
+  waypoints: [[9.0, 4.0, -1.5708], [9.0, 30.0, 1.5708]]
+- name: rider_2
+  model: casual_male_asian_middleage_wheelchair
+  pose: [11.0, 12.0, 1.5708]
+  agent: {agent_type: wheelchair_manual}
+  waypoints: [[11.0, 31.0, 1.5708], [11.0, 6.0, -1.5708]]
+- name: rider_3
+  model: casual_male_asian_middleage_wheelchair
+  pose: [10.4, 22.0, -1.5708]
+  agent: {agent_type: wheelchair_manual}
+  waypoints: [[10.4, 3.0, -1.5708], [10.4, 24.0, 1.5708]]
+- name: nurse
+  model: Hospital/nurse_female_caucasian_young
+  pose: [8.6, 8.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.2}
+  waypoints: [[8.6, 28.0, 1.5708], [8.6, 8.0, -1.5708]]
+- name: doctor
+  model: Hospital/doctor_male_caucasian_middleage
+  pose: [11.4, 26.0, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.3}
+  waypoints: [[11.4, 4.0, -1.5708], [11.4, 26.0, 1.5708]]
+- name: visitor
+  model: casual_female_caucasian_young
+  pose: [9.8, 16.0, 1.5708]
+  agent: {agent_type: elder}
+  waypoints: [[9.8, 29.0, 1.5708], [9.8, 16.0, -1.5708]]
+robots:
+- start: [10.0, 1.0, 1.5708]
+  phases:
+  - goto: [10.0, 32.5, 1.5708]

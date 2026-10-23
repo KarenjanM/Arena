@@ -1,0 +1,11 @@
+format: arena-scenario/2
+robots:
+- start: [11.0, 4.0, 1.5708]
+  phases:
+  - {goto: [13.0, 2.0, -1.5708], via: [{elevator: elev_m, to: elev_m2}]}
+  level: '0'
+  goal_level: '1'
+conditions:
+- {op: eventually, p: robot in elev_m2_cabin, text: Arrive in elev_m2.}
+- {op: never, p: robot in elev_m1_cabin, text: Do not end up in elev_m1.}
+- {op: eventually, p: robot in l1_lobby, text: Leave the cabin on level 1.}

@@ -6,17 +6,17 @@ import pytest
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
 from arena_simulation_setup.tree.World import WorldView, describe
 from arena_simulation_setup.tree.World.Scenario import ScenarioView
-from arena_simulation_setup.utils.generative import (
+from arena_simulation_setup.generative.world import (
     BaseConfiguration,
     WorldGenerator,
     WorldGeneratorType,
 )
-from arena_simulation_setup.utils.generative.barn import WorldGeneratorBarn
-from arena_simulation_setup.utils.generative.barn_cylinder import WorldGeneratorBarnCylinder
-from arena_simulation_setup.utils.generative.empty import WorldGeneratorEmpty
-from arena_simulation_setup.utils.generative.hallway import WorldGeneratorHallway
-from arena_simulation_setup.utils.generative.utils import line_pairs, to_corners, to_walls
-from arena_simulation_setup.utils.generative.world_generator import save_generated
+from arena_simulation_setup.generative.world.barn import WorldGeneratorBarn
+from arena_simulation_setup.generative.world.barn_cylinder import WorldGeneratorBarnCylinder
+from arena_simulation_setup.generative.world.empty import WorldGeneratorEmpty
+from arena_simulation_setup.generative.world.hallway import WorldGeneratorHallway
+from arena_simulation_setup.generative.world.utils import line_pairs, to_corners, to_walls
+from arena_simulation_setup.generative.world.world_generator import save_generated
 from shapely import GeometryCollection, LineString, MultiLineString, Point, Polygon
 
 # ---------------------------------------------------------------------------

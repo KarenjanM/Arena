@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from arena_simulation_setup.shared.entities import Waypoint
+from arena_simulation_setup.shared.entities import DynamicObstacle, Waypoint
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.geometry import PointResolver, Pose, Position
 from arena_simulation_setup.utils.resolution import activate_resolver, current_resolver
@@ -80,11 +80,34 @@ def test_waypoint_from_any_string_with_context():
         wp = Waypoint.from_any("zone_a")
     assert isinstance(wp, Waypoint)
     assert _inside(wp)
+    assert (wp.zone, wp.level) == ("zone_a", "")
+
+
+def test_shifted_zone_waypoint_keeps_its_zone():
+    with activate_resolver(_resolver()):
+        wp = Waypoint.from_any("zone_a") + Position(10.0, 0.0)
+    assert isinstance(wp, Waypoint)
+    assert wp.zone == "zone_a"
 
 
 def test_waypoint_from_any_string_requires_context():
     with pytest.raises(ValueError, match="no world resolution context active"):
         Waypoint.from_any("zone_a")
+
+
+def test_parsed_entity_remembers_the_zone_its_pose_was_sampled_from():
+    from arena_simulation_setup.shared import DynamicObstacle
+
+    c = converter.copy()
+    c.set_resolver(_resolver())
+    zoned = c.structure({"name": "walker", "model": "human", "pose": "zone_a"}, DynamicObstacle)
+    literal = c.structure({"name": "walker", "model": "human", "pose": [1.0, 1.0]}, DynamicObstacle)
+    assert (zoned.placement_zone, literal.placement_zone) == ("zone_a", "")
+    assert _inside(zoned.pose.position)
+
+
+def test_waypoint_from_any_mapping_keeps_its_level():
+    assert Waypoint.from_any({"x": 1.0, "y": 2.0, "level": "1"}) == Waypoint(x=1.0, y=2.0, z=0.0, level="1")
 
 
 def test_non_string_inputs_unaffected_without_context():
@@ -103,3 +126,18 @@ def test_converter_resolves_string_waypoints():
     wps = c.structure(["zone_a", "zone_a"], list[Waypoint])
     assert len(wps) == 2
     assert all(isinstance(w, Waypoint) and _inside(w) for w in wps)
+
+
+def test_converter_keeps_the_zone_and_level_of_waypoints():
+    c = converter.copy()
+    c.set_resolver(_resolver())
+    named, placed = c.structure(["zone_a", {"x": 1.0, "y": 2.0, "level": "1"}], list[Waypoint])
+    assert (named.zone, named.level) == ("zone_a", "")
+    assert placed == Waypoint(x=1.0, y=2.0, z=0.0, level="1")
+
+
+def test_converter_keeps_the_zone_of_a_scenario_human_waypoint():
+    c = converter.copy()
+    c.set_resolver(_resolver())
+    human = c.structure({"name": "rider", "model": "arenian", "pose": [1.0, 1.0], "level": "1", "waypoints": ["zone_a"]}, DynamicObstacle)
+    assert [(w.zone, w.level) for w in human.waypoints] == [("zone_a", "")]

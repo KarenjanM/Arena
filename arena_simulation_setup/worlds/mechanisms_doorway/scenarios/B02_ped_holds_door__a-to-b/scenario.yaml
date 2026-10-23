@@ -1,0 +1,30 @@
+format: arena-scenario/2
+humans:
+- name: holder
+  model: casual_female_caucasian_young
+  pose: [10.0, 6.0, 0.0]
+  agent: {agent_type: adult}
+  waypoints:
+  - [10.0, 6.0]
+  - {x: 13.0, y: 6.0, dwell: 6.0}
+  - [20.0, 6.0]
+  waypoint_mode: once
+- name: follower_1
+  model: worker_male_caucasian_young
+  pose: [8.8, 5.6, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[20.0, 5.6]]
+  waypoint_mode: once
+- name: follower_2
+  model: Office/office_female_caucasian_young
+  pose: [7.8, 6.4, 0.0]
+  agent: {agent_type: adult}
+  waypoints: [[20.0, 6.4]]
+  waypoint_mode: once
+robots:
+- start: [3.0, 6.0, 0.0]
+  phases:
+  - {goto: [23.0, 9.0, 0.0]}
+conditions:
+- {op: eventually, p: robot in east_north, text: Reach the far hall.}
+- {op: before, p: holder in east_entry, q: robot in east_entry, text: The holder goes through before the robot.}

@@ -4,7 +4,7 @@ import pytest
 import shapely
 
 from arena_simulation_setup.tree.World import Level
-from arena_simulation_setup.utils.generative.sketch import WorldGeneratorSketch, normalize, split_sketch
+from arena_simulation_setup.generative.world.sketch import WorldGeneratorSketch, normalize, split_sketch
 
 
 def build(sketch: str, **config) -> WorldGeneratorSketch:

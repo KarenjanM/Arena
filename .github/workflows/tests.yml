@@ -12,62 +12,87 @@ on:
         required: true
 
 jobs:
-  suites:
+  image:
     runs-on: ubuntu-latest
-    container: ros:jazzy
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      image: ${{ steps.pick.outputs.image }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/ci
+      - id: pick
+        run: .github/ci/pick-image.sh
+      - name: request this week's image
+        if: github.event_name == 'push' && steps.pick.outputs.image != steps.pick.outputs.current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci-image.yml --ref jazzy -f missing_only=true
+
+  suites:
+    needs: image
+    runs-on: ubuntu-latest
+    container: ${{ needs.image.outputs.image }}
     defaults:
       run:
         shell: bash
+    env:
+      CCACHE_DIR: /github/home/.cache/ccache
+      CCACHE_MAXSIZE: 500M
+      UV_CACHE_DIR: /github/home/.cache/uv
+      UV_LINK_MODE: copy
     steps:
-      - run: apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git python3-vcstool
+      - run: type -P ccache curl git vcs zstd > /dev/null || { apt-get update && apt-get install -y --no-install-recommends ca-certificates ccache curl git python3-vcstool zstd; }
       - uses: voshch/ci/trial-merge@v1
         with:
           base: jazzy
           head: ${{ inputs.pr && format('refs/pull/{0}/head', inputs.pr) || github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
       - name: fetch the dependency repos
-        run: |
-          git config --global --add safe.directory '*'
-          vcs import --shallow --recursive --input _meta/repos/arena.repos .
-          ln -s ../arena_training/deps/rosnav_rl/rosnav_rl deps/rosnav_rl
-          ln -s ../arena_training/deps/rosnav_rl/rosnav_rl_msgs deps/rosnav_rl_msgs
-      - name: fetch the default robot
-        run: |
-          for path in $(python3 -c 'import pathlib, re, sys; sys.path.insert(0, "_meta"); from arena_cli.features.robots import robot_submodules; robot = re.search(r"_ARENA_DEFAULT_ROBOT = \"(\w+)\"", pathlib.Path("task_generator/task_generator/manager/robot_manager/robots_manager.py").read_text()).group(1); print(*robot_submodules(pathlib.Path("."))[robot])'); do
-            git -C arena_robots submodule update --init --recursive --checkout --depth 1 "${path#arena_robots/}"
-          done
+        run: .github/ci/fetch-deps.sh
       - name: list the packages with tests
-        run: |
-          source /opt/ros/jazzy/setup.bash
-          colcon list --base-paths . -t | while read -r name path _; do
-            case "$path" in deps/rosnav_rl) ;; deps/* | */deps/* | arena_tools* | arena_planners/planners/*) continue ;; esac
-            if [ -d "$path/test" ] || [ -d "$path/tests" ]; then echo "$name"; fi
-          done | sort -u > tested.txt
-          cat tested.txt
+        run: .github/ci/tested-packages.sh | tee tested.txt
       - name: install the system dependencies
-        run: |
-          source /opt/ros/jazzy/setup.bash
-          rosdep update --rosdistro jazzy
-          rosdep install --ignore-src -r -y --rosdistro jazzy --from-paths $(colcon list --packages-up-to $(cat tested.txt) -p)
+        run: .github/ci/system-deps.sh --purge-dropped $(cat tested.txt)
+      - uses: actions/cache@v4
+        with:
+          path: /github/home/.cache/uv
+          key: uv-${{ hashFiles('**/uv.lock') }}
+          restore-keys: uv-
       - name: install the locked python dependencies
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+          type -P uv > /dev/null || curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
           python3 _meta/tools/uv_workspace.py compose
           uv venv --system-site-packages /opt/venv
           export VIRTUAL_ENV=/opt/venv
           members=$(python3 -c 'import re, tomllib, pathlib; norm = lambda n: re.sub(r"[-_.]+", "-", n).lower(); ws = pathlib.Path(".uv-workspace"); tested = {norm(n) for n in pathlib.Path("tested.txt").read_text().split()}; [print(n) for m in tomllib.load(open(ws / "pyproject.toml", "rb"))["tool"]["uv"]["workspace"]["members"] for n in [tomllib.load(open(ws / m / "pyproject.toml", "rb"))["project"]["name"]] if norm(n) in tested]')
           uv sync --inexact --active --project .uv-workspace $(printf -- '--package %s ' arena-rosnav $members)
+      - uses: actions/cache@v4
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ccache-${{ github.workflow }}-
+            ccache-
       - name: build the packages
         id: build
         run: |
           source /opt/ros/jazzy/setup.bash
           export PATH=/opt/venv/bin:$PATH
-          colcon build --symlink-install --packages-up-to $(cat tested.txt) --cmake-args -DPython3_EXECUTABLE=/opt/venv/bin/python
+          export CCACHE_BASEDIR=$GITHUB_WORKSPACE
+          colcon build --symlink-install --packages-up-to $(cat tested.txt) --cmake-args -DPython3_EXECUTABLE=/opt/venv/bin/python -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ccache --show-stats
       - name: run every test suite
         run: |
           source install/setup.bash
           export PATH=/opt/venv/bin:$PATH
-          colcon test --packages-select $(cat tested.txt) --executor sequential --event-handlers console_cohesion+ --return-code-on-test-failure
+          mkdir -p log/suites
+          status=0
+          awk '{print NR, $1}' tested.txt | xargs -P "$(nproc)" -L 1 bash -c 'ROS_DOMAIN_ID=$((10 + $0)) colcon --log-base "log/suites/$1" test --packages-select "$1" --event-handlers console_cohesion+ --return-code-on-test-failure > "log/suites/$1.txt" 2>&1 && echo "passed $1" || { echo "failed $1"; exit 1; }' || status=$?
+          cat log/suites/*.txt
+          exit $status
       - name: list the test results
         if: always()
         run: /opt/venv/bin/colcon test-result --verbose
@@ -77,3 +102,6 @@ jobs:
           source install/setup.bash
           uv pip install --python /opt/venv/bin/python3 "basedpyright==$(grep -oP 'basedpyright==\K[0-9.]+' .pre-commit-config.yaml)"
           /opt/venv/bin/basedpyright --pythonpath /opt/venv/bin/python3 _meta $(colcon list --packages-select $(cat tested.txt) -p)
+      - name: prune the uv cache
+        if: always()
+        run: uv cache prune --ci

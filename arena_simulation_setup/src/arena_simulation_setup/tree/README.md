@@ -59,9 +59,9 @@ walks it calling `destination()`.
 | `SimplePathResolver` | [tree/__init__.py:177](__init__.py#L177) | Fixed `Path`; checks `path / identifier.relpath()`. `locate()` uses the same existence check |
 | `DynamicPathResolver` | [tree/__init__.py:191](__init__.py#L191) | `DynamicPath` whose value can change at runtime (e.g. `DynamicPaths.WORLD`); optional transform `fn` |
 | `DynamicPathListResolver` | [tree/__init__.py](__init__.py) | `DynamicPathList` whose paths can change at runtime (`DynamicPaths.LINKED`), the first path holding the asset wins; optional transform `fn` |
-| `NetResolver` | [tree/__init__.py:212](__init__.py#L212) | Batches same-tick `resolve()` requests; calls `ros2 run arena_assets arena_assets -s net <provider> fetch`. `locate()` instead runs a non-fetching `... exists` check. Constructor takes `formats=` (defaults to the `ARENA_MODELS_FORMATS` env filter; pass `formats=()` to opt out) and `ttl=` (defaults to `ARENA_MODELS_TTL`, seconds). `listall(network=True)` caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` regardless of the payload `ttl=`, and `listall_async` shares one in-flight fetch per provider. `NetResolver.all(_T, providers=NETWORK_PROVIDERS, ...)` builds one instance per bucket name |
+| `NetResolver` | [tree/__init__.py:212](__init__.py#L212) | Batches same-tick `resolve()` requests; calls `ros2 run arena_assets arena_assets -s net <provider> fetch`. `locate()` instead runs a non-fetching `... exists` check. Constructor takes `formats=` (defaults to the `ARENA_MODELS_FORMATS` env filter; pass `formats=()` to opt out) and `ttl=` (defaults to `ARENA_MODELS_TTL`, seconds). `listall(network=True)` caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` regardless of the payload `ttl=`, and `listall_async` shares one in-flight fetch per provider. `expire(identifier=None)` writes `1` into the `.ttl` of one complete entry, or of every one in the bucket and drops its listings, so the next `resolve()` refetches while an unreachable bucket still serves the old copy (`arena asset expire`). `NetResolver.all(_T, providers=NETWORK_PROVIDERS, ...)` builds one instance per bucket name |
 | `LocalResolver` | [tree/__init__.py](__init__.py) | Reads and writes a subdirectory of the local root (`$ARENA_ASSETS_DIR_LOCAL`, looked up at every use, never cached): `resolve()` checks existence, `destination()` is the write target |
-| `FallbackResolver` | [tree/__init__.py](__init__.py) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
+| `FallbackResolver` | [tree/__init__.py:406](__init__.py#L406) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
 
 ### `DynamicPaths` singleton
 
@@ -75,6 +75,17 @@ walks it calling `destination()`.
 
 `DynamicPaths.as_resolvers(T)` returns three resolvers for a given `Identifier`
 type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, then `ARENA`.
+
+`point_world_assets(path, linked)` ([World/view.py](World/view.py)) points
+`WORLD` at `path` (`/dev/null` for None) and `LINKED` at `linked`, then
+invalidates every `DynamicPathResolver` and `DynamicPathListResolver`
+registered on any `Identifier` kind, so no kind keeps answers cached from the
+previous world. The task generator's world load and `SoundLibrary.use_world`
+call it. `world_assets(view, world=None)` is the scoped form: a context
+manager that points the paths at `view` and the worlds it links levels from
+(taken from `world` when already loaded) and restores both on exit, also on
+an exception. Offline tools that resolve a world's assets (`nav_at_r`,
+`preload_world`, the scenario generator) use it.
 
 ## Shipped Identifiers
 
