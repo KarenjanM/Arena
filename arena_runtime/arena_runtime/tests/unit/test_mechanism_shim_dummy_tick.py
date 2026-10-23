@@ -181,7 +181,7 @@ def test_departure_to_an_unknown_cabin_reopens_the_door(shim, on_dummy_sim):
     on_dummy_sim(body)
 
 
-def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_dummy_sim):
+def test_robot_ride_releases_its_rider_when_the_teleport_fails(shim, on_dummy_sim):
     async def body(sim, jackal):
         reasons: list[str] = []
         sim.set_incident_callback(reasons.append)
@@ -193,9 +193,9 @@ def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_d
         assert a_door.state == shim._DoorState.CLOSED
         await shim._tick(sim, DT)
         assert not a.departing
-        assert a.dispatched == {"jackal"}
+        assert a.dispatched == set()
         assert b.pending_occupants == ()
-        assert b.just_arrived == {"jackal": False}
+        assert b.just_arrived == {}
         assert b_door.last_trigger_sim_time == 0.0
         assert b_door.state == shim._DoorState.OPENING
         assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
@@ -206,8 +206,7 @@ def test_robot_ride_dispatches_and_lands_even_when_the_teleport_fails(shim, on_d
 def test_arrival_from_an_unknown_cabin_teleports_nobody_and_finishes_the_tick(shim, on_dummy_sim):
     async def body(sim):
         b, b_door = _elevator(shim, sim, "b", 10.0, "ghost")
-        b.arriving_eta = 0.0
-        b.pending_occupants = (("rider", (0.0, 0.0)),)
+        b.queue_arrival(shim._Arrival(eta=0.0, source="ghost", occupants=(("rider", (0.0, 0.0)),)))
         _spawn_lamp(sim)
         await shim._tick(sim, DT)
         assert b.just_arrived == {"rider": False}
@@ -221,11 +220,10 @@ def test_failed_teleport_of_an_untracked_rider_does_not_abort_the_tick(shim, on_
     async def body(sim):
         b, _ = _elevator(shim, sim, "b", 10.0, "a")
         _elevator(shim, sim, "a", 0.0, "b")
-        b.arriving_eta = 0.0
-        b.pending_occupants = (("rider", (0.5, 0.0)),)
+        b.queue_arrival(shim._Arrival(eta=0.0, source="a", occupants=(("rider", (0.5, 0.0)),)))
         _spawn_lamp(sim)
         await shim._tick(sim, DT)
-        assert b.just_arrived == {"rider": False}
+        assert b.just_arrived == {}
         assert sim._light_outputs == {"lamp": (1.0, 0.0)}
 
     on_dummy_sim(body)
@@ -238,7 +236,7 @@ def test_failed_teleport_without_an_incident_callback_only_logs(shim, on_dummy_s
         _place(sim, jackal, 0.0, 0.0)
         await shim._tick(sim, DT)
         await shim._tick(sim, DT)
-        assert b.just_arrived == {"jackal": False}
+        assert b.just_arrived == {}
 
     on_dummy_sim(body, jackal=True)
 
@@ -318,7 +316,8 @@ def test_reset_restores_an_elevator_without_a_cabin_door(shim, on_dummy_sim):
 
     async def body(sim):
         elevator = Elevator(name="e", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["f"])
-        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", arriving_eta=3.0, pending_occupants=(("r", (0.0, 0.0)),), just_arrived={"r": True}, departing=True, dispatched={"r"})
+        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", just_arrived={"r": True}, departing=True, dispatched={"r"})
+        runtime.queue_arrival(shim._Arrival(eta=3.0, source="f", occupants=(("r", (0.0, 0.0)),)))
         sim._elevator_runtime["e"] = runtime
         shim.reset_mechanisms(sim)
         assert (runtime.arriving_eta, runtime.pending_occupants, runtime.just_arrived, runtime.departing, runtime.dispatched) == (-math.inf, (), {}, False, set())
@@ -348,8 +347,8 @@ def test_pedestrian_rides_to_the_same_offset_in_the_destination_cabin(shim, on_d
         b, _ = _elevator(shim, sim, "b", 10.0, "a")
         await shim._tick(sim, DT)
         await shim._tick(sim, DT)
-        assert a.dispatched == {"walker", "jackal"}
-        assert b.just_arrived == {"walker": False, "jackal": False}
+        assert a.dispatched == {"walker"}
+        assert b.just_arrived == {"walker": False}
         assert {name: xy for name, xy, _ in human.pedestrian_discs()} == {"walker": pytest.approx((10.5, 0.3))}
         assert reasons == ["jackal: elevator teleport 'a' -> 'b' failed: NotImplementedError()"]
 

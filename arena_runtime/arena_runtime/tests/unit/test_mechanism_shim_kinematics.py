@@ -23,8 +23,8 @@ def _runtime(shim, door, kind="sliding"):
     return shim._DoorRuntime(door=door, closed_pose=closed, open_pose=shim._door_open_pose(door, closed, kind), effective_kind=kind)
 
 
-@pytest.mark.parametrize(("kind", "effective"), [("hinged", "teleport"), ("teleport", "teleport"), ("sliding_top", "sliding_top"), ("sliding", "sliding")])
-def test_effective_kind_falls_back_to_teleport_only_for_hinged(shim, kind, effective):
+@pytest.mark.parametrize(("kind", "effective"), [("hinged", "hinged"), ("teleport", "teleport"), ("sliding_top", "sliding_top"), ("sliding", "sliding")])
+def test_effective_kind_keeps_each_door_kind(shim, kind, effective):
     import rclpy.logging
 
     logger = rclpy.logging.get_logger("test_mechanism_shim_kinematics")
@@ -105,7 +105,8 @@ def test_scheduled_arrival_without_riders_only_opens_the_door(shim):
     from task_generator.shared import Elevator, Position
 
     elevator = Elevator(name="b", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["a"])
-    runtime = shim._ElevatorRuntime(elevator=elevator, door_name="b/door", destination_name="a", arriving_eta=5.0)
+    runtime = shim._ElevatorRuntime(elevator=elevator, door_name="b/door", destination_name="a")
+    runtime.queue_arrival(shim._Arrival(eta=5.0, source="a", occupants=()))
     door = _runtime(shim, shim._elevator_synthesized_door(elevator))
     result = shim._step_elevator(runtime, door, None, occupants=[], outside_trigger=False, now=5.0)
     assert result.teleport_job is None
