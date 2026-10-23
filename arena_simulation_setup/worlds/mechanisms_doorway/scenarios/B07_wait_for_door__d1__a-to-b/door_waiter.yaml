@@ -1,0 +1,35 @@
+name: door_waiter
+extends: adult
+mode: behavior_tree
+needs:
+  main_door.locked==false:
+    initial:
+      mean: 0.0
+      clip_low: 0.0
+      clip_high: 0.0
+    decay_rate:
+      mean: 0.0
+      clip_low: 0.0
+      clip_high: 0.0
+sequences:
+  default:
+    steps:
+      wait:
+        duration:
+          mean: 3600.0
+    then: default
+    transitions:
+    - when:
+        main_door.locked==false:
+          above: 50.0
+      goto: go
+  go:
+    steps:
+      leave:
+        kind: go_to
+        target: east_marker
+      stay:
+        duration:
+          mean: 3600.0
+    then: go
+initial_sequence: default

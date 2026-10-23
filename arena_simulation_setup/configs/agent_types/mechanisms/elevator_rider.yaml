@@ -1,0 +1,48 @@
+name: elevator_rider
+extends: adult
+mode: behavior_tree
+
+needs:
+  "elevator.cabin_door==open":
+    initial: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+    decay_rate: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+  teleported:
+    initial: {mean: 0.0, clip_low: 0.0, clip_high: 0.0}
+    decay_rate: {mean: 25.0, clip_low: 25.0, clip_high: 25.0}
+
+initial_sequence: queue
+
+sequences:
+  queue:
+    steps:
+      wait_in_line:
+        interaction: QUEUE_USE
+        target: elevator_queue
+        duration: {mean: 3600.0}
+        patience: {mean: 3600.0}
+    then: queue
+    transitions:
+      - when: {"elevator.cabin_door==open": {above: 50.0}}
+        goto: board
+
+  board:
+    steps:
+      enter:
+        kind: go_to
+        target: elevator
+        patience: {mean: 20.0, std: 3.0, clip_low: 10.0, clip_high: 30.0}
+      ride:
+        duration: {mean: 3600.0}
+    on_failure: queue
+    transitions:
+      - when: {teleported: {above: 50.0}}
+        goto: leave
+
+  leave:
+    steps:
+      walk_out:
+        kind: go_to
+        target: elevator_exit
+      stay:
+        duration: {mean: 3600.0}
+    then: leave

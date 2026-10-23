@@ -426,7 +426,8 @@ Resolvers run in order, first hit wins
 Worlds not shipped in this package are hosted in the public bucket(s) named
 by `WORLD_BUCKETS` and pulled on demand. `arena asset find world <name>`
 prints every resolver's verdict for a name (which one hit, which were
-shadowed). `arena asset pull world <name>` fetches one into the local cache.
+shadowed). `arena asset pull world <name>` fetches one into the local cache, and
+`arena asset expire world <name>` makes the next use download it again.
 `arena asset push world <name>` publishes a locally-authored world after a
 preflight that checks every asset it references would resolve for someone
 else.

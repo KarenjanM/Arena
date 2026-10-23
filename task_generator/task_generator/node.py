@@ -5,7 +5,6 @@ import enum
 import hashlib
 import json
 import random
-import re
 import threading
 import traceback
 import typing
@@ -102,11 +101,6 @@ _EPISODE_QOS = rclpy.qos.QoSProfile(
 _SIM_TICK_RATE = 30.0
 _ONE_TICK = 1e-6
 _STEP_TIMEOUT = 10.0
-_ENV_PREFIX = re.compile(r"^env_\d+/")
-
-
-def _strip_env(name: str) -> str:
-    return _ENV_PREFIX.sub("", name, count=1)
 
 
 class _TimelineState(typing.TypedDict):
@@ -594,7 +588,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             realizer=realizer,
             env_id=self._env_id,
         )
-        self._simulator.set_semantics_callback(self._on_semantics_changed)
         self._simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up human simulator")
@@ -607,6 +600,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             acoustics=self._acoustics_simulator,
             robots_visible=self.conf.Human.ROBOTS_VISIBLE.value,
         )
+        self._simulator.set_semantics_callback(self._on_semantics_changed)
         self._human_simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up environment manager")
@@ -789,6 +783,35 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _on_semantics_changed(self, changes: "Sequence[SemanticChange]") -> None:
         self._semantics_dirty = True
+        self._forward_semantic_changes(changes)
+
+    def _forward_semantic_changes(self, changes: "Sequence[SemanticChange]") -> None:
+        """Hand discrete and predicate semantic changes to the human simulator under authored and env-stripped names."""
+        human = self._human_simulator
+        if not changes:
+            return
+        from arena_runtime.sim._semantics import _SEMANTIC_KINDS
+
+        authored = {realized: bare for bare, realized in self._semantic_names.items()}
+        prefix = f"{self._realizer.prefix()}/"
+        for change in changes:
+            kind = _SEMANTIC_KINDS.get(change.kind)
+            if change.field_kind == "state" and (change.field in kind.CONTINUOUS if kind is not None else self._is_number(change.current)):
+                continue
+            entity = authored.get(change.entity) or human.authored_name(change.entity)
+            value = change.current.removeprefix(prefix)
+            human.notify_semantic_change(entity, change.field, value)
+            stripped = change.entity.removeprefix(prefix)
+            if stripped != entity:
+                human.notify_semantic_change(stripped, change.field, value)
+
+    @staticmethod
+    def _is_number(value: str) -> bool:
+        try:
+            float(value)
+        except ValueError:
+            return False
+        return True
 
     # SEMANTICS WRITE PATH
 
@@ -1070,8 +1093,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         peds: dict[str, tuple[float, float]] = {}
         for name, (x, y), _radius in self._human_simulator.pedestrian_discs():
             local = self._environment_manager.ezilear(Pose(Position(x, y), Orientation.identity()))
-            peds[_strip_env(name)] = (local.position.x, local.position.y)
-        clips = {_strip_env(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
+            peds[self._human_simulator.authored_name(name)] = (local.position.x, local.position.y)
+        clips = {self._human_simulator.authored_name(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
         self._known_subjects.update(peds)
         self._known_subjects.update(robots)
         return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls)
@@ -1096,7 +1119,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def ped_names(self) -> list[str]:
         """Bare names of the pedestrians the human simulator currently tracks."""
-        return [_strip_env(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
+        return [self._human_simulator.authored_name(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
 
     def on_task_submitted(self, manager: "RobotManager") -> None:
         """Republish the episode record with the robot's phases and flush its semantic state."""

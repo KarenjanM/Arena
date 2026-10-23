@@ -73,7 +73,9 @@ window open) or does not answer it within 10 s, the teleport runs inside an
 unpause window instead and polls TF for up to 2 s per attempt.
 
 `_launch_robot` order: unpause window, one sim step, tracked launch, adapter
-readiness, `bring_up_controllers()`, window close, `adapter.on_controllers_active`.
+readiness, `bring_up_controllers()`, `adapter.on_controllers_active` (arm
+adapters park every arm at its `stow` pose and wait until it settled), window
+close. The first reset then places the robot with its arms already parked.
 Controllers are driven here, not by `controller_manager/spawner`: each round
 reads `list_controllers` and issues the one call the snapshot needs (load an
 absent one, configure an unconfigured one, one grouped STRICT switch for all

@@ -14,6 +14,7 @@ pytest.importorskip("task_generator.shared")
 pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
+    _Arrival,
     _DoorRuntime,
     _DoorState,
     _ElevatorRuntime,
@@ -82,6 +83,10 @@ class _Mech:
         self.node = _Node()
         self._door_runtime: dict[str, _DoorRuntime] = {}
         self._elevator_runtime: dict[str, _ElevatorRuntime] = {}
+        self._human_simulator = None
+
+    def robot_discs(self) -> list[tuple[str, tuple[float, float], float]]:
+        return []
 
 
 def _door(name: str = "d", hold_time: float = 2.0) -> Door:
@@ -144,7 +149,7 @@ def test_door_snapshot_closed():
     assert snap.kind == "door"
     assert snap.discrete == {"state": "closed"}
     assert snap.continuous == {"progress": 0.0}
-    assert snap.predicates == {"open": False, "in_transit": False, "triggered": False}
+    assert snap.predicates == {"open": False, "in_transit": False, "triggered": False, "blocked_close": False}
 
 
 def test_door_snapshot_opening_and_triggered():
@@ -201,7 +206,7 @@ def test_door_attach_ignores_cfgs_publishes_full_vocab():
     snap = inst.snapshot()
     assert snap.discrete == {"state": "closed"}
     assert snap.continuous == {"progress": 0.0}
-    assert snap.predicates == {"open": False, "in_transit": False, "triggered": False}
+    assert snap.predicates == {"open": False, "in_transit": False, "triggered": False, "blocked_close": False}
 
 
 def test_door_attach_with_no_cfgs_publishes_full_vocab():
@@ -214,7 +219,7 @@ def test_door_attach_with_no_cfgs_publishes_full_vocab():
     snap = inst.snapshot()
     assert snap.discrete == {"state": "closed"}
     assert snap.continuous == {"progress": 0.0}
-    assert snap.predicates == {"open": False, "in_transit": False, "triggered": False}
+    assert snap.predicates == {"open": False, "in_transit": False, "triggered": False, "blocked_close": False}
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +240,13 @@ def test_elevator_snapshot_idle():
         "in_transit": False,
         "dispatched": False,
         "just_arrived": False,
+        "full": False,
     }
 
 
 def test_elevator_snapshot_scheduled_arrival():
     rt = _elevator_runtime()
-    rt.arriving_eta = 8.0
+    rt.queue_arrival(_Arrival(eta=8.0, source="other", occupants=()))
     inst = _attach_elevator(rt)
     inst.step(3.0)
     snap = inst.snapshot()
@@ -250,7 +256,7 @@ def test_elevator_snapshot_scheduled_arrival():
 
 def test_elevator_arriving_eta_clamped_to_zero():
     rt = _elevator_runtime()
-    rt.arriving_eta = 2.0
+    rt.queue_arrival(_Arrival(eta=2.0, source="other", occupants=()))
     inst = _attach_elevator(rt)
     inst.step(5.0)  # already past the eta
     assert inst.snapshot().continuous["arriving_eta"] == pytest.approx(0.0)
@@ -259,7 +265,7 @@ def test_elevator_arriving_eta_clamped_to_zero():
 def test_elevator_occupants_counts_all_committed_sets():
     rt = _elevator_runtime()
     rt.dispatched = {"r1"}
-    rt.pending_occupants = (("r2", (0.0, 0.0)),)
+    rt.queue_arrival(_Arrival(eta=1.0, source="other", occupants=(("r2", (0.0, 0.0)),)))
     rt.just_arrived = {"r3": True, "r4": False}
     inst = _attach_elevator(rt)
     inst.step(0.0)
@@ -298,13 +304,19 @@ def test_door_reset_restores_all_fields():
 
 def test_elevator_reset_restores_all_fields():
     rt = _elevator_runtime()
-    rt.arriving_eta = 8.0
-    rt.pending_occupants = (("r", (1.0, 2.0)),)
+    rt.queue_arrival(_Arrival(eta=8.0, source="other", occupants=(("r", (1.0, 2.0)),)))
     rt.just_arrived = {"r": True}
     rt.departing = True
     rt.dispatched = {"r"}
+    rt.live_occupants = ("r",)
+    rt.target_override = "other"
+    rt.rr_index = 1
     inst = _attach_elevator(rt)
     inst.reset()
+    assert rt.arrivals == []
+    assert rt.live_occupants == ()
+    assert rt.target_override is None
+    assert rt.rr_index == 0
     assert rt.arriving_eta == -math.inf
     assert rt.pending_occupants == ()
     assert rt.just_arrived == {}
@@ -352,7 +364,7 @@ def test_manager_first_step_emits_all_fields():
     mgr.step(1.0)
     assert len(batches) == 1
     fields = {c.field for c in batches[0]}
-    assert fields == {"state", "progress", "open", "in_transit", "triggered"}
+    assert fields == {"state", "progress", "open", "in_transit", "triggered", "blocked_close"}
 
 
 def test_manager_no_change_no_callback():
@@ -411,7 +423,7 @@ def test_manager_reset_clears_snapshot_cache_and_restores():
     mgr.step(2.0)
     # cache cleared: the post-reset step re-emits every field from empty.
     assert len(batches) == 1
-    assert {c.field for c in batches[0]} == {"state", "progress", "open", "in_transit", "triggered"}
+    assert {c.field for c in batches[0]} == {"state", "progress", "open", "in_transit", "triggered", "blocked_close"}
 
 
 def test_manager_detach_removes_instance_and_cache():
@@ -468,7 +480,7 @@ def test_manager_attach_with_no_cfgs_publishes_full_door_vocab():
     assert len(snaps) == 1
     assert snaps[0].discrete == {"state": "closed"}
     assert snaps[0].continuous == {"progress": 0.0}
-    assert snaps[0].predicates == {"open": False, "in_transit": False, "triggered": False}
+    assert snaps[0].predicates == {"open": False, "in_transit": False, "triggered": False, "blocked_close": False}
 
 
 def test_manager_attach_with_no_cfgs_publishes_full_elevator_vocab():
@@ -484,11 +496,13 @@ def test_manager_attach_with_no_cfgs_publishes_full_elevator_vocab():
     mgr.attach("elevator", "e")
     snaps = mgr.snapshot()
     assert len(snaps) == 1
-    assert snaps[0].discrete == {"cabin_door": "closed"}
+    assert snaps[0].discrete == {"cabin_door": "closed", "target": ""}
     assert snaps[0].continuous == {
         "arriving_eta": -1.0,
         "occupants": 0.0,
         "cabin_door_progress": 0.0,
+        "live_occupants": 0.0,
+        "capacity": -1.0,
     }
 
 

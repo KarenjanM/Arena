@@ -30,10 +30,26 @@ if TYPE_CHECKING:
     from arena_simulation_setup.utils.affordance import AffordanceSlot
 
 
+_WAYPOINT_SOURCES = ('zone', 'elevator')
+_WAYPOINT_KEYS = frozenset({'x', 'y', 'z', *_WAYPOINT_SOURCES, 'level', 'dwell'})
+
+
+def _resolve_elevator_point(name: str) -> Position:
+    """A point in the named elevator's cabin, `<level_id>.<name>` accepted."""
+    try:
+        return resolve_zone_point(name)
+    except ValueError:
+        if '.' not in name:
+            raise
+        return resolve_zone_point(name.split('.', 1)[1])
+
+
 @attrs.define(auto_attribs=True, kw_only=True)
 class Waypoint(Position):
     level: str = ''
     zone: str = ''
+    dwell: float = attrs.field(default=0.0, converter=float, validator=attrs.validators.ge(0.0))
+    elevator: str | None = None
 
     @property
     def position(self) -> Position:
@@ -51,7 +67,7 @@ class Waypoint(Position):
 
     @classmethod
     def from_any(cls, obj: Union[geometry_msgs.msg.Point, Position, Mapping, str, typing.Sequence[float]]) -> Self:
-        """A waypoint from a zone name, a position, `[x, y[, z]]` or `{x, y[, z][, level]}`."""
+        """A waypoint from a zone name, a position, `[x, y[, z]]` or a mapping with x/y, zone or elevator."""
         if isinstance(obj, str):
             return cls.from_position(pos=resolve_zone_point(obj), zone=obj)
         if isinstance(obj, cls):
@@ -59,25 +75,40 @@ class Waypoint(Position):
         if isinstance(obj, Position):
             return cls.from_position(pos=obj)
         if isinstance(obj, Mapping):
-            unknown = set(obj) - {'x', 'y', 'z', 'level'}
+            unknown = set(obj) - _WAYPOINT_KEYS
             if unknown:
                 raise ValueError(f'waypoint has unknown keys {sorted(unknown)}')
-            pos = Position.parse({k: obj[k] for k in ('x', 'y', 'z') if k in obj})
-            return cls.from_position(pos=pos, level=str(obj.get('level', '')))
+            sources = [key for key in _WAYPOINT_SOURCES if key in obj] + (['x/y'] if {'x', 'y'} & set(obj) else [])
+            if len(sources) != 1:
+                raise ValueError(f'waypoint needs exactly one of zone, elevator or x/y, got {dict(obj)!r}')
+            zone = ''
+            elevator = None
+            if 'zone' in obj:
+                zone = str(obj['zone'])
+                pos = resolve_zone_point(zone)
+            elif 'elevator' in obj:
+                elevator = str(obj['elevator'])
+                pos = _resolve_elevator_point(elevator)
+            else:
+                pos = Position.parse({k: obj[k] for k in ('x', 'y', 'z') if k in obj})
+            return cls(x=pos.x, y=pos.y, z=pos.z, level=str(obj.get('level', '')), zone=zone, dwell=obj.get('dwell', 0.0), elevator=elevator)
         return cls.from_position(pos=Position.parse(obj))
 
     @classmethod
     def from_position(cls, pos: Position, level: str = '', zone: str = '') -> Self:
         return cls(x=pos.x, y=pos.y, z=pos.z, level=level, zone=zone)
 
+    def _moved(self, pos: Position) -> Waypoint:
+        return attrs.evolve(self, x=pos.x, y=pos.y, z=pos.z)
+
     def __add__(self, other: Vector3) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
-            return type(self).from_position(pos=super().__add__(other), level=self.level, zone=self.zone)
+            return self._moved(Position(x=self.x + other.x, y=self.y + other.y, z=self.z + other.z))
         return NotImplemented
 
     def __radd__(self, other: Position) -> Waypoint | NotImplementedType:
         if isinstance(other, Position):
-            return type(self).from_position(pos=other + Position(x=self.x, y=self.y, z=self.z), level=self.level, zone=self.zone)
+            return self._moved(other + Position(x=self.x, y=self.y, z=self.z))
         return NotImplemented
 
 
@@ -195,6 +226,8 @@ class DynamicObstacle(Entity):
     velocity: float = attrs.field(converter=float, default=1.0)  # m/s
     agent: dict | str | None = None
     hunav: dict = attrs.field(factory=dict)
+    spawn_delay: float = attrs.field(default=0.0, converter=float, validator=attrs.validators.ge(0.0))
+    semantic_alias: dict[str, str] = attrs.field(factory=dict)
 
 
 @attrs.define

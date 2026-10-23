@@ -1,0 +1,113 @@
+format: arena-world/2
+schedules:
+- name: elev_a_service
+  semantics:
+  - {preset: schedule, params: {windows: [], regime: elev_a_off}}
+levels:
+- id: '0'
+  zones:
+  - {name: l0_lobby, polygon: [[0.0, 0.0], [16.0, 0.0], [16.0, 10.0], [0.0, 10.0]], floor: Concrete_Smooth}
+  - {name: annex, polygon: [[22.0, 0.0], [30.0, 0.0], [30.0, 10.0], [22.0, 10.0]], floor: Concrete_Smooth}
+  - {name: elev_a_cabin, polygon: [[2.0, 10.0], [4.0, 10.0], [4.0, 12.0], [2.0, 12.0]], floor: false, ceiling: false}
+  - {name: elev_b_cabin, polygon: [[6.0, 10.0], [8.0, 10.0], [8.0, 12.0], [6.0, 12.0]], floor: false, ceiling: false}
+  - {name: elev_m_cabin, polygon: [[10.0, 10.0], [12.0, 10.0], [12.0, 12.0], [10.0, 12.0]], floor: false, ceiling: false}
+  - {name: elev_s0_cabin, polygon: [[16.0, 4.0], [18.0, 4.0], [18.0, 6.0], [16.0, 6.0]], floor: false, ceiling: false}
+  - {name: elev_s1_cabin, polygon: [[20.0, 4.0], [22.0, 4.0], [22.0, 6.0], [20.0, 6.0]], floor: false, ceiling: false}
+  walls:
+  - {path: [[0.0, 0.0], [16.0, 0.0]], material: Plaster_Wall}
+  - {path: [[0.0, 0.0], [0.0, 10.0], [2.0, 10.0]], material: Plaster_Wall}
+  - {path: [[4.0, 10.0], [6.0, 10.0]], material: Plaster_Wall}
+  - {path: [[8.0, 10.0], [10.0, 10.0]], material: Plaster_Wall}
+  - {path: [[12.0, 10.0], [16.0, 10.0]], material: Plaster_Wall}
+  - {path: [[16.0, 0.0], [16.0, 4.0]], material: Plaster_Wall}
+  - {path: [[16.0, 6.0], [16.0, 10.0]], material: Plaster_Wall}
+  - {path: [[22.0, 0.0], [30.0, 0.0], [30.0, 10.0]], material: Plaster_Wall}
+  - {path: [[22.0, 10.0], [30.0, 10.0]], material: Plaster_Wall}
+  - {path: [[22.0, 0.0], [22.0, 4.0]], material: Plaster_Wall}
+  - {path: [[22.0, 6.0], [22.0, 10.0]], material: Plaster_Wall}
+  elevators:
+  - name: elev_a
+    position: [3.0, 11.0]
+    door_side: -y
+    destinations: [elev_a1]
+    hold_time: 6.0
+    travel_time: 4.0
+    recall_on: elev_a_off
+    capacity: 3
+    call_mode: edge
+  - name: elev_b
+    position: [7.0, 11.0]
+    door_side: -y
+    destinations: [elev_b1]
+    hold_time: 6.0
+    travel_time: 4.0
+    accept_outside_calls: false
+    call_mode: edge
+  - name: elev_m
+    position: [11.0, 11.0]
+    door_side: -y
+    destinations: [elev_m1, elev_m2]
+    hold_time: 6.0
+    travel_time: 4.0
+    call_mode: edge
+  - name: elev_s0
+    position: [17.0, 5.0]
+    door_side: -x
+    destinations: [elev_s1]
+    hold_time: 6.0
+    travel_time: 4.0
+    call_mode: edge
+  - name: elev_s1
+    position: [21.0, 5.0]
+    door_side: +x
+    destinations: [elev_s0]
+    hold_time: 6.0
+    travel_time: 4.0
+    call_mode: edge
+- id: '1'
+  zones:
+  - {name: l1_lobby, polygon: [[0.0, 0.0], [16.0, 0.0], [16.0, 10.0], [0.0, 10.0]], floor: Concrete_Smooth}
+  - {name: elev_a1_cabin, polygon: [[2.0, 10.0], [4.0, 10.0], [4.0, 12.0], [2.0, 12.0]], floor: false, ceiling: false}
+  - {name: elev_b1_cabin, polygon: [[6.0, 10.0], [8.0, 10.0], [8.0, 12.0], [6.0, 12.0]], floor: false, ceiling: false}
+  - {name: elev_m1_cabin, polygon: [[10.0, 10.0], [12.0, 10.0], [12.0, 12.0], [10.0, 12.0]], floor: false, ceiling: false}
+  - {name: elev_m2_cabin, polygon: [[12.0, -2.0], [14.0, -2.0], [14.0, 0.0], [12.0, 0.0]], floor: false, ceiling: false}
+  walls:
+  - {path: [[0.0, 0.0], [12.0, 0.0]], material: Plaster_Wall}
+  - {path: [[14.0, 0.0], [16.0, 0.0]], material: Plaster_Wall}
+  - {path: [[0.0, 0.0], [0.0, 10.0], [2.0, 10.0]], material: Plaster_Wall}
+  - {path: [[4.0, 10.0], [6.0, 10.0]], material: Plaster_Wall}
+  - {path: [[8.0, 10.0], [10.0, 10.0]], material: Plaster_Wall}
+  - {path: [[12.0, 10.0], [16.0, 10.0]], material: Plaster_Wall}
+  - {path: [[16.0, 0.0], [16.0, 10.0]], material: Plaster_Wall}
+  elevators:
+  - name: elev_a1
+    position: [3.0, 11.0]
+    door_side: -y
+    destinations: [elev_a]
+    hold_time: 6.0
+    travel_time: 4.0
+    recall_on: elev_a_off
+    capacity: 3
+    call_mode: edge
+  - name: elev_b1
+    position: [7.0, 11.0]
+    door_side: -y
+    destinations: [elev_b]
+    hold_time: 6.0
+    travel_time: 4.0
+    accept_outside_calls: false
+    call_mode: edge
+  - name: elev_m1
+    position: [11.0, 11.0]
+    door_side: -y
+    destinations: [elev_m]
+    hold_time: 6.0
+    travel_time: 4.0
+    call_mode: edge
+  - name: elev_m2
+    position: [13.0, -1.0]
+    door_side: +y
+    destinations: [elev_m]
+    hold_time: 6.0
+    travel_time: 4.0
+    call_mode: edge

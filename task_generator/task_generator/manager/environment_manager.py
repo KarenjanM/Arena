@@ -76,7 +76,7 @@ def _realized_plate(realizer: Realizer, cfg: SemanticCfg, level_id: str) -> Sema
         x, y = params['position'][:2]
         params['position'] = list(realizer.realize_xy(x, y, level_id))
     if params.get('drives'):
-        params['drives'] = realizer.prefix(params['drives'], level_id)
+        params['drives'] = realizer.realize_reference(params['drives'], level_id)
     return attrs.evolve(cfg, params=params)
 
 

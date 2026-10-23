@@ -1,0 +1,14 @@
+format: arena-scenario/2
+robots:
+- start: [14.0, 1.25, 3.1416]
+  phases:
+  - {goto: [2.0, 1.25, 3.1416]}
+timeline:
+- {every: 6.0, offset: 2.0, set: [{entity: door_sliding, field: locked, value: 'true'}]}
+- {every: 6.0, offset: 5.0, set: [{entity: door_sliding, field: locked, value: 'false'}]}
+conditions:
+- {op: eventually, p: robot in sliding_a, text: Pass the door.}
+- op: never_during
+  p: robot in sliding_gap
+  q: door_sliding/0.state == closing
+  text: Never stand in the threshold while the door is closing.

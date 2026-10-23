@@ -1,0 +1,42 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: west_hall, polygon: [[0.0, 0.0], [12.0, 0.0], [12.0, 12.0], [0.0, 12.0]], floor: Concrete_Smooth}
+  - {name: dw_main, polygon: [[12.0, 5.4], [14.0, 5.4], [14.0, 6.6], [12.0, 6.6]], floor: Concrete_Smooth}
+  - {name: dw_side, polygon: [[12.0, 10.0], [14.0, 10.0], [14.0, 11.2], [12.0, 11.2]], floor: Concrete_Smooth}
+  - {name: east_entry, polygon: [[14.0, 0.0], [16.0, 0.0], [16.0, 12.0], [14.0, 12.0]], floor: Concrete_Smooth}
+  - {name: east_south, polygon: [[16.0, 0.0], [26.0, 0.0], [26.0, 5.3], [16.0, 5.3]], floor: Concrete_Smooth}
+  - {name: east_mid, polygon: [[16.0, 5.3], [20.8, 5.3], [20.8, 6.7], [16.0, 6.7]], floor: Concrete_Smooth}
+  - {name: east_queue, polygon: [[20.8, 5.3], [26.0, 5.3], [26.0, 6.7], [20.8, 6.7]], floor: Concrete_Smooth}
+  - {name: east_north, polygon: [[16.0, 6.7], [26.0, 6.7], [26.0, 12.0], [16.0, 12.0]], floor: Concrete_Smooth}
+  walls:
+  - {path: [[0.0, 0.0], [12.0, 0.0]], material: Plaster_Wall}
+  - {path: [[0.0, 0.0], [0.0, 12.0], [12.0, 12.0]], material: Plaster_Wall}
+  - {path: [[12.0, 0.0], [12.0, 5.4]], material: Plaster_Wall}
+  - {path: [[12.0, 6.6], [12.0, 10.0]], material: Plaster_Wall}
+  - {path: [[12.0, 11.2], [12.0, 12.0]], material: Plaster_Wall}
+  - {path: [[12.0, 5.4], [14.0, 5.4]], material: Plaster_Wall}
+  - {path: [[12.0, 6.6], [14.0, 6.6]], material: Plaster_Wall}
+  - {path: [[12.0, 10.0], [14.0, 10.0]], material: Plaster_Wall}
+  - {path: [[12.0, 11.2], [14.0, 11.2]], material: Plaster_Wall}
+  - {path: [[14.0, 0.0], [16.0, 0.0]], material: Plaster_Wall}
+  - {path: [[14.0, 12.0], [16.0, 12.0]], material: Plaster_Wall}
+  - {path: [[14.0, 0.0], [14.0, 5.4]], material: Plaster_Wall}
+  - {path: [[14.0, 6.6], [14.0, 10.0]], material: Plaster_Wall}
+  - {path: [[14.0, 11.2], [14.0, 12.0]], material: Plaster_Wall}
+  - {path: [[16.0, 0.0], [26.0, 0.0], [26.0, 5.3], [26.0, 6.7]], material: Plaster_Wall}
+  - {path: [[16.0, 12.0], [26.0, 12.0]], material: Plaster_Wall}
+  - {path: [[26.0, 6.7], [26.0, 12.0]], material: Plaster_Wall}
+  doors:
+  - name: main_door
+    span: [[13.0, 5.4], [13.0, 6.6]]
+    activation_distance: 2.0
+    semantics:
+    - {preset: gate, params: {authorized: [], locked: false}}
+    - {preset: pressure_plate, params: {position: [13.0, 6.0], radius: 0.0, drives: main_door}}
+  - name: side_door
+    span: [[13.0, 10.0], [13.0, 11.2]]
+    activation_distance: 2.0
+    semantics:
+    - {preset: gate, params: {authorized: [], locked: false}}

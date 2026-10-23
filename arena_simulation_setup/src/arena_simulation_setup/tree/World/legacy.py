@@ -15,10 +15,10 @@ from .model import FORMAT
 logger = logging.getLogger(__name__)
 
 _ZONE_ALIASES = {'mat': 'material', 'ceiling_mat': 'ceiling_material', 'wall_mat': 'wall_material'}
-_DOOR_KEYS = frozenset({'name', 'start', 'end', 'kind', 'width', 'height', 'material', 'activation_distance', 'transition_time', 'hold_time', 'semantics'})
-_ELEVATOR_KEYS = frozenset({'name', 'position', 'size', 'door_side', 'material', 'destination', 'activation_distance', 'transition_time', 'hold_time', 'travel_time', 'accept_outside_calls', 'recall_on', 'semantics'})
+_DOOR_KEYS = frozenset({'name', 'start', 'end', 'kind', 'width', 'height', 'material', 'activation_distance', 'transition_time', 'hold_time', 'swing_direction', 'semantics'})
+_ELEVATOR_KEYS = frozenset({'name', 'position', 'size', 'door_side', 'material', 'destination', 'activation_distance', 'transition_time', 'hold_time', 'travel_time', 'accept_outside_calls', 'recall_on', 'capacity', 'call_mode', 'semantics'})
 _OBJECT_KEYS = frozenset({'name', 'model', 'pose', 'scale', 'light'})
-_HUMAN_KEYS = frozenset({'name', 'model', 'pose', 'waypoints', 'waypoint_mode', 'velocity', 'agent'})
+_HUMAN_KEYS = frozenset({'name', 'model', 'pose', 'waypoints', 'waypoint_mode', 'velocity', 'agent', 'spawn_delay', 'semantic_alias'})
 _ZONE_KEYS = frozenset({'name', 'description', 'material', 'corners', 'walls', 'doors', 'elevators', 'schedules', 'signals', 'sounds', 'lights', 'entities', 'ceiling', 'ceiling_height', 'ceiling_cast_shadows', 'ceiling_material', 'ceiling_lights', 'wall_material', 'semantics'})
 _SOUND_KEYS = frozenset({'name', 'asset_id', 'position', 'attach', 'frame', 'offset', 'level', 'loop', 'reference_distance_m', 'semantics'})
 _LIGHT_RENAMES = {'entity_ref': 'attach', 'pos': 'pose'}
@@ -180,20 +180,25 @@ class _Upgrade:
 
 def _waypoint(value: object) -> object:
     if isinstance(value, Mapping):
+        level = value.get('level_id')
+        extras = {key: value[key] for key in ('dwell',) if key in value}
+        if level:
+            extras['level'] = str(level)
+        for source in ('zone', 'elevator'):
+            if source in value:
+                return {source: value[source], **extras}
         if 'position' in value:
             point = _point(value['position'])
-            level = value.get('level_id')
-            if level:
+            if isinstance(point, str):
+                return {'zone': point, **extras} if extras else point
+            if extras:
                 if not isinstance(point, (list, Mapping)):
                     raise TypeError(f'waypoint position must be a point, got {point!r}')
                 x, y, *z = point if isinstance(point, list) else [point['x'], point['y']]
-                return {'x': x, 'y': y, **({'z': z[0]} if z else {}), 'level': str(level)}
+                return {'x': x, 'y': y, **({'z': z[0]} if z else {}), **extras}
             return point
-        level = value.get('level_id')
         flat = {key: value[key] for key in ('x', 'y', 'z') if key in value}
-        if level:
-            flat['level'] = str(level)
-        return flat if level else _point(flat)
+        return {**flat, **extras} if extras else _point(flat)
     return value
 
 

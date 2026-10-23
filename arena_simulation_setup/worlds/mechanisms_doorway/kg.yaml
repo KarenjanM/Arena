@@ -1,0 +1,11 @@
+format: arena-kg/1
+uses: [core@2]
+entities:
+- {id: 'room:west_hall', props: {description: west hall}}
+- {id: 'room:dw_main', props: {description: main doorway (1.2 m)}}
+- {id: 'room:dw_side', props: {description: side doorway (1.2 m)}}
+- {id: 'room:east_entry', props: {description: strip in front of the doors}}
+- {id: 'room:east_mid', props: {description: band behind the queue tail}}
+- {id: 'room:east_queue', props: {description: where the counter queue stands}}
+facts: []
+constraints: []

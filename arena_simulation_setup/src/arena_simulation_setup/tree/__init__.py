@@ -374,6 +374,20 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
     def is_stale(self, identifier: IdentifierT) -> bool:
         return identifier in self._stale
 
+    def expire(self, identifier: IdentifierT | None = None) -> int:
+        """Expire one complete cache entry, or every one in the bucket plus its listings."""
+        if identifier is None:
+            for listing in self.path.glob(f'{self._LISTING_FILE}*'):
+                listing.unlink()
+            entries = [marker.parent for marker in self.path.rglob(self._TTL_MARKER)]
+        else:
+            entries = [self.path / identifier.relpath()]
+        expired = [entry for entry in entries if entry.is_dir() and self._complete(entry)]
+        for entry in expired:
+            (entry / self._TTL_MARKER).write_text('1')
+        self.invalidate()
+        return len(expired)
+
     def _complete(self, candidate: Path) -> bool:
         """Fully fetched once: the marker is written only after a successful fetch."""
         if not candidate.is_dir():

@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import types
 from collections.abc import Callable, Iterable
@@ -21,7 +22,7 @@ import rclpy
 import rclpy.node
 from rcl_interfaces.srv import GetParameters
 
-from arena_bringup.reaper import GRACE_INT_S, GRACE_KILL_S, GRACE_TERM_S, Reaper
+from arena_bringup.reaper import GRACE_INT_S, GRACE_KILL_S, GRACE_TERM_S, Reaper, _exists, stop
 
 REGISTER_ENV_SERVICE = '/arena/register_env'
 VIZ_MANIFEST_SUFFIX = '/state/viz_manifest'
@@ -39,6 +40,7 @@ class Supervisor:
         self._children: dict[str, subprocess.Popen] = {}
         self._signal_count = 0
         self._reaper = Reaper()
+        self._swept: set[str] = set()
 
     def spawn(self, role: str, cmd: list[str]) -> subprocess.Popen:
         proc = subprocess.Popen(cmd, start_new_session=True)
@@ -51,7 +53,16 @@ class Supervisor:
         return self._children.get('runtime')
 
     def alive(self) -> list[tuple[str, subprocess.Popen]]:
-        return [(r, p) for r, p in self._children.items() if p.poll() is None]
+        """Children whose process group still has a member, an exited leader's orphans included."""
+        return [(r, p) for r, p in self._children.items() if p.poll() is None or _exists(p.pid)]
+
+    def sweep_exited(self) -> None:
+        """Stop the process group of every child whose leader exited, in the background."""
+        for role, proc in self._children.items():
+            if role in self._swept or proc.poll() is None:
+                continue
+            self._swept.add(role)
+            threading.Thread(target=stop, args=([proc.pid],), daemon=True).start()
 
     def signal_handler(self, signum: int, _frame: types.FrameType | None) -> None:
         self._signal_count += 1
@@ -89,19 +100,17 @@ class Supervisor:
     @staticmethod
     def _signal_pgs(children: Iterable[tuple[str, subprocess.Popen]], sig: int) -> None:
         for _, proc in children:
-            if proc.poll() is not None:
-                continue
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(os.getpgid(proc.pid), sig)
+                os.killpg(proc.pid, sig)
 
     @staticmethod
     def _wait(children: Iterable[tuple[str, subprocess.Popen]], timeout: float) -> bool:
         deadline = time.monotonic() + timeout
-        for _, proc in children:
-            remaining = max(0.0, deadline - time.monotonic())
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                proc.wait(timeout=remaining)
-        return all(p.poll() is not None for _, p in children)
+        while any(p.poll() is None or _exists(p.pid) for _, p in children):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.2)
+        return True
 
     def has_service(self, service: str) -> bool:
         return any(name == service for name, _ in self._node.get_service_names_and_types())
@@ -295,9 +304,12 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
                 )
 
     if runtime is not None:
-        runtime.wait()
+        while runtime.poll() is None:
+            sup.sweep_exited()
+            time.sleep(1.0)
         return runtime.returncode
     while sup.alive():
+        sup.sweep_exited()
         time.sleep(1.0)
     return 0
 

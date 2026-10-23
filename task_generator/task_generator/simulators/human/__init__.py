@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import collections
 import copy
 import itertools
 import math
@@ -39,6 +40,7 @@ from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Ori
 from task_generator.simulators.human.animation_manager import AnimationManager
 from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
+from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
 from task_generator.simulators.human.utils import (
@@ -53,6 +55,8 @@ if typing.TYPE_CHECKING:
     from task_generator.simulators.acoustics import BaseAcousticsSimulator, PedestrianHearing
 
 PED_RADIUS = 0.3
+
+Segment = tuple[tuple[float, float], tuple[float, float]]
 
 _STREAM_QOS = rclpy.qos.QoSProfile(
     reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
@@ -218,6 +222,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         )
 
         self._hearing: PedestrianHearing | None = acoustics.pedestrian_hearing(self)
+
+        self._semantic_values: dict[tuple[str, str], str] = {}
+        self._semantic_backlog: collections.deque[tuple[str, str, str | None, str]] = collections.deque()
+        self._semantic_draining = False
 
         self._simulator.attach_human_simulator(self)
 
@@ -403,6 +411,56 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 self._ped_positions_xy[name] = (x, y)
         results = await self.relay_pedestrian_update(peds_msg)
         return all(results)
+
+    # world mechanisms
+
+    def authored_name(self, realized: str) -> str:
+        """Strip the env prefix and a trailing `/<level_id>` from a realized entity name."""
+        prefix = self._realizer.prefix()
+        name = realized[len(prefix) + 1 :] if prefix and realized.startswith(f"{prefix}/") else realized
+        head, sep, tail = name.rpartition("/")
+        if sep and head and tail in self._realizer._level_origins:
+            return head
+        return name
+
+    def set_mechanism_walls(self, key: str, segments: Sequence[Segment] | None) -> None:
+        """Replace the named wall set seen by pedestrian navigation; None removes it. Map frame."""
+
+    async def _clear_mechanism_walls(self) -> None:
+        """Drop every mechanism wall set (world teardown)."""
+
+    def notify_semantic_change(self, entity: str, field: str, value: str) -> None:
+        """Broadcast `<entity>.<field>==<previous>` at intensity 0 and `<entity>.<field>==<value>` at intensity 1, in order."""
+        previous = self._semantic_values.get((entity, field))
+        self._semantic_values[(entity, field)] = value
+        self._semantic_backlog.append((entity, field, previous, value))
+        if not self._semantic_draining:
+            self._semantic_draining = True
+            self._in_background(self._drain_semantic_backlog())
+
+    def _in_background(self, coro: typing.Coroutine[typing.Any, typing.Any, None]) -> None:
+        """Run a coroutine on the node loop from sync code, inside or outside the loop."""
+        try:
+            asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            loop = self.node.event_loop
+            loop.call_soon_threadsafe(lambda: loop.create_task(coro))
+
+    async def _drain_semantic_backlog(self) -> None:
+        try:
+            while self._semantic_backlog:
+                entity, field, previous, value = self._semantic_backlog.popleft()
+                try:
+                    await self._apply_semantic_change(entity, field, previous, value)
+                except Exception as e:
+                    self._logger.warning(f"semantic change {semantic_atom(entity, field, value)!r} not delivered: {e!r}")
+        finally:
+            self._semantic_draining = False
+
+    async def _apply_semantic_change(self, entity: str, field: str, previous: str | None, value: str) -> None:
+        if previous is not None and previous != value:
+            await self.notify_stimulus(-1, semantic_atom(entity, field, previous), 0.0)
+        await self.notify_stimulus(-1, semantic_atom(entity, field, value), 1.0)
 
     # possession
 
@@ -903,6 +961,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if purge >= ObstacleLayer.WORLD:
             await self._simulator.remove_mechanisms()
             await self._simulator.remove_lights()
+            await self._clear_mechanism_walls()
+            self._semantic_values.clear()
             futures.append(self._simulator.remove_world())
             if self._known_elevators:
                 self._known_elevators = ()

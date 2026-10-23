@@ -32,16 +32,19 @@ three axes; e.g. `task.scenario.file` is read by both `TM_Robots.scenario` and
 levels), with start and goal sampled anywhere. Which levels exist is set at load time
 (`world:=name` loads all, `world:=name[0,3]` loads only 0 and 3), not per reset.
 
-Crossing floors is handled below the task mode, in `RobotManager.submit_task`: when a
-`GoToPhase` targets a different level than the one the task starts on, it injects
-elevator-boarding subgoals (`WorldManager.elevator_route` BFS over the elevator graph)
-ahead of it. The starting level comes from the `start` pose a task mode passes along
-with the request (a reset submits before the robot is moved there), or from the
-robot's live pose when none is given, so a request submitted mid-episode is routed
-from where the robot is. A boarding subgoal counts as reached only within the cabin's
-`boarding_radius`, where the whole robot is inside and clear of the cabin door, capped
-by the configured goal tolerance. The robot drives into each cabin, the mechanism shim
-teleports it across, and the next leg becomes reachable.
+Crossing floors is handled below the task mode, in `RobotManager.submit_task`:
+[`route_phases`](../../manager/robot_manager/elevator_routing.py) expands the explicit
+`via` elevators of a `GoToPhase`, then, when the goal is on a different level than the
+one the robot ends up on, the BFS route over the elevator graph
+(`WorldManager.elevator_hops`). Each ride becomes a door-aligned approach leg
+(`ElevatorLegPhase`), an `ElevatorRidePhase` and a door-aligned exit leg. The ride is a
+goto phase whose `target` is the boarding cabin, whose dispatch pose sits at the cabin's
+back wall and whose `until` atom is `robot in <destination cabin>`, so it is met once the
+robot has boarded and the elevator has delivered it, and replay judges it like any other
+phase. The starting level comes from the `start` pose a task mode passes along with the
+request (a reset submits before the robot is moved there), or from the robot's live pose
+when none is given. The mechanism shim teleports the robot across while it waits inside
+the cabin.
 
 ## Task modes (`TM_Robots` subclasses)
 

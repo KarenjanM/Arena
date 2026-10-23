@@ -92,7 +92,7 @@ arena fork down <name>                     # delete a fork and its edits
 arena evaluation benchmark ... --lanes 4   # one benchmark run across 4 lanes, each in a pool fork
 ```
 
-`ARENA_FORK_CPUS`, `ARENA_FORK_MEM` and `ARENA_FORK_DOMAIN_BASE` (default 20) in `.env` tune forks.
+`ARENA_FORK_CPUS`, `ARENA_FORK_MEM` and `ARENA_FORK_DOMAIN_BASE` (default 20) in `.env` tune forks. A new fork takes the lowest domain from that base up that no fork holds, no running container sets and no ROS process on the host has bound (any UDP port in the domain's RTPS range).
 
 
 ## Development
