@@ -3,6 +3,7 @@
 import json
 import os
 import pathlib
+import socket
 import subprocess
 from collections.abc import Iterator
 
@@ -256,7 +257,7 @@ def test_free_domain_skips_domains_forks_hold(ws: pathlib.Path) -> None:
     add_fork(ws, "a", "r", 20)
     add_fork(ws, "b", "r", 21, kept=False)
     add_fork(ws, "c", "r", 23)
-    used = {int(d) for d in fork._used_domains() if d.isdigit()}
+    used = {int(d) for d in fork._used_domains() if d.isdigit()} | fork._dds_domains()
     domain = fork._free_domain()
     assert domain >= 22
     assert domain not in {20, 21, 23} | used
@@ -265,11 +266,22 @@ def test_free_domain_skips_domains_forks_hold(ws: pathlib.Path) -> None:
 
 def test_free_domain_starts_at_the_configured_base_and_stops_at_232(ws: pathlib.Path) -> None:
     os.environ["ARENA_FORK_DOMAIN_BASE"] = "200"
-    used = {int(d) for d in fork._used_domains() if d.isdigit()}
+    used = {int(d) for d in fork._used_domains() if d.isdigit()} | fork._dds_domains()
     assert fork._free_domain() == min(set(range(200, 233)) - used)
     os.environ["ARENA_FORK_DOMAIN_BASE"] = "233"
     with pytest.raises(CLIError, match="no free ROS domain"):
         fork._free_domain()
+
+
+def test_free_domain_skips_a_domain_a_ros_process_has_bound(ws: pathlib.Path) -> None:
+    taken = fork._dds_domains()
+    domain = next(d for d in range(60, 100) if d not in taken)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", 7400 + 250 * domain + 10))
+        assert domain in fork._dds_domains()
+        os.environ["ARENA_FORK_DOMAIN_BASE"] = str(domain)
+        assert fork._free_domain() > domain
+    assert domain not in fork._dds_domains()
 
 
 def test_forks_lists_complete_fork_dirs_by_kind(ws: pathlib.Path) -> None:
