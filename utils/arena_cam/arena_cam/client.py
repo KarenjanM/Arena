@@ -141,6 +141,13 @@ class FaceWatch:
         self._subscriptions = []
 
 
+def next_frame_time(last: Time | None, now: Time, period: Time) -> Time:
+    """Lockstep stamp of the next frame: one period after the last, or after the live sim time when there is no last or it lags by more than a period."""
+    if last is None or now > last + period + period:
+        last = now
+    return last + period
+
+
 class CamNode(ArenaMixinNode):
     """Standalone node that plays a `Camera` timeline against the selected viewports."""
 
@@ -266,8 +273,11 @@ class CamNode(ArenaMixinNode):
         if not self._run_paused:
             return
         self.get_logger().info("lockstep run paused, recording holding until resume")
+        seen = self.sim_time
         while self._run_paused and rclpy.ok():
             await asyncio.sleep(0.2)
+        while self.sim_time == seen and not self._run_paused and rclpy.ok():
+            await asyncio.sleep(0.05)
 
     async def _run_follower(self) -> None:
         """Ride the active lockstep run instead of driving the sim: register a hard
@@ -287,7 +297,7 @@ class CamNode(ArenaMixinNode):
             return
         self._beat_pub = self.create_publisher(LockstepHeartbeat, topic, 10)
         self._follower = True
-        self._lockstep_time = self.sim_time
+        self._lockstep_time = None
         self.get_logger().info(f"riding active lockstep run: cam gated at {self._fps:g} fps")
         try:
             await self._timeline.run(self)
@@ -514,8 +524,10 @@ class CamNode(ArenaMixinNode):
             # cover the next frame window so the scheduler advances one period and
             # freezes at its gate, then capture that frozen tick
             await self._await_resumed()
-            assert self._lockstep_time is not None and self._beat_pub is not None
-            self._lockstep_time = self._lockstep_time + Time.from_float(1.0 / self._fps)
+            assert self._beat_pub is not None
+            if self._lockstep_time is None and self.sim_time.to_seconds() == 0.0:
+                await self.next_clock()
+            self._lockstep_time = next_frame_time(self._lockstep_time, self.sim_time, Time.from_float(1.0 / self._fps))
             beat = LockstepHeartbeat()
             beat.header.stamp = self._lockstep_time.to_msg()
             self._beat_pub.publish(beat)
