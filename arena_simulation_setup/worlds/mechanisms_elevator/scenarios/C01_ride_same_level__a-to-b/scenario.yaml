@@ -1,0 +1,9 @@
+format: arena-scenario/2
+robots:
+- start: [8.0, 5.0, 0.0]
+  phases:
+  - {goto: [26.0, 5.0, 0.0], via: [elev_s0]}
+  level: '0'
+  goal_level: '0'
+conditions:
+- {op: eventually, p: robot in annex, text: Arrive in the target room.}

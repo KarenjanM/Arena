@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from arena_cam.record import Recorder, claim, default_name, record_path, tagged
+from arena_cam.record import Recorder, claim, default_name, record_path, tagged, take_paths
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe not on PATH")
 
@@ -66,6 +66,8 @@ def test_record_path_defaults_and_tags_per_camera(tmp_path: Path) -> None:
     assert record_path(str(tmp_path / "tour.mkv")).suffix == ".mkv"
     assert tagged(path, "sim") == tmp_path / "takes" / "tour-sim.mp4"
     assert tagged(path, "viz0") == tmp_path / "takes" / "tour-viz0.mp4"
+    assert take_paths(path, ["viz0"]) == [path]
+    assert take_paths(path, ["sim", "viz0"]) == [tagged(path, "sim"), tagged(path, "viz0")]
 
 
 def test_claim_refuses_clobber(tmp_path: Path) -> None:

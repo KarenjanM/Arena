@@ -21,7 +21,7 @@ class NoopHumanSimulator(BaseHumanSimulator):
 
     async def _remove_obstacles_impl(
         self,
-        names: Sequence[str],
+        obstacles: Sequence[Obstacle],
     ) -> bool:
         return True
 

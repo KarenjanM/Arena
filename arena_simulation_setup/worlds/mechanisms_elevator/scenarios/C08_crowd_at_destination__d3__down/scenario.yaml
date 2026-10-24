@@ -1,0 +1,82 @@
+format: arena-scenario/2
+humans:
+- name: waiting_1
+  model: casual_female_caucasian_young
+  pose: [1.6, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 1.6, y: 8.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_2
+  model: worker_male_caucasian_young
+  pose: [2.6, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 2.6, y: 8.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_3
+  model: Office/office_female_caucasian_young
+  pose: [3.6, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.6, y: 8.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_4
+  model: male_adult_medical_01
+  pose: [4.6, 8.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 4.6, y: 8.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_5
+  model: female_adult_medical_01
+  pose: [1.6, 7.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 1.6, y: 7.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_6
+  model: worker_male_asian_middleage
+  pose: [2.6, 7.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 2.6, y: 7.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_7
+  model: casual_female_caucasian_young
+  pose: [3.6, 7.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.6, y: 7.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_8
+  model: worker_male_caucasian_young
+  pose: [4.6, 7.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 4.6, y: 7.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+- name: waiting_9
+  model: Office/office_female_caucasian_young
+  pose: [1.6, 6.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 1.6, y: 6.4, level: '0'}
+  waypoint_mode: once
+  level: '0'
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '1'
+  goal_level: '0'
+conditions:
+- {op: eventually, p: robot in l0_lobby, text: Arrive on the other floor.}

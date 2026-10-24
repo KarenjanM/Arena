@@ -76,7 +76,7 @@ def _realized_plate(realizer: Realizer, cfg: SemanticCfg, level_id: str) -> Sema
         x, y = params['position'][:2]
         params['position'] = list(realizer.realize_xy(x, y, level_id))
     if params.get('drives'):
-        params['drives'] = realizer.prefix(params['drives'], level_id)
+        params['drives'] = realizer.realize_reference(params['drives'], level_id)
     return attrs.evolve(cfg, params=params)
 
 
@@ -163,7 +163,7 @@ class EnvironmentManager(NodeInterface):
             'affordance_markers',
             rclpy.qos.QoSProfile(depth=1, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE),
         )
-        self._human_simulator.on_seated_change(self._publish_affordance_markers)
+        self._human_simulator.on_held_seats_change(self._publish_affordance_markers)
         self._attached_semantic_entities: set[str] = set()
         self._world_light_names: set[str] = set()
         self._episode_lights: dict[str, dict[str, str]] = {}
@@ -276,9 +276,9 @@ class EnvironmentManager(NodeInterface):
         self._publish_affordance_markers()
 
     def _publish_affordance_markers(self) -> None:
-        """Republish the latched slot overlay of every spawned obstacle, occupancy from the agents seated on it."""
-        seated = self._human_simulator.seated()
-        objects = ((name, pose, slots, seated.get(sim_path, [])) for name, (sim_path, pose, slots) in sorted(self._affordances.items()))
+        """Republish the latched slot overlay of every spawned obstacle, occupancy from the seats agents hold on it."""
+        held = self._human_simulator.held_seats()
+        objects = ((name, pose, slots, held.get(sim_path, [])) for name, (sim_path, pose, slots) in sorted(self._affordances.items()))
         self._affordance_markers_pub.publish(MarkerArray(markers=affordance_markers(objects, self.node.sim_time.to_msg())))
 
     async def spawn_world_obstacles(

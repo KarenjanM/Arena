@@ -1,0 +1,8 @@
+format: arena-scenario/2
+robots:
+- start: [14.0, 18.75, 3.1416]
+  phases:
+  - {goto: [2.0, 18.75, 3.1416]}
+conditions:
+- {op: eventually, p: robot in dz_west, text: Reach the other room.}
+- {op: eventually, p: robot in dz_up, text: Take the door-free detour.}

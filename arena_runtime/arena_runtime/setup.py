@@ -24,6 +24,9 @@ setup(
             'arena_node = arena_runtime.arena_node:main',
             'urdf_publisher = arena_runtime.urdf_publisher:main',
             'clock_relay = arena_runtime.clock_relay:main',
-        ]
+        ],
+        'arena_mcp.domains': [
+            'runtime = arena_runtime.mcp:domain',
+        ],
     }
 )

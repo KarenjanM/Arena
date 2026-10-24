@@ -12,6 +12,7 @@ members = [
     "arena-bringup",
     "arena-cam",
     "arena-cli",
+    "arena-mcp",
     "arena-rclpy-mixins",
     "arena-rosnav",
     "arena-runtime",
@@ -21,7 +22,6 @@ members = [
     "rerun-utils",
     "rviz-utils",
     "task-generator",
-    "task-generator-mcp",
 ]
 
 [[package]]
@@ -236,6 +236,30 @@ provides-extras = ["test"]
 name = "arena-cli"
 version = "0.0.0"
 source = { editable = "_meta/arena_cli" }
+
+[[package]]
+name = "arena-mcp"
+version = "0.0.1"
+source = { virtual = "arena_mcp" }
+dependencies = [
+    { name = "mcp" },
+    { name = "numpy" },
+    { name = "pillow" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", specifier = ">=2.0.0" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "arena-rclpy-mixins"
@@ -3295,26 +3319,6 @@ requires-dist = [
     { name = "transformers", specifier = ">=5.5.4" },
     { name = "typing-extensions" },
     { name = "watchdog" },
-]
-provides-extras = ["test"]
-
-[[package]]
-name = "task-generator-mcp"
-version = "0.0.1"
-source = { virtual = "utils/task_generator_mcp" }
-dependencies = [
-    { name = "mcp" },
-]
-
-[package.optional-dependencies]
-test = [
-    { name = "pytest" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mcp", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
 ]
 provides-extras = ["test"]
 

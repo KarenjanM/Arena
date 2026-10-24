@@ -28,7 +28,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/DespawnRobot.srv
   srv/GetTaskModes.srv
   srv/MoveEntity.srv
-  srv/Pause.srv
   srv/QueryDynamicObstacles.srv
   srv/QueryEnvironments.srv
   srv/QueryParametrizeds.srv
@@ -45,6 +44,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   srv/SpawnRobot.srv
   srv/SpawnSound.srv
   srv/SpawnStatic.srv
+  srv/SubmitTask.srv
   action/RunEpisode.action
   DEPENDENCIES geometry_msgs diagnostic_msgs builtin_interfaces rcl_interfaces
 )

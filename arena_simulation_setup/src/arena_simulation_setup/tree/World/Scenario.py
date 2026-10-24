@@ -129,6 +129,7 @@ class TimelineEntry(Parseable):
 
 
 SCENARIO_FORMAT = "arena-scenario/2"
+LEGACY_SCENARIO_FORMAT = "arena-scenario/1"
 SCENARIO_KEYS = frozenset({"format", "objects", "humans", "sounds", "lights", "robots", "regions", "timeline", "conditions"})
 
 
@@ -226,8 +227,11 @@ def upgrade_scenario(raw: object) -> tuple[dict, list[str]]:
         if "goal_floor" in robot:
             robot["goal_level"] = robot.pop("goal_floor")
         goal = robot.pop("goal", None)
+        via = robot.pop("via", None)
         if goal is not None and not robot.get("phases"):
-            robot["phases"] = [{"goto": goal}]
+            robot["phases"] = [{"goto": goal, **({"via": via} if via else {})}]
+        elif via:
+            up.warn(f"robot via {via!r} applies only to a robot goal without phases, dropped")
         for key in ("level", "goal_level"):
             if key in robot and not robot[key]:
                 robot.pop(key)

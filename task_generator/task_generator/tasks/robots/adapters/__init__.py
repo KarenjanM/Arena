@@ -256,6 +256,12 @@ class Adapter(ABC):
         robot: RobotManager,
     ) -> None: ...
 
+    def cancel_goals(self) -> None:
+        """Cancel the in-flight goal of every client."""
+        for client in self._clients.values():
+            if client.is_done() is False:
+                client.cancel()
+
     def on_phase_tick(
         self,
         phase: TaskPhase,
@@ -289,6 +295,10 @@ class Adapter(ABC):
         return None
 
     async def on_reset(self, robot: RobotManager, ctx: ResetContext) -> None:
+        return None
+
+    async def on_cabin_open(self, robot: RobotManager) -> None:
+        """Called once per elevator ride, when the cabin that delivered the robot reports its door open."""
         return None
 
     async def on_controllers_active(self, robot: RobotManager) -> None:

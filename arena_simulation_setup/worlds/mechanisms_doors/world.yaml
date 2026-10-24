@@ -1,0 +1,117 @@
+format: arena-world/2
+levels:
+- id: '0'
+  zones:
+  - {name: sliding_a, polygon: [[0.0, 0.0], [7.5, 0.0], [7.5, 2.5], [0.0, 2.5]], floor: Concrete_Smooth}
+  - {name: sliding_gap, polygon: [[7.5, 0.0], [8.5, 0.0], [8.5, 2.5], [7.5, 2.5]], floor: Concrete_Smooth}
+  - {name: sliding_b, polygon: [[8.5, 0.0], [16.0, 0.0], [16.0, 2.5], [8.5, 2.5]], floor: Concrete_Smooth}
+  - {name: slidingtop_a, polygon: [[0.0, 2.5], [7.5, 2.5], [7.5, 5.0], [0.0, 5.0]], floor: Concrete_Smooth}
+  - {name: slidingtop_gap, polygon: [[7.5, 2.5], [8.5, 2.5], [8.5, 5.0], [7.5, 5.0]], floor: Concrete_Smooth}
+  - {name: slidingtop_b, polygon: [[8.5, 2.5], [16.0, 2.5], [16.0, 5.0], [8.5, 5.0]], floor: Concrete_Smooth}
+  - {name: hinged_a, polygon: [[0.0, 5.0], [7.5, 5.0], [7.5, 7.5], [0.0, 7.5]], floor: Concrete_Smooth}
+  - {name: hinged_gap, polygon: [[7.5, 5.0], [8.5, 5.0], [8.5, 7.5], [7.5, 7.5]], floor: Concrete_Smooth}
+  - {name: hinged_b, polygon: [[8.5, 5.0], [16.0, 5.0], [16.0, 7.5], [8.5, 7.5]], floor: Concrete_Smooth}
+  - {name: teleport_a, polygon: [[0.0, 7.5], [7.5, 7.5], [7.5, 10.0], [0.0, 10.0]], floor: Concrete_Smooth}
+  - {name: teleport_gap, polygon: [[7.5, 7.5], [8.5, 7.5], [8.5, 10.0], [7.5, 10.0]], floor: Concrete_Smooth}
+  - {name: teleport_b, polygon: [[8.5, 7.5], [16.0, 7.5], [16.0, 10.0], [8.5, 10.0]], floor: Concrete_Smooth}
+  - {name: shorthold_a, polygon: [[0.0, 10.0], [7.5, 10.0], [7.5, 12.5], [0.0, 12.5]], floor: Concrete_Smooth}
+  - {name: shorthold_gap, polygon: [[7.5, 10.0], [8.5, 10.0], [8.5, 12.5], [7.5, 12.5]], floor: Concrete_Smooth}
+  - {name: shorthold_b, polygon: [[8.5, 10.0], [16.0, 10.0], [16.0, 12.5], [8.5, 12.5]], floor: Concrete_Smooth}
+  - {name: gate_a, polygon: [[0.0, 12.5], [7.5, 12.5], [7.5, 15.0], [0.0, 15.0]], floor: Concrete_Smooth}
+  - {name: gate_gap, polygon: [[7.5, 12.5], [8.5, 12.5], [8.5, 15.0], [7.5, 15.0]], floor: Concrete_Smooth}
+  - {name: gate_b, polygon: [[8.5, 12.5], [16.0, 12.5], [16.0, 15.0], [8.5, 15.0]], floor: Concrete_Smooth}
+  - {name: airlock_a, polygon: [[0.0, 15.0], [5.5, 15.0], [5.5, 17.5], [0.0, 17.5]], floor: Concrete_Smooth}
+  - {name: airlock_gap, polygon: [[5.5, 15.0], [10.5, 15.0], [10.5, 17.5], [5.5, 17.5]], floor: Concrete_Smooth}
+  - {name: airlock_b, polygon: [[10.5, 15.0], [16.0, 15.0], [16.0, 17.5], [10.5, 17.5]], floor: Concrete_Smooth}
+  - {name: dz_west, polygon: [[0.0, 17.5], [4.0, 17.5], [4.0, 23.5], [0.0, 23.5]], floor: Concrete_Smooth}
+  - {name: dz_low, polygon: [[4.0, 17.5], [12.0, 17.5], [12.0, 20.0], [4.0, 20.0]], floor: Concrete_Smooth}
+  - {name: dz_up, polygon: [[4.0, 21.0], [12.0, 21.0], [12.0, 23.5], [4.0, 23.5]], floor: Concrete_Smooth}
+  - {name: dz_east, polygon: [[12.0, 17.5], [16.0, 17.5], [16.0, 23.5], [12.0, 23.5]], floor: Concrete_Smooth}
+  - {name: dl_west, polygon: [[0.0, 23.5], [4.0, 23.5], [4.0, 29.5], [0.0, 29.5]], floor: Concrete_Smooth}
+  - {name: dl_low, polygon: [[4.0, 23.5], [12.0, 23.5], [12.0, 26.0], [4.0, 26.0]], floor: Concrete_Smooth}
+  - {name: dl_up, polygon: [[4.0, 27.0], [12.0, 27.0], [12.0, 29.5], [4.0, 29.5]], floor: Concrete_Smooth}
+  - {name: dl_east, polygon: [[12.0, 23.5], [16.0, 23.5], [16.0, 29.5], [12.0, 29.5]], floor: Concrete_Smooth}
+  walls:
+  - {path: [[0.0, 0.0], [16.0, 0.0]], material: Plaster_Wall}
+  - {path: [[0.0, 0.0], [0.0, 2.5]], material: Plaster_Wall}
+  - {path: [[8.0, 0.0], [8.0, 0.65]], material: Plaster_Wall}
+  - {path: [[8.0, 1.85], [8.0, 2.5]], material: Plaster_Wall}
+  - {path: [[16.0, 0.0], [16.0, 2.5]], material: Plaster_Wall}
+  - {path: [[0.0, 2.5], [16.0, 2.5]], material: Plaster_Wall}
+  - {path: [[0.0, 2.5], [0.0, 5.0]], material: Plaster_Wall}
+  - {path: [[8.0, 2.5], [8.0, 3.15]], material: Plaster_Wall}
+  - {path: [[8.0, 4.35], [8.0, 5.0]], material: Plaster_Wall}
+  - {path: [[16.0, 2.5], [16.0, 5.0]], material: Plaster_Wall}
+  - {path: [[0.0, 5.0], [16.0, 5.0]], material: Plaster_Wall}
+  - {path: [[0.0, 5.0], [0.0, 7.5]], material: Plaster_Wall}
+  - {path: [[8.0, 5.0], [8.0, 5.65]], material: Plaster_Wall}
+  - {path: [[8.0, 6.85], [8.0, 7.5]], material: Plaster_Wall}
+  - {path: [[16.0, 5.0], [16.0, 7.5]], material: Plaster_Wall}
+  - {path: [[0.0, 7.5], [16.0, 7.5]], material: Plaster_Wall}
+  - {path: [[0.0, 7.5], [0.0, 10.0]], material: Plaster_Wall}
+  - {path: [[8.0, 7.5], [8.0, 8.15]], material: Plaster_Wall}
+  - {path: [[8.0, 9.35], [8.0, 10.0]], material: Plaster_Wall}
+  - {path: [[16.0, 7.5], [16.0, 10.0]], material: Plaster_Wall}
+  - {path: [[0.0, 10.0], [16.0, 10.0]], material: Plaster_Wall}
+  - {path: [[0.0, 10.0], [0.0, 12.5]], material: Plaster_Wall}
+  - {path: [[8.0, 10.0], [8.0, 10.65]], material: Plaster_Wall}
+  - {path: [[8.0, 11.85], [8.0, 12.5]], material: Plaster_Wall}
+  - {path: [[16.0, 10.0], [16.0, 12.5]], material: Plaster_Wall}
+  - {path: [[0.0, 12.5], [16.0, 12.5]], material: Plaster_Wall}
+  - {path: [[0.0, 12.5], [0.0, 15.0]], material: Plaster_Wall}
+  - {path: [[8.0, 12.5], [8.0, 13.15]], material: Plaster_Wall}
+  - {path: [[8.0, 14.35], [8.0, 15.0]], material: Plaster_Wall}
+  - {path: [[16.0, 12.5], [16.0, 15.0]], material: Plaster_Wall}
+  - {path: [[0.0, 15.0], [16.0, 15.0]], material: Plaster_Wall}
+  - {path: [[0.0, 15.0], [0.0, 17.5]], material: Plaster_Wall}
+  - {path: [[6.0, 15.0], [6.0, 15.65]], material: Plaster_Wall}
+  - {path: [[6.0, 16.85], [6.0, 17.5]], material: Plaster_Wall}
+  - {path: [[10.0, 15.0], [10.0, 15.65]], material: Plaster_Wall}
+  - {path: [[10.0, 16.85], [10.0, 17.5]], material: Plaster_Wall}
+  - {path: [[16.0, 15.0], [16.0, 17.5]], material: Plaster_Wall}
+  - {path: [[0.0, 17.5], [16.0, 17.5]], material: Plaster_Wall}
+  - {path: [[0.0, 17.5], [0.0, 23.5]], material: Plaster_Wall}
+  - {path: [[4.0, 20.0], [4.0, 21.0]], material: Plaster_Wall}
+  - {path: [[4.0, 20.0], [12.0, 20.0]], material: Plaster_Wall}
+  - {path: [[8.0, 17.5], [8.0, 18.15]], material: Plaster_Wall}
+  - {path: [[8.0, 19.35], [8.0, 20.0]], material: Plaster_Wall}
+  - {path: [[4.0, 21.0], [12.0, 21.0]], material: Plaster_Wall}
+  - {path: [[16.0, 17.5], [16.0, 23.5]], material: Plaster_Wall}
+  - {path: [[12.0, 20.0], [12.0, 21.0]], material: Plaster_Wall}
+  - {path: [[0.0, 23.5], [16.0, 23.5]], material: Plaster_Wall}
+  - {path: [[0.0, 23.5], [0.0, 29.5]], material: Plaster_Wall}
+  - {path: [[4.0, 26.0], [4.0, 27.0]], material: Plaster_Wall}
+  - {path: [[4.0, 26.0], [12.0, 26.0]], material: Plaster_Wall}
+  - {path: [[8.0, 23.5], [8.0, 24.15]], material: Plaster_Wall}
+  - {path: [[8.0, 25.35], [8.0, 26.0]], material: Plaster_Wall}
+  - {path: [[4.0, 27.0], [12.0, 27.0]], material: Plaster_Wall}
+  - {path: [[16.0, 23.5], [16.0, 29.5]], material: Plaster_Wall}
+  - {path: [[12.0, 26.0], [12.0, 27.0]], material: Plaster_Wall}
+  - {path: [[0.0, 29.5], [16.0, 29.5]], material: Plaster_Wall}
+  doors:
+  - name: door_sliding
+    span: [[8.0, 0.65], [8.0, 1.85]]
+    activation_distance: 1.0
+    semantics:
+    - {preset: gate, params: {authorized: [], locked: false}}
+  - {name: door_slidingtop, span: [[8.0, 3.15], [8.0, 4.35]], kind: sliding_top, activation_distance: 1.0}
+  - {name: door_hinged, span: [[8.0, 5.65], [8.0, 6.85]], kind: hinged, activation_distance: 1.0}
+  - {name: door_teleport, span: [[8.0, 8.15], [8.0, 9.35]], kind: teleport, activation_distance: 1.0}
+  - {name: door_shorthold, span: [[8.0, 10.65], [8.0, 11.85]], activation_distance: 1.0, transition_time: 2.0, hold_time: 0.3}
+  - name: door_gate
+    span: [[8.0, 13.15], [8.0, 14.35]]
+    activation_distance: 1.0
+    semantics:
+    - {preset: gate, params: {authorized: [jackal], locked: false}}
+  - {name: door_al_outer, span: [[6.0, 15.65], [6.0, 16.85]], activation_distance: 1.0}
+  - name: door_al_inner
+    span: [[10.0, 15.65], [10.0, 16.85]]
+    activation_distance: 0.0
+    semantics:
+    - {preset: pressure_plate, params: {position: [8.0, 16.25], radius: 1.0, drives: door_al_inner, latch: 2.0}}
+  - {name: door_dz, span: [[8.0, 18.15], [8.0, 19.35]], activation_distance: 0.0}
+  - name: door_dl
+    span: [[8.0, 24.15], [8.0, 25.35]]
+    activation_distance: 1.0
+    semantics:
+    - {preset: gate, params: {authorized: [], locked: false}}

@@ -12,7 +12,6 @@ Audio frames and sound detections live in `arena_robots_msgs`. Types of the aren
 |---|---|
 | `ResetEpisode.srv` | Advance to a new episode; accepts optional world and seed for replay. Resolves any in-flight `RunEpisode` goal with `Result.SKIPPED` (reason="reset"). |
 | `QueueEpisode.srv` | Stage the next episode (modes, world, robots, per-mode params, human backend params). Applied at the next reset. |
-| `Pause.srv` | Toggle pause from external callers. |
 | `GetTaskModes.srv` | Return currently active task-mode strings. |
 | `QueryWorlds.srv` / `QueryScenarios.srv` / `QueryEnvironments.srv` / `QueryParametrizeds.srv` / `QueryRobots.srv` / `QueryStaticObstacles.srv` / `QueryDynamicObstacles.srv` / `QueryTaskModes.srv` | Listing of available shortnames for the corresponding asset class. |
 | `SpawnStatic.srv` / `SpawnDynamic.srv` / `SpawnRobot.srv` | Inject a static obstacle / dynamic pedestrian / additional robot into the running episode via `TM_Obstacles.extend` / `TM_Robots.extend`. `SpawnRobot` accepts an optional `args` (`diagnostic_msgs/KeyValue[]`) forwarded to `Robot.parse` (e.g. `mobile`, `mobile.local_planner`, `mobile.agent`), and an `immediate` flag that provisions the robot into the live world now (idle) instead of committing on the next reset. |
@@ -20,6 +19,7 @@ Audio frames and sound detections live in `arena_robots_msgs`. Types of the aren
 | `MoveEntity.srv` | Move a runtime-spawned static obstacle or sound by the handle its spawn returned, or any robot by name, to a map-frame pose via `runtime/move`. The same path the rviz drag handles use. |
 | `DespawnRobot.srv` | Single fleet-removal surface: stages a live robot for teardown on the next reset, un-stages a queued despawn, or cancels a queued spawn (toggles `state/robots/pending`). |
 | `SetSemantic.srv` | Write one semantic field value on an entity via `semantics/set`; one of three writer paths into semantics state (timeline, modules, external). |
+| `SubmitTask.srv` | Hand one robot a task via `runtime/submit_task`: `task_yaml` is a `phases:` list or a `{phases, conditions}` mapping in the scenario format, parsed by `TaskRequest.parse` and passed to `RobotManager.submit_task`, goto poses map-frame and shifted into scenario coordinates like rviz goals. Unfinished phases of the robot's previous request are dropped. An empty phases list only stops the robot: its unfinished phases are dropped, its in-flight action goal is cancelled and `phase_indices` is empty. Returns the episode-wide `phase_indices` the request was appended at, elevator legs included. |
 
 ## Messages (`msg/`)
 

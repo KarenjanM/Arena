@@ -73,7 +73,9 @@ window open) or does not answer it within 10 s, the teleport runs inside an
 unpause window instead and polls TF for up to 2 s per attempt.
 
 `_launch_robot` order: unpause window, one sim step, tracked launch, adapter
-readiness, `bring_up_controllers()`, window close, `adapter.on_controllers_active`.
+readiness, `bring_up_controllers()`, `adapter.on_controllers_active` (arm
+adapters park every arm at its `stow` pose and wait until it settled), window
+close. The first reset then places the robot with its arms already parked.
 Controllers are driven here, not by `controller_manager/spawner`: each round
 reads `list_controllers` and issues the one call the snapshot needs (load an
 absent one, configure an unconfigured one, one grouped STRICT switch for all
@@ -147,11 +149,11 @@ It also publishes the latched `affordance_markers` MarkerArray
 ([`affordance_markers.py`](affordance_markers.py)) with the placed affordance
 slots of every spawned static obstacle, world and episode alike: per slot its
 box with the top diagonals and an arrow from the box edge for each allowed
-facing, one marker namespace per kind (`sit`). A slot an agent sits on is pink
-and the slots overlapping it grey, from `AffordanceClaims` over the agents the
-human simulator reports seated on the object (`seated()`, each claiming the
-nearest slot within 0.75 m). It is republished whenever obstacles spawn or are
-removed and whenever the seated agents change, and rviz shows it as the
+facing, one marker namespace per kind (`sit`). A slot an agent holds, walking up or seated, is pink
+and the slots overlapping it grey, from `AffordanceClaims` over the seats the
+human simulator reports held on the object (`held_seats()`). It is republished
+whenever obstacles spawn or are removed and whenever the held seats change, and
+rviz shows it as the
 Affordances display in the Interaction group, off by default.
 
 **Obstacle/pedestrian removal is split:** `BaseHumanSimulator.unuse_obstacles`

@@ -1,4 +1,4 @@
-"""Elevator cabins, door states and teleports the arena_humansim bridge hands to the engine."""
+"""Elevator cabins as teleport zones, door states as zone access and teleports the arena_humansim bridge hands to the engine."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 pytest.importorskip("rclpy")
 
-from arena_humansim_msgs.srv import SetElevatorDoors, SetElevators, TeleportAgents
+from arena_humansim_msgs.srv import NotifyStimulus, SetTeleportZones, SetZoneAccess, TeleportAgents
 from arena_simulation_setup.shared import Elevator
 from arena_simulation_setup.tree.World.model import Level, World
 from arena_simulation_setup.tree.World.view import _ring_free_cabins
@@ -46,22 +46,23 @@ def _adapter(realizer: Realizer) -> ArenaHumanSimulator:
 def test_cabin_doorway_waits_outside_its_door_side_facing_the_cabin(door_side: str, doorway: tuple[float, float], facing_in: float) -> None:
     realizer = _realizer()
     elevator = realizer.realize(Elevator(name="lift", position=Position(4.0, 2.0), size=[2.0, 3.0, 2.5], door_side=door_side), "1")
-    msg = _adapter(realizer)._elevator_msg(elevator)
+    msg = _adapter(realizer)._zone_msg(elevator)
 
-    assert (msg.doorway.x, msg.doorway.y) == pytest.approx((34.0 + doorway[0], 2.0 + doorway[1]))
-    assert math.remainder(msg.doorway.theta - facing_in, math.tau) == pytest.approx(0.0)
-    assert math.remainder(msg.boarding.theta - facing_in - math.pi, math.tau) == pytest.approx(0.0)
+    assert (msg.entry.x, msg.entry.y) == pytest.approx((34.0 + doorway[0], 2.0 + doorway[1]))
+    assert math.remainder(msg.entry.theta - facing_in, math.tau) == pytest.approx(0.0)
+    assert math.remainder(msg.hold.theta - facing_in - math.pi, math.tau) == pytest.approx(0.0)
 
 
 def test_cabin_goes_to_the_engine_in_the_laid_out_frame() -> None:
     realizer = _realizer()
     elevator = realizer.realize(Elevator(name="lift", position=Position(4.0, 2.0), size=[2.0, 3.0, 2.5], door_side="+y"), "1")
-    msg = _adapter(realizer)._elevator_msg(elevator)
+    msg = _adapter(realizer)._zone_msg(elevator)
 
     assert msg.name == realizer.prefix("lift", "1")
-    assert (msg.boarding.x, msg.boarding.y) == pytest.approx((34.0, 2.0))
-    assert [(p.x, p.y) for p in msg.footprint] == pytest.approx([(33.0, 0.5), (35.0, 0.5), (35.0, 3.5), (33.0, 3.5)])
-    assert msg.door_open is False
+    assert (msg.hold.x, msg.hold.y) == pytest.approx((34.0, 2.0))
+    assert [(p.x, p.y) for p in msg.footprint] == pytest.approx([(33.0, 0.5), (35.0, 0.5), (35.0, 3.125), (33.0, 3.125)])
+    assert msg.open is False
+    assert msg.delay < 0.0
 
 
 def test_linked_levels_ring_names_each_next_realized_cabin_as_destination() -> None:
@@ -70,10 +71,10 @@ def test_linked_levels_ring_names_each_next_realized_cabin_as_destination() -> N
     realizer = _realizer()
     realizer.reset_elevator_levels(world.elevator_levels())
     adapter = _adapter(realizer)
-    msgs = [adapter._elevator_msg(realizer.realize(elevator, level_id)) for level_id, level in world.levels.items() for elevator in level.elevators]
+    msgs = [adapter._zone_msg(realizer.realize(elevator, level_id)) for level_id, level in world.levels.items() for elevator in level.elevators]
 
-    assert [msg.destination for msg in msgs] == [msgs[1].name, msgs[2].name, msgs[0].name]
-    assert [msg.boarding.x for msg in msgs] == pytest.approx([1.0, 31.0, 61.0])
+    assert [list(msg.destinations) for msg in msgs] == [[msgs[1].name], [msgs[2].name], [msgs[0].name]]
+    assert [msg.hold.x for msg in msgs] == pytest.approx([1.0, 31.0, 61.0])
 
 
 class _Bridge(ArenaHumanSimulator):
@@ -85,28 +86,35 @@ class _Bridge(ArenaHumanSimulator):
 
 
 class _Engine:
-    """In-process stand-in for the engine's elevator and teleport services, recording every request."""
+    """In-process stand-in for the engine's zone, teleport and stimulus services, recording every request."""
 
     def __init__(self, node: typing.Any) -> None:
-        self.elevators: list[list[str]] = []
-        self.doors: list[dict[str, bool]] = []
+        self.zones: list[list[str]] = []
+        self.access: list[dict[str, bool]] = []
         self.teleports: list[TeleportAgents.Request] = []
-        node.create_service(SetElevators, str(node.service_namespace(ArenaHumanSimulator.SERVICE_SET_ELEVATORS)), self._set_elevators)
-        node.create_service(SetElevatorDoors, str(node.service_namespace(ArenaHumanSimulator.SERVICE_SET_ELEVATOR_DOORS)), self._set_doors)
+        self.stimuli: list[tuple[int, str, float]] = []
+        node.create_service(SetTeleportZones, str(node.service_namespace(ArenaHumanSimulator.SERVICE_SET_TELEPORT_ZONES)), self._set_zones)
+        node.create_service(SetZoneAccess, str(node.service_namespace(ArenaHumanSimulator.SERVICE_SET_ZONE_ACCESS)), self._set_access)
         node.create_service(TeleportAgents, str(node.service_namespace(ArenaHumanSimulator.SERVICE_TELEPORT_AGENTS)), self._teleport)
+        node.create_service(NotifyStimulus, str(node.service_namespace(ArenaHumanSimulator.SERVICE_NOTIFY_STIMULUS)), self._notify)
 
-    def _set_elevators(self, request: SetElevators.Request, response: SetElevators.Response) -> SetElevators.Response:
-        self.elevators.append([elevator.name for elevator in request.elevators])
+    def _set_zones(self, request: SetTeleportZones.Request, response: SetTeleportZones.Response) -> SetTeleportZones.Response:
+        self.zones.append([zone.name for zone in request.zones])
         response.success = True
         return response
 
-    def _set_doors(self, request: SetElevatorDoors.Request, response: SetElevatorDoors.Response) -> SetElevatorDoors.Response:
-        self.doors.append(dict(zip(request.name, request.open, strict=True)))
+    def _set_access(self, request: SetZoneAccess.Request, response: SetZoneAccess.Response) -> SetZoneAccess.Response:
+        self.access.append(dict(zip(request.name, request.open, strict=True)))
         response.success = True
         return response
 
     def _teleport(self, request: TeleportAgents.Request, response: TeleportAgents.Response) -> TeleportAgents.Response:
         self.teleports.append(request)
+        response.success = True
+        return response
+
+    def _notify(self, request: NotifyStimulus.Request, response: NotifyStimulus.Response) -> NotifyStimulus.Response:
+        self.stimuli.append((request.agent_id, request.stimulus, request.intensity))
         response.success = True
         return response
 
@@ -133,7 +141,7 @@ def _on_bridge(body: typing.Callable[[ArenaHumanSimulator, _Engine], typing.Awai
         thread = threading.Thread(target=executor.spin, daemon=True)
         thread.start()
         try:
-            for client in (bridge._set_elevators_client, bridge._set_elevator_doors_client, bridge._teleport_agents_client):
+            for client in (bridge._set_teleport_zones_client, bridge._set_zone_access_client, bridge._teleport_agents_client, bridge._notify_stimulus_client):
                 assert await client.ensure(timeout_sec=5.0)
             await body(bridge, engine)
         finally:
@@ -162,6 +170,7 @@ def test_teleport_reaches_the_engine_by_agent_id_in_the_engine_frame() -> None:
         assert [(pose.x, pose.y) for pose in request.pose] == pytest.approx([(31.0, 2.0), (0.5, -1.0)])
         assert [pose.theta for pose in request.pose] == pytest.approx([math.pi / 2, 0.0])
         assert set(bridge._teleport_stamps) == {7, 12}
+        assert engine.stimuli == [(7, "teleported", 1.0), (12, "teleported", 1.0)]
 
     _on_bridge(body)
 
@@ -188,7 +197,7 @@ def test_world_cabins_reach_the_engine_and_leave_with_the_world() -> None:
         await bridge.remove_obstacles(purge=ObstacleLayer.WORLD)
         assert await bridge.spawn_elevators([])
 
-        assert engine.elevators == [[cabin.name for cabin in cabins], []]
+        assert engine.zones == [[cabin.name for cabin in cabins], []]
 
     _on_bridge(body)
 
@@ -197,6 +206,6 @@ def test_door_changes_reach_the_engine_by_cabin_name() -> None:
     async def body(bridge: ArenaHumanSimulator, engine: _Engine) -> None:
         await bridge.elevator_doors_changed({"env_0/0/lift_0": True, "env_0/1/lift_1": False})
 
-        assert engine.doors == [{"env_0/0/lift_0": True, "env_0/1/lift_1": False}]
+        assert engine.access == [{"env_0/0/lift_0": True, "env_0/1/lift_1": False}]
 
     _on_bridge(body)

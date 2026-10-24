@@ -79,3 +79,41 @@ def test_released_reaper_leaves_the_groups_alone() -> None:
     finally:
         sleeper.kill()
         sleeper.wait()
+
+
+_EXITING_CHILD_SUPERVISOR = """
+import sys, time
+import rclpy
+from arena_bringup.supervisor import Supervisor
+rclpy.init(args=[])
+sup = Supervisor(rclpy.create_node("orphan_test_supervisor"))
+sup.spawn("env_0", ["bash", "-c", sys.executable + ' -c "$0" "$1" "$2" & exit 0', *sys.argv[2:]])
+time.sleep(2.0)
+if sys.argv[1] == "sweep":
+    sup.release()
+    for _ in range(300):
+        sup.sweep_exited()
+        time.sleep(0.1)
+else:
+    sup.cleanup()
+    sup.release()
+    time.sleep(30)
+"""
+
+
+@pytest.mark.parametrize("stage", ["sweep", "cleanup"])
+def test_orphan_of_an_exited_child_is_interrupted_while_the_supervisor_lives(tmp_path: Path, stage: str) -> None:
+    marker, ready = tmp_path / "marker", tmp_path / "ready"
+    supervisor = subprocess.Popen([sys.executable, "-c", _EXITING_CHILD_SUPERVISOR, stage, _GRANDCHILD, str(marker), str(ready)])
+    grandchild = 0
+    try:
+        grandchild = int(_wait_for(ready, 30.0))
+
+        assert _wait_for(marker, 15.0) == "INT"
+        assert supervisor.poll() is None
+    finally:
+        supervisor.kill()
+        supervisor.wait(timeout=5)
+        if grandchild:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(grandchild, signal.SIGKILL)

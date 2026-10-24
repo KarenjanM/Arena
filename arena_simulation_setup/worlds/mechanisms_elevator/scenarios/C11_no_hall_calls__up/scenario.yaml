@@ -1,0 +1,9 @@
+format: arena-scenario/2
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708], via: [elev_b]}
+  level: '0'
+  goal_level: '1'
+conditions:
+- {op: never, p: robot in elev_b_cabin, text: The service cabin never admits the robot.}

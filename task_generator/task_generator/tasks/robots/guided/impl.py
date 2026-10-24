@@ -55,16 +55,13 @@ class TM_Guided(TM_Random):
         self._rebuild_markers()
 
         for robot in self._ctx.robots.values():
-            phases: list[TaskPhase] = [GoToPhase(pose=wp) for wp in self._waypoints] or [GoToPhase(pose=robot.start_pos)]
-            await robot.submit_task(TaskRequest(phases=phases), robot.start_pos if from_start else None)
+            start = self._start_poses.get(robot.name, robot.start_pos)
+            phases: list[TaskPhase] = [GoToPhase(pose=wp) for wp in self._waypoints] or [GoToPhase(pose=start)]
+            await robot.submit_task(TaskRequest(phases=phases), start if from_start else None)
 
     async def _reset_waypoints(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
         self._waypoints = []
-
-        for robot in self._ctx.robots.values():
-            self._start_poses[robot.name] = robot.start_pos
-
         await self._publish_chain(from_start=True)
 
     @property

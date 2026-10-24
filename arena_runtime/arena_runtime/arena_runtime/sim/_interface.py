@@ -80,6 +80,8 @@ class HumanSimulator(typing.Protocol):
 
     async def elevator_doors_changed(self, doors: Mapping[str, bool]) -> None: ...
 
+    def set_mechanism_walls(self, key: str, segments: Sequence[tuple[tuple[float, float], tuple[float, float]]] | None) -> None: ...
+
 
 class SimUnavailable(RuntimeError):
     """Sim service call timed out or the sim transport is gone."""

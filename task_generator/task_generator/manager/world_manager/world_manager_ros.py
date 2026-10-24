@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
+import attrs
 import geometry_msgs.msg
 import launch
 import launch.actions
@@ -28,7 +29,7 @@ from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
-from arena_simulation_setup.shared import Position, Wall
+from arena_simulation_setup.shared import Door, Position, Wall
 from arena_simulation_setup.tree.World import Level, World, WorldIdentifier, WorldView
 from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
 from arena_simulation_setup.tree.World.view import point_world_assets
@@ -38,7 +39,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import MapSource, map_source
 
-from . import markers
+from . import markers, mechanism_map
 from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
 from .world_manager import WorldManager
 
@@ -130,6 +131,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     _map_server_present: bool
     _map_render_memo: dict[str, tuple[bytes, str]]
     _static_markers: list[visualization_msgs.msg.Marker] | None
+    _served_map: tuple[bytes, str] | None
+    _mechanism_map_enabled: bool
+    _mechanism_agents: tuple[str, ...]
+    _mechanism_blocked: frozenset[str]
+    _mechanism_served: frozenset[str]
+    _mechanism_task: asyncio.Task | None
 
     def _load_multi_level_map(self, world_view: WorldView, level_ids: Sequence[str]) -> MultiLevelMap | None:
         maps: dict[str, WorldMap] = {}
@@ -283,6 +290,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         point_world_assets(world_view.path, world.sources)
         static_footprints = await asyncio.gather(*(o.footprint() for o in world.all_static_entities))
         self.update_world(world_map=world_map, world_description=world, multi_level_map=multi_level_map, static_footprints=static_footprints)
+        self._mechanism_blocked = frozenset()
+        self._mechanism_served = frozenset()
 
         self._world_name = world_name
         self._world_mtime = world_view.mtime(world.sources)
@@ -307,8 +316,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         return True
 
-    async def _load_map_to_server(self, png_bytes: bytes, map_yaml_text: str, description: Level) -> None:
-        """Shift+LoadMap+door-mask. Caller guarantees map_server is present."""
+    async def _load_png_to_server(self, png_bytes: bytes, map_yaml_text: str) -> None:
+        """Shift+LoadMap. Caller guarantees map_server is present."""
         tmp_map = self._shift_map(png_bytes, map_yaml_text)
         try:
             map_yaml = os.path.join(tmp_map.name, 'map.yaml')
@@ -320,7 +329,79 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             raise RuntimeError(f'failed to load map for world {self._world_name}: service timed out')
         if response.result > 0:
             raise RuntimeError(f'failed to load map for world {self._world_name}: status code {response.result}')
+
+    async def _load_map_to_server(self, png_bytes: bytes, map_yaml_text: str, description: Level) -> None:
+        """Shift+LoadMap+door-mask. Caller guarantees map_server is present. Applies the mechanism map if enabled."""
+        self._served_map = (png_bytes, map_yaml_text)
+        blocked = self._mechanism_blocked if self._mechanism_map_enabled else frozenset()
+        await self._load_png_to_server(self._paint_blocked(png_bytes, map_yaml_text, blocked), map_yaml_text)
+        self._mechanism_served = blocked
         self._publish_door_mask(description, png_bytes, map_yaml_text)
+
+    def _world_doors(self) -> list[tuple[str, Door]]:
+        """(realized name, door shifted into the flattened map frame) for every loaded door."""
+        realizer: Realizer = self.node._realizer
+        doors: list[tuple[str, Door]] = []
+        for level_id, level in self._world.levels.items():
+            ox, oy = self._map.level_origins.get(level_id, (0.0, 0.0))
+            for door in level.all_doors:
+                shifted = attrs.evolve(door, start=Position(door.start.x + ox, door.start.y + oy), end=Position(door.end.x + ox, door.end.y + oy))
+                doors.append((str(realizer.prefix(door.name, level_id)), shifted))
+        return doors
+
+    def _paint_blocked(self, png_bytes: bytes, map_yaml_text: str, blocked: frozenset[str]) -> bytes:
+        if not blocked:
+            return png_bytes
+        segments = [((d.start.x, d.start.y), (d.end.x, d.end.y), d.width) for name, d in self._world_doors() if name in blocked]
+        return mechanism_map.paint_segments(png_bytes, map_yaml_text, segments)
+
+    def set_mechanism_map(self, enabled: bool, agents: Sequence[str]) -> None:
+        """Enable/disable the mechanism-aware planner map for the robot names/sim paths in `agents`."""
+        self._mechanism_map_enabled = enabled
+        self._mechanism_agents = tuple(agents)
+        if not enabled:
+            self._mechanism_blocked = frozenset()
+            self._schedule_mechanism_push()
+            return
+        simulator = self.node._simulator
+        if simulator is None:
+            self._logger.warning('mechanism map: no simulator yet')
+            return
+        try:
+            snapshots = simulator.semantics_snapshot()
+        except Exception as exc:
+            self._logger.warning(f'mechanism map: no semantics snapshot yet ({exc!r})')
+            return
+        self._update_mechanism_map(snapshots)
+
+    def _update_mechanism_map(self, snapshots: "Sequence[SemanticEntitySnapshot]") -> None:
+        if not self._mechanism_map_enabled:
+            return
+        self._mechanism_blocked = mechanism_map.blocked_doors(self._world_doors(), snapshots, self._mechanism_agents)
+        self._schedule_mechanism_push()
+
+    def _schedule_mechanism_push(self) -> None:
+        if self._mechanism_blocked == self._mechanism_served or not self._map_server_present or self._served_map is None:
+            return
+        if self._mechanism_task is not None and not self._mechanism_task.done():
+            return
+        try:
+            self._mechanism_task = asyncio.get_running_loop().create_task(self._mechanism_push_loop())
+        except RuntimeError:
+            self._mechanism_task = None
+
+    async def _mechanism_push_loop(self) -> None:
+        """Reload the served map until it matches the latest blocked-door set (latest wins)."""
+        try:
+            while self._served_map is not None and self._mechanism_served != self._mechanism_blocked:
+                blocked = self._mechanism_blocked
+                png_bytes, map_yaml_text = self._served_map
+                async with self._map_server_lock:
+                    await self._load_png_to_server(self._paint_blocked(png_bytes, map_yaml_text, blocked), map_yaml_text)
+                self._mechanism_served = blocked
+                self._logger.info(f'mechanism map: {len(blocked)} door(s) served as occupied: {sorted(blocked)}')
+        except Exception as exc:
+            self._logger.error(f'mechanism map push failed: {exc!r}')
 
     async def _push_world_to_map_server(self, description: Level, level_origins: dict[str, tuple[float, float]] | None = None) -> None:
         """Render+load the computed map. Caller guarantees map_server is present."""
@@ -394,6 +475,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         msg.markers.extend(self._static_markers)  # pyright: ignore[reportAttributeAccessIssue]
         msg.markers.extend(markers.mechanism_markers(self._world, realizer, snapshots, stamp))  # pyright: ignore[reportAttributeAccessIssue]
         self._world_markers_pub.publish(msg)
+        self._update_mechanism_map(snapshots)
 
     def refresh_world_markers(self, snapshots: "Sequence[SemanticEntitySnapshot]") -> None:
         """Republish the world overlay from the held description, rebuilding the static layers."""
@@ -444,6 +526,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._map_server_lock = asyncio.Lock()
         self._map_render_memo = {}
         self._static_markers = None
+        self._served_map = None
+        self._mechanism_map_enabled = False
+        self._mechanism_agents = ()
+        self._mechanism_blocked = frozenset()
+        self._mechanism_served = frozenset()
+        self._mechanism_task = None
         self._world_markers_pub = self.node.create_publisher(
             visualization_msgs.msg.MarkerArray,
             'world_markers',

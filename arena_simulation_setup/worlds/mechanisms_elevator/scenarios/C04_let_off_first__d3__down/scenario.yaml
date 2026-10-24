@@ -1,0 +1,41 @@
+format: arena-scenario/2
+humans:
+- name: arrival_1
+  model: casual_female_caucasian_young
+  pose: [2.4, 8.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 2.4, y: 8.0, level: '0'}
+  - {x: 10.0, y: 2.0, level: '1'}
+  waypoint_mode: once
+  level: '0'
+- name: arrival_2
+  model: worker_male_caucasian_young
+  pose: [3.0, 8.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.0, y: 8.0, level: '0'}
+  - {x: 11.0, y: 2.0, level: '1'}
+  waypoint_mode: once
+  level: '0'
+- name: arrival_3
+  model: Office/office_female_caucasian_young
+  pose: [3.6, 8.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.6, y: 8.0, level: '0'}
+  - {x: 12.0, y: 2.0, level: '1'}
+  waypoint_mode: once
+  level: '0'
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '1'
+  goal_level: '0'
+conditions:
+- {op: eventually, p: robot in l0_lobby, text: Arrive on the other floor.}
+- op: never_during
+  p: robot in elev_a1_cabin
+  q: elev_a1/1.just_arrived == true
+  text: Never be in the cabin while arrivals are still inside.

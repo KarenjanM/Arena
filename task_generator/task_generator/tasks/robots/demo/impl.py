@@ -72,14 +72,15 @@ class TM_Demo(TM_Robots):
 
     def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
-        declare_int(self.node, str(self.namespace("vertices")), 4, label="Vertices", lo=3, hi=20)
-        declare_double(self.node, str(self.namespace("radius")), 1.5, label="Radius (m)", lo=0.5, hi=10.0)
+        declare_int(self.node, str(self.namespace("vertices")), 4, label="Vertices", description="Corners of the regular polygon each robot drives, at least 3.", lo=3, hi=20)
+        declare_double(self.node, str(self.namespace("radius")), 1.5, label="Radius (m)", description="Distance in m from the polygon center to each corner.", lo=0.5, hi=10.0)
         declare_enum(
             self.node,
             str(self.namespace("gesture")),
             "<random>",
             choices=["<random>", *_available_gestures()],
             label="Gesture",
+            description="Gesture played at every corner, <random> draws one per corner.",
         )
         declare_enum(
             self.node,
@@ -87,6 +88,7 @@ class TM_Demo(TM_Robots):
             _Orientation.RADIAL_IN.value,
             choices=[o.value for o in _Orientation],
             label="Orientation",
+            description="Heading at each corner: tangent faces the next corner, radial_in the center, radial_out away from it.",
         )
         self._vertices_p = self.node.ROSParam[int](self.namespace("vertices"))
         self._radius_p = self.node.ROSParam[float](self.namespace("radius"))

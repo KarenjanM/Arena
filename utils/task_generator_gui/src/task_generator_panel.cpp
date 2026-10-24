@@ -14,7 +14,17 @@ namespace task_generator_gui
         root_layout = new QVBoxLayout(this);
     }
 
-    TaskGeneratorPanel::~TaskGeneratorPanel() = default;
+    TaskGeneratorPanel::~TaskGeneratorPanel()
+    {
+        if (holding && hold_client)
+        {
+            auto request = std::make_shared<arena_runtime_msgs::srv::LifecycleHold::Request>();
+            request->action = arena_runtime_msgs::srv::LifecycleHold::Request::RELEASE;
+            request->caller_id = hold_caller_id;
+            request->reason = "panel_pause";
+            hold_client->async_send_request(request);
+        }
+    }
 
     void TaskGeneratorPanel::onInitialize()
     {
@@ -51,29 +61,26 @@ namespace task_generator_gui
 
         reset_episode_client = node->create_client<task_generator_msgs::srv::ResetEpisode>(
             task_generator_node + "/lifecycle/reset_episode");
-        pause_client = node->create_client<task_generator_msgs::srv::Pause>(
-            task_generator_node + "/lifecycle/pause");
+        hold_client = node->create_client<arena_runtime_msgs::srv::LifecycleHold>("/arena/sim_lifecycle/hold");
+        hold_caller_id = std::string(node->get_fully_qualified_name()) + "/task_generator_panel" + task_generator_node;
 
         queue_episode_client = node->create_client<task_generator_msgs::srv::QueueEpisode>(
             task_generator_node + "/config/queue_episode");
 
         parameters_client = std::make_shared<rclcpp::AsyncParametersClient>(node, task_generator_node);
 
-        // Latched paused-state subscription.
         {
-            rclcpp::QoS pqos(rclcpp::KeepLast(1));
-            pqos.transient_local();
-            paused_state_sub = node->create_subscription<std_msgs::msg::Bool>(
-                task_generator_node + "/state/paused",
-                pqos,
-                [this](const std_msgs::msg::Bool::SharedPtr msg)
+            rclcpp::QoS hqos(rclcpp::KeepLast(1));
+            hqos.transient_local();
+            holders_sub = node->create_subscription<arena_runtime_msgs::msg::HoldRegistry>(
+                "/arena/state/holders",
+                hqos,
+                [this](const arena_runtime_msgs::msg::HoldRegistry::SharedPtr msg)
                 {
-                    QMetaObject::invokeMethod(this, [this, paused = msg->data]()
-                    {
-                        paused_state = paused;
-                        if (pause_button)
-                            pause_button->setText(paused_state ? "Unpause" : "Pause");
-                    }, Qt::QueuedConnection);
+                    bool held = false;
+                    for (const auto &entry : msg->holds)
+                        held = held || entry.caller_id == hold_caller_id;
+                    QMetaObject::invokeMethod(this, [this, held]() { setHolding(held); }, Qt::QueuedConnection);
                 });
         }
 
@@ -608,11 +615,31 @@ namespace task_generator_gui
 
     // --- Pause toggle ---
 
+    void TaskGeneratorPanel::setHolding(bool held)
+    {
+        holding = held;
+        if (pause_button)
+            pause_button->setText(holding ? "Unpause" : "Pause");
+    }
+
     void TaskGeneratorPanel::onPauseClicked()
     {
-        auto request = std::make_shared<task_generator_msgs::srv::Pause::Request>();
-        request->action = task_generator_msgs::srv::Pause::Request::TOGGLE;
-        pause_client->async_send_request(request);
+        if (!hold_client->service_is_ready())
+        {
+            RCLCPP_WARN(node->get_logger(), "/arena/sim_lifecycle/hold is not available, is the Arena runtime up?");
+            return;
+        }
+        const bool acquire = !holding;
+        auto request = std::make_shared<arena_runtime_msgs::srv::LifecycleHold::Request>();
+        request->action = acquire ? arena_runtime_msgs::srv::LifecycleHold::Request::ACQUIRE : arena_runtime_msgs::srv::LifecycleHold::Request::RELEASE;
+        request->caller_id = hold_caller_id;
+        request->reason = "panel_pause";
+        hold_client->async_send_request(
+            request,
+            [this, acquire](rclcpp::Client<arena_runtime_msgs::srv::LifecycleHold>::SharedFuture)
+            {
+                QMetaObject::invokeMethod(this, [this, acquire]() { setHolding(acquire); }, Qt::QueuedConnection);
+            });
     }
 
     // --- Dirty flag management ---

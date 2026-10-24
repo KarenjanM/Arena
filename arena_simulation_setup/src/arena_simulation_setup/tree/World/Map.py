@@ -14,6 +14,14 @@ import yaml
 
 from arena_simulation_setup.tree import PathView
 
+PREVIEW_PIXEL_BUDGET = 800
+PREVIEW_MIN_RESOLUTION = 0.05
+
+
+def preview_resolution(size_m: float) -> float:
+    """Meters per pixel that fit `size_m` into PREVIEW_PIXEL_BUDGET pixels, never finer than PREVIEW_MIN_RESOLUTION."""
+    return max(PREVIEW_MIN_RESOLUTION, size_m / PREVIEW_PIXEL_BUDGET)
+
 
 class Map(PathView):
     @property

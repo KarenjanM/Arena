@@ -1,0 +1,13 @@
+format: arena-scenario/2
+robots:
+- start: [2.0, 13.75, 0.0]
+  phases:
+  - {goto: [14.0, 13.75, 0.0]}
+timeline:
+- {at: 0.0, set: [{entity: door_gate, field: locked, value: 'true'}]}
+conditions:
+- {op: eventually, p: robot in gate_b, text: Pass the gate.}
+- op: never_during
+  p: robot in gate_gap
+  q: door_gate/0.state == closing
+  text: Never stand in the threshold while the gate door is closing.

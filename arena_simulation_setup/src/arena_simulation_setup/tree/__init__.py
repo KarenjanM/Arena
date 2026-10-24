@@ -75,10 +75,31 @@ class DynamicPathList:
         self.paths: list[Path] = []
 
 
+def local_root() -> Path:
+    """The writable local asset root, ARENA_ASSETS_DIR_LOCAL as set at call time."""
+    return Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local'))
+
+
+class LocalRootPath(DynamicPath):
+    """local_root() at every read, or the path assigned to it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._assigned: Path | None = None
+
+    @property
+    def path(self) -> Path:
+        return self._assigned if self._assigned is not None else local_root()
+
+    @path.setter
+    def path(self, value: Path) -> None:
+        self._assigned = value
+
+
 class DynamicPaths:
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
-    ARENA = DynamicPath(Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local')))
+    ARENA = LocalRootPath()
 
     @classmethod
     def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
@@ -200,7 +221,9 @@ for path, _, files in os.walk(root):
 """
 
     def _identify(self, relpath: Path, files: Iterable[str]) -> tuple[IdentifierT | None, list[IdentifierT]]:
-        """The directory itself as an asset, else the assets among the files it holds."""
+        """The directory itself as an asset, else the assets among the files it holds, hidden entries never."""
+        if any(part.startswith('.') for part in relpath.parts):
+            return None, []
         try:
             return self._IdentifierT.from_relpath(relpath), []
         except Exception:
@@ -208,7 +231,7 @@ for path, _, files in os.walk(root):
 
         found: list[IdentifierT] = []
         for file in files:
-            if file.lower() == 'readme.md':
+            if file.lower() == 'readme.md' or file.startswith('.'):
                 continue
             try:
                 found.append(self._IdentifierT.from_relpath(relpath / file))
@@ -305,6 +328,29 @@ class DynamicPathResolver(PathResolverBase[IdentifierT], typing.Generic[Identifi
         return self._fn(self._dynamic_path.path)
 
 
+class LocalResolver(PathResolverBase[IdentifierT], typing.Generic[IdentifierT]):
+    """Reads and writes `subdir` of the local root, which is looked up again at every use."""
+
+    def __init__(self, _T: type[IdentifierT], /, subdir: str, **kwargs: object) -> None:
+        super().__init__(_T, **kwargs)
+        self._subdir = subdir
+
+    @property
+    def path(self) -> Path:
+        return local_root() / self._subdir
+
+    async def resolve(self, identifier: IdentifierT) -> Path | None:
+        root = self.path
+        return next((root / candidate for candidate in self._candidates(identifier.relpath()) if (root / candidate).exists()), None)
+
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
+        self._listall_cache = None
+        return await super().listall_async(**kwargs)
+
+    def destination(self, identifier: IdentifierT) -> Path | None:
+        return self.path / identifier.relpath()
+
+
 class DynamicPathListResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
     """
     Resolve asset paths from a dynamic list of disk locations, the first one holding the asset wins.
@@ -373,6 +419,20 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
 
     def is_stale(self, identifier: IdentifierT) -> bool:
         return identifier in self._stale
+
+    def expire(self, identifier: IdentifierT | None = None) -> int:
+        """Expire one complete cache entry, or every one in the bucket plus its listings."""
+        if identifier is None:
+            for listing in self.path.glob(f'{self._LISTING_FILE}*'):
+                listing.unlink()
+            entries = [marker.parent for marker in self.path.rglob(self._TTL_MARKER)]
+        else:
+            entries = [self.path / identifier.relpath()]
+        expired = [entry for entry in entries if entry.is_dir() and self._complete(entry)]
+        for entry in expired:
+            (entry / self._TTL_MARKER).write_text('1')
+        self.invalidate()
+        return len(expired)
 
     def _complete(self, candidate: Path) -> bool:
         """Fully fetched once: the marker is written only after a successful fetch."""

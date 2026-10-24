@@ -61,7 +61,7 @@ def ps_(argv: list[str]) -> None:
 
 
 def console(argv: list[str]) -> None:
-    """tail a benchmark run's console log (MCP-launched runs only)"""
+    """tail a benchmark run's console log, the runner.log every run writes"""
     common._reg_require(NAME)
     common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "console", *argv)
 
@@ -103,7 +103,7 @@ def plot(argv: list[str]) -> None:
 
 
 def kill(argv: list[str]) -> None:
-    """terminate running arena processes (ros2 run arena_evaluation evaluation_cli kill)"""
+    """stop arena processes by PID, --kind KIND or --all, SIGINT first (bare kill stops nothing and lists them)"""
     common._reg_require(NAME)
     common._exec("ros2", "run", "arena_evaluation", "evaluation_cli", "kill", *argv)
 

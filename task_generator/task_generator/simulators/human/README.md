@@ -37,6 +37,9 @@ human-sim `_*_impl` methods:
 | `tracked_robots()` | every spawned robot as a `TrackedRobot`: map-frame pose from the `map` to base-frame TF and the velocity between its last two TF stamps |
 | `notify_stimulus(agent, stimulus, intensity)` | stimulus seam, returns False by default, fed edge-triggered by the acoustics backend's `PedestrianHearing` (arena: `continuous_heard_sounds` for `agent:<id>` listeners) and by scenario timeline `stimulus` actions. `agent` is an engine id or a spawned agent's name or `sim_path` |
 | `check_stimuli(scenario, humans, timeline)` | raise `ValueError` at scenario load for any timeline stimulus on a backend whose `TAKES_STIMULI` is False (only arena sets it), and for one whose target's agent type does not act on it, judged by `stimuli_taken(obstacle)` (None by default, arena: the type's needs and autonomous step `until` events) |
+| `notify_semantic_change(entity, field, value)` | sync, called by the node for every discrete/predicate `SemanticChange` (authored entity name). Delivered in order, in the background, as the broadcast stimuli `<entity>.<field>==<old>` at 0 and `<entity>.<field>==<new>` at 1, so it is inert on backends without stimuli |
+| `set_mechanism_walls(key, segments)` | sync, no-op by default. Named wall set for pedestrian navigation (map frame), `None` removes it. Called by the mechanism runtime with `elevator:<name>` (cabin back and side walls) and `door:<name>` (doorway while the door cannot open for peds) |
+| `authored_name(realized)` | env prefix and trailing `/<level_id>` stripped |
 
 ### `HumanSimulator` Protocol surface
 
@@ -48,7 +51,7 @@ specialized teleport semantics (e.g. resetting an internal agent list).
 | --- | --- |
 | `pedestrian_discs()` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, reads `_ped_positions_xy`, radius is `PED_RADIUS`) |
 | `pedestrian_clips()` | `() -> Mapping[str, frozenset[str]]` (sync, the gesture clips each ped is playing, from the same `arena_peds` message) |
-| `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`, `ArenaHumanSimulator` teleports in the engine instead) |
+| `pedestrian_teleport(destinations)` | `(Mapping[str, tuple[float, float]]) -> bool` (async, dispatches via `relay_pedestrian_update`, `ArenaHumanSimulator` teleports in the engine instead, then sends each moved ped its next itinerary leg and the `teleported` stimulus) |
 | `elevator_doors_changed(doors)` | `(Mapping[str, bool]) -> None` (async) |
 | `configure(params)` | `(Sequence[rcl_interfaces.msg.Parameter]) -> list[Parameter]` (async). It runs at every episode reset with `QueueEpisode.human_params`. It strips the prefix from the names under `PARAM_NAMESPACE`, sorts them, and hands them to `_configure_impl`, also when there are none. It returns the accepted ones. |
 
@@ -60,7 +63,7 @@ Every subclass must implement:
 | --- | --- |
 | `_spawn_obstacles_impl(obstacles)` | human-sim side: register or prepare static obstacles |
 | `_spawn_dynamic_obstacles_impl(obstacles)` | human-sim side: register pedestrian agents |
-| `_remove_obstacles_impl()` | human-sim side: signal removal of current episode's obstacles |
+| `_remove_obstacles_impl(obstacles)` | human-sim side: remove static obstacles, keyed the way the backend spawned them (arena_humansim by `sim_path`, hunav and dummy by `name`) |
 | `_spawn_walls_impl(walls)` | human-sim side: ingest wall geometry |
 | `_spawn_doors_impl(doors)` | human-sim side: ingest door geometry |
 | `_spawn_robot_impl(robots)` | human-sim side: register robots |
@@ -265,7 +268,7 @@ keys below go in the entry's `humansim:` block (`Obstacle.humansim`):
 | Key | Meaning |
 | --- | --- |
 | `type` | Object type string, matched against a behavior-tree step/action `target:` (falls back to the model's `annotation.yaml` name/desc if omitted). |
-| `capacity` | Max simultaneous occupants. Default `1`. |
+| `capacity` | Queue length at which a needs-driven agent looking for an object of this type passes this one over. Default the count of the entry's `seats`, else the most of the annotated sit slots that can be held together, at least `1`. |
 | `satisfies` | `{need: amount}` applied to an agent that completes an interaction here, same shape as an agent-type step's `satisfies:`. |
 | `interaction_radius` | Overrides the interaction kind's default approach radius for this object. |
 | `formation: {type, params}` | Provider-side formation for agents interacting here (`type` one of `line`, `cluster`, `f_formation`, `dyad`, see [config/agent_types/README.md](../../../../humansim/arena_humansim/config/agent_types/README.md)). |
@@ -381,6 +384,26 @@ A new backend with episode-level params adds its namespace to `Constants.HUMAN_P
 `PARAM_NAMESPACE` from it, and implements `_configure_impl`. The `human.` prefix is reserved for params every
 backend honors. None are defined, so `queue_episode` rejects it.
 
+World mechanisms (doors, elevators, see `arena_simulation_setup/AUTHORING.md`, Pedestrians and world
+mechanisms):
+
+- `pedestrian_teleport` moves the engine agents through `teleport_agents` (see the elevator cabins below),
+  then hands an itinerary ped its next leg and sends every moved ped the stimulus `teleported`.
+- `set_mechanism_walls` keeps one named engine wall set per key (`__mech/<key>/<i>`), applied in the
+  background in call order, the latest state per key wins. An `elevator:<name>` set also registers two
+  world objects: `<name>` (type `elevator`, cabin centre, facing out of the door) and `<name>/queue`
+  (type `elevator_queue`, in the doorway, line formation growing into the lobby). Every world door is a
+  world object `<name>` of type `door` at the doorway centre. Names are authored (env and level stripped).
+- `notify_semantic_change` also feeds per-ped aliases: a `dynamic:` entry with
+  `semantic_alias: {elevator: elev_a}` receives `elevator.<field>==<value>` for `elev_a`, replayed from
+  the current values when the ped spawns.
+- `spawn_delay` holds a scenario ped out of the engine (and so out of the roster and the physics sim)
+  until that many sim seconds after the spawn call. Its engine id is taken from a range above `1 << 24`.
+- A ped whose waypoints carry `dwell` or `{elevator: <name>}` rides (`extra["itinerary"]`, written by the
+  scenario task) gets its waypoints one leg at a time (`itinerary.py`): up to the next dwell stop, where it
+  stands for `dwell` seconds, or up to the named cabin, where it selects its destination and waits until the
+  elevator teleports it. Other cross-level legs are left to the engine's own cabin routing.
+
 The engine runs in the world frame (authored coordinates, levels laid out, no env offset). The adapter owns
 the env offset on both sides: spawn poses, waypoints, walls, world objects, regions, robot and possessed poses
 are un-shifted going in, agent poses, gesture targets, flow agents and the engine's marker layers are shifted
@@ -390,11 +413,13 @@ World objects go to the engine with what the model annotation and the scenario e
 `hoi`, `capacity`, `satisfies`, `interaction_radius`, `formation`, and seats. The annotation's seats are its
 placed `affordances.sit` slots, each at its bbox center facing one of its yaws, drawn per object from the
 episode RNG. A scenario entry's `seats` (object-local poses in the `pose` grammar without zone names) override
-them, and an empty list clears them. Without a `capacity`, an object takes as many agents as the scenario's
+them, and an empty list clears them. Without a `capacity`, it is the count of the scenario's
 `seats`, else the most of its sit slots that can be occupied at once with no two overlapping, and at least one. Seats become the cluster slots a sitter is placed on, so a `SIT_ON` parks the
 ped on the seat, not on a ring around the object. An object without seats keeps the ring. A ped approaches
 the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its
-whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius.
+whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius. Annotated
+seats also go out with their conflicts, the pairs of sit slots that overlap, so the engine never lets two agents
+hold overlapping seats and seats as many sitters as fit together.
 
 Each seat also has the height of the surface a body rests on, sent as `WorldObjectInfo.seat_heights`: a sit slot's
 is the top of its z range, which the asset build measures; a scenario seat's is its `z`, else that of the sit slot it
@@ -404,18 +429,22 @@ reports that seat's height in `AgentFrame.support_height`; the adapter passes it
 the renderer to set the body on the surface. An agent on its feet, on a generated ring slot, beside a full object or on
 a seat of unknown height gets `Pedestrian.NO_SUPPORT`, and the renderer leaves the body where the clip puts it.
 
-The adapter follows the engine's latched `interactions` frame and reports the participants of every held `SIT_ON`
-by object through `seated()`, map-frame positions from the latest agent states, notifying `on_seated_change`
-listeners when the set changes. The base class reports nobody seated.
+The adapter follows the engine's latched `interactions` frame and reports the seat indices the participants of
+every `SIT_ON` and `LIE_ON` hold on an object with annotated seats through `held_seats()`, by object sim path,
+notifying `on_held_seats_change` listeners when they change. Two held seats that overlap compromise the episode
+once through the incident callback the node sets with `set_incident_callback`. The base class reports no held
+seats.
 
-Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
-realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the
-cabin center facing the door, `doorway` outside the door side at the cabin half-size along the door normal plus
-the 0.3 m doorway depth plus half of `PED_RADIUS`, facing the cabin, `queue` on the same normal a further
-`CABIN_DOOR_THRESHOLD` (0.6 m) plus `PED_RADIUS` out, clear of the reach in which a body reopens a loaded cabin,
-`footprint` the cabin corners, `door_open`
-false, the state the shim spawns its cabin doors in), an empty list when the world goes. Door changes go out as
-one `set_elevator_doors` batch per mechanism tick. A ride ends in `pedestrian_teleport`, which maps the published
+Elevator cabins reach the engine with the world as teleport zones: `spawn_elevators` sends one
+`set_teleport_zones` call with every realized cabin as a `TeleportZone` (`name` and `destinations` as the
+mechanism shim knows them, `hold` at the cabin center facing the door, `entry` outside the door side at the
+cabin half-size along the door normal plus the 0.3 m doorway depth plus half of `PED_RADIUS`, facing the cabin,
+`wait` on the same normal a further `CABIN_DOOR_THRESHOLD` (0.6 m) plus `PED_RADIUS` out, clear of the reach in
+which a body reopens a loaded cabin, `footprint` the cabin corners with the door side pulled in by the door
+inset plus half the door width plus `PED_RADIUS`, the band in which a body blocks the closing door, `open`
+false, the state the shim spawns its cabin doors in, and `delay` -1, so the engine never teleports a rider
+itself), an empty list when the world goes. Door changes go out as one `set_zone_access` batch per mechanism
+tick. A ride ends in `pedestrian_teleport`, which maps the published
 pedestrian names to engine agent ids (the scenario or flow name, else the id itself) and calls `teleport_agents`
 with engine-frame poses and the pedestrian's facing. The engine then moves the agent, the physics sim follows
 from the next engine frame, and the interpolation snaps a teleported agent instead of sliding it from the

@@ -49,7 +49,7 @@ from viewport_control_msgs.srv import (
 
 from . import curves, faces, surfaces
 from .curves import Quat, Vec3
-from .record import Recorder, claim, tagged
+from .record import Recorder, claim, take_paths
 from .surfaces import TargetSelection
 
 if typing.TYPE_CHECKING:
@@ -180,9 +180,10 @@ class CamNode(ArenaMixinNode):
         self._run_paused = False
         self._follower = False
         self._beat_pub = None
+        self.ran = False
 
     async def setup(self) -> None:
-        await self.take()
+        self.ran = await self.take()
         rclpy.try_shutdown()
 
     async def take(self) -> bool:
@@ -229,7 +230,7 @@ class CamNode(ArenaMixinNode):
     async def _open_recorders(self) -> bool:
         """One ffmpeg per camera. A lone camera keeps the file name, several get `-sim` / `-viz<env>` tags."""
         assert self._record is not None
-        paths = [self._record] if len(self._endpoints) == 1 else [tagged(self._record, surfaces.tag(endpoint.ns)) for endpoint in self._endpoints]
+        paths = take_paths(self._record, [surfaces.tag(endpoint.ns) for endpoint in self._endpoints])
         try:
             claim(paths, self._force)
         except FileExistsError as e:

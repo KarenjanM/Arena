@@ -15,6 +15,8 @@ import math
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
+from arena_rclpy_mixins.spin import run_main
+
 from . import curves
 from .client import FOV_DEFAULT, CamNode, FaceWatch, Steered, TargetSelection
 from .curves import Quat, Vec3
@@ -543,11 +545,21 @@ class Camera:
         self._actions.append(_Steer(next_frame))
         return self
 
-    def play(self) -> None:
-        """Connect to the live sim, run the shot, disconnect. Blocks until done."""
-        CamNode.run_main(timeline=self, targets=self._targets)
+    def _run(self, record: tuple[str, float] | None = None, *, force: bool = False, lockstep: bool = False) -> bool:
+        nodes: list[CamNode] = []
 
-    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> None:
+        def make() -> CamNode:
+            nodes.append(CamNode(timeline=self, targets=self._targets, record=record, force=force, lockstep=lockstep))
+            return nodes[-1]
+
+        run_main(make)
+        return bool(nodes) and nodes[0].ran
+
+    def play(self) -> bool:
+        """Connect to the live sim, run the shot, disconnect. Blocks until done, False when no viewport ran it."""
+        return self._run()
+
+    def record(self, out: str | None = None, fps: float = 30.0, force: bool = False, lockstep: bool = False) -> bool:
         """Render the shot to a video, one capture per frame, encoded by ffmpeg.
 
         A bare `out` name lands under `$ARENA_DATA_DIR/recordings/`, an absolute
@@ -559,10 +571,10 @@ class Camera:
 
         `lockstep` makes the recording frame-exact: with a run active
         the cam rides it as a hard channel gated at 1/fps, with no run it takes its
-        own hold and steps the sim by 1/fps between frames.
+        own hold and steps the sim by 1/fps between frames. False when no viewport ran the shot.
         """
         path = record_path(out or default_name("take"))
-        CamNode.run_main(timeline=self, targets=self._targets, record=(str(path), float(fps)), force=bool(force), lockstep=bool(lockstep))
+        return self._run((str(path), float(fps)), force=bool(force), lockstep=bool(lockstep))
 
     async def prepare(self, node: CamNode) -> None:
         """Let each queued action set up against a connected node before the timeline runs."""

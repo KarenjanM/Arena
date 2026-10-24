@@ -768,16 +768,17 @@ def test_elevator_cabin_door_reset_restores():
     assert cabin.last_applied_progress == -1.0
 
 
-def test_elevator_members_populated():
+def test_elevator_members_are_live_occupants():
+    """Members are the agents inside the cabin now."""
     mech = _Mech()
     rt = _elevator_runtime("e")
     rt.dispatched = {"r1"}
-    rt.pending_occupants = (("r2", (0.0, 0.0)),)
     rt.just_arrived = {"r3": True}
+    rt.live_occupants = ("r1", "p1")
     mech._elevator_runtime["e"] = rt
     inst = ElevatorSemantics.attach(mech, "e", _elevator_full_cfgs())
     inst.step(0.0)
-    assert set(inst.snapshot().members) == {"r1", "r2", "r3"}
+    assert set(inst.snapshot().members) == {"r1", "p1"}
 
 
 def test_door_members_empty():
@@ -875,12 +876,13 @@ def test_manager_set_value_door_is_read_only():
 
 
 def test_manager_set_value_elevator_is_read_only():
+    """Every elevator field except `target` stays read-only."""
     mech = _Mech()
     mech._elevator_runtime["e"] = _elevator_runtime("e")
     mech._door_runtime["e/door"] = _door_runtime("e/door")
     mgr = _manager(mech)
     mgr.attach("elevator", "e", [_MCfg("state", "occupants")])
-    with pytest.raises(ValueError, match="read-only"):
+    with pytest.raises(ValueError, match="not writable"):
         mgr.set_value("e", "occupants", "3")
 
 
@@ -1053,7 +1055,7 @@ def test_writable_sets_per_kind():
     assert OccupancyCapSemantics.WRITABLE == frozenset({"cap"})
     assert SoundSemantics.WRITABLE == frozenset({"sounding", "volume_db"})
     assert DoorSemantics.WRITABLE == frozenset()
-    assert ElevatorSemantics.WRITABLE == frozenset()
+    assert ElevatorSemantics.WRITABLE == frozenset({"target"})
 
 
 def _light_cfgs(light_on=None, lit=None, dim=None, dead_fraction=None):

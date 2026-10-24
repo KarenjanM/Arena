@@ -1,0 +1,50 @@
+format: arena-scenario/2
+objects:
+- {name: far_curb_w, model: Common/Object/painting_1, pose: [0.3, 6.0, 0.0], humansim: {type: far_curb_w}}
+humans:
+- name: xwaiter_1
+  model: casual_female_caucasian_young
+  pose: [12.8, 5.2, 3.1416]
+  agent: {agent_type: ./signal_waiter.yaml}
+- {name: xwaiter_2, model: worker_male_caucasian_young, pose: [12.8, 6.0, 3.1416], agent: {agent_type: ./signal_waiter.yaml}}
+- name: xwaiter_3
+  model: Office/office_female_caucasian_young
+  pose: [12.8, 6.8, 3.1416]
+  agent: {agent_type: ./signal_waiter.yaml}
+- {name: xwaiter_4, model: male_adult_medical_01, pose: [13.6, 5.2, 3.1416], agent: {agent_type: ./signal_waiter.yaml}}
+- {name: xwaiter_5, model: female_adult_medical_01, pose: [13.6, 6.0, 3.1416], agent: {agent_type: ./signal_waiter.yaml}}
+- {name: xwaiter_6, model: worker_male_asian_middleage, pose: [13.6, 6.8, 3.1416], agent: {agent_type: ./signal_waiter.yaml}}
+- name: cart_1
+  model: male_adult_medical_01
+  pose: [11.0, 1.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.3}
+  waypoints: [[11.0, 1.0], [11.0, 11.0]]
+  waypoint_mode: reverse
+- name: cart_2
+  model: female_adult_medical_01
+  pose: [11.0, 11.0, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.3}
+  waypoints: [[11.0, 11.0], [11.0, 1.0]]
+  waypoint_mode: reverse
+- name: cart_3
+  model: worker_male_asian_middleage
+  pose: [11.0, 1.0, 1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.3}
+  waypoints: [[11.0, 1.0], [11.0, 11.0]]
+  waypoint_mode: reverse
+- name: cart_4
+  model: casual_female_caucasian_young
+  pose: [11.0, 11.0, -1.5708]
+  agent: {agent_type: adult, desired_velocity: 1.3}
+  waypoints: [[11.0, 11.0], [11.0, 1.0]]
+  waypoint_mode: reverse
+robots:
+- start: [19.0, 6.0, 3.1416]
+  phases:
+  - {goto: [3.0, 6.0, 3.1416]}
+conditions:
+- {op: eventually, p: robot in x_west, text: Cross the lane.}
+- op: never_during
+  p: robot in xwalk
+  q: xwalk_signal.stop == true
+  text: Never be on the crosswalk while the signal says stop.

@@ -5,7 +5,6 @@ import enum
 import hashlib
 import json
 import random
-import re
 import threading
 import traceback
 import typing
@@ -29,6 +28,7 @@ import task_generator_msgs.action
 import task_generator_msgs.msg
 import task_generator_msgs.srv
 import tf2_ros
+import yaml
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
@@ -37,6 +37,7 @@ from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.shared.judge import Sample, WallGrid, atom_holds, zone_polygons
+from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
@@ -54,7 +55,7 @@ from std_msgs.msg import Bool, Int16, String
 from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest, RecordedTopics
 
 from task_generator.constants import Constants
-from task_generator.constants.runtime import Configuration, migrate_deprecated_params
+from task_generator.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN, Configuration, migrate_deprecated_params
 from task_generator.interactive import MarkerHub
 from task_generator.interactive.colors import RobotColors
 from task_generator.interactive.entities import EntityHandles
@@ -102,11 +103,6 @@ _EPISODE_QOS = rclpy.qos.QoSProfile(
 _SIM_TICK_RATE = 30.0
 _ONE_TICK = 1e-6
 _STEP_TIMEOUT = 10.0
-_ENV_PREFIX = re.compile(r"^env_\d+/")
-
-
-def _strip_env(name: str) -> str:
-    return _ENV_PREFIX.sub("", name, count=1)
 
 
 class _TimelineState(typing.TypedDict):
@@ -153,6 +149,11 @@ class EpisodeRuntime:
     pending_world: str = ""
     pending_seed: int = -1
     action_in_flight: bool = False
+
+
+def _is_map_frame(frame_id: str) -> bool:
+    """Empty, map, or an env's namespaced map frame (env_0/map), all carrying realized map coordinates."""
+    return frame_id in ("", "map") or frame_id.endswith("/map")
 
 
 def _derive_seed(run_seed: str, world: str, episode_id: int) -> int:
@@ -594,7 +595,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             realizer=realizer,
             env_id=self._env_id,
         )
-        self._simulator.set_semantics_callback(self._on_semantics_changed)
         self._simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up human simulator")
@@ -607,6 +607,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             acoustics=self._acoustics_simulator,
             robots_visible=self.conf.Human.ROBOTS_VISIBLE.value,
         )
+        self._simulator.set_semantics_callback(self._on_semantics_changed)
+        self._human_simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up environment manager")
         self._environment_manager = EnvironmentManager(
@@ -788,6 +790,35 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _on_semantics_changed(self, changes: "Sequence[SemanticChange]") -> None:
         self._semantics_dirty = True
+        self._forward_semantic_changes(changes)
+
+    def _forward_semantic_changes(self, changes: "Sequence[SemanticChange]") -> None:
+        """Hand discrete and predicate semantic changes to the human simulator under authored and env-stripped names."""
+        human = self._human_simulator
+        if not changes:
+            return
+        from arena_runtime.sim._semantics import _SEMANTIC_KINDS
+
+        authored = {realized: bare for bare, realized in self._semantic_names.items()}
+        prefix = f"{self._realizer.prefix()}/"
+        for change in changes:
+            kind = _SEMANTIC_KINDS.get(change.kind)
+            if change.field_kind == "state" and (change.field in kind.CONTINUOUS if kind is not None else self._is_number(change.current)):
+                continue
+            entity = authored.get(change.entity) or human.authored_name(change.entity)
+            value = change.current.removeprefix(prefix)
+            human.notify_semantic_change(entity, change.field, value)
+            stripped = change.entity.removeprefix(prefix)
+            if stripped != entity:
+                human.notify_semantic_change(stripped, change.field, value)
+
+    @staticmethod
+    def _is_number(value: str) -> bool:
+        try:
+            float(value)
+        except ValueError:
+            return False
+        return True
 
     # SEMANTICS WRITE PATH
 
@@ -1069,8 +1100,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         peds: dict[str, tuple[float, float]] = {}
         for name, (x, y), _radius in self._human_simulator.pedestrian_discs():
             local = self._environment_manager.ezilear(Pose(Position(x, y), Orientation.identity()))
-            peds[_strip_env(name)] = (local.position.x, local.position.y)
-        clips = {_strip_env(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
+            peds[self._human_simulator.authored_name(name)] = (local.position.x, local.position.y)
+        clips = {self._human_simulator.authored_name(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
         self._known_subjects.update(peds)
         self._known_subjects.update(robots)
         return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls)
@@ -1095,7 +1126,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def ped_names(self) -> list[str]:
         """Bare names of the pedestrians the human simulator currently tracks."""
-        return [_strip_env(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
+        return [self._human_simulator.authored_name(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
 
     def on_task_submitted(self, manager: "RobotManager") -> None:
         """Republish the episode record with the robot's phases and flush its semantic state."""
@@ -1110,8 +1141,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _robot_phases(self, manager: "RobotManager") -> dict:
         """The runner's phases and condition spans plus `map_poses`, the realized goto pose per phase (null without one)."""
-        from task_generator.tasks.robots.request import GoToPhase
-
         data = manager.runner.serialize()
         data["map_poses"] = [list(self._realizer.realize(s.phase.pose).to_2d()) if isinstance(s.phase, GoToPhase) and s.phase.pose is not None else None for s in manager.runner.phases]
         return data
@@ -1840,8 +1869,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return response
 
     def _pose_from_request(self, stamped: geometry_msgs.msg.PoseStamped) -> Pose:
+        """A map-frame request pose, shifted back into the world frame the task modes place entities in."""
+        if not _is_map_frame(stamped.header.frame_id):
+            raise ValueError(f"pose must be in the map frame, got {stamped.header.frame_id!r}")
         p = stamped.pose.position
-        return Pose(Position(p.x, p.y), orientation=Orientation.from_msg(stamped.pose.orientation))
+        return self._realizer.ezilear(Pose(Position(p.x, p.y), orientation=Orientation.from_msg(stamped.pose.orientation)))
 
     async def _cb_spawn_static(
         self,
@@ -1853,6 +1885,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = "task generator not initialized"
             return response
         try:
+            await arena_simulation_setup.tree.assets.Object.ObjectIdentifier.parse(request.model).resolve_path()
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.STATIC, request.model, pose)
             assert isinstance(obstacle, Obstacle)
@@ -1875,6 +1908,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = "task generator not initialized"
             return response
         try:
+            await arena_simulation_setup.tree.assets.Human.HumanIdentifier.parse(request.model).resolve_path()
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.DYNAMIC, request.model, pose)
             self._compromise(f"dynamic {request.model} spawned by hand")
@@ -1919,7 +1953,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
-        if request.pose.header.frame_id not in ("map", ""):
+        if not _is_map_frame(request.pose.header.frame_id):
             response.success = False
             response.error_msg = f"pose must be in the map frame, got {request.pose.header.frame_id!r}"
             return response
@@ -1961,6 +1995,44 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.success = False
             response.error_msg = str(e)
         return response
+
+    async def _cb_submit_task(
+        self,
+        request: task_generator_msgs.srv.SubmitTask.Request,
+        response: task_generator_msgs.srv.SubmitTask.Response,
+    ) -> task_generator_msgs.srv.SubmitTask.Response:
+        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
+            response.success = False
+            response.error_msg = "task generator not initialized"
+            return response
+        manager = self._robots_manager.managers.get(request.robot)
+        if manager is None:
+            response.success = False
+            response.error_msg = f"unknown robot {request.robot!r}, robots: {sorted(self._robots_manager.managers)}"
+            return response
+        try:
+            task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
+            self._ezilear_phases(task.phases)
+            async with self._reset_lock:
+                first = len(manager.runner.phases)
+                if task.phases:
+                    await manager.submit_task(task)
+                else:
+                    manager.stop_task()
+                response.phase_indices = list(range(first, len(manager.runner.phases)))
+            response.success = True
+        except Exception as e:
+            response.success = False
+            response.error_msg = str(e)
+        return response
+
+    def _ezilear_phases(self, phases: Sequence[TaskPhase]) -> None:
+        """Shift map-frame goto poses into scenario coordinates in place."""
+        for phase in phases:
+            if isinstance(phase, GoToPhase) and phase.pose is not None:
+                phase.pose = self._realizer.ezilear(phase.pose)
+            elif isinstance(phase, LoopPhase):
+                self._ezilear_phases(phase.phases)
 
     async def _cb_require_map(
         self,
@@ -2015,7 +2087,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 goal_handle.abort()
             return task_generator_msgs.action.RunEpisode.Result(
                 state=task_generator_msgs.action.RunEpisode.Result.SKIPPED,
-                info="shutting down" if self._shutting_down else "busy",
+                info=RUN_EPISODE_SHUTTING_DOWN if self._shutting_down else RUN_EPISODE_BUSY,
             )
 
         if not world:
@@ -2262,6 +2334,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             task_generator_msgs.srv.DespawnRobot,
             self.service_namespace("runtime", "despawn_robot"),
             self._cb_despawn_robot,
+        )
+
+        self.create_service(
+            task_generator_msgs.srv.SubmitTask,
+            self.service_namespace("runtime", "submit_task"),
+            self._cb_submit_task,
         )
 
         self.create_service(

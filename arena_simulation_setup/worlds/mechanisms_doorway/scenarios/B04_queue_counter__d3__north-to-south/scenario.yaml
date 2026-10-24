@@ -1,0 +1,34 @@
+format: arena-scenario/2
+objects:
+- name: counter
+  model: Hospital/Reception_Counter
+  pose: [25.4, 6.0, 3.1416]
+  humansim:
+    type: counter
+    capacity: 1
+    interaction_radius: 1.0
+    formation: {type: line, params: {base_step: 0.8, front_offset: 0.8}}
+humans:
+- {name: customer_1, model: casual_female_caucasian_young, pose: [24.4, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_2, model: worker_male_caucasian_young, pose: [23.6, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- name: customer_3
+  model: Office/office_female_caucasian_young
+  pose: [22.8, 6.0, 0.0]
+  agent: {agent_type: ./customer.yaml}
+- {name: customer_4, model: male_adult_medical_01, pose: [22.0, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_5, model: female_adult_medical_01, pose: [21.2, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_6, model: worker_male_asian_middleage, pose: [20.4, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_7, model: casual_female_caucasian_young, pose: [19.6, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- {name: customer_8, model: worker_male_caucasian_young, pose: [18.8, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+- name: customer_9
+  model: Office/office_female_caucasian_young
+  pose: [18.0, 6.0, 0.0]
+  agent: {agent_type: ./customer.yaml}
+- {name: customer_10, model: male_adult_medical_01, pose: [17.2, 6.0, 0.0], agent: {agent_type: ./customer.yaml}}
+robots:
+- start: [22.0, 10.0, -1.5708]
+  phases:
+  - {goto: [22.0, 2.0, -1.5708]}
+conditions:
+- {op: eventually, p: robot in east_south, text: Cross the hall.}
+- {op: never, p: robot in east_queue, text: Never cut through the queue.}
