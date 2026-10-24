@@ -12,13 +12,12 @@ from arena_rclpy_mixins.ROSParamServer import ROSParamServer
 from arena_rclpy_mixins.ServiceNamespace import ServiceNamespace
 
 from arena_simulation_setup.tree.World import WorldIdentifier
+from arena_simulation_setup.tree.World.Map import preview_resolution
 
 from . import alphabet
 from .layout import diagnostics_of
 from .schema import declare_config_params
 from .world_generator import WorldGenerator, WorldGeneratorType, save_generated
-
-PREVIEW_PIXEL_BUDGET = 800
 
 
 class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
@@ -71,9 +70,9 @@ class WorldGeneratorROS(WorldGenerator, ROSParamServer, ServiceNamespace):
             diagnostics = diagnostics_of(level)
 
             if not request.preview_only:
-                save_generated(WorldIdentifier(request.world or self.get_parameter('world').get_parameter_value().string_value).resolve_sync(), world, self.files())
+                save_generated(WorldIdentifier(request.world or self.get_parameter('world').get_parameter_value().string_value).resolve_write_sync(), world, self.files())
 
-            resolution = request.resolution or max(0.05, max(diagnostics.extent) / PREVIEW_PIXEL_BUDGET)
+            resolution = request.resolution or preview_resolution(max(diagnostics.extent))
             response.png, map_origin = level.render(resolution=resolution)
             response.map_origin = [float(map_origin[0]), float(map_origin[1])]
             response.map_resolution = float(resolution)

@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>arena_mcp</name>
+  <version>0.0.1</version>
+  <description>One MCP server for Arena: the shared core every package imports to publish its domain, the server and the arena mcp entry point</description>
+
+  <maintainer email="voshch@arena-rosnav.org">voshch</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rosidl_runtime_py</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>arena_rclpy_mixins</exec_depend>
+  <exec_depend>arena_bringup</exec_depend>
+  <exec_depend>arena_runtime_msgs</exec_depend>
+  <exec_depend>task_generator_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -104,5 +104,11 @@ setup(
             f'nav_at_r = {package_name}.metrics.nav_at_r:main',
             f'world_generator = {package_name}.generative.world.world_generator_ros:main',
         ],
+        'arena_mcp.domains': [
+            f'airchitect = {package_name}.mcp.airchitect:domain',
+            f'assets = {package_name}.mcp.assets:domain',
+            f'worldgen = {package_name}.mcp.worldgen:domain',
+            f'worlds = {package_name}.mcp.worlds:domain',
+        ],
     },
 )

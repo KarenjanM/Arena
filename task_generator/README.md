@@ -74,3 +74,43 @@ the active mode if it changed.
 
 See [task_generator/tasks/README.md](task_generator/tasks/README.md#reset-semantics)
 for the full `Task._reset_episode` ordering and the WORLD-layer invariant.
+
+## MCP domains
+
+The package contributes two domains to the [arena_mcp](../arena_mcp/README.md)
+server, both clients of the task generator node of one env. List their tools
+with `python3 -m arena_mcp ls episode` and `python3 -m arena_mcp ls entities`.
+
+- `episode` ([mcp/episode.py](task_generator/mcp/episode.py)): reset
+  (blocking until the new episode runs), run through the `RunEpisode` action as
+  a job on a managed env (`task.episode.auto_reset` false, an auto-advancing
+  env answers busy; `jobs_wait` for the outcome, `jobs_cancel` cancels the
+  goal), wait for
+  an episode state, current and queued records, the history of records with
+  their final outcomes, queueing the next episode, task modes with their
+  parameter schemas, the `task.episode.*` parameters, the startup
+  configuration, the asset catalogs and task submission to a robot. Resources
+  `arena://episode/{env_id}/current` and `arena://episode/{env_id}/history`.
+- `entities` ([mcp/entities.py](task_generator/mcp/entities.py)): spawn
+  static and dynamic obstacles and robots, despawn robots, move entities,
+  semantics, runtime sounds (the `sounds` module serves them), the map server,
+  pedestrians (`arena_peds`, `human/move`, `human/stream`) and, when the env
+  runs `human:=arena`, the humansim behavior services (waypoints, flow,
+  sources and sinks, stimuli, agents, profile).
+
+Every tool takes `env_id`, optional when exactly one env runs. `episode_queue`
+keeps every field it is not given, `tm_modules` included, and types per-mode
+params by the node's declaration of `task.<mode>.<leaf>`. Task modes and
+parameter names come from the mode registry and `constants/runtime.py`:
+`episode_task_modes` reads the live env, or the registry with defaults when
+no env runs. Spawn, move and pedestrian poses are map-frame. Pausing the sim
+is a runtime hold, not an episode tool.
+
+`runtime/submit_task` (`task_generator_msgs/SubmitTask`) is the node service
+behind `episode_submit_task` and the goals of the `robots` domain: a `phases:`
+list or `{phases, conditions}` mapping in the scenario format, parsed by
+`TaskRequest.parse` and handed to `RobotManager.submit_task`, answering with the
+episode-wide phase indices. Goto poses are map-frame and shifted into scenario
+coordinates the way an rviz goal handle's are. An empty phase list stops the
+robot: `RobotManager.stop_task` drops its unfinished phases and cancels the
+in-flight adapter goals.

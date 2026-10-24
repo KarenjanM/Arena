@@ -77,6 +77,14 @@ def test_parse_reach_forms():
     assert posed.target is not None and posed.frame == "base_link"
 
 
+def test_reach_pose_survives_serialization_in_full():
+    phase = ReachPhase(target=Pose(Position(0.4, 0.1, 0.9), Orientation.from_euler((0.1, 0.5, -0.3))), frame="base_link")
+    again = TaskPhase.parse(phase.serialize())
+    assert isinstance(again, ReachPhase) and again.target is not None and again.frame == "base_link"
+    assert list(again.target.position) == pytest.approx([0.4, 0.1, 0.9])
+    assert again.target.orientation.to_euler() == pytest.approx((0.1, 0.5, -0.3))
+
+
 def test_reach_requires_exactly_one_target():
     with pytest.raises(ValueError):
         ReachPhase()

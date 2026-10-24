@@ -28,6 +28,7 @@
   <exec_depend>task_generator_msgs</exec_depend>
   <exec_depend>arena_viz</exec_depend>
   <exec_depend>interactive_markers</exec_depend>
+  <exec_depend>arena_mcp</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
   <test_depend>python3-hypothesis</test_depend>

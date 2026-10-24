@@ -18,8 +18,6 @@ All service paths are relative to the task_generator node namespace (default `/t
 | Path | Type | Usage |
 |---|---|---|
 | `lifecycle/reset_episode` | `task_generator_msgs::srv::ResetEpisode` | Next button (after queue flush) |
-| `lifecycle/pause` | `std_srvs::srv::Empty` | Pause button |
-| `lifecycle/unpause` | `std_srvs::srv::Empty` | Unpause button |
 | `lifecycle/wait_for_world` | `std_srvs::srv::Empty` | Called after world param change |
 | `query/worlds` | `task_generator_msgs::srv::QueryWorlds` | Populate world combobox |
 | `query/robots` | `task_generator_msgs::srv::QueryRobots` | Populate robot combobox |
@@ -32,6 +30,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 | `config/queue_episode` | `task_generator_msgs::srv::QueueEpisode` | Queue / Next buttons (modes, world, robots, per-mode params staged for next reset) |
 | `runtime/spawn_dynamic` | `task_generator_msgs::srv::SpawnDynamic` | Spawn pedestrian tool (click+drag pose) |
 | `runtime/spawn_robot` | `task_generator_msgs::srv::SpawnRobot` | Spawn Robot button (mid-episode spawn) |
+| `/arena/sim_lifecycle/hold` (absolute) | `arena_runtime_msgs::srv::LifecycleHold` | Pause button: acquires and releases the panel's own hold |
 
 ### Latched topics consumed
 
@@ -39,7 +38,7 @@ All service paths are relative to the task_generator node namespace (default `/t
 |---|---|---|
 | `state/episode` | `task_generator_msgs::msg::EpisodeRecord` | Current episode. Subscribers dedup by `episode_id` (same id may be republished as outcome resolves) and feed the panel's local `history_buffer_` (ring of 50, oldest-first) plus the current/bold row. |
 | `state/queue` | `task_generator_msgs::msg::EpisodeRecord` | Queued (next) episode. On arrival the panel populates widgets via `populateFromQueue` (signal-blocked) and clears dirty flags. Drives the "Next:" preview row when it differs from current. |
-| `state/paused` | `std_msgs::msg::Bool` | Drives the pause button label authoritatively. The pause button is fire-and-forget; UI reflects the published state, not the service-call return. |
+| `/arena/state/holders` (absolute) | `arena_runtime_msgs::msg::HoldRegistry` | Drives the pause button label: paused while the panel's own hold is listed. |
 | `state/resetting` | `std_msgs::msg::Bool` | True while `_run_reset_cycle` holds the reset lock. The world generator panel disables "+Deploy" while it is set. |
 | `/parameter_events` | `rcl_interfaces::msg::ParameterEvent` | Filters on `node == task_generator_node`; if any changed/new/deleted parameter starts with `task.<active_mode>.`, rebuilds the matching family's param tree on the Qt thread. |
 
@@ -57,7 +56,7 @@ The button row is `Pause | Discard | Queue | Next`. Discard and Queue are enable
 
 ## Pause / Unpause button
 
-A single Pause/Unpause button. The label is driven by the latched `state/paused` topic, not by the service-call return. Clicking is fire-and-forget: calls `lifecycle/pause` or `lifecycle/unpause` based on the current state, and the label flips when the server publishes the new value. This keeps the UI in sync even if pause/unpause is triggered externally.
+A single Pause/Unpause button backed by the runtime's ref-counted holds. Pause acquires a hold on `/arena/sim_lifecycle/hold` under the panel's own caller id (reason `panel_pause`), Unpause releases it, and the panel releases a hold it still owns when it closes. The label follows the latched `/arena/state/holders`, so it shows whether the panel's hold is in effect. The sim stays paused while other callers hold it, since a hold is shared by every env of one sim.
 
 ## Playlist (episode history)
 

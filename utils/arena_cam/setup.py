@@ -28,6 +28,9 @@ setup(
     entry_points={
         'console_scripts': [
             'cam = arena_cam.cli:main',
-        ]
+        ],
+        'arena_mcp.domains': [
+            'view = arena_cam.mcp:domain',
+        ],
     }
 )

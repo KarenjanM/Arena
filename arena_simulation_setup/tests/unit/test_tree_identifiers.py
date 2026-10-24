@@ -307,6 +307,18 @@ def test_simple_path_resolver_listall_skips_invalid_paths(tmp_path):
     assert all(isinstance(r, _DomainFoo) for r in results)
 
 
+def test_simple_path_resolver_listall_skips_hidden_entries(tmp_path):
+    import asyncio
+
+    (tmp_path / 'D' / 'foo' / 'chair').mkdir(parents=True)
+    (tmp_path / 'D' / 'foo' / '.cache').mkdir()
+    (tmp_path / 'D' / 'foo' / '.gitkeep').write_text('')
+    (tmp_path / '.generated' / 'foo' / 'table').mkdir(parents=True)
+    resolver = SimplePathResolver(_DomainFoo, path=tmp_path)
+    for results in (list(resolver.listall()), asyncio.run(resolver.listall_async())):
+        assert {(r.domain, r.name) for r in results} == {('D', 'chair')}
+
+
 def test_fallback_resolver_is_write_only():
     import asyncio
 

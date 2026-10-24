@@ -126,6 +126,22 @@ def test_watchdog_deadline_exits_process():
     assert proc.returncode == 7, proc.stderr
 
 
+def test_async_main_exits_when_teardown_overruns_its_deadline():
+    proc = subprocess.Popen([sys.executable, str(_CHILD), "async_swallowed_cancel"], env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    assert proc.stdout is not None
+    try:
+        deadline = time.monotonic() + 20.0
+        while proc.stdout.readline().strip() != "READY":
+            assert time.monotonic() < deadline, "child never became ready"
+        proc.send_signal(signal.SIGINT)
+        _, stderr = proc.communicate(timeout=20)
+    finally:
+        proc.kill()
+    assert proc.returncode == 1, stderr
+    assert "teardown did not finish within 2s" in stderr, stderr
+    assert "Thread 0x" in stderr, stderr
+
+
 def test_async_main_exits_on_failing_async_callback():
     proc = _run("callback_failure")
     assert proc.returncode == 1, proc.stderr

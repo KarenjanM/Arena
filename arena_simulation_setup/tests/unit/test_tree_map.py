@@ -5,7 +5,7 @@ import logging
 import pytest
 import shapely
 
-from arena_simulation_setup.tree.World.Map import Map
+from arena_simulation_setup.tree.World.Map import PREVIEW_MIN_RESOLUTION, PREVIEW_PIXEL_BUDGET, Map, preview_resolution
 
 
 def _simple_rooms():
@@ -88,3 +88,9 @@ def test_generate_map_yaml_contains_resolution():
     yaml_str = Map.generate_map_yaml(resolution=0.05, filename="map.png", origin=(0.0, 0.0))
     assert "0.05" in yaml_str
     assert "map.png" in yaml_str
+
+
+def test_preview_resolution_fits_the_pixel_budget_and_never_goes_finer_than_the_minimum():
+    assert preview_resolution(PREVIEW_PIXEL_BUDGET * 0.5) == pytest.approx(0.5)
+    assert preview_resolution(1.0) == PREVIEW_MIN_RESOLUTION
+    assert preview_resolution(0.0) == PREVIEW_MIN_RESOLUTION

@@ -24,6 +24,9 @@ EPISODE_PARAMS: dict[str, str] = {
     'task.episode.goto_pose.signal': 'Signal the robot must send to end a goto_pose phase, such as arrived (empty = Arena judges arrival).',
 }
 
+RUN_EPISODE_BUSY = 'busy'
+RUN_EPISODE_SHUTTING_DOWN = 'shutting down'
+
 DEPRECATED_PARAMS: dict[str, str] = {
     'episodes': 'task.episode.count',
     'auto_reset': 'task.episode.auto_reset',

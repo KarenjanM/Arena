@@ -221,7 +221,8 @@ class ReachPhase(TaskPhase):
         elif self.named_target is not None:
             result["reach"] = self.named_target
         elif self.target is not None:
-            result["reach"] = _pose_dict(self.target)
+            orientation = self.target.orientation
+            result["reach"] = [*map(float, self.target.position), orientation.w, orientation.x, orientation.y, orientation.z]
         if self.frame:
             result["frame"] = self.frame
         for key in ("position_tolerance", "orientation_tolerance", "planning_time"):

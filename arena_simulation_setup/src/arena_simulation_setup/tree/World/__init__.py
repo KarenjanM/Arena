@@ -1,6 +1,7 @@
 from .membership import DERIVE_MODES, connections, contents, derive, describe, zones_of
 from .model import (
     FORMAT,
+    LEGACY_FORMAT,
     MICROPHONE_PLACEMENT_TOLERANCE_M,
     WORLD_LIGHTING_MODES,
     Level,
@@ -25,6 +26,7 @@ __all__ = [
     'describe',
     'zones_of',
     'FORMAT',
+    'LEGACY_FORMAT',
     'Level',
     'MICROPHONE_PLACEMENT_TOLERANCE_M',
     'WORLD_LIGHTING_MODES',

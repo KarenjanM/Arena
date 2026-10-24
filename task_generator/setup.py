@@ -48,6 +48,10 @@ setup(
             'task_generator_node = task_generator.task_generator_node:main',
             'generate_map = task_generator.utils.map_generator:main',
             # 'server = task_generator.server:main',
-        ]
+        ],
+        'arena_mcp.domains': [
+            'episode = task_generator.mcp.episode:domain',
+            'entities = task_generator.mcp.entities:domain',
+        ],
     }
 )

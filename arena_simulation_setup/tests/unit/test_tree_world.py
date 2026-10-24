@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 import io
 import math
+import shutil
 
 import PIL.Image
 import pytest
 import yaml
 
+from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.shared.world import Door, Elevator, Schedule, Signal, Sound
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
-from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldMicrophone, Zone, ZoneCeiling, parse_world, write_world
+from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldMicrophone, WorldView, Zone, ZoneCeiling, parse_world, write_world
 from arena_simulation_setup.tree.World.legacy import upgrade
 from arena_simulation_setup.tree.World.write import dump_zone
 from arena_simulation_setup.utils.cattrs import converter
@@ -429,3 +431,11 @@ def test_world_microphones_structure_from_world_yaml_shape():
 def test_world_microphones_reject_invalid_construction(microphone, message):
     with pytest.raises(ValueError, match=message):
         _reception(microphone).validate_microphones()
+
+
+def test_load_hands_the_validation_warnings_to_notes(tmp_path):
+    shutil.copy(ASS_DIR / "worlds" / "three_storied_residential" / "world.yaml", tmp_path / "world.yaml")
+    notes: list[str] = []
+    world = WorldView(tmp_path).load(level_filter={"2"}, notes=notes)
+    assert world.level_ids == ["2"]
+    assert any("3_elevator" in note for note in notes)

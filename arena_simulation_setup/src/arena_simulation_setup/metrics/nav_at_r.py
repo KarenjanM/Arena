@@ -116,7 +116,7 @@ def _robots_dir() -> Path:
 
 
 def resolve_world(raw: str) -> tuple[WorldView, set[str] | None]:
-    """World directory, or name with an optional `[level,...]` filter resolved like the runtime (ARENA_WORLD_PATH, installed worlds, world buckets)."""
+    """World directory, or name with an optional `[level,...]` filter resolved like the runtime (ARENA_WORLD_PATH, the writable local root, installed worlds, world buckets)."""
     name, levels = WorldIdentifier.split_filter(raw)
     path = Path(name).expanduser()
     if path.is_dir():

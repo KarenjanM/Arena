@@ -129,6 +129,7 @@ class TimelineEntry(Parseable):
 
 
 SCENARIO_FORMAT = "arena-scenario/2"
+LEGACY_SCENARIO_FORMAT = "arena-scenario/1"
 SCENARIO_KEYS = frozenset({"format", "objects", "humans", "sounds", "lights", "robots", "regions", "timeline", "conditions"})
 
 
