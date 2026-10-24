@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import dataclasses
 import json
+import logging
 import os
 import secrets
 import socket
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ToolError
-from .proc import alive, stop_group
+from .proc import alive, start_time, stop_group
 
 RUNNING = "running"
 SUCCEEDED = "succeeded"
@@ -23,10 +23,25 @@ LOST = "lost"
 TERMINAL = (SUCCEEDED, FAILED, CANCELLED, LOST)
 
 
+TAIL_BYTES = 512 * 1024
+
+
+def data_dir() -> Path:
+    """$ARENA_DATA_DIR, else ~/arena_ws/data."""
+    return Path(os.environ.get("ARENA_DATA_DIR") or Path.home() / "arena_ws" / "data")
+
+
 def jobs_root() -> Path:
-    """$ARENA_DATA_DIR/mcp/<hostname>/jobs, so forks sharing one data dir keep separate job tables."""
-    base = Path(os.environ.get("ARENA_DATA_DIR") or Path.home() / "arena_ws" / "data")
-    return base / "mcp" / socket.gethostname() / "jobs"
+    """$ARENA_DATA_DIR/mcp/<hostname>/jobs."""
+    return data_dir() / "mcp" / socket.gethostname() / "jobs"
+
+
+def tail_file(path: Path, lines: int) -> str:
+    """The last lines of a text file, read from its last TAIL_BYTES."""
+    with path.open("rb") as handle:
+        handle.seek(max(0, path.stat().st_size - TAIL_BYTES))
+        text = handle.read().decode(errors="replace")
+    return "\n".join(text.splitlines()[-lines:])
 
 
 @dataclasses.dataclass
@@ -43,7 +58,13 @@ class Job:
     argv: list[str] | None = None
     cwd: str | None = None
     pid: int | None = None
+    pid_start: int | None = None
     exit_code: int | None = None
+
+    @property
+    def alive(self) -> bool:
+        """Whether the job's process still runs, a reused pid counting as gone."""
+        return self.pid is not None and alive(self.pid, self.pid_start)
 
     @property
     def log_path(self) -> Path:
@@ -88,8 +109,14 @@ class Jobs:
         self._jobs: dict[str, Job] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._cancels: dict[str, Callable[[], Awaitable[None]]] = {}
+        self._stoppers: dict[str, Callable[[Job], Awaitable[str]]] = {}
         self._cancelling: set[str] = set()
         self._loaded = False
+
+    def stopper(self, kinds: Sequence[str], stop: Callable[[Job], Awaitable[str]]) -> None:
+        """Stop process jobs of these kinds with stop, which returns the outcome text."""
+        for kind in kinds:
+            self._stoppers[kind] = stop
 
     def _new(self, kind: str, title: str) -> Job:
         jobs_root().mkdir(parents=True, exist_ok=True)
@@ -148,7 +175,7 @@ class Jobs:
         env: dict[str, str] | None = None,
         result: Callable[[Job], dict[str, Any]] | None = None,
     ) -> Job:
-        """Start argv in its own session with output in the job log; it outlives the server."""
+        """Start argv in its own session with output in the job log, the process outlives the server."""
         job = self._new(kind, title)
         job.argv = list(argv)
         job.cwd = str(cwd) if cwd is not None else os.getcwd()
@@ -167,6 +194,7 @@ class Jobs:
                 self._finish(job, FAILED, error=f"could not start {argv[0]}: {exc}")
                 return job
         job.pid = process.pid
+        job.pid_start = start_time(process.pid)
         job.save()
 
         async def watch() -> None:
@@ -199,7 +227,7 @@ class Jobs:
                 job = Job(**json.loads(record.read_text()))
             except (OSError, ValueError, TypeError):
                 continue
-            if job.state == RUNNING and (job.pid is None or not alive(job.pid)):
+            if job.state == RUNNING and not job.alive:
                 job.state = LOST
                 job.error = "the server that started it exited first, the outcome was not observed"
                 job.save()
@@ -210,7 +238,7 @@ class Jobs:
         job = self._jobs.get(job_id)
         if job is None:
             raise ToolError(f"no job {job_id!r}", hint="jobs_list shows the known jobs")
-        if job.state == RUNNING and job.id not in self._tasks and job.pid is not None and not alive(job.pid):
+        if job.state == RUNNING and job.id not in self._tasks and job.pid is not None and not job.alive:
             self._finish(job, LOST, error="exited while no server watched it")
         return job
 
@@ -223,25 +251,21 @@ class Jobs:
         job = self.get(job_id)
         if not job.log_path.is_file():
             return ""
-        with job.log_path.open("rb") as log:
-            log.seek(0, os.SEEK_END)
-            size = log.tell()
-            log.seek(max(0, size - 256 * 1024))
-            text = log.read().decode(errors="replace")
-        return "\n".join(text.splitlines()[-lines:])
+        return tail_file(job.log_path, lines)
 
     async def cancel(self, job_id: str) -> Job:
         job = self.get(job_id)
         if job.state in TERMINAL:
             return job
-        hook = self._cancels.pop(job_id, None)
+        hook = self._cancels.get(job_id)
         if hook is not None:
-            with contextlib.suppress(Exception):
-                await hook()
+            await hook()
+            self._cancels.pop(job_id, None)
         task = self._tasks.get(job_id)
         self._cancelling.add(job_id)
         if job.pid is not None:
-            outcome = await stop_group(job.pid)
+            stop = self._stoppers.get(job.kind)
+            outcome = await stop(job) if stop is not None else await stop_group(job.pid)
             if job.state in TERMINAL:
                 job.error = outcome
                 job.save()
@@ -249,8 +273,7 @@ class Jobs:
                 self._finish(job, CANCELLED, error=outcome)
         elif task is not None:
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await task
+            await asyncio.wait({task})
         return job
 
     async def wait(self, job_id: str, timeout: float) -> Job:
@@ -259,8 +282,7 @@ class Jobs:
         if job.state in TERMINAL:
             return job
         if task is not None:
-            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
-                await asyncio.wait_for(asyncio.shield(task), timeout)
+            await asyncio.wait({task}, timeout=timeout)
             return job
         deadline = time.monotonic() + timeout
         while job.state == RUNNING and time.monotonic() < deadline:
@@ -269,17 +291,18 @@ class Jobs:
         return job
 
     async def shutdown(self) -> None:
-        """Cancel in-process task jobs; detached subprocesses keep running and stay listed."""
+        """Cancel in-process task jobs, detached subprocesses keep running and stay listed."""
         for job_id, task in list(self._tasks.items()):
             job = self._jobs[job_id]
             if job.pid is None and not task.done():
                 hook = self._cancels.pop(job_id, None)
                 if hook is not None:
-                    with contextlib.suppress(Exception):
+                    try:
                         await hook()
+                    except Exception:
+                        logging.getLogger(__name__).exception("cancel hook of job %s failed", job_id)
                 task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
+                await asyncio.wait({task})
 
 
 JOBS = Jobs()

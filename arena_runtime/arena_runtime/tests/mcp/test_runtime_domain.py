@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("arena_mcp")
 pytest.importorskip("rclpy")
 
-from arena_mcp.core import JOBS, ROS, ToolError
+from arena_mcp.core import JOBS, ROS, ToolError, cli
 
 from arena_runtime import mcp
 
@@ -70,7 +70,6 @@ async def _start(rig: Rig) -> None:
             super().__init__("mcp_env_peer")
             self.register = self.create_client(RegisterEnv, "/arena/register_env")
             self.confirm = self.create_client(ConfirmWorld, "/arena/confirm_world")
-            self.requests: list[tuple[int, str]] = []
             self.env_id: int | None = None
             self.ns = ""
             self.create_subscription(ShutdownRequest, "/arena/shutdown_request", self._on_shutdown, 10)
@@ -91,7 +90,6 @@ async def _start(rig: Rig) -> None:
             self.heartbeat.publish(Heartbeat(fqn=f"/{self.ns}", stamp=self.get_clock().now().to_msg()))
 
         def _on_shutdown(self, msg: ShutdownRequest) -> None:
-            self.requests.append((msg.env_id, msg.reason))
             if msg.env_id == self.env_id and msg.reason == "despawn_env":
                 self.publish_state(State.PRIMARY_STATE_FINALIZED)
 
@@ -219,10 +217,10 @@ def test_envs_lists_registered_env_with_slot_and_heartbeat(rig: Rig) -> None:
     assert state["envs"] == {"count": 1, "ready": 1, "env_ids": [env_id]}
 
 
-async def _other_hold(rig: Rig, action: int) -> None:
+async def _other_hold(rig: Rig, action: int, caller_id: str = "/mcp_other_holder", reason: str = "foreign") -> None:
     from arena_runtime_msgs.srv import LifecycleHold
 
-    await rig.call(rig.other.hold, LifecycleHold.Request(action=action, caller_id="/mcp_other_holder", reason="foreign"))
+    await rig.call(rig.other.hold, LifecycleHold.Request(action=action, caller_id=caller_id, reason=reason))
 
 
 def test_holds_are_counted_and_release_spares_other_callers(rig: Rig) -> None:
@@ -251,6 +249,21 @@ def test_holds_are_counted_and_release_spares_other_callers(rig: Rig) -> None:
 
     rig.run(rig.until(unpaused, 5.0, "unpaused after the last hold"))
     assert rig.run(mcp.runtime_release())["released"] == []
+
+
+def test_own_holds_are_the_runtime_holders_under_this_caller(rig: Rig) -> None:
+    from arena_runtime_msgs.srv import LifecycleHold
+
+    caller = rig.run(mcp._caller())
+    rig.run(_other_hold(rig, LifecycleHold.Request.ACQUIRE, caller_id=caller, reason="earlier"))
+
+    async def listed() -> bool:
+        return (await mcp.runtime_state())["own"]["holds"] == {"earlier": 1}
+
+    rig.run(rig.until(listed, 5.0, "a hold taken under this caller_id listed as own"))
+    released = rig.run(mcp.runtime_release())
+    assert released["released"] == ["earlier"] and released["own"] == {}
+    assert not rig.arena._holds.has(caller, "earlier")
 
 
 def test_step_advances_a_held_sim_and_refuses_without_hold(rig: Rig) -> None:
@@ -293,23 +306,37 @@ async def _status_where(rig: Rig, pred: object, what: str) -> dict:
     return holder["status"]
 
 
-def test_lockstep_register_validates_and_resolves_cli_presets(rig: Rig) -> None:
-    registered = rig.run(mcp.runtime_lockstep_register([f"beat|/mcp/beat|{BEAT}|0.1|soft"]))
-    assert registered["caller"] == "cli"
-    assert registered["channels"] == [{"name": "beat", "topic": "/mcp/beat", "type": BEAT, "period_s": 0.1, "hard": False}]
-    status = rig.run(_status_where(rig, lambda status: [reg["caller"] for reg in status["registrations"]] == ["cli"], "cli registration"))
-    assert status["registrations"][0]["channels"][0]["name"] == "beat"
+def _cli_channels(status: dict) -> list[dict]:
+    return [channel for reg in status["registrations"] if reg["caller"] == "cli" for channel in reg["channels"]]
+
+
+async def _gate_reachable() -> bool:
+    try:
+        await mcp.runtime_lockstep_gate([])
+    except ToolError as exc:
+        if "lockstep unreachable" in str(exc):
+            return False
+        raise
+    return True
+
+
+@pytest.mark.skipif(not cli.sourced(), reason="needs a shell that sourced arena")
+def test_lockstep_gate_runs_the_cli_verb_with_specs_and_presets(rig: Rig) -> None:
+    rig.run(rig.until(_gate_reachable, 60.0, "the ros2 cli to discover the register service"), timeout=120.0)
+    gated = rig.run(mcp.runtime_lockstep_gate([f"beat|/mcp/beat|{BEAT}|0.1|soft"]), timeout=120.0)
+    assert gated["command"].startswith("arena lockstep gate") and gated["output"] == "cli gates: beat"
+    status = rig.run(_status_where(rig, lambda status: [channel["name"] for channel in _cli_channels(status)] == ["beat"], "cli registration"))
+    assert _cli_channels(status)[0]["hard"] is False
     with pytest.raises(ToolError, match="cannot resolve type"):
-        rig.run(mcp.runtime_lockstep_register(["bad|/mcp/beat|nope/msg/Nope|0.1|hard"]))
-    with pytest.raises(ToolError, match="period"):
-        rig.run(mcp.runtime_lockstep_register([f"bad|/mcp/beat|{BEAT}|0|hard"]))
-    with pytest.raises(ToolError, match="no lockstep preset 'nope'"):
-        rig.run(mcp.runtime_lockstep_register(["nope"]))
-    presets = mcp._presets()
-    peds = rig.run(mcp.runtime_lockstep_register(["peds"], caller="mcp_test"))
-    assert peds["channels"] == [{"name": "peds", "topic": presets["peds"]["topic"], "type": presets["peds"]["type"], "period_s": presets["peds"]["period_s"], "hard": True}]
-    rig.run(mcp.runtime_lockstep_register([], caller="mcp_test"))
-    rig.run(mcp.runtime_lockstep_register([]))
+        rig.run(mcp.runtime_lockstep_gate(["bad|/mcp/beat|nope/msg/Nope|0.1|hard"]), timeout=120.0)
+    with pytest.raises(ToolError, match="period_s must be > 0"):
+        rig.run(mcp.runtime_lockstep_gate([f"bad|/mcp/beat|{BEAT}|0|hard"]), timeout=120.0)
+    with pytest.raises(ToolError, match="bad channel spec 'nope'"):
+        rig.run(mcp.runtime_lockstep_gate(["nope"]), timeout=120.0)
+    assert rig.run(mcp.runtime_lockstep_gate(["peds"]), timeout=120.0)["output"] == "cli gates: peds"
+    peds = rig.run(_status_where(rig, lambda status: [channel["name"] for channel in _cli_channels(status)] == ["peds"], "peds preset registered"))
+    assert _cli_channels(peds)[0]["hard"] is True and "{env}" in _cli_channels(peds)[0]["topic"]
+    assert rig.run(mcp.runtime_lockstep_gate([]), timeout=120.0)["output"] == "cli gates cleared"
     rig.run(_status_where(rig, lambda status: status["registrations"] == [], "registrations cleared"))
 
 
@@ -339,26 +366,15 @@ def test_lockstep_start_for_seconds_pauses_through_a_job(rig: Rig) -> None:
     rig.run(_status_where(rig, lambda status: not status["active"], "stopped run"))
 
 
-def test_shutdown_broadcast_reaches_the_env(rig: Rig) -> None:
-    env_id = rig.env.env_id
-    sent = rig.run(mcp.runtime_shutdown("mcp test"))
-    assert sent["env_id"] == env_id and sent["subscribers"] >= 1
-
-    async def received() -> bool:
-        return (env_id, "mcp test") in rig.env.requests
-
-    rig.run(rig.until(received, 5.0, "shutdown request at the env"))
-
-
 def test_despawn_evicts_the_env_and_cleanup_reports_removed(rig: Rig) -> None:
     env_id = rig.env.env_id
+    with pytest.raises(ToolError, match=f"no env {env_id + 7}"):
+        rig.run(mcp.runtime_despawn_env(env_id + 7))
     despawned = rig.run(mcp.runtime_despawn_env(timeout_s=20.0), timeout=30.0)
     assert despawned == {"env_id": env_id, "requested": True, "gone": True}
     assert rig.run(mcp.runtime_envs()) == []
-    with pytest.raises(ToolError, match="no env is registered"):
+    with pytest.raises(ToolError, match="no env is up"):
         rig.run(mcp.runtime_despawn_env())
-    with pytest.raises(ToolError, match=f"no env {env_id + 7}"):
-        rig.run(mcp.runtime_despawn_env(env_id + 7))
     assert rig.run(mcp.runtime_cleanup_env(env_id)) == {"env_id": env_id, "removed": 0}
 
 
@@ -395,4 +411,3 @@ def test_server_shutdown_releases_only_its_own_holds(rig: Rig) -> None:
     rig.run(ROS.shutdown())
     assert not rig.arena._holds.has(caller, "left_over")
     assert rig.arena._holds.has("/mcp_other_holder", "foreign")
-    assert mcp._OWN.holds == {}

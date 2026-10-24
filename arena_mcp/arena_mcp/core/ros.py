@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import logging
 import os
 import threading
 from collections.abc import Awaitable, Callable
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
     from arena_rclpy_mixins.Async import ActionClientWrapper, AsyncNode
     from rcl_interfaces.msg import ParameterValue
     from rclpy.action.client import ClientGoalHandle
+    from rclpy.parameter import Parameter
+    from rclpy.publisher import Publisher
     from rclpy.qos import QoSProfile
 
 
@@ -32,16 +35,24 @@ RELIABLE = "reliable"
 SENSOR = "sensor"
 
 
-def _qos(kind: str, depth: int) -> QoSProfile:
-    import rclpy.qos
+def profile(kind: str, depth: int) -> QoSProfile:
+    """The arena_rclpy_mixins QoS profile of a qos name: latched, reliable or sensor (best effort)."""
+    from arena_rclpy_mixins import qos
 
     if kind == LATCHED:
-        return rclpy.qos.QoSProfile(depth=depth, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE, durability=rclpy.qos.DurabilityPolicy.TRANSIENT_LOCAL)
+        return qos.latched(depth)
     if kind == RELIABLE:
-        return rclpy.qos.QoSProfile(depth=depth, reliability=rclpy.qos.ReliabilityPolicy.RELIABLE)
+        return qos.reliable(depth)
     if kind == SENSOR:
-        return rclpy.qos.QoSProfile(depth=depth, reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT)
+        return qos.best_effort(depth)
     raise ValueError(f"unknown qos {kind!r}, use latched, reliable or sensor")
+
+
+def type_name(interface: object) -> str:
+    """package/kind/Name of a generated rosidl message, service or action class."""
+    cls = cast(type, interface)
+    package, kind = cls.__module__.split(".")[:2]
+    return f"{package}/{kind}/{cls.__name__}"
 
 
 class TopicCache:
@@ -70,6 +81,10 @@ class TopicCache:
         with self._lock:
             return self.history[-1] if self.history else None
 
+    def snapshot(self) -> list[Any]:
+        with self._lock:
+            return list(self.history)
+
     def next(self) -> asyncio.Future[Any]:
         future = self._loop.create_future()
         with self._lock:
@@ -92,10 +107,14 @@ class Ros:
         self._start = asyncio.Lock()
         self._actions: dict[tuple[str, str], Any] = {}
         self._topics: dict[str, tuple[Any, TopicCache, Any]] = {}
-        self._publishers: dict[str, Any] = {}
+        self._publishers: dict[tuple[str, type, str], Publisher] = {}
         self._shutdown_hooks: list[Callable[[], Awaitable[None]]] = []
+        self._closing = False
+        self._crash: Exception | None = None
 
     async def node(self) -> AsyncNode:
+        if self._crash is not None:
+            raise ToolError(f"the server's ROS executor stopped: {type(self._crash).__name__}: {self._crash}", hint="restart the MCP server")
         async with self._start:
             if self._node is None:
                 try:
@@ -107,6 +126,7 @@ class Ros:
                     raise ToolError(f"ROS is not available in this environment ({exc})", hint="serve from a sourced Arena container") from exc
                 if not rclpy.ok():
                     rclpy.init(args=None, signal_handler_options=SignalHandlerOptions.NO)
+                self._closing = False
                 self._node = AsyncNode(f"arena_mcp_{os.getpid()}")
                 self._executor = create_executor()
                 self._executor.add_node(self._node)
@@ -115,8 +135,16 @@ class Ros:
             return self._node
 
     def _spin(self) -> None:
-        with contextlib.suppress(Exception):
+        from rclpy.executors import ExternalShutdownException
+
+        try:
             self._executor.spin()
+        except Exception as exc:
+            if self._closing:
+                return
+            if not isinstance(exc, ExternalShutdownException):
+                logging.getLogger(__name__).exception("the ROS executor stopped")
+            self._crash = exc
 
     @property
     def started(self) -> bool:
@@ -133,6 +161,7 @@ class Ros:
             return
         import rclpy
 
+        self._closing = True
         with contextlib.suppress(Exception):
             self._executor.shutdown(timeout_sec=2.0)
         with contextlib.suppress(Exception):
@@ -141,12 +170,13 @@ class Ros:
             if rclpy.ok():
                 rclpy.shutdown()
         self._node = None
+        self._crash = None
         self._actions.clear()
         self._topics.clear()
         self._publishers.clear()
 
-    async def served(self, name: str, *, timeout: float = 2.0) -> bool:
-        """Whether another node serves the service name, read from the graph without creating a client."""
+    async def served(self, name: str, *, timeout: float = 2.0, srv_type: str | None = None) -> bool:
+        """Whether another node serves the service name, of srv_type when given, read from the graph without creating a client."""
         node = await self.node()
         own = node.get_fully_qualified_name()
         loop = asyncio.get_running_loop()
@@ -156,15 +186,15 @@ class Ros:
                 if f"{namespace.rstrip('/')}/{node_name}" == own:
                     continue
                 with contextlib.suppress(Exception):
-                    if any(service == name for service, _ in node.get_service_names_and_types_by_node(node_name, namespace)):
+                    if any(service == name and (srv_type is None or srv_type in types) for service, types in node.get_service_names_and_types_by_node(node_name, namespace)):
                         return True
             if loop.time() >= deadline:
                 return False
             await asyncio.sleep(0.1)
 
     async def ready(self, srv_type: object, name: str, timeout: float = 2.0) -> bool:
-        """Whether a server for name is up; never leaves a client behind, so the name does not look live."""
-        return await self.served(name, timeout=timeout)
+        """Whether a server of srv_type for name is up, without creating a client."""
+        return await self.served(name, timeout=timeout, srv_type=type_name(srv_type))
 
     async def call[RequestT, ResponseT](self, srv_type: ServiceType[RequestT, ResponseT], name: str, request: RequestT | None = None, *, timeout: float = 10.0, ready: float = 2.0, hint: str | None = None) -> ResponseT:
         """Call a service, failing at once when no server answers within ready seconds."""
@@ -219,7 +249,7 @@ class Ros:
         entry = self._topics.get(topic)
         if entry is None:
             cache = TopicCache(asyncio.get_running_loop(), depth)
-            subscription = node.create_subscription(msg_type, topic, cache.on_message, _qos(qos, max(depth, 1)))
+            subscription = node.create_subscription(msg_type, topic, cache.on_message, profile(qos, max(depth, 1)))
             entry = (msg_type, cache, subscription)
             self._topics[topic] = entry
         elif entry[0] is not msg_type:
@@ -246,13 +276,33 @@ class Ros:
         except TimeoutError as exc:
             raise ToolError(f"no new message on {topic} within {timeout:.0f}s") from exc
 
-    async def publish[MsgT](self, msg_type: type[MsgT], topic: str, msg: MsgT, *, qos: str = RELIABLE) -> None:
+    async def collect[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str, count: int, timeout: float) -> list[MsgT]:
+        """Up to count messages received on topic within timeout, through a subscription that lives only for the call."""
         node = await self.node()
-        publisher = self._publishers.get(topic)
+        loop = asyncio.get_running_loop()
+        cache = TopicCache(loop, count)
+        subscription = node.create_subscription(msg_type, topic, cache.on_message, profile(qos, max(count, 1)))
+        deadline = loop.time() + timeout
+        try:
+            while len(cache.snapshot()) < count and loop.time() < deadline:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(cache.next(), deadline - loop.time())
+        finally:
+            node.destroy_subscription(subscription)
+        return cast(list[MsgT], cache.snapshot())
+
+    async def publisher[MsgT](self, msg_type: type[MsgT], topic: str, *, qos: str = RELIABLE) -> Publisher:
+        """The server's publisher of msg_type on topic with this qos, created on first use."""
+        node = await self.node()
+        key = (topic, msg_type, qos)
+        publisher = self._publishers.get(key)
         if publisher is None:
-            publisher = node.create_publisher(msg_type, topic, _qos(qos, 10))
-            self._publishers[topic] = publisher
-        publisher.publish(msg)
+            publisher = node.create_publisher(msg_type, topic, profile(qos, 10))
+            self._publishers[key] = publisher
+        return publisher
+
+    async def publish[MsgT](self, msg_type: type[MsgT], topic: str, msg: MsgT, *, qos: str = RELIABLE) -> None:
+        (await self.publisher(msg_type, topic, qos=qos)).publish(msg)
 
     async def graph(self) -> dict[str, list[str]]:
         """Live node, service, action and topic names."""
@@ -269,6 +319,7 @@ class Ros:
 
     async def get_params(self, node_name: str, names: list[str] | None = None) -> dict[str, Any]:
         from rcl_interfaces.srv import GetParameters, ListParameters
+        from rclpy.parameter import parameter_value_to_python
 
         if names is None:
             listed = await self.call(ListParameters, f"{node_name}/list_parameters", hint=f"node {node_name} is not up")
@@ -276,7 +327,7 @@ class Ros:
         response = await self.call(GetParameters, f"{node_name}/get_parameters", GetParameters.Request(names=names), hint=f"node {node_name} is not up")
         if len(response.values) != len(names):
             await self._undeclared(node_name, names)
-        return {name: param_to_python(value) for name, value in zip(names, response.values, strict=True)}
+        return {name: parameter_value_to_python(value) for name, value in zip(names, response.values, strict=True)}
 
     async def _undeclared(self, node_name: str, names: list[str]) -> None:
         from rcl_interfaces.srv import ListParameters
@@ -301,60 +352,57 @@ class Ros:
         return {name: {"ok": result.successful, "reason": result.reason} for name, result in zip(names, response.results, strict=True)}
 
 
-PARAM_TYPES = {1: "bool", 2: "int", 3: "double", 4: "string", 5: "byte_array", 6: "bool_array", 7: "int_array", 8: "double_array", 9: "string_array"}
-
-
-def param_to_python(value: ParameterValue) -> object:
-    return {
-        0: lambda v: None,
-        1: lambda v: v.bool_value,
-        2: lambda v: v.integer_value,
-        3: lambda v: v.double_value,
-        4: lambda v: v.string_value,
-        5: lambda v: list(v.byte_array_value),
-        6: lambda v: list(v.bool_array_value),
-        7: lambda v: list(v.integer_array_value),
-        8: lambda v: list(v.double_array_value),
-        9: lambda v: list(v.string_array_value),
-    }[value.type](value)
-
-
 def python_to_param(value: object, declared: int) -> ParameterValue:
-    """A ParameterValue of the declared type, or of the value's own type when the parameter is undeclared."""
-    from rcl_interfaces.msg import ParameterValue
+    """A ParameterValue of the declared type, or of the value's own type when the parameter is untyped."""
+    from rcl_interfaces.msg import ParameterType
+    from rclpy.parameter import Parameter
 
-    kind = declared or _infer(value)
     try:
-        if kind == 1:
-            scalar = _scalar(value)
-            if isinstance(scalar, str):
-                lowered = scalar.strip().lower()
-                if lowered not in ("true", "false"):
-                    raise ValueError(value)
-                scalar = lowered == "true"
-            return ParameterValue(type=1, bool_value=bool(scalar))
-        if kind == 2:
-            scalar = _scalar(value)
-            if isinstance(scalar, float) and not scalar.is_integer():
-                raise ValueError(value)
-            return ParameterValue(type=2, integer_value=int(scalar))
-        if kind == 3:
-            return ParameterValue(type=3, double_value=float(_scalar(value)))
-        if kind == 4:
-            return ParameterValue(type=4, string_value=str(_scalar(value)))
-        if kind == 5:
-            return ParameterValue(type=5, byte_array_value=[bytes([int(_scalar(item))]) for item in _items(value)])
-        if kind == 6:
-            return ParameterValue(type=6, bool_array_value=[bool(_scalar(item)) for item in _items(value)])
-        if kind == 7:
-            return ParameterValue(type=7, integer_array_value=[int(_scalar(item)) for item in _items(value)])
-        if kind == 8:
-            return ParameterValue(type=8, double_array_value=[float(_scalar(item)) for item in _items(value)])
-        if kind == 9:
-            return ParameterValue(type=9, string_array_value=[str(_scalar(item)) for item in _items(value)])
+        kind = Parameter.Type.from_parameter_value(value) if declared == ParameterType.PARAMETER_NOT_SET else Parameter.Type(declared)
     except (TypeError, ValueError) as exc:
-        raise ToolError(f"{value!r} is not a valid {PARAM_TYPES.get(kind, kind)} value") from exc
-    raise ToolError(f"unsupported parameter type {kind}")
+        raise ToolError(f"cannot send {value!r} as a ROS parameter") from exc
+    try:
+        return Parameter("value", kind, _coerce(value, kind)).get_parameter_value()
+    except (TypeError, ValueError) as exc:
+        raise ToolError(f"{value!r} is not a valid {kind.name.lower()} value") from exc
+
+
+def _coerce(value: object, kind: Parameter.Type) -> bool | int | float | str | list[Any]:
+    from rclpy.parameter import Parameter
+
+    scalars: dict[Parameter.Type, Callable[[Any], bool | int | float | str]] = {
+        Parameter.Type.BOOL: _bool,
+        Parameter.Type.INTEGER: _int,
+        Parameter.Type.DOUBLE: float,
+        Parameter.Type.STRING: str,
+    }
+    arrays: dict[Parameter.Type, Callable[[Any], Any]] = {
+        Parameter.Type.BYTE_ARRAY: lambda item: bytes([int(item)]),
+        Parameter.Type.BOOL_ARRAY: bool,
+        Parameter.Type.INTEGER_ARRAY: int,
+        Parameter.Type.DOUBLE_ARRAY: float,
+        Parameter.Type.STRING_ARRAY: str,
+    }
+    if kind in scalars:
+        return scalars[kind](_scalar(value))
+    if kind in arrays:
+        return [arrays[kind](_scalar(item)) for item in _items(value)]
+    raise TypeError(f"unsupported parameter type {kind.name}")
+
+
+def _bool(scalar: str | float) -> bool:
+    if isinstance(scalar, str):
+        lowered = scalar.strip().lower()
+        if lowered not in ("true", "false"):
+            raise ValueError(scalar)
+        return lowered == "true"
+    return bool(scalar)
+
+
+def _int(scalar: str | float) -> int:
+    if isinstance(scalar, float) and not scalar.is_integer():
+        raise ValueError(scalar)
+    return int(scalar)
 
 
 def _scalar(value: object) -> bool | int | float | str:
@@ -367,26 +415,6 @@ def _items(value: object) -> list[object]:
     if isinstance(value, list | tuple):
         return list(value)
     raise TypeError(f"{type(value).__name__} is not a list")
-
-
-def _infer(value: object) -> int:
-    if isinstance(value, bool):
-        return 1
-    if isinstance(value, int):
-        return 2
-    if isinstance(value, float):
-        return 3
-    if isinstance(value, str):
-        return 4
-    if isinstance(value, list | tuple):
-        if all(isinstance(item, bool) for item in value):
-            return 6
-        if all(isinstance(item, int) for item in value):
-            return 7
-        if all(isinstance(item, int | float) for item in value):
-            return 8
-        return 9
-    raise ToolError(f"cannot send {type(value).__name__} as a ROS parameter")
 
 
 ROS = Ros()

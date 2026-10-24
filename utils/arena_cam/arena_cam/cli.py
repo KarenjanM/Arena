@@ -69,17 +69,17 @@ def _coerce(token: str) -> object:
         return token
 
 
-def _parse_params(tokens: list[str]) -> dict:
+def parse_params(tokens: list[str]) -> dict:
     params: dict = {}
     for token in tokens:
         if "=" not in token:
-            raise SystemExit(f"expected key=value, got {token!r}")
+            raise ValueError(f"expected key=value, got {token!r}")
         key, _, value = token.partition("=")
         params[key] = _coerce(value)
     return params
 
 
-def _is_path(name: str) -> bool:
+def is_path(name: str) -> bool:
     return name.endswith((".yaml", ".yml")) or "/" in name or os.path.exists(name)
 
 
@@ -183,18 +183,18 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("drive takes no params, only the target flags")
         _drive(args.sim, args.viz, args.record, args.fps, args.lockstep, args.force)
         return
-    params = _parse_params(args.params)
     targets = _resolve_targets(args.sim, args.viz)
-    is_path = _is_path(args.name)
+    shot_file = is_path(args.name)
     try:
-        cam = load_shot(args.name, targets) if is_path else Camera(targets).add(args.name, params)
+        params = parse_params(args.params)
+        cam = load_shot(args.name, targets) if shot_file else Camera(targets).add(args.name, params)
     except ValueError as e:
         raise SystemExit(str(e)) from None
     if args.record is None:
         if not cam.play():
             raise SystemExit(1)
         return
-    out = args.record or default_name(os.path.splitext(os.path.basename(args.name))[0] if is_path else args.name)
+    out = args.record or default_name(os.path.splitext(os.path.basename(args.name))[0] if shot_file else args.name)
     try:
         ran = cam.record(out, fps=args.fps, force=args.force, lockstep=args.lockstep)
     except FileNotFoundError as e:

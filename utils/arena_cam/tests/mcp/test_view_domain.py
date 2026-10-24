@@ -38,7 +38,6 @@ class Arena:
         self.node = rclpy.create_node("arena")
         self.node.declare_parameter("sim", "mujoco")
         self.requests: dict[str, list] = {"set_view": [], "set_reference_frame": [], "set_projection": [], "capture": []}
-        self.steps: list[float] = []
         self.holds = 0
         self.clock_ns = 0
         self.lock = threading.Lock()
@@ -98,7 +97,6 @@ class Arena:
                 response.error_msg = "step requires an active hold and no open unpause window"
                 return response
             self.clock_ns += round(request.seconds * 1e9)
-            self.steps.append(request.seconds)
         response.success = True
         response.advanced = request.seconds
         return response
@@ -174,7 +172,7 @@ def test_view_domain_is_served_from_its_entry_point():
 
     (loaded,) = discover(["view"])
     assert loaded.served, loaded.reason
-    assert {spec.name for spec in loaded.domain.tools} == {"view_available", "view_set", "view_capture", "view_frame_exact", "view_record"}
+    assert {spec.name for spec in loaded.domain.tools} == {"view_available", "view_set", "view_capture", "view_record"}
     assert [resource.uri for resource in loaded.domain.resources] == ["arena://view/shots"]
 
 
@@ -205,6 +203,7 @@ def test_set_and_capture_place_env_poses_in_the_world_and_follow_robots(rig: Rig
             await view.view_set(view.View())
         with pytest.raises(ToolError, match="no rviz viewport"):
             await view.view_capture(surface="rviz")
+        await view.view_set(view.View(follow="jackal", mode="yaw"))
         return placed, captured, followed, down
 
     placed, captured, followed, down = rig.run(scenario())
@@ -213,9 +212,10 @@ def test_set_and_capture_place_env_poses_in_the_world_and_follow_robots(rig: Rig
     assert (first_view.eye.x, first_view.eye.y, first_view.eye.z) == (11.0, 0.0, 2.0)
     assert (first_view.target.x, first_view.target.y, first_view.target.z) == (10.0, 0.0, 0.0)
     assert requests["set_projection"][0].projection == "orthographic"
-    world, follow, top = requests["set_reference_frame"][:3]
+    world, follow, top, yawed = requests["set_reference_frame"][:4]
     assert world.has_pose and world.entity == "" and world.mode == world.FULL
-    assert follow.entity == "env_0/jackal/base_link" and follow.mode == follow.YAW_ONLY
+    assert follow.entity == "env_0/jackal/base_link" and follow.mode == follow.FULL
+    assert yawed.entity == "env_0/jackal/base_link" and yawed.mode == yawed.YAW_ONLY
     assert top.has_pose and top.entity == ""
     assert placed["camera"]["x"] == pytest.approx(11.0)
     summary, image = captured
@@ -229,34 +229,11 @@ def test_set_and_capture_place_env_poses_in_the_world_and_follow_robots(rig: Rig
     assert down[0]["camera"]["y"] == pytest.approx(3.0)
 
 
-def test_frame_exact_steps_the_held_sim_per_frame_and_releases_the_hold(rig: Rig):
-    from arena_runtime_msgs.msg import LockstepStatus
-
-    async def scenario():
-        before = rig.arena.clock_ns
-        frames = await view.view_frame_exact(robot="jackal", frames=3, step_s=0.1)
-        rig.arena.lockstep.publish(LockstepStatus(active=True))
-        await asyncio.sleep(0.5)
-        with pytest.raises(ToolError, match="lockstep run owns"):
-            await view.view_frame_exact()
-        rig.arena.lockstep.publish(LockstepStatus(active=False))
-        await asyncio.sleep(0.5)
-        return before, frames
-
-    before, frames = rig.run(scenario())
-    summary, *images = frames
-    assert len(images) == summary["frames"] == 3
-    assert rig.arena.steps[-3:] == [0.1, 0.1, 0.1]
-    assert summary["sim_times"] == pytest.approx([before * 1e-9 + 0.1 * (index + 1) for index in range(3)])
-    assert summary["following"] == "jackal"
-    assert rig.arena.holds == 0
-    gated = [request.min_sim_time.sec + request.min_sim_time.nanosec * 1e-9 for request in rig.arena.requests["capture"][-3:]]
-    assert gated == pytest.approx(summary["sim_times"])
-
-
 @pytest.mark.skipif(shutil.which("ffmpeg") is None or not os.environ.get("ARENA_DIR"), reason="needs ffmpeg and a sourced Arena checkout")
 def test_record_films_a_lockstep_take_through_the_cam_cli(rig: Rig, tmp_path):
     out = tmp_path / "take.mp4"
+    out.write_bytes(b"")
+    (tmp_path / "take-sim.mp4").write_bytes(b"earlier take")
 
     async def scenario():
         with pytest.raises(ToolError, match="cannot play 'no_such_shot'"):
@@ -264,7 +241,7 @@ def test_record_films_a_lockstep_take_through_the_cam_cli(rig: Rig, tmp_path):
         with pytest.raises(ToolError, match="no rviz viewport"):
             await view.view_record("hold", {"duration": 0.2}, surface="rviz")
         captures = len(rig.arena.requests["capture"])
-        job = await view.view_record("hold", {"duration": 0.2}, out=str(out))
+        job = await view.view_record("hold", {"duration": 0.2}, out=str(out), force=True)
         done = await JOBS.wait(job["id"], 120.0)
         return job, done, len(rig.arena.requests["capture"]) - captures
 

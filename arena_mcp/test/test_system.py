@@ -13,6 +13,7 @@ rclpy = pytest.importorskip("rclpy")
 
 from arena_mcp.core import JOBS, proc
 from arena_mcp.core.errors import ToolError
+from arena_mcp.core.jobs import tail_file
 from arena_mcp.domains import system
 
 
@@ -27,32 +28,21 @@ def isolated_data_dir(tmp_path):
         os.environ["ARENA_DATA_DIR"] = previous
 
 
-def test_launch_tokens_never_start_rviz_and_refuse_owned_keys():
-    tokens = system.launch_tokens("flatsim", env_n=2, world="map_empty", robot="jackal", args={"task.robots": "random", "record.auto": False, "lockstep.rtf": 2.5}, headless=True)
-    assert tokens == ["sim:=flatsim", "env.n:=2", "viz:=false", "headless:=true", "world:=map_empty", "robot:=jackal", "task.robots:=random", "record.auto:=false", "lockstep.rtf:=2.5"]
-    assert system.launch_tokens("gazebo", env_n=None, world=None, robot=None, args=None, headless=False) == ["sim:=gazebo", "headless:=false"]
-    for key in ("viz", "env.n", "sim"):
+def test_launch_tokens_pass_args_as_the_cli_takes_them_and_refuse_owned_keys():
+    owned = {"sim": "flatsim", "env.n": 2, "world": "map_empty", "robot": "jackal", "headless": None}
+    tokens = system.launch_tokens(owned, {"task.robots": "random", "record.auto": False, "lockstep.rtf": 2.5, "viz": False})
+    assert tokens == ["sim:=flatsim", "env.n:=2", "world:=map_empty", "robot:=jackal", "task.robots:=random", "record.auto:=false", "lockstep.rtf:=2.5", "viz:=false"]
+    assert system.launch_tokens({"sim": "gazebo", "world": None, "headless": True}, None) == ["sim:=gazebo", "headless:=true"]
+    assert system.launch_tokens({"sim": "no_such_sim"}, None) == ["sim:=no_such_sim"]
+    for key in owned:
         with pytest.raises(ToolError, match="its own parameter"):
-            system.launch_tokens("dummy", env_n=1, world=None, robot=None, args={key: "x"}, headless=True)
-    with pytest.raises(ToolError, match="not a launch argument"):
-        system.launch_tokens("dummy", env_n=1, world=None, robot=None, args={"a b": 1}, headless=True)
+            system.launch_tokens(owned, {key: "x"})
+
+
+def test_launch_refuses_fewer_than_one_env():
     with pytest.raises(ToolError, match="at least 1"):
-        system.launch_tokens("dummy", env_n=0, world=None, robot=None, args=None, headless=True)
-
-
-def test_launch_refuses_unknown_sims_listing_the_registered_ones():
-    async def scenario():
-        with pytest.raises(ToolError) as launch:
-            await system.system_launch("no_such_sim")
-        with pytest.raises(ToolError) as runtime:
-            await system.system_runtime("no_such_sim")
-        return launch.value, runtime.value
-
-    launch, runtime = asyncio.run(scenario())
-    for refused in (launch, runtime):
-        assert "unknown sim 'no_such_sim'" in str(refused)
-        assert "dummy" in refused.hint and "flatsim" in refused.hint
-    assert JOBS.list(kind="launch") == [] and JOBS.list(kind="runtime") == []
+        asyncio.run(system.system_launch("dummy", env_n=0))
+    assert JOBS.list(kind="launch") == []
 
 
 GRACEFUL = """
@@ -97,6 +87,18 @@ def test_stop_sigints_the_launch_group_and_waits_for_the_whole_tree():
     assert stacks["jobs"][0]["processes"] == 2
     assert not os.path.exists(f"/proc/{child}") or open(f"/proc/{child}/stat").read().rsplit(")", 1)[1].split()[0] == "Z"
     assert stopped == {"job": job.id, "signal": "SIGINT", "stopped": True, "survivors": []}
+
+
+def test_cancelling_a_launch_job_runs_the_stop_ladder_over_the_whole_tree():
+    async def scenario():
+        job, child = await _started("launch", GRACEFUL)
+        cancelled = await JOBS.cancel(job.id)
+        return child, cancelled
+
+    child, cancelled = asyncio.run(scenario())
+    assert cancelled.state == "cancelled" and cancelled.error == "stopped by SIGINT"
+    assert cancelled.progress["stop_attempts"] == 1 and cancelled.progress["survivors"] == []
+    assert not os.path.exists(f"/proc/{child}") or open(f"/proc/{child}/stat").read().rsplit(")", 1)[1].split()[0] == "Z"
 
 
 def test_stop_reports_orphans_keeps_them_in_stacks_and_escalates_on_the_next_call():
@@ -150,20 +152,6 @@ def test_stacks_list_foreign_launch_processes_outermost_only():
         outer.wait()
 
 
-def test_colcon_jobs_are_serialized():
-    async def scenario():
-        job = await JOBS.start_process("build", "held build", [sys.executable, "-c", "import time; time.sleep(60)"])
-        try:
-            with pytest.raises(ToolError, match="still running"):
-                await system.system_build(["arena_mcp"])
-            with pytest.raises(ToolError, match="still running"):
-                await system.system_test("arena_mcp")
-        finally:
-            await JOBS.cancel(job.id)
-
-    asyncio.run(scenario())
-
-
 def test_node_logs_by_file_name_then_by_logger(tmp_path):
     root = tmp_path / "log"
     run = root / "2026-10-19-17-00-00-000000-host-1"
@@ -184,7 +172,7 @@ def test_node_logs_by_file_name_then_by_logger(tmp_path):
         system.node_log(root, "/arena/env_1/task_generator_node")
     with pytest.raises(ToolError, match="no ROS log directory"):
         system.node_log(tmp_path / "missing", "x")
-    assert system.tail(python, 1) == "[INFO] [1.0] [arena.env_0.task_generator_node]: reset done"
+    assert tail_file(python, 1) == "[INFO] [1.0] [arena.env_0.task_generator_node]: reset done"
 
 
 def test_logs_of_a_job_and_argument_checks(tmp_path):

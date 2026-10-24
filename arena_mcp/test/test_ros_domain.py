@@ -21,7 +21,7 @@ from std_srvs.srv import SetBool
 
 from arena_mcp.core import JOBS, ROS
 from arena_mcp.core.errors import ToolError
-from arena_mcp.core.ros import LATCHED, _qos
+from arena_mcp.core.ros import LATCHED, profile
 from arena_mcp.domains import ros
 
 NS = "/arena_mcp_ros_test"
@@ -83,7 +83,7 @@ class Peer:
         self.node.create_service(SetBool, f"{NS}/toggle", self._toggle)
         self.chatter = self.node.create_publisher(String, f"{NS}/chatter", 10)
         self.camera = self.node.create_publisher(ImageMsg, f"{NS}/camera", 10)
-        latched = self.node.create_publisher(String, f"{NS}/state", _qos(LATCHED, 1))
+        latched = self.node.create_publisher(String, f"{NS}/state", profile(LATCHED, 1))
         latched.publish(String(data="ready"))
         self._latched = latched
         self.node.create_subscription(Int32, f"{NS}/command", self.received.append, 10)

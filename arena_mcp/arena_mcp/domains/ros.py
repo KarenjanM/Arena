@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Protocol, cast
 
 from pydantic import Field
 
 from arena_mcp.core import JOBS, LATCHED, RELIABLE, ROS, SENSOR, Domain, JobHandle, ToolError, media, msgs
-from arena_mcp.core.ros import _qos
 
 if TYPE_CHECKING:
     from nav_msgs.msg import OccupancyGrid
     from rclpy.node import Node
-    from rclpy.publisher import Publisher
     from sensor_msgs.msg import CompressedImage, Image
 
     from arena_mcp.core.msgs import RosMessage
@@ -33,7 +30,6 @@ domain = Domain(
 QOS = (SENSOR, RELIABLE, LATCHED)
 KINDS = ("msg", "srv", "action")
 IMAGE_TYPES = ("sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage", "nav_msgs/msg/OccupancyGrid")
-_publishers: dict[tuple[str, str, str], Publisher] = {}
 
 
 def resolve(type_name: str, kind: str | None = None) -> tuple[str, str]:
@@ -175,27 +171,6 @@ def _image(full: str, msg: object) -> object:
     return media.occupancy_png(cast("OccupancyGrid", msg))
 
 
-async def collect(msg_type: type, topic: str, *, qos: str, count: int, timeout_s: float) -> list[object]:
-    """Up to count messages received on topic within timeout_s, through a subscription that lives only for the call."""
-    node = await ROS.node()
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[object] = asyncio.Queue()
-
-    def on_message(msg: object) -> None:
-        loop.call_soon_threadsafe(queue.put_nowait, msg)
-
-    subscription = node.create_subscription(msg_type, topic, on_message, _qos(qos, max(count, 1)))
-    received: list[object] = []
-    deadline = loop.time() + timeout_s
-    try:
-        while len(received) < count and loop.time() < deadline:
-            with contextlib.suppress(TimeoutError):
-                received.append(await asyncio.wait_for(queue.get(), deadline - loop.time()))
-    finally:
-        node.destroy_subscription(subscription)
-    return received
-
-
 @domain.tool(read_only=True)
 async def ros_echo(
     topic: str,
@@ -213,7 +188,7 @@ async def ros_echo(
     if qos not in QOS:
         raise ToolError(f"unknown qos {qos!r}", hint=f"qos: {', '.join(QOS)}")
     full, msg_type = await _typed("topics", "msg", topic, type_name)
-    received = await collect(msg_type, topic, qos=qos, count=count, timeout_s=timeout_s)
+    received = await ROS.collect(msg_type, topic, qos=qos, count=count, timeout=timeout_s)
     if not received:
         raise ToolError(f"nothing received on {topic} within {timeout_s:.0f}s", hint="ros_graph shows whether it has publishers, a state topic needs qos='latched'")
     clipped: list[str] = []
@@ -245,11 +220,7 @@ async def ros_publish(
     msg_type = load(full, "msg")
     msg = msgs.fill(msg_type, message)
     node = await ROS.node()
-    key = (topic, full, qos)
-    publisher = _publishers.get(key)
-    if publisher is None:
-        publisher = node.create_publisher(msg_type, topic, _qos(qos, 10))
-        _publishers[key] = publisher
+    publisher = await ROS.publisher(msg_type, topic, qos=qos)
     loop = asyncio.get_running_loop()
     deadline = loop.time() + max(match_s, 0.0)
     while publisher.get_subscription_count() < node.count_subscribers(topic) and loop.time() < deadline:

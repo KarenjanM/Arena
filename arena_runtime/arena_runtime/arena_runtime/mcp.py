@@ -3,31 +3,30 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import sys
 import time
 from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import Field
 
 from arena_mcp.core import JOBS, LATCHED, ROS, Domain, ToolError, cli, env_table, msgs
-from arena_mcp.core.envs import NO_RUNTIME, RUNTIME
+from arena_mcp.core.envs import NO_RUNTIME, RUNTIME, tg
 from arena_mcp.core.jobs import FAILED, RUNNING, JobHandle
 
 if TYPE_CHECKING:
     from arena_runtime_msgs.msg import HoldRegistry, LockstepStatus
     from arena_runtime_msgs.srv import LifecycleHold, SpawnEnv
-    from rclpy.publisher import Publisher
     from std_srvs.srv import Trigger
 
 domain = Domain(
     "runtime",
     """The Arena runtime (/arena): env table, spawn and despawn, sim health, pause holds, stepping, unpause windows and the lockstep scheduler.
     One runtime drives one simulator, so pause, step and lockstep act on every env of it at once.
-    Holds taken here are owned by this server (caller_id = its node name), released on request or when the server exits, never another caller's.""",
+    Holds owned by this server are the runtime's holders under its caller_id (its node name), released on request or when the server exits, never another caller's.""",
     requires=("rclpy", "arena_runtime_msgs"),
 )
 
 SIM_STATE = f"{RUNTIME}/state/sim"
+HOLDERS = f"{RUNTIME}/state/holders"
 SPAWN_ENV = f"{RUNTIME}/spawn_env"
 DESPAWN_ENV = f"{RUNTIME}/despawn_env"
 CLEANUP_ENV = f"{RUNTIME}/cleanup_env"
@@ -35,16 +34,12 @@ HOLD = f"{RUNTIME}/sim_lifecycle/hold"
 STEP = f"{RUNTIME}/sim_lifecycle/step"
 WINDOW = f"{RUNTIME}/sim_lifecycle/unpause_window"
 LOCKSTEP = f"{RUNTIME}/sim_lifecycle/lockstep"
-SHUTDOWN_REQUEST = f"{RUNTIME}/shutdown_request"
-LOCKSTEP_CALLER = "cli"
 
 
 class _Own:
     def __init__(self) -> None:
-        self.holds: collections.Counter[str] = collections.Counter()
         self.windows = 0
         self.lock = asyncio.Lock()
-        self.shutdown_publisher: Publisher | None = None
 
 
 _OWN = _Own()
@@ -77,20 +72,23 @@ def _holders(registry: HoldRegistry) -> list[dict[str, Any]]:
     return [msgs.to_dict(entry) for entry in registry.holds]
 
 
-async def _holders_settled(caller: str) -> list[dict[str, Any]]:
+def _mine(registry: HoldRegistry, caller: str) -> collections.Counter[str]:
+    return collections.Counter({entry.reason: entry.count for entry in registry.holds if entry.caller_id == caller})
+
+
+async def _next_holders() -> asyncio.Future[HoldRegistry]:
     from arena_runtime_msgs.msg import HoldRegistry
 
-    cache = await ROS.cache(HoldRegistry, f"{RUNTIME}/state/holders", qos=LATCHED)
-    deadline = time.monotonic() + 1.0
-    while True:
-        last = cache.last
-        if isinstance(last, HoldRegistry):
-            mine = {entry.reason: entry.count for entry in last.holds if entry.caller_id == caller}
-            if mine == dict(_OWN.holds) or time.monotonic() > deadline:
-                return _holders(last)
-        elif time.monotonic() > deadline:
-            return []
-        await asyncio.sleep(0.05)
+    await _latest(HoldRegistry, "holders")
+    return (await ROS.cache(HoldRegistry, HOLDERS, qos=LATCHED)).next()
+
+
+async def _published(future: asyncio.Future[HoldRegistry]) -> HoldRegistry:
+    from arena_runtime_msgs.msg import HoldRegistry
+
+    with contextlib.suppress(TimeoutError):
+        return await asyncio.wait_for(future, 2.0)
+    return await _latest(HoldRegistry, "holders")
 
 
 def _lockstep_dict(status: LockstepStatus) -> dict[str, Any]:
@@ -114,16 +112,11 @@ def _env_row(record: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _resolve(env_id: int | None) -> int:
-    ids = sorted(record["env_id"] for record in await env_table())
-    if env_id is None:
-        if len(ids) == 1:
-            return ids[0]
-        if not ids:
-            raise ToolError("no env is registered with the runtime", hint="runtime_spawn_env starts one")
-        raise ToolError(f"{len(ids)} envs are up, pass env_id", hint=f"env_ids: {ids}")
-    if env_id not in ids:
-        raise ToolError(f"no env {env_id}", hint=f"env_ids: {ids}")
-    return env_id
+    fqn = await tg(env_id)
+    for record in await env_table():
+        if record["fqn"] == fqn:
+            return record["env_id"]
+    raise ToolError(f"{fqn} is not registered with the runtime", hint="runtime_envs lists the registered envs")
 
 
 async def _sim_now() -> float | None:
@@ -160,13 +153,14 @@ async def runtime_state() -> dict[str, Any]:
         _latest(EnvRegistry, "envs"),
     )
     status = _lockstep_dict(lockstep)
+    caller = await _caller()
     return {
         "running": True,
         "healthy": sim.alive,
         "sim": {"alive": sim.alive, "reason": sim.reason, "since_wall": msgs.seconds(sim.header.stamp)},
         "paused": paused.data,
         "holders": _holders(holders),
-        "own": {"caller_id": await _caller(), "holds": dict(_OWN.holds), "windows": _OWN.windows},
+        "own": {"caller_id": caller, "holds": dict(_mine(holders, caller)), "windows": _OWN.windows},
         "lockstep": {key: status[key] for key in ("active", "paused", "ungated", "target_rtf", "measured_rtf", "tick", "waiting_on", "gated_ticks")},
         "envs": {"count": len(envs.envs), "ready": sum(1 for record in envs.envs if record.ready), "env_ids": sorted(record.env_id for record in envs.envs)},
         "params": await ROS.get_params(RUNTIME),
@@ -277,9 +271,10 @@ async def runtime_hold(reason: Annotated[str, Field(description="label of the ho
         raise ToolError("reason must not be empty")
     caller = await _caller()
     async with _OWN.lock:
+        published = await _next_holders()
         response = await _hold_call(LifecycleHold.Request.ACQUIRE, caller, reason)
-        _OWN.holds[reason] += 1
-    return {"caller_id": caller, "paused": response.paused, "hold_count": response.hold_count, "own": dict(_OWN.holds), "holders": await _holders_settled(caller)}
+        registry = await _published(published)
+    return {"caller_id": caller, "paused": response.paused, "hold_count": response.hold_count, "own": dict(_mine(registry, caller)), "holders": _holders(registry)}
 
 
 @domain.tool()
@@ -291,24 +286,24 @@ async def runtime_release(reason: Annotated[str | None, Field(description="relea
 
     caller = await _caller()
     async with _OWN.lock:
+        registry = await _latest(HoldRegistry, "holders")
+        mine = _mine(registry, caller)
         if reason is None:
-            targets = list(_OWN.holds.elements())
-        elif _OWN.holds[reason] > 0:
+            targets = list(mine.elements())
+        elif mine[reason] > 0:
             targets = [reason]
         else:
-            raise ToolError(f"this server holds no {reason!r}", hint=f"own holds: {dict(+_OWN.holds) or 'none'}, runtime_state lists every holder")
-        hold_count = None
+            raise ToolError(f"this server holds no {reason!r}", hint=f"own holds: {dict(mine) or 'none'}, runtime_state lists every holder")
         paused = None
+        hold_count = sum(entry.count for entry in registry.holds)
         for target in targets:
+            published = await _next_holders()
             response = await _hold_call(LifecycleHold.Request.RELEASE, caller, target)
-            _OWN.holds[target] -= 1
-            if _OWN.holds[target] <= 0:
-                del _OWN.holds[target]
+            registry = await _published(published)
             hold_count, paused = response.hold_count, response.paused
     if paused is None:
         paused = (await _latest(Bool, "paused")).data
-        hold_count = sum(entry.count for entry in (await _latest(HoldRegistry, "holders")).holds)
-    return {"caller_id": caller, "released": targets, "paused": paused, "hold_count": hold_count, "own": dict(_OWN.holds), "holders": await _holders_settled(caller)}
+    return {"caller_id": caller, "released": targets, "paused": paused, "hold_count": hold_count, "own": dict(_mine(registry, caller)), "holders": _holders(registry)}
 
 
 @domain.tool()
@@ -322,7 +317,7 @@ async def runtime_step(
     before = await _sim_now()
     response = await ROS.call(LifecycleStep, STEP, LifecycleStep.Request(seconds=float(seconds)), timeout=timeout_s, hint=NO_RUNTIME)
     if not response.success:
-        raise ToolError(f"step refused: {response.error_msg}", hint="runtime_hold pauses the sim first" if "hold" in response.error_msg else None)
+        raise ToolError(f"step refused: {response.error_msg}")
     after = await _sim_reached(before + response.advanced) if before is not None else await _sim_now()
     return {"requested": seconds, "advanced": response.advanced, "sim_time_before": before, "sim_time_after": after}
 
@@ -391,44 +386,12 @@ async def runtime_lockstep_start(
 
 
 @domain.tool()
-async def runtime_lockstep_register(
+async def runtime_lockstep_gate(
     channels: Annotated[list[str], Field(description="preset names (engine, peds) or 'name|topic|type|period_s|role' with role hard or soft, {env} in a topic expands per env; empty clears")],
-    caller: Annotated[str, Field(description="registration slot to replace, cli is the one arena lockstep gate uses")] = LOCKSTEP_CALLER,
 ) -> dict[str, Any]:
-    """Replace the lockstep gate channels registered under caller, global to all envs."""
-    from arena_runtime_msgs.msg import LockstepRegistration
-    from arena_runtime_msgs.srv import LockstepRegister
-
-    from arena_runtime.lockstep import spec_to_msg
-    from arena_runtime.lockstep_gates import ChannelSpec, parse_channel_entry
-
-    entries = []
-    for entry in channels:
-        if "|" in entry:
-            try:
-                entries.append(spec_to_msg(parse_channel_entry(entry)))
-            except ValueError as exc:
-                raise ToolError(str(exc), hint="want name|topic|type|period_s|role, role hard or soft") from exc
-            continue
-        presets = _presets()
-        if entry not in presets:
-            raise ToolError(f"no lockstep preset {entry!r}", hint=f"presets: {', '.join(sorted(presets))}, or a raw name|topic|type|period_s|role spec")
-        preset = presets[entry]
-        entries.append(spec_to_msg(ChannelSpec(name=preset["name"], topic_template=preset["topic"], type_name=preset["type"], period_s=float(preset["period_s"]), hard=bool(preset["hard"]))))
-    registration = LockstepRegistration(caller=caller, env="", channels=entries)
-    response = await ROS.call(LockstepRegister, f"{LOCKSTEP}/register", LockstepRegister.Request(registration=registration), hint=NO_RUNTIME)
-    if not response.success:
-        raise ToolError(f"lockstep register refused: {response.error_msg}")
-    return {"caller": caller, "channels": [msgs.to_dict(channel) for channel in entries]}
-
-
-def _presets() -> dict[str, dict[str, Any]]:
-    meta = str(cli.arena_dir() / "_meta")
-    if meta not in sys.path:
-        sys.path.append(meta)
-    from arena_cli.cli import _LOCKSTEP_PRESETS
-
-    return _LOCKSTEP_PRESETS
+    """Replace the lockstep gate channels of the cli registration, global to all envs, through `arena lockstep gate`."""
+    done = await asyncio.to_thread(cli.run, "lockstep", "gate", *channels, timeout=90.0)
+    return {"command": done["command"], "output": done["stdout"].strip()}
 
 
 @domain.tool(idempotent=True)
@@ -443,7 +406,7 @@ async def runtime_lockstep_pause() -> dict[str, Any]:
     """Freeze a running lockstep at the next tick boundary, keeping the run and its hold."""
     response = await _trigger("pause")
     if not response.success:
-        raise ToolError(response.message or "lockstep not running", hint="runtime_lockstep_start starts it")
+        raise ToolError(response.message, hint="runtime_lockstep_start starts it")
     return {"lockstep": "paused"}
 
 
@@ -452,7 +415,7 @@ async def runtime_lockstep_resume() -> dict[str, Any]:
     """Continue a paused lockstep run."""
     response = await _trigger("resume")
     if not response.success:
-        raise ToolError(response.message or "lockstep not running", hint="runtime_lockstep_start starts it")
+        raise ToolError(response.message, hint="runtime_lockstep_start starts it")
     return {"lockstep": "resumed"}
 
 
@@ -462,30 +425,6 @@ async def runtime_lockstep_status() -> dict[str, Any]:
     from arena_runtime_msgs.msg import LockstepStatus
 
     return _lockstep_dict(await _latest(LockstepStatus, "lockstep"))
-
-
-@domain.tool(destructive=True)
-async def runtime_shutdown(
-    reason: str,
-    env_id: Annotated[int | None, Field(description="env to stop, reached even when the runtime does not track it; None means the only registered env")] = None,
-) -> dict[str, Any]:
-    """Publish the shutdown broadcast asking one env to shut itself down."""
-    from arena_runtime_msgs.msg import ShutdownRequest
-
-    if env_id is None:
-        env_id = await _resolve(None)
-    node = await ROS.node()
-    if _OWN.shutdown_publisher is None:
-        _OWN.shutdown_publisher = node.create_publisher(ShutdownRequest, SHUTDOWN_REQUEST, 10)
-    publisher = _OWN.shutdown_publisher
-    deadline = time.monotonic() + 2.0
-    while publisher.get_subscription_count() == 0 and time.monotonic() < deadline:
-        await asyncio.sleep(0.05)
-    subscribers = publisher.get_subscription_count()
-    if subscribers == 0:
-        raise ToolError(f"no env listens on {SHUTDOWN_REQUEST}", hint="runtime_envs lists the live envs")
-    publisher.publish(ShutdownRequest(env_id=env_id, reason=reason))
-    return {"env_id": env_id, "reason": reason, "subscribers": subscribers}
 
 
 @domain.resource("arena://runtime/state", mime_type="application/json", description="Runtime health: sim, pause, holders, lockstep, envs, params")
@@ -499,19 +438,25 @@ async def envs_resource() -> list[dict[str, Any]]:
 
 
 async def _release_own() -> None:
+    from arena_runtime_msgs.msg import HoldRegistry
     from arena_runtime_msgs.srv import LifecycleHold, LifecycleUnpauseWindow
 
-    if not ROS.started or (not _OWN.holds and not _OWN.windows):
+    if not ROS.started:
         return
     caller = await _caller()
     for _ in range(_OWN.windows):
         with contextlib.suppress(ToolError):
             await _window_call(LifecycleUnpauseWindow.Request.RELEASE, caller, timeout=1.0, ready=0.5)
-    for reason in list(_OWN.holds.elements()):
+    _OWN.windows = 0
+    if (await ROS.node()).count_publishers(HOLDERS) == 0:
+        return
+    try:
+        registry = await _latest(HoldRegistry, "holders", timeout=1.0)
+    except ToolError:
+        return
+    for reason in list(_mine(registry, caller).elements()):
         with contextlib.suppress(ToolError):
             await _hold_call(LifecycleHold.Request.RELEASE, caller, reason, timeout=1.0, ready=0.5)
-    _OWN.holds.clear()
-    _OWN.windows = 0
 
 
 ROS.on_shutdown(_release_own)

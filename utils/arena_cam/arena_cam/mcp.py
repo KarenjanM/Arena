@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import importlib
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 
@@ -12,7 +10,6 @@ from pydantic import BaseModel, Field
 from arena_mcp.core import LATCHED, RELIABLE, ROS, Domain, ToolError, cli, fleet, media, msgs
 
 if TYPE_CHECKING:
-    from arena_rclpy_mixins.Time import Time
     from sensor_msgs.msg import Image
 
     from arena_cam.curves import Quat, Vec3
@@ -22,29 +19,23 @@ domain = Domain(
     "view",
     """Viewport cameras: aim and capture the sim GUI camera (/arena/viewport: MuJoCo, Isaac, Gazebo while its GUI runs) or an env's rviz camera.
     Poses are in the env frame (the world frame when several envs run and env_id is omitted), relative to the robot while following one.
-    view_frame_exact holds the sim and steps it per frame, view_record films an arena cam take in lockstep as a job.""",
+    view_record films an arena cam take in lockstep as a job.""",
     requires=("viewport_control_msgs", "arena_runtime_msgs"),
 )
 
-SIM = "/arena"
-HOLD = "/arena/sim_lifecycle/hold"
-STEP = "/arena/sim_lifecycle/step"
-LOCKSTEP = "/arena/state/lockstep"
 NO_VIEWPORT = "MuJoCo serves /arena/viewport, Isaac and Gazebo only while their GUI runs (launch without headless:=true), an env's rviz camera needs arena viz, view_available lists what is up"
-MAX_FRAMES = 8
-FPS = 30.0
 CHASE_EYE = (-3.0, 0.0, 2.0)
 Surface = Literal["sim", "rviz"]
 
 
 class View(BaseModel):
-    """Where the camera looks: from eye at target, or straight down from top_down metres, optionally following a robot."""
+    """Where the camera looks: from eye at target, or straight down from top_down meters, optionally following a robot."""
 
     eye: tuple[float, float, float] | None = Field(default=None, description="camera position, default 3 m behind and 2 m above a followed robot")
     target: tuple[float, float, float] = Field(default=(0.0, 0.0, 0.0), description="look-at point")
     top_down: float | None = Field(default=None, description="height above target, looks straight down and ignores eye")
     follow: str | None = Field(default=None, description="robot name, eye and target become relative to its base frame")
-    mode: Literal["full", "yaw", "position"] = Field(default="yaw", description="how much of the followed robot's rotation the camera inherits")
+    mode: Literal["full", "yaw", "position"] = Field(default="full", description="how much of the followed robot's rotation the camera inherits")
     fov: float = Field(default=0.0, description="horizontal field of view in rad, 0 keeps the current one")
     projection: Literal["perspective", "orthographic"] | None = None
 
@@ -165,14 +156,12 @@ async def _current(endpoint: _Endpoint) -> _Shot:
     return _Shot(eye=eye, target=curves.vadd(eye, curves.quat_forward(quat)), quat=quat, fov=0.0, following=None)
 
 
-async def _capture(endpoint: _Endpoint, shot: _Shot, min_sim_time: Time | None = None) -> Image:
+async def _capture(endpoint: _Endpoint, shot: _Shot) -> Image:
     from viewport_control_msgs.srv import ViewportCapture
 
     from arena_cam import surfaces
 
     request = ViewportCapture.Request(pose=surfaces.ros_pose(shot.eye, shot.quat), fov=float(shot.fov))
-    if min_sim_time is not None:
-        request.min_sim_time = min_sim_time.to_msg()
     return (await _call(ViewportCapture, f"{endpoint.ns}/viewport/capture", request, timeout=30.0)).image
 
 
@@ -197,10 +186,10 @@ async def view_available() -> dict[str, Any]:
             if service.endswith(surfaces.VIEW_SUFFIX):
                 providers.setdefault(service[: -len(surfaces.VIEW_SUFFIX)], []).append(f"{namespace.rstrip('/')}/{name}")
     try:
-        sim = (await ROS.get_params(SIM, ["sim"]))["sim"]
+        sim = (await ROS.get_params(surfaces.ARENA_ROOT, ["sim"]))["sim"]
     except ToolError:
         sim = None
-    viewports = [{"surface": "sim" if ns == SIM else "rviz", "tag": surfaces.tag(ns), "ns": f"{ns}/viewport", "capture": f"{ns}/viewport/capture" in services, "served_by": providers.get(ns, [])} for ns, _ in found]
+    viewports = [{"surface": "sim" if ns == surfaces.ARENA_ROOT else "rviz", "tag": surfaces.tag(ns), "ns": f"{ns}/viewport", "capture": f"{ns}/viewport/capture" in services, "served_by": providers.get(ns, [])} for ns, _ in found]
     out: dict[str, Any] = {"sim": sim, "viewports": viewports}
     if not any(entry["surface"] == "sim" for entry in viewports):
         out["hint"] = "Gazebo serves /arena/viewport only while its GUI runs, relaunch without headless:=true" if sim == "gazebo" else NO_VIEWPORT
@@ -230,63 +219,6 @@ async def view_capture(view: View | None = None, env_id: int | None = None, surf
     return [{**_describe(endpoint, shot), "stamp": msgs.seconds(image.header.stamp), "width": image.width, "height": image.height}, media.image_msg(image)]
 
 
-async def _held_sim_time() -> Time:
-    node = await ROS.node()
-    seen = node.sim_time
-    for _ in range(25):
-        await asyncio.sleep(0.2)
-        if node.sim_time == seen:
-            break
-        seen = node.sim_time
-    return seen
-
-
-@domain.tool()
-async def view_frame_exact(
-    env_id: int | None = None,
-    robot: Annotated[str | None, Field(description="follow this robot, shorthand for view.follow")] = None,
-    view: View | None = None,
-    frames: Annotated[int, Field(description=f"frames to capture, at most {MAX_FRAMES}")] = 1,
-    step_s: Annotated[float, Field(description="sim seconds stepped before each frame, 0 captures the held tick")] = 1.0 / 30.0,
-    surface: Surface = "sim",
-) -> list[Any]:
-    """Frame-exact capture: hold the sim, step it step_s per frame, capture each frame once the sim reached that time, release the hold."""
-    from arena_rclpy_mixins.Time import Time
-    from arena_runtime_msgs.msg import LockstepStatus
-    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep
-
-    if not 1 <= frames <= MAX_FRAMES:
-        raise ToolError(f"frames must be in [1, {MAX_FRAMES}]")
-    if step_s < 0.0:
-        raise ToolError("step_s must not be negative")
-    try:
-        status = await ROS.latest(LockstepStatus, LOCKSTEP, qos=LATCHED, timeout=0.5)
-    except ToolError:
-        status = None
-    if status is not None and status.active:
-        raise ToolError("a lockstep run owns the sim stepping", hint="view_record rides it frame-exactly, or stop the run first")
-    if robot is not None:
-        view = (view or View()).model_copy(update={"follow": robot})
-    endpoint = await _endpoint(surface, env_id)
-    shot = await _apply(endpoint, view, env_id) if view is not None else await _current(endpoint)
-    caller = (await ROS.node()).get_fully_qualified_name()
-    hold = LifecycleHold.Request(action=LifecycleHold.Request.ACQUIRE, caller_id=caller, reason="view_frame_exact")
-    await ROS.call(LifecycleHold, HOLD, hold, hint="no Arena runtime is up, view_capture works without one")
-    images: list[Image] = []
-    try:
-        tick = await _held_sim_time()
-        for _ in range(frames):
-            if step_s > 0.0:
-                stepped = await ROS.call(LifecycleStep, STEP, LifecycleStep.Request(seconds=step_s), timeout=30.0)
-                if not stepped.success:
-                    raise ToolError(f"step failed: {stepped.error_msg}")
-                tick = tick + Time.from_float(stepped.advanced)
-            images.append(await _capture(endpoint, shot, min_sim_time=tick))
-    finally:
-        await ROS.call(LifecycleHold, HOLD, LifecycleHold.Request(action=LifecycleHold.Request.RELEASE, caller_id=caller, reason="view_frame_exact"))
-    return [{**_describe(endpoint, shot), "frames": len(images), "sim_times": [msgs.seconds(image.header.stamp) for image in images]}, *(media.image_msg(image) for image in images)]
-
-
 def _catalog() -> tuple[list[str], list[str]]:
     from arena_cam.registry import PRIMITIVES
     from arena_cam.shots import SHOTS, discover
@@ -311,28 +243,29 @@ async def view_record(
     env_id: Annotated[int | None, Field(description="the env whose rviz camera films, every env's when omitted")] = None,
     force: Annotated[bool, Field(description="overwrite an existing file")] = False,
 ) -> dict[str, Any]:
-    """Film an arena cam take at 30 fps in lockstep, one 1/30 s sim step per frame, as a job whose result lists the written files."""
-    from arena_cam import Camera, TargetSelection, load_shot
-    from arena_cam.cli import _parse_params
-    from arena_cam.record import default_name, resolve_path
-    from arena_cam.surfaces import find_targets
+    """Film an arena cam take in lockstep, one sim step per frame, as a job whose result lists the written files."""
+    from arena_cam import Camera, TargetSelection, load_shot, surfaces
+    from arena_cam.cli import is_path, parse_params
+    from arena_cam.record import default_name, resolve_path, take_paths
 
     tokens = [f"{key}={value}" for key, value in (params or {}).items()]
-    is_path = name.endswith((".yaml", ".yml")) or "/" in name or os.path.exists(name)
+    shot_file = is_path(name)
     targets = TargetSelection(include_sim=surface != "rviz", viz_all=surface != "sim" and env_id is None, viz_env=env_id if surface != "sim" else None)
     try:
-        if is_path:
+        if shot_file:
             load_shot(name, targets)
         else:
-            Camera(targets).add(name, _parse_params(tokens))
-    except (ValueError, OSError, SystemExit) as exc:
+            Camera(targets).add(name, parse_params(tokens))
+    except (ValueError, OSError) as exc:
         verbs, shots = _catalog()
         raise ToolError(f"arena cam cannot play {name!r}: {exc}", hint=f"verbs: {', '.join(verbs)}, shots: {', '.join(shots) or 'none'}") from exc
-    if not find_targets((await ROS.graph())["services"], targets, await _env_refs()):
+    found = surfaces.find_targets((await ROS.graph())["services"], targets, await _env_refs())
+    if not found:
         raise ToolError(f"no {surface} viewport is up", hint=NO_VIEWPORT)
-    target = out or default_name(Path(name).stem)
+    target = out or default_name(Path(name).stem if shot_file else name)
     path = resolve_path(target)
-    args = ["cam", name, *tokens, "--record", target, "--fps", f"{FPS:g}", "--lockstep"]
+    files = take_paths(path, [surfaces.tag(ns) for ns, _ in found])
+    args = ["cam", name, *tokens, "--record", target, "--lockstep"]
     if surface == "sim":
         args.append("--sim")
     elif surface == "rviz":
@@ -341,7 +274,7 @@ async def view_record(
         args.append("--force")
 
     def written(_job: object) -> dict[str, Any]:
-        return {"files": [str(candidate) for candidate in [path, *sorted(path.parent.glob(f"{path.stem}-*{path.suffix}"))] if candidate.is_file()]}
+        return {"files": [str(file) for file in files if file.is_file()]}
 
     job = await cli.job("view", f"arena cam {name} --record {target}", *args, result=written)
     return {**job.as_dict(), "output": str(path)}

@@ -39,5 +39,5 @@ async def jobs_wait(job_id: str, timeout_s: float = 30.0) -> dict[str, Any]:
 
 @domain.tool(destructive=True)
 async def jobs_cancel(job_id: str) -> dict[str, Any]:
-    """Stop a job: process jobs get SIGINT, then SIGTERM and SIGKILL only if they survive the grace window."""
+    """Stop a job: process jobs get SIGINT, then SIGTERM and SIGKILL only if they survive the grace window, launch jobs run the system_stop ladder to its end."""
     return (await JOBS.cancel(job_id)).as_dict()

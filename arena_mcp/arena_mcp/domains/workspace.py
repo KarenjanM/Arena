@@ -171,8 +171,6 @@ async def workspace_feature(name: str, action: Annotated[str, Field(description=
     offered = [command for command in _commands(module) if command in FEATURE_ACTIONS]
     if action not in offered:
         raise ToolError(f"feature {name} has no {action!r} action here", hint=f"actions: {', '.join(offered) or 'none'}")
-    if (name, action) == ("docker", "stop"):
-        raise ToolError("docker stop stops the container this server runs in", hint="run `arena feature docker stop` from a shell")
     return (await cli.job("feature", f"arena feature {name} {action}", "feature", name, action)).as_dict()
 
 

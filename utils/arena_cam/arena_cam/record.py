@@ -53,6 +53,11 @@ def tagged(path: Path, tag: str) -> Path:
     return path.with_stem(f"{path.stem}-{tag}")
 
 
+def take_paths(path: Path, tags: list[str]) -> list[Path]:
+    """`path` for a lone camera, else one tagged file per camera."""
+    return [path] if len(tags) == 1 else [tagged(path, tag) for tag in tags]
+
+
 def claim(paths: Iterable[Path], force: bool = False) -> None:
     """Refuse existing files so a take is never clobbered, `force` overrides that."""
     taken = [str(path) for path in paths if path.exists()]

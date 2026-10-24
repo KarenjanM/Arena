@@ -636,7 +636,7 @@ absent.
 (`/arena/viewport`) by default and an env's rviz camera with `surface: rviz`,
 through the same addressing (`surfaces`) and look-at math (`curves`) as `cam`.
 
-A view is `eye` and `target`, or `top_down` metres above `target`, optionally
+A view is `eye` and `target`, or `top_down` meters above `target`, optionally
 following a robot by its base frame (`follow`, `mode` as in `track`). Poses are
 in the env frame and are shifted by the env's registry `reference` for the sim
 viewport, the way `cam` localizes shots. While following, they are relative to
@@ -644,9 +644,7 @@ the robot. `view_available` reports which viewports are up, the node serving
 each and the simulator, and names the missing Gazebo GUI when that is why none
 is up.
 
-`view_frame_exact` takes a sim hold, steps `step_s` per frame, captures each frame
-with `min_sim_time` at the stepped time and releases the hold. It refuses while a
-lockstep run owns the stepping. `view_record` runs `arena cam <name> --record
---lockstep` at 30 fps as a job (`jobs_status`, `jobs_wait`), which rides an
-active lockstep run or steps the sim itself. The job result lists the written
-files. `arena://view/shots` lists the verbs and shots it takes.
+`view_record` runs `arena cam <name> --record --lockstep` as a job
+(`jobs_status`, `jobs_wait`), which rides an active lockstep run or steps the sim
+itself. The job result lists the written files. `arena://view/shots` lists the
+verbs and shots it takes.

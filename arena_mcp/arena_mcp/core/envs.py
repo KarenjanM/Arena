@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from arena_bringup.viz_backends import env_idx_from_ns
+
 from .errors import ToolError
 from .msgs import to_dict
 from .ros import LATCHED, ROS
 
 RUNTIME = "/arena"
+ENVS_TOPIC = f"{RUNTIME}/state/envs"
+SUBMIT_TASK_TIMEOUT_S = 150.0
 NO_RUNTIME = "no Arena runtime is up, system_launch starts one"
 
 
@@ -14,7 +18,7 @@ async def env_table(*, timeout: float = 2.0) -> list[dict[str, Any]]:
     """The runtime's env registry: env_id, task generator fqn, slot and readiness per env."""
     from arena_runtime_msgs.msg import EnvRegistry
 
-    registry = await ROS.latest(EnvRegistry, f"{RUNTIME}/state/envs", qos=LATCHED, timeout=timeout, hint=NO_RUNTIME)
+    registry = await ROS.latest(EnvRegistry, ENVS_TOPIC, qos=LATCHED, timeout=timeout, hint=NO_RUNTIME)
     return [to_dict(record) for record in registry.envs]
 
 
@@ -43,7 +47,7 @@ async def tg(env_id: int | None = None) -> str:
         raise ToolError("no env is up", hint=NO_RUNTIME)
     if env_id is None and len(nodes) == 1:
         return nodes[0]
-    matches = [node for node in nodes if env_id is not None and f"/env_{env_id}/" in node]
+    matches = [node for node in nodes if env_id is not None and env_idx_from_ns(node) == env_id]
     if len(matches) == 1:
         return matches[0]
     raise ToolError(f"cannot pick an env among {nodes}", hint="pass env_id")

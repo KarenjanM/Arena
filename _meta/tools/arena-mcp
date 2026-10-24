@@ -13,11 +13,11 @@ Runs the Arena MCP server inside the running arena container, for an MCP client 
   --fork NAME          attach to the fork NAME instead of the dev container
   --host SSH_HOST      run everything on SSH_HOST through ssh -T -o BatchMode=yes
   --container NAME     attach to this container instead of looking it up
-  --print-command      print the commands instead of running them
+  --print-command      print the compose project and the commands instead of running them
 
-The container is the compose service 'arena' of project arena-<basename of ARENA_WS_DIR>
-(arena-<basename>-<fork> with --fork). It is never started here: without one, run
-'source arena' (or 'arena fork new NAME' inside it for a fork) first.
+The container is the compose service 'arena' of the workspace's compose project, as
+_meta/docker/lib names it (with ARENA_FORK=NAME for --fork). It is never started here:
+without one, run 'source arena' (or 'arena fork new NAME' inside it for a fork) first.
 EOF
 }
 
@@ -59,11 +59,6 @@ if [ "$#" -gt 0 ] && { [ "$1" = serve ] || [ "$1" = ls ]; }; then
     shift
 fi
 
-if [ -n "$fork" ] && ! [[ "$fork" =~ ^[a-z0-9][a-z0-9_-]{0,62}$ ]]; then
-    say "fork name '$fork' must be 1-63 lowercase letters, digits, '-' or '_', starting with a letter or digit"
-    exit 2
-fi
-
 workspace(){
     if [ -n "${ARENA_WS_DIR:-}" ]; then
         printf '%s\n' "$ARENA_WS_DIR"
@@ -78,15 +73,34 @@ workspace(){
     fi
 }
 
-project="arena-$(basename "$(workspace)")${fork:+-$fork}"
+lib="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../docker/lib"
+ARENA_WS_DIR=$(workspace)
+ARENA_FORK=$fork
+arena_compose_sudo=""
+set +eu
+# shellcheck source=../docker/lib
+. "$lib"
+set -eu
+project=$ARENA_PROJECT_NAME
+lib_defs="$(declare -p ARENA_PROJECT_NAME arena_compose_sudo; declare -f arena_docker arena_containers)"
 
 quote(){
-    printf '%q ' "$@"
+    local arg out=""
+    for arg in "$@"; do
+        out+="'${arg//\'/\'\\\'\'}' "
+    done
+    printf '%s' "$out"
+}
+
+over_ssh(){
+    printf '%s\0' ssh -T -o BatchMode=yes "$host" "$(quote bash -c "$lib_defs"$'\n''"$@"' arena-mcp "$@")"
 }
 
 remote(){
     if [ -n "$host" ]; then
-        ssh -T -o BatchMode=yes "$host" "$(quote "$@")"
+        local argv
+        mapfile -d '' argv < <(over_ssh "$@")
+        "${argv[@]}"
     else
         "$@"
     fi
@@ -94,22 +108,25 @@ remote(){
 
 shown(){
     if [ -n "$host" ]; then
-        printf '%s\n' "$(quote ssh -T -o BatchMode=yes "$host" "$(quote "$@")")"
+        local argv
+        mapfile -d '' argv < <(over_ssh "$@")
+        printf '%q ' "${argv[@]}"
     else
-        printf '%s\n' "$(quote "$@")"
+        printf '%q ' env "ARENA_WS_DIR=$ARENA_WS_DIR" "ARENA_FORK=$ARENA_FORK" bash -c '. "$0" && "$@"' "$lib" "$@"
     fi
 }
 
-lookup=(docker ps -q --filter status=running --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=arena)
+lookup=(arena_containers arena)
 script='source /opt/arena_ws/source >/dev/null 2>&1; exec python3 -m arena_mcp "$@"'
 
 if [ "$print" = 1 ]; then
+    printf 'project: %s\n' "$project"
     if [ -z "$container" ]; then
         printf 'lookup: %s\n' "$(shown "${lookup[@]}")"
         container='{container}'
     fi
-    printf 'probe: %s\n' "$(shown docker exec "$container" test -f /.built)"
-    printf 'exec: %s\n' "$(shown docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
+    printf 'probe: %s\n' "$(shown arena_docker exec "$container" test -f /.built)"
+    printf 'exec: %s\n' "$(shown arena_docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
     exit 0
 fi
 
@@ -133,11 +150,12 @@ if [ -z "$container" ]; then
         exit 1
     fi
 fi
-if ! remote docker exec "$container" test -f /.built </dev/null >/dev/null 2>&1; then
+if ! remote arena_docker exec "$container" test -f /.built </dev/null >/dev/null 2>&1; then
     say "container $container$where is not running, or its first-boot setup has not finished (docker logs -f $container)"
     exit 1
 fi
 if [ -n "$host" ]; then
-    exec ssh -T -o BatchMode=yes "$host" "$(quote docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")"
+    mapfile -d '' argv < <(over_ssh arena_docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@")
+    exec "${argv[@]}"
 fi
-exec docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@"
+arena_docker exec -i "$container" /entrypoint.sh bash --norc -c "$script" bash "$verb" "$@"

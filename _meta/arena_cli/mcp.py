@@ -8,8 +8,6 @@ import sys
 from arena_cli.common import CLIError, _exec, _host_path, make_verb
 from arena_cli.complete import Flags, Static, Union
 
-GROUP = "arena_mcp.domains"
-
 DESCRIPTION = """Serve the Arena MCP domains to an MCP client over stdio.
 
 Usage:
@@ -23,8 +21,12 @@ there. The .mcp.json at the Arena root registers it as the server 'arena'."""
 
 
 def domains() -> list[str]:
-    """Domain names registered under the arena_mcp.domains entry-point group, without importing them."""
+    """Domain names registered under the arena_mcp entry-point group, without importing them."""
+    if importlib.util.find_spec("arena_mcp") is None:
+        return []
     from importlib.metadata import entry_points
+
+    from arena_mcp import GROUP
 
     return sorted({point.name for point in entry_points(group=GROUP)})
 

@@ -8,11 +8,10 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
+from . import GROUP
 from .core.domain import Domain
 from .core.jobs import JOBS
 from .core.ros import ROS
-
-GROUP = "arena_mcp.domains"
 
 INSTRUCTIONS = """\
 Arena: ROS 2 navigation research platform (simulators, task generator, robots, worlds, benchmarks).
