@@ -396,6 +396,14 @@ ped on the seat, not on a ring around the object. An object without seats keeps 
 the object's origin, not its seat, so an object with seats and no `interaction_radius` gets one that reaches its
 whole bounding-box footprint from beside it: the farthest corner from the origin plus the ped radius.
 
+Each seat also has the height of the surface a body rests on, sent as `WorldObjectInfo.seat_heights`: a sit slot's
+is the top of its z range, which the asset build measures; a scenario seat's is its `z`, else that of the sit slot it
+lies in or within 15 cm of, so a lying seat along a bed gives its mattress as `z`. Both add the object's own z. The
+engine parks agents on seats in 2D and, once an agent holding a `SIT_ON` or `LIE_ON` has arrived on an explicit seat,
+reports that seat's height in `AgentFrame.support_height`; the adapter passes it on as `Pedestrian.support_height`, for
+the renderer to set the body on the surface. An agent on its feet, on a generated ring slot, beside a full object or on
+a seat of unknown height gets `Pedestrian.NO_SUPPORT`, and the renderer leaves the body where the clip puts it.
+
 The adapter follows the engine's latched `interactions` frame and reports the participants of every held `SIT_ON`
 by object through `seated()`, map-frame positions from the latest agent states, notifying `on_seated_change`
 listeners when the set changes. The base class reports nobody seated.
