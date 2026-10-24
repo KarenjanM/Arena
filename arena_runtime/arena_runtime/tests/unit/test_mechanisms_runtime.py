@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import random
 
 import pytest
 
@@ -14,6 +15,8 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     TELEPORT_GRACE,
     _advance_state,
     _Arrival,
+    _CarState,
+    _check_door_conflicts,
     _door_geometry,
     _door_open_pose,
     _DoorRuntime,
@@ -32,6 +35,7 @@ from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     shim_spawn_elevators,
 )
 from arena_runtime.sim._semantics import GateSemantics, SemanticsManager  # noqa: E402
+from arena_simulation_setup.shared.semantics import SemanticCfg  # noqa: E402
 from arena_simulation_setup.utils.geometry import Orientation, Pose, Position  # noqa: E402
 from task_generator.shared import Door, Elevator  # noqa: E402
 
@@ -292,7 +296,8 @@ def test_round_robin_advances_one_step_per_departure():
     rt = _multi_runtime()
     up = _ElevatorRuntime(elevator=_elevator("env/up/1"), door_name="up/door", destination_name="env/hub/0")
     door = _DoorRuntime(door=_door("hub/door"), closed_pose=Pose(), open_pose=Pose(), effective_kind="sliding")
-    rt.departing = True
+    rt.car = _CarState.DEPARTING
+    rt.next_stop = rt.current_destination()
     _step_elevator(rt, door, up, occupants=[("r1", (0.0, 0.0))], outside_trigger=False, now=1.0)
     assert up.arrivals[0].source == "env/hub/0"
     assert rt.current_destination() == "env/down/2"
@@ -306,7 +311,8 @@ def test_target_write_overrides_round_robin_and_clears():
     assert _snap(mech, "env/hub/0", "elevator").discrete["target"] == "env/up/1"
     assert mech._semantics.set_value("env/hub/0", "target", "2.down")
     assert rt.target_override == "env/down/2"
-    rt.departing = True
+    rt.car = _CarState.DEPARTING
+    rt.next_stop = rt.current_destination()
     door = _DoorRuntime(door=_door("hub/door"), closed_pose=Pose(), open_pose=Pose(), effective_kind="sliding")
     dest = _ElevatorRuntime(elevator=_elevator("env/down/2"), door_name="x", destination_name="")
     _step_elevator(rt, door, dest, occupants=[("r1", (0.0, 0.0))], outside_trigger=False, now=1.0)
@@ -339,7 +345,7 @@ def test_tick_multi_destination_rides_follow_target():
         )
         mech._semantics.set_value("hub", "target", "down")
         await _run(mech, 0.2, robots={"r1": (-0.5, 0.0)})
-        await _run(mech, 4.0)
+        await _run(mech, 15.0)
         return mech
 
     mech = asyncio.run(scenario())
@@ -351,8 +357,8 @@ def test_tick_multi_destination_rides_follow_target():
 # ---------------------------------------------------------------------------
 
 
-def test_two_cabins_dispatching_to_same_destination_both_arrive():
-    """Both ride groups land and both source cabins unseal."""
+def test_two_cabins_sending_to_one_destination_are_served_one_after_the_other():
+    """One car per group: r1's ride lands before the car fetches r2, both end in b."""
 
     async def scenario():
         mech = _Mech()
@@ -365,19 +371,24 @@ def test_two_cabins_dispatching_to_same_destination_both_arrive():
         mech._robots = {"r1": (-0.5, 0.0)}
         await _run(mech, 0.5)
         mech._robots["r2"] = (19.5, 0.0)
-        assert mech._elevator_runtime["b"].arriving_eta > 0
         await _run(mech, 0.5)
-        assert len(mech._elevator_runtime["b"].arrivals) == 2
-        await _run(mech, 4.0)
+        assert len(mech._elevator_runtime["b"].arrivals) == 1
+        assert mech._elevator_runtime["c"].call_since < math.inf
+        r1_landed = False
+        for _ in range(900):
+            await _run(mech, DT)
+            if not r1_landed and mech._robots["r1"] == pytest.approx((9.5, 0.0)):
+                r1_landed = True
+                assert mech._robots["r2"] == (19.5, 0.0)
+                mech._robots["r1"] = (12.5, 0.0)
         return mech
 
     mech = asyncio.run(scenario())
-    assert mech._robots["r1"] == pytest.approx((9.5, 0.0))
+    assert mech._robots["r1"] == (12.5, 0.0)
     assert mech._robots["r2"] == pytest.approx((9.5, 0.0))
     assert mech._elevator_runtime["b"].arrivals == []
     assert mech._elevator_runtime["a"].dispatched == set()
     assert mech._elevator_runtime["c"].dispatched == set()
-    assert set(mech._elevator_runtime["b"].just_arrived) == {"r1", "r2"}
 
 
 def test_arrival_queue_orders_by_eta():
@@ -696,9 +707,9 @@ def test_edge_closed_cabin_with_rider_departs_despite_waiting_caller():
     assert door.last_trigger_sim_time == -100.0
 
 
-@pytest.mark.parametrize("call_mode, departs", [("level", False), ("edge", True)])
-def test_crowded_lobby_tick(call_mode, departs):
-    """Peds idling at the hall door: a level cabin is held forever, an edge cabin closes and departs."""
+@pytest.mark.parametrize("call_mode", ["level", "edge"])
+def test_crowded_lobby_tick(call_mode):
+    """Peds idling at the hall door hold a loaded cabin at most hold_time, then it departs."""
 
     async def scenario():
         mech = _Mech(_HumanSim({"p1": (1.4, 0.6), "p2": (1.4, -0.6)}))
@@ -709,8 +720,194 @@ def test_crowded_lobby_tick(call_mode, departs):
         return mech
 
     mech = asyncio.run(scenario())
-    if departs:
-        assert mech._robots["r1"] == pytest.approx((9.5, 0.0))
-    else:
-        assert mech._robots["r1"] == (-0.5, 0.0)
-        assert mech._door_runtime["a/door"].state == _DoorState.OPEN
+    assert mech._robots["r1"] == pytest.approx((9.5, 0.0))
+
+
+# ---------------------------------------------------------------------------
+# one car per group
+# ---------------------------------------------------------------------------
+
+
+def _open(mech: _Mech, name: str) -> bool:
+    return mech._door_runtime[f"{name}/door"].state != _DoorState.CLOSED
+
+
+def test_a_call_at_the_cabin_without_the_car_brings_it_there_empty():
+    async def scenario():
+        mech = _Mech()
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "a"))
+        cars = (mech._elevator_runtime["a"].car, mech._elevator_runtime["b"].car)
+        mech._robots = {"r1": (11.8, 0.0)}
+        opened_without_car = False
+        for _ in range(int(round(8.0 / DT))):
+            await _run(mech, DT)
+            opened_without_car |= mech._elevator_runtime["b"].car != _CarState.PRESENT and _open(mech, "b")
+        return mech, cars, opened_without_car
+
+    mech, cars, opened_without_car = asyncio.run(scenario())
+    assert cars == (_CarState.PRESENT, _CarState.ABSENT)
+    assert not opened_without_car
+    assert mech._elevator_runtime["b"].car == _CarState.PRESENT
+    assert mech._elevator_runtime["a"].car == _CarState.ABSENT
+    assert _open(mech, "b")
+    assert mech._robots["r1"] == (11.8, 0.0)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_never_two_open_doors_in_a_group_under_random_calls(seed):
+    async def scenario():
+        mech = _Mech(_HumanSim())
+        incidents: list[str] = []
+        mech._incident_callback = incidents.append
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "c"), _elevator("c", (20.0, 0.0), "a"))
+        rng = random.Random(seed)
+        spots = [(x + dx, 0.0) for x in (0.0, 10.0, 20.0) for dx in (-0.5, 1.8, 4.0)]
+        worst = 0
+        for _ in range(60):
+            mech._robots = {f"r{i}": rng.choice(spots) for i in range(3)}
+            mech._human_simulator.peds = {f"p{i}": rng.choice(spots) for i in range(3)}
+            for _ in range(int(round(1.0 / DT))):
+                await _run(mech, DT)
+                worst = max(worst, sum(_open(mech, name) for name in "abc"))
+        return worst, incidents
+
+    worst, incidents = asyncio.run(scenario())
+    assert worst == 1
+    assert incidents == []
+
+
+def test_an_idle_car_answers_the_oldest_call_first():
+    a = _ElevatorRuntime(elevator=_elevator("a", destination="b"), door_name="a/door", destination_name="b")
+    b = _ElevatorRuntime(elevator=_elevator("b", destination="c"), door_name="b/door", destination_name="c", car=_CarState.ABSENT, call_since=5.0)
+    c = _ElevatorRuntime(elevator=_elevator("c", destination="a"), door_name="c/door", destination_name="a", car=_CarState.ABSENT, call_since=3.0)
+    door = _DoorRuntime(door=_door("a/door"), closed_pose=Pose(), open_pose=Pose(), effective_kind="sliding")
+    _step_elevator(a, door, b, occupants=[], outside_trigger=False, now=6.0, group={"b": b, "c": c})
+    assert a.departing
+    assert a.next_stop == "c"
+    _step_elevator(a, door, b, occupants=[], outside_trigger=False, now=6.1, group={"b": b, "c": c})
+    assert a.car == _CarState.ABSENT
+    assert c.car == _CarState.ARRIVING
+    assert c.arrivals[0].occupants == ()
+
+
+def test_an_empty_car_held_open_by_a_passerby_still_answers_a_call_elsewhere():
+    async def scenario():
+        mech = _Mech(_HumanSim({"p1": (1.8, 0.4)}))
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "a"))
+        await _run(mech, 1.0)
+        held = _open(mech, "a")
+        mech._robots = {"r1": (11.8, 0.0)}
+        await _run(mech, 9.0)
+        return mech, held
+
+    mech, held = asyncio.run(scenario())
+    assert held
+    assert mech._elevator_runtime["b"].car == _CarState.PRESENT
+    assert not _open(mech, "a")
+
+
+def test_an_arriving_empty_car_answers_its_callers_for_hold_time_after_its_door_opened():
+    a = _ElevatorRuntime(elevator=_elevator("a", destination="b"), door_name="a/door", destination_name="b", car=_CarState.ABSENT)
+    b = _ElevatorRuntime(elevator=_elevator("b", destination="a"), door_name="b/door", destination_name="a", car=_CarState.ABSENT, call_since=1.0)
+    a.queue_arrival(_Arrival(eta=10.0, source="b", occupants=()))
+    door = _DoorRuntime(door=_door("a/door"), closed_pose=Pose(), open_pose=Pose(), effective_kind="sliding")
+    _step_elevator(a, door, b, occupants=[], outside_trigger=True, now=10.0, group={"b": b})
+    assert a.car == _CarState.PRESENT
+    for now in (11.0, 12.5, 12.9):
+        _step_elevator(a, door, b, occupants=[], outside_trigger=True, now=now, group={"b": b})
+        assert door.last_trigger_sim_time == now
+    _step_elevator(a, door, b, occupants=[], outside_trigger=True, now=13.1, group={"b": b})
+    assert door.last_trigger_sim_time == 12.9
+
+
+def test_the_arrival_hold_ends_at_teleport_grace_when_a_call_waits():
+    async def scenario():
+        mech = _Mech()
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "a"))
+        mech._robots = {"r1": (-0.5, 0.0)}
+        await _run(mech, 4.0)
+        landed = mech._robots["r1"]
+        mech._robots["r2"] = (1.8, 0.0)
+        await _run(mech, 8.0)
+        held = _open(mech, "b") and mech._elevator_runtime["b"].car == _CarState.PRESENT
+        await _run(mech, 10.0)
+        return mech, landed, held
+
+    mech, landed, held = asyncio.run(scenario())
+    assert landed == pytest.approx((9.5, 0.0))
+    assert held
+    assert mech._robots["r1"] == pytest.approx((-0.5, 0.0))
+    assert mech._elevator_runtime["a"].car == _CarState.PRESENT
+
+
+def test_a_recall_brings_the_car_and_keeps_it_there_with_the_door_open():
+    async def scenario():
+        mech = _Mech()
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "a"))
+        cfgs = [SemanticCfg(role="state", name="state", params={"windows": [{"start": 0.0, "end": 100.0, "value": "on"}], "regime": "alarm"})]
+        assert mech._semantics.attach("schedule", "fire", cfgs)
+        mech._semantics.set_recall("b", "alarm")
+        await _run(mech, 8.0)
+        arrived = (mech._elevator_runtime["b"].car, _open(mech, "b"), _open(mech, "a"))
+        mech._robots = {"r1": (1.8, 0.0)}
+        await _run(mech, 20.0)
+        return mech, arrived
+
+    mech, arrived = asyncio.run(scenario())
+    assert arrived == (_CarState.PRESENT, True, False)
+    assert mech._elevator_runtime["b"].car == _CarState.PRESENT
+    assert _open(mech, "b")
+    assert not _open(mech, "a")
+
+
+def test_a_failed_teleport_brings_the_car_back_to_its_riders():
+    async def scenario():
+        mech = _Mech()
+        mech.robot_teleport_ok = False
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "a"))
+        mech._robots = {"r1": (-0.5, 0.0)}
+        left = returned = False
+        for _ in range(int(round(15.0 / DT))):
+            await _run(mech, DT)
+            left |= mech._elevator_runtime["b"].car == _CarState.PRESENT
+            returned |= left and mech._elevator_runtime["a"].car == _CarState.PRESENT and _open(mech, "a")
+        return mech, left, returned
+
+    mech, left, returned = asyncio.run(scenario())
+    assert left
+    assert returned
+    assert mech._robots["r1"] == (-0.5, 0.0)
+
+
+def test_reset_puts_the_car_back_at_the_first_cabin():
+    async def scenario():
+        mech = _Mech()
+        await _spawn_elevators(mech, _elevator("b", (10.0, 0.0), "a"), _elevator("a", (0.0, 0.0), "b"))
+        mech._robots = {"r1": (11.8, 0.0)}
+        await _run(mech, 6.0)
+        moved = mech._elevator_runtime["b"].car
+        reset_mechanisms(mech)
+        return mech, moved
+
+    mech, moved = asyncio.run(scenario())
+    assert moved == _CarState.PRESENT
+    assert mech._elevator_runtime["a"].car == _CarState.PRESENT
+    assert mech._elevator_runtime["b"].car == _CarState.ABSENT
+    assert mech._elevator_runtime["b"].call_since == math.inf
+
+
+def test_two_open_doors_in_a_group_are_reported_once():
+    async def scenario():
+        mech = _Mech()
+        incidents: list[str] = []
+        mech._incident_callback = incidents.append
+        await _spawn_elevators(mech, _elevator("a", (0.0, 0.0), "b"), _elevator("b", (10.0, 0.0), "a"))
+        for name in "ab":
+            mech._door_runtime[f"{name}/door"].state = _DoorState.OPEN
+        _check_door_conflicts(mech)
+        _check_door_conflicts(mech)
+        return incidents
+
+    incidents = asyncio.run(scenario())
+    assert len(incidents) == 1
+    assert "'a'" in incidents[0] and "'b'" in incidents[0]

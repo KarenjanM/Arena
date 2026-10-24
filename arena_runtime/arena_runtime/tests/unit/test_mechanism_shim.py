@@ -17,8 +17,10 @@ pytest.importorskip("arena_runtime.sim._mechanism_shim")
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     DOOR_INSET,
     WALL_THICKNESS,
+    TELEPORT_GRACE,
     _advance_state,
     _Arrival,
+    _CarState,
     _compute_teleport_destinations,
     _door_geometry,
     _door_open_pose,
@@ -343,7 +345,8 @@ def test_departing_survives_blocked_close_and_completes_when_clear():
     elev_a = _elevator(name="a", destination="b", travel_time=3.0)
     a = _elev_runtime(elev_a, door_name="a/door", destination="b")
     b = _elev_runtime(_elevator(name="b", destination="a"), door_name="b/door", destination="a")
-    a.departing = True
+    a.car = _CarState.DEPARTING
+    a.next_stop = "b"
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.OPEN
     dr.progress = 1.0
@@ -371,7 +374,8 @@ def test_departing_door_closed_commits_teleport_to_dest():
     elev_b = _elevator(name="b", destination="a")
     a = _elev_runtime(elev_a, door_name="a/door", destination="b")
     b = _elev_runtime(elev_b, door_name="b/door", destination="a")
-    a.departing = True
+    a.car = _CarState.DEPARTING
+    a.next_stop = "b"
     dr_a = _door_runtime(_door(name="a/door"), kind="sliding")
     dr_a.state = _DoorState.CLOSED
     result = _step_elevator(
@@ -392,7 +396,8 @@ def test_departing_missing_destination_reverts():
     """Departing with no destination: cancel, hold door open."""
     elev = _elevator(name="a", destination="ghost")
     a = _elev_runtime(elev, destination="ghost")
-    a.departing = True
+    a.car = _CarState.DEPARTING
+    a.next_stop = "ghost"
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
     result = _step_elevator(a, dr, None, occupants=[], outside_trigger=False, now=5.0)
@@ -479,10 +484,11 @@ def test_just_arrived_occupant_holds_door_open():
     assert dr.last_trigger_sim_time == 5.0
 
 
-def test_just_arrived_resident_blocks_depart_for_new_entrant():
-    """Fresh entrant (r2) must wait: departing would teleport the just_arrived r right back."""
+def test_just_arrived_resident_holds_the_door_for_a_new_entrant_within_grace():
+    """Fresh entrant (r2) waits while the just_arrived r may still be walking out."""
     a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
     a.just_arrived = {"r": True}
+    a.arrived_at = 4.0
     dr = _door_runtime(_door(name="a/door"), kind="sliding")
     dr.state = _DoorState.CLOSED
     _step_elevator(
@@ -495,6 +501,20 @@ def test_just_arrived_resident_blocks_depart_for_new_entrant():
     )
     assert not a.departing
     assert dr.last_trigger_sim_time == 5.0
+
+
+def test_just_arrived_resident_past_grace_rides_along_with_a_new_entrant():
+    a = _elev_runtime(_elevator(name="a", destination="b"), destination="b")
+    a.just_arrived = {"r": True}
+    a.arrived_at = 4.0
+    dr = _door_runtime(_door(name="a/door"), kind="sliding")
+    dr.state = _DoorState.CLOSED
+    dr.last_trigger_sim_time = -100.0
+    now = 4.0 + TELEPORT_GRACE + 0.1
+    _step_elevator(a, dr, None, occupants=[("r", (0.0, 0.0)), ("r2", (0.0, 0.0))], outside_trigger=False, now=now)
+    assert a.departing
+    assert a.next_stop == "b"
+    assert dr.last_trigger_sim_time == -100.0
 
 
 def test_close_blocked_by_agent_disc_in_slot_reopens():
@@ -804,8 +824,8 @@ def test_tick_blocker_at_departing_doorway_reverts():
     """Outside trigger on A while A is departing (occupant closing) cancels departure."""
     runtimes, doors = _prime_pair()
     a = runtimes["a"]
-    # Manually set departing so we can test the abort.
-    a.departing = True
+    a.car = _CarState.DEPARTING
+    a.next_stop = "b"
     doors["a/door"].state = _DoorState.CLOSING
     doors["a/door"].progress = 0.4
     # Outside trigger on A cancels departing.
@@ -817,7 +837,8 @@ def test_tick_missing_destination_reverts():
     """Departing with unknown destination holds door open."""
     runtimes, doors = _prime_pair()
     a = runtimes["a"]
-    a.departing = True
+    a.car = _CarState.DEPARTING
+    a.next_stop = "b"
     del runtimes["b"]
     doors["a/door"].state = _DoorState.CLOSED
     doors["a/door"].progress = 0.0
@@ -1123,7 +1144,7 @@ def test_reset_mechanisms_resets_bare_elevator_and_cabin_door():
     er = _elev_runtime(_elevator(name="e", destination="other"), door_name="e/door", destination="other")
     er.queue_arrival(_Arrival(eta=8.0, source="other", occupants=(("r", (1.0, 2.0)),)))
     er.just_arrived = {"r": True}
-    er.departing = True
+    er.car = _CarState.DEPARTING
     er.dispatched = {"r"}
     cabin = _door_runtime(_door(name="e/door"), kind="sliding")
     cabin.state = _DoorState.OPEN

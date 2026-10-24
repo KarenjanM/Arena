@@ -108,6 +108,13 @@ class _DoorState(enum.StrEnum):
     CLOSING = 'closing'
 
 
+class _CarState(enum.StrEnum):
+    PRESENT = 'present'  # car here, door free to open
+    DEPARTING = 'departing'  # car here, door closed, leaving this tick
+    ABSENT = 'absent'  # car elsewhere in the group, door closed
+    ARRIVING = 'arriving'  # car travelling here, door closed
+
+
 @attrs.define
 class _DoorRuntime:
     door: Door
@@ -148,8 +155,22 @@ class _ElevatorRuntime:
     just_arrived: dict[str, bool] = attrs.field(factory=dict)
     # Sim time of the last arrival, unconfirmed just_arrived entries expire TELEPORT_GRACE after it.
     arrived_at: float = -math.inf
-    # True while door is in the process of closing to dispatch a teleport.
-    departing: bool = False
+    # Where the group's car is relative to this cabin.
+    car: _CarState = _CarState.PRESENT
+    # The group's first cabin by name, where its car starts.
+    home: bool = True
+    # Every cabin of this cabin's group by name, linked through destinations.
+    group: tuple[str, ...] = ()
+    # Sim time of the oldest unanswered call while the car is elsewhere, inf when none.
+    call_since: float = math.inf
+    # Sim time the current boarders started boarding, inf when none are aboard.
+    boarded_at: float = math.inf
+    # Sim time the car last arrived here, -inf for the car's start.
+    present_since: float = -math.inf
+    # Cabin the departing car heads to.
+    next_stop: str = ''
+    # Two doors of this cabin's group were open at the last tick.
+    door_conflict: bool = False
     # Occupants already dispatched this leg, still in the cabin until their teleport fires.
     dispatched: set[str] = attrs.field(factory=set)
     door_reported_open: bool = False
@@ -162,6 +183,10 @@ class _ElevatorRuntime:
     rr_index: int = 0
     # Outside agents in the call radius at the last step.
     hall_callers: frozenset[str] = frozenset()
+
+    @property
+    def departing(self) -> bool:
+        return self.car == _CarState.DEPARTING
 
     @property
     def destinations(self) -> tuple[str, ...]:
@@ -232,11 +257,16 @@ def _reset_door(runtime: _DoorRuntime) -> None:
 
 
 def _reset_elevator(runtime: _ElevatorRuntime) -> None:
-    """Reset an elevator runtime to spawn defaults (empty queue, round-robin from the first destination)."""
+    """Reset an elevator runtime to spawn defaults (car at the group's first cabin, empty queue, round-robin from the first destination)."""
     runtime.arrivals = []
     runtime.just_arrived = {}
     runtime.arrived_at = -math.inf
-    runtime.departing = False
+    runtime.car = _CarState.PRESENT if runtime.home else _CarState.ABSENT
+    runtime.call_since = math.inf
+    runtime.boarded_at = math.inf
+    runtime.present_since = -math.inf
+    runtime.next_stop = ''
+    runtime.door_conflict = False
     runtime.dispatched = set()
     runtime.dispatch_deadline = math.inf
     runtime.live_occupants = ()
@@ -550,9 +580,11 @@ def _step_elevator(
     now: float,
     outside_names: frozenset[str] = frozenset(),
     callers: frozenset[str] | None = None,
+    group: typing.Mapping[str, _ElevatorRuntime] | None = None,
 ) -> _ElevatorStepResult:
-    """`callers` are the outside agents in the call radius, None means one anonymous caller on outside_trigger."""
+    """`callers` are the outside agents in the call radius, None means one anonymous caller on outside_trigger, `group` the other cabins of the car's group by name."""
     result = _ElevatorStepResult()
+    others = group or {}
     if callers is None:
         callers = frozenset({''}) if outside_trigger else frozenset()
     new_callers = callers - runtime.hall_callers
@@ -581,9 +613,13 @@ def _step_elevator(
         runtime.dispatched = set()
         runtime.dispatch_deadline = math.inf
 
-    # Check for a scheduled arrival (one per tick, in eta order).
+    # The car lands here.
     if runtime.arrivals and now >= runtime.arrivals[0].eta:
         arrival = runtime.arrivals.pop(0)
+        runtime.car = _CarState.PRESENT
+        runtime.call_since = math.inf
+        runtime.boarded_at = math.inf
+        runtime.present_since = now
         door_runtime.last_trigger_sim_time = now
         if arrival.occupants:
             result.teleport_job = (arrival.source, runtime.elevator.name, list(arrival.occupants))
@@ -591,66 +627,92 @@ def _step_elevator(
             runtime.arrived_at = now
         return result
 
-    # While a teleport is in transit, suppress door triggers except holding the door for the previous arrival group.
-    if runtime.arrivals:
-        if runtime.just_arrived:
-            door_runtime.last_trigger_sim_time = now
+    # Our dispatched riders are mid-flight or the car is on its way here: the door stays shut.
+    if runtime.car == _CarState.ARRIVING or runtime.arrivals or runtime.dispatched:
         return result
 
-    # Our dispatched rider is mid-flight: the cabin is away, keep the door shut until they land.
-    if runtime.dispatched:
-        return result
-
-    # Track new (non-just-arrived) occupants in the cabin.
     new_occupants = current - runtime.just_arrived.keys()
+    accepts = runtime.elevator.accept_outside_calls
+
+    # The car is elsewhere: a caller outside or anyone shut inside calls it here.
+    if runtime.car == _CarState.ABSENT:
+        hall_call = accepts and (bool(new_callers) if runtime.elevator.call_mode == 'edge' else outside_trigger)
+        if (new_occupants or hall_call) and runtime.call_since == math.inf:
+            runtime.call_since = now
+        return result
+
+    if new_occupants:
+        runtime.boarded_at = min(runtime.boarded_at, now)
+    else:
+        runtime.boarded_at = math.inf
+    hold_time = runtime.elevator.hold_time
+    pending = min((other.call_since for other in others.values()), default=math.inf)
+    yielding = pending != math.inf and now - max(pending, runtime.present_since + runtime.elevator.transition_time) > hold_time
 
     # Outside trigger opens the door if this elevator accepts outside calls and has room.
-    if outside_trigger and runtime.elevator.accept_outside_calls and not runtime.full:
+    if outside_trigger and accepts and not runtime.full:
         if runtime.elevator.call_mode != 'edge':
             call = True
         else:
-            idle_shut = door_runtime.state == _DoorState.CLOSED and not runtime.departing and not new_occupants
+            idle_shut = door_runtime.state == _DoorState.CLOSED and runtime.car != _CarState.DEPARTING and not new_occupants
             call = bool(new_callers) or idle_shut
+        if new_occupants and now - runtime.boarded_at > hold_time:
+            call = False
+        if not new_occupants and yielding:
+            call = False
         if call:
             door_runtime.last_trigger_sim_time = now
-            runtime.departing = False
+            runtime.car = _CarState.PRESENT
             return result
 
-    # Departing phase: door closing with occupants, slab gate holds it open while blocked
-    if runtime.departing:
-        if door_runtime.state == _DoorState.CLOSED:
-            if dest_runtime is None:
-                result.missing_destination = True
-                runtime.departing = False
-                door_runtime.last_trigger_sim_time = now
-                return result
-            eta = now + runtime.elevator.travel_time
-            dest_runtime.queue_arrival(_Arrival(eta=eta, source=runtime.elevator.name, occupants=tuple(occupants)))
-            runtime.dispatched = {name for name, _ in occupants}
-            runtime.dispatch_deadline = eta + TELEPORT_GRACE
-            runtime.departing = False
-            runtime.just_arrived = {}
-            if runtime.target_override is None and len(runtime.destinations) > 1:
-                runtime.rr_index = (runtime.rr_index + 1) % len(runtime.destinations)
+    # Departing phase: the door has closed behind the riders, the car leaves for next_stop.
+    if runtime.car == _CarState.DEPARTING:
+        if door_runtime.state != _DoorState.CLOSED:
             return result
-        # Door still closing: hold off.
+        target = others.get(runtime.next_stop)
+        if target is None and dest_runtime is not None and runtime.next_stop == runtime.current_destination():
+            target = dest_runtime
+        if target is None:
+            result.missing_destination = True
+            runtime.car = _CarState.PRESENT
+            door_runtime.last_trigger_sim_time = now
+            return result
+        eta = now + runtime.elevator.travel_time
+        target.queue_arrival(_Arrival(eta=eta, source=runtime.elevator.name, occupants=tuple(occupants)))
+        target.car = _CarState.ARRIVING
+        runtime.car = _CarState.ABSENT
+        runtime.dispatched = {name for name, _ in occupants}
+        runtime.dispatch_deadline = eta + TELEPORT_GRACE
+        runtime.just_arrived = {}
+        runtime.boarded_at = math.inf
+        if runtime.next_stop == runtime.current_destination() and runtime.target_override is None and len(runtime.destinations) > 1:
+            runtime.rr_index = (runtime.rr_index + 1) % len(runtime.destinations)
         return result
 
-    # Hold door open for just-arrived occupants (post-teleport)
-    if runtime.just_arrived:
+    # Hold door open for just-arrived occupants (post-teleport), at most TELEPORT_GRACE.
+    if runtime.just_arrived and now <= runtime.arrived_at + TELEPORT_GRACE:
         door_runtime.last_trigger_sim_time = now
         return result
 
-    # No new occupants: let the door close naturally (do not refresh trigger).
-    if not new_occupants:
+    # Boarders aboard: once the door has fully closed, leave for the next destination.
+    if new_occupants:
+        if door_runtime.state == _DoorState.CLOSED:
+            runtime.car = _CarState.DEPARTING
+            runtime.next_stop = runtime.current_destination()
         return result
 
-    # New occupant present, door has fully closed: start departing.
-    if door_runtime.state == _DoorState.CLOSED:
-        runtime.departing = True
+    # Only earlier arrivals inside: keep the door open for them unless a call elsewhere has waited past hold_time.
+    if current and not yielding:
+        door_runtime.last_trigger_sim_time = now
         return result
 
-    # Door is still open or closing: do not refresh, let it close.
+    # Idle car with the door closed answers the oldest call in its group, empty.
+    if pending != math.inf:
+        if door_runtime.state == _DoorState.CLOSED:
+            runtime.car = _CarState.DEPARTING
+            runtime.next_stop = min((other.call_since, name) for name, other in others.items())[1]
+        return result
+
     return result
 
 
@@ -736,12 +798,15 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             callers = frozenset(name for i, (name, xy) in enumerate(named_positions) if i not in all_occupant_idx and radius > 0.0 and _near_door_segment(door_runtime.door, [xy], radius))
         destination = runtime.current_destination()
         dest_runtime = mech._elevator_runtime.get(destination)
+        group = {name: mech._elevator_runtime[name] for name in runtime.group if name != elev_name and name in mech._elevator_runtime}
         if mech._semantics.elevator_recalled(elev_name, now):
             runtime.live_occupants = tuple(sorted(name for name, _ in occupants))
-            door_runtime.last_trigger_sim_time = now  # recall: hold cabin door open
-            runtime.departing = False
-            continue
-        result = _step_elevator(runtime, door_runtime, dest_runtime, occupants, outside_trigger, now, outside_names=outside_names, callers=callers)
+            if runtime.car in (_CarState.PRESENT, _CarState.DEPARTING):
+                door_runtime.last_trigger_sim_time = now  # recall: hold cabin door open
+                runtime.car = _CarState.PRESENT
+                continue
+            runtime.call_since = -math.inf
+        result = _step_elevator(runtime, door_runtime, dest_runtime, occupants, outside_trigger, now, outside_names=outside_names, callers=callers, group=group)
         if result.missing_destination:
             logger.warning(f"Elevator {elev_name!r}: destination {destination!r} unknown; door held open.")
         if result.dispatch_timeout:
@@ -769,6 +834,7 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             pending.append(mech.move_box(name, _interp_pose(runtime)))
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
+    _check_door_conflicts(mech)
 
     if mech._human_simulator is not None:
         door_changes: dict[str, bool] = {}
@@ -853,6 +919,54 @@ async def _apply_lights(mech: MechanismITF) -> None:
         level, dead_fraction = output
         await mech._apply_light(light, level, light.alive(dead_fraction))
         mech._light_outputs[entity] = output
+
+
+def _check_door_conflicts(mech: MechanismITF) -> None:
+    """Report an elevator group with more than one cabin door not closed, once per occurrence."""
+    for name, runtime in mech._elevator_runtime.items():
+        if not runtime.home:
+            continue
+        unclosed = []
+        for member in runtime.group or (name,):
+            member_rt = mech._elevator_runtime.get(member)
+            door = mech._door_runtime.get(member_rt.door_name) if member_rt is not None else None
+            if door is not None and door.state != _DoorState.CLOSED:
+                unclosed.append(member)
+        conflict = len(unclosed) > 1
+        if conflict and not runtime.door_conflict:
+            _report_incident(mech, f"Elevator group {name!r}: doors of {unclosed} open at once")
+        runtime.door_conflict = conflict
+
+
+def _assign_groups(mech: MechanismITF) -> None:
+    """Group the cabins linked through their destinations, one car per group, a group without a car gets it at its first cabin by name."""
+    runtimes = mech._elevator_runtime
+    parent = {name: name for name in runtimes}
+
+    def find(name: str) -> str:
+        while parent[name] != name:
+            name = parent[name]
+        return name
+
+    for name, runtime in runtimes.items():
+        for dest in runtime.destinations:
+            if dest in parent:
+                parent[find(dest)] = find(name)
+    members: dict[str, list[str]] = {}
+    for name in runtimes:
+        members.setdefault(find(name), []).append(name)
+    for names in members.values():
+        names.sort()
+        holders = [name for name in names if runtimes[name].car != _CarState.ABSENT]
+        keep = holders[0] if holders else names[0]
+        for name in names:
+            runtime = runtimes[name]
+            runtime.group = tuple(names)
+            runtime.home = name == names[0]
+            if name != keep:
+                runtime.car = _CarState.ABSENT
+        if not holders:
+            runtimes[keep].car = _CarState.PRESENT
 
 
 def _release_failed_riders(mech: MechanismITF, source_name: str, dest_name: str, names: Sequence[str]) -> None:
@@ -955,8 +1069,10 @@ async def shim_spawn_elevators(mech: MechanismITF, elevators: Sequence[Elevator]
             elevator=elevator,
             door_name=door.name,
             destination_name=','.join(elevator.destinations),
+            car=_CarState.ABSENT,
         )
         _call_walls(mech, f"elevator:{elevator.name}", _elevator_wall_segments(elevator))
+    _assign_groups(mech)
     if synthesized_doors and not await shim_spawn_doors(mech, synthesized_doors):
         ok = False
     return ok
@@ -975,6 +1091,7 @@ async def shim_remove_elevators(mech: MechanismITF, names: Sequence[str]) -> boo
             door_names.append(door_name)
         if mech._elevator_runtime.pop(name, None) is not None:
             _call_walls(mech, f"elevator:{name}", None)
+    _assign_groups(mech)
     if door_names and not await shim_remove_doors(mech, door_names):
         ok = False
     return ok

@@ -27,9 +27,6 @@ from arena_humansim_msgs.msg import (
     AgentStates as AgentStatesMsg,
 )
 from arena_humansim_msgs.msg import (
-    Elevator as ElevatorMsg,
-)
-from arena_humansim_msgs.msg import (
     Gesture as EngineGestureMsg,
 )
 from arena_humansim_msgs.msg import (
@@ -49,6 +46,9 @@ from arena_humansim_msgs.msg import (
 )
 from arena_humansim_msgs.msg import (
     SourceConfig as SourceConfigMsg,
+)
+from arena_humansim_msgs.msg import (
+    TeleportZone as TeleportZoneMsg,
 )
 from arena_humansim_msgs.msg import (
     Waypoint as WaypointMsg,
@@ -75,10 +75,10 @@ from arena_humansim_msgs.srv import (
     RemoveWalls,
     RemoveWorldObjects,
     ResetSimulation,
-    SetElevatorDoors,
-    SetElevators,
     SetFlow,
+    SetTeleportZones,
     SetWaypoints,
+    SetZoneAccess,
     SpawnAgents,
     TeleportAgents,
     UpdateRobot,
@@ -88,7 +88,7 @@ from arena_people_msgs.msg import Pedestrian, Pedestrians
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.lazy import LazySubscription
 from arena_runtime_msgs.msg import LockstepChannel
-from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD
+from arena_simulation_setup.shared.world import CABIN_DOOR_INSET, CABIN_DOOR_THRESHOLD, CABIN_DOOR_WIDTH
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.tree.World.model import elevator_doorway_pose
 from arena_simulation_setup.utils.affordance import AffordanceClaims, AffordanceKind, AffordanceSlot, SlotOccupied, conflicts, max_occupancy, placed_slots
@@ -246,8 +246,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
     SERVICE_GET_PROFILE = "get_profile"
     SERVICE_FEEDBACK = "feedback"
     SERVICE_NOTIFY_STIMULUS = "notify_stimulus"
-    SERVICE_SET_ELEVATORS = "set_elevators"
-    SERVICE_SET_ELEVATOR_DOORS = "set_elevator_doors"
+    SERVICE_SET_TELEPORT_ZONES = "set_teleport_zones"
+    SERVICE_SET_ZONE_ACCESS = "set_zone_access"
     SERVICE_TELEPORT_AGENTS = "teleport_agents"
     TAKES_STIMULI = True
 
@@ -341,13 +341,13 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             NotifyStimulus,
             self.node.service_namespace(self.SERVICE_NOTIFY_STIMULUS),
         )
-        self._set_elevators_client: ClientWrapper = self.node.create_client_wrapper(
-            SetElevators,
-            self.node.service_namespace(self.SERVICE_SET_ELEVATORS),
+        self._set_teleport_zones_client: ClientWrapper = self.node.create_client_wrapper(
+            SetTeleportZones,
+            self.node.service_namespace(self.SERVICE_SET_TELEPORT_ZONES),
         )
-        self._set_elevator_doors_client: ClientWrapper = self.node.create_client_wrapper(
-            SetElevatorDoors,
-            self.node.service_namespace(self.SERVICE_SET_ELEVATOR_DOORS),
+        self._set_zone_access_client: ClientWrapper = self.node.create_client_wrapper(
+            SetZoneAccess,
+            self.node.service_namespace(self.SERVICE_SET_ZONE_ACCESS),
         )
         self._teleport_agents_client: ClientWrapper = self.node.create_client_wrapper(
             TeleportAgents,
@@ -697,8 +697,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
                     self._get_profile_client,
                     self._feedback_client,
                     self._notify_stimulus_client,
-                    self._set_elevators_client,
-                    self._set_elevator_doors_client,
+                    self._set_teleport_zones_client,
+                    self._set_zone_access_client,
                     self._teleport_agents_client,
                     self._set_params_client,
                 )
@@ -1427,51 +1427,59 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             await self.notify_stimulus(agent_id, STIMULUS_TELEPORTED, 1.0)
         return not unknown
 
-    def _elevator_msg(self, elevator: Elevator) -> ElevatorMsg:
-        """A realized cabin in the engine frame, its riders queuing clear of the door threshold and holding inside facing the door."""
+    def _zone_msg(self, elevator: Elevator) -> TeleportZoneMsg:
+        """A realized cabin as a teleport zone in the engine frame, riders waiting clear of the door threshold and holding inside facing the door, clear of the band where a body blocks the closing door, teleported by Arena only."""
         doorway = elevator_doorway_pose(elevator, standoff=PED_RADIUS / 2.0)
         queue = elevator_doorway_pose(elevator, standoff=CABIN_DOOR_THRESHOLD + PED_RADIUS)
         facing_in = doorway.orientation.to_yaw()
         cx, cy = self._to_engine(elevator.position.x, elevator.position.y)
         dx, dy = self._to_engine(doorway.position.x, doorway.position.y)
         qx, qy = self._to_engine(queue.position.x, queue.position.y)
-        footprint = [Point32(x=x, y=y, z=0.0) for corner in elevator.cabin_corners() for x, y in (self._to_engine(corner.x, corner.y),)]
-        return ElevatorMsg(
+        reach = math.hypot(doorway.position.x - elevator.position.x, doorway.position.y - elevator.position.y)
+        ox, oy = (doorway.position.x - elevator.position.x) / reach, (doorway.position.y - elevator.position.y) / reach
+        band = CABIN_DOOR_INSET + CABIN_DOOR_WIDTH / 2.0 + PED_RADIUS
+        footprint = []
+        for corner in elevator.cabin_corners():
+            inset = band if (corner.x - elevator.position.x) * ox + (corner.y - elevator.position.y) * oy > 0.0 else 0.0
+            x, y = self._to_engine(corner.x - ox * inset, corner.y - oy * inset)
+            footprint.append(Point32(x=x, y=y, z=0.0))
+        return TeleportZoneMsg(
             name=elevator.name,
-            destination=elevator.destination,
-            boarding=Pose2DMsg(x=cx, y=cy, theta=math.remainder(facing_in + math.pi, math.tau)),
-            doorway=Pose2DMsg(x=dx, y=dy, theta=facing_in),
-            queue=Pose2DMsg(x=qx, y=qy, theta=facing_in),
+            destinations=list(elevator.destinations),
+            entry=Pose2DMsg(x=dx, y=dy, theta=facing_in),
+            wait=Pose2DMsg(x=qx, y=qy, theta=facing_in),
+            hold=Pose2DMsg(x=cx, y=cy, theta=math.remainder(facing_in + math.pi, math.tau)),
             footprint=footprint,
-            door_open=False,
+            open=False,
+            delay=-1.0,
         )
 
     async def _set_elevators_impl(self, elevators: Sequence[Elevator]) -> bool:
-        request = SetElevators.Request(elevators=[self._elevator_msg(elevator) for elevator in elevators])
+        request = SetTeleportZones.Request(zones=[self._zone_msg(elevator) for elevator in elevators])
         try:
-            response = await self._set_elevators_client.call_timeout(request)
+            response = await self._set_teleport_zones_client.call_timeout(request)
         except Exception as e:
-            self._logger.error(f"SetElevators call failed: {e}")
+            self._logger.error(f"SetTeleportZones call failed: {e}")
             return False
         if response is None:
-            self._logger.error("SetElevators timed out")
+            self._logger.error("SetTeleportZones timed out")
             return False
         if not response.success:
-            self._logger.error(f"SetElevators failed: {response.message}")
+            self._logger.error(f"SetTeleportZones failed: {response.message}")
         return response.success
 
     async def _set_elevator_doors_impl(self, doors: Mapping[str, bool]) -> bool:
-        request = SetElevatorDoors.Request(name=list(doors), open=list(doors.values()))
+        request = SetZoneAccess.Request(name=list(doors), open=list(doors.values()))
         try:
-            response = await self._set_elevator_doors_client.call_timeout(request)
+            response = await self._set_zone_access_client.call_timeout(request)
         except Exception as e:
-            self._logger.error(f"SetElevatorDoors call failed: {e}")
+            self._logger.error(f"SetZoneAccess call failed: {e}")
             return False
         if response is None:
-            self._logger.error("SetElevatorDoors timed out")
+            self._logger.error("SetZoneAccess timed out")
             return False
         if not response.success:
-            self._logger.error(f"SetElevatorDoors failed: {response.message}")
+            self._logger.error(f"SetZoneAccess failed: {response.message}")
         return response.success
 
     async def _remove_obstacles_impl(self, obstacles: Sequence[Obstacle]) -> bool:

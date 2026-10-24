@@ -15,6 +15,7 @@ pytest.importorskip("arena_runtime.sim._mechanism_shim")
 
 from arena_runtime.sim._mechanism_shim import (  # noqa: E402
     _Arrival,
+    _CarState,
     _DoorRuntime,
     _DoorState,
     _ElevatorRuntime,
@@ -277,7 +278,7 @@ def test_elevator_occupants_counts_all_committed_sets():
 
 def test_elevator_departing_predicate():
     rt = _elevator_runtime()
-    rt.departing = True
+    rt.car = _CarState.DEPARTING
     inst = _attach_elevator(rt)
     inst.step(0.0)
     assert inst.snapshot().predicates["departing"] is True
@@ -306,7 +307,7 @@ def test_elevator_reset_restores_all_fields():
     rt = _elevator_runtime()
     rt.queue_arrival(_Arrival(eta=8.0, source="other", occupants=(("r", (1.0, 2.0)),)))
     rt.just_arrived = {"r": True}
-    rt.departing = True
+    rt.car = _CarState.DEPARTING
     rt.dispatched = {"r"}
     rt.live_occupants = ("r",)
     rt.target_override = "other"

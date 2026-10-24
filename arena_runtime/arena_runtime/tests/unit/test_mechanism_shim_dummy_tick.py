@@ -144,7 +144,7 @@ def test_elevator_without_a_cabin_door_is_left_alone(shim, on_dummy_sim):
 
     async def body(sim):
         elevator = Elevator(name="e", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["f"])
-        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", departing=True)
+        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", car=shim._CarState.DEPARTING, next_stop="f")
         sim._elevator_runtime["e"] = runtime
         await shim._tick(sim, DT)
         assert runtime.departing
@@ -157,7 +157,8 @@ def test_recalled_elevator_holds_its_door_open_and_cancels_departure(shim, on_du
 
     async def body(sim):
         runtime, door = _elevator(shim, sim, "a", 0.0, "b")
-        runtime.departing = True
+        runtime.car = shim._CarState.DEPARTING
+        runtime.next_stop = "b"
         cfgs = [SemanticCfg(role="state", name="state", params={"windows": [{"start": 0.0, "end": 100.0, "value": "on"}], "regime": "alarm"})]
         assert sim._semantics.attach("schedule", "fire", cfgs)
         sim._semantics.set_recall("a", "alarm")
@@ -172,7 +173,8 @@ def test_recalled_elevator_holds_its_door_open_and_cancels_departure(shim, on_du
 def test_departure_to_an_unknown_cabin_reopens_the_door(shim, on_dummy_sim):
     async def body(sim):
         runtime, door = _elevator(shim, sim, "a", 0.0, "ghost")
-        runtime.departing = True
+        runtime.car = shim._CarState.DEPARTING
+        runtime.next_stop = "ghost"
         await shim._tick(sim, DT)
         assert not runtime.departing
         assert door.last_trigger_sim_time == 0.0
@@ -316,7 +318,7 @@ def test_reset_restores_an_elevator_without_a_cabin_door(shim, on_dummy_sim):
 
     async def body(sim):
         elevator = Elevator(name="e", position=Position(0.0, 0.0, 0.0), size=[2.0, 2.0, 2.5], destinations=["f"])
-        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", just_arrived={"r": True}, departing=True, dispatched={"r"})
+        runtime = shim._ElevatorRuntime(elevator=elevator, door_name="e/door", destination_name="f", just_arrived={"r": True}, car=shim._CarState.DEPARTING, dispatched={"r"})
         runtime.queue_arrival(shim._Arrival(eta=3.0, source="f", occupants=(("r", (0.0, 0.0)),)))
         sim._elevator_runtime["e"] = runtime
         shim.reset_mechanisms(sim)

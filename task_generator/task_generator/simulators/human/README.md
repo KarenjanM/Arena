@@ -427,14 +427,16 @@ notifying `on_held_seats_change` listeners when they change. Two held seats that
 once through the incident callback the node sets with `set_incident_callback`. The base class reports no held
 seats.
 
-Elevator cabins reach the engine with the world: `spawn_elevators` sends one `set_elevators` call with every
-realized cabin as an `Elevator` (`name` and `destination` as the mechanism shim knows them, `boarding` at the
-cabin center facing the door, `doorway` outside the door side at the cabin half-size along the door normal plus
-the 0.3 m doorway depth plus half of `PED_RADIUS`, facing the cabin, `queue` on the same normal a further
-`CABIN_DOOR_THRESHOLD` (0.6 m) plus `PED_RADIUS` out, clear of the reach in which a body reopens a loaded cabin,
-`footprint` the cabin corners, `door_open`
-false, the state the shim spawns its cabin doors in), an empty list when the world goes. Door changes go out as
-one `set_elevator_doors` batch per mechanism tick. A ride ends in `pedestrian_teleport`, which maps the published
+Elevator cabins reach the engine with the world as teleport zones: `spawn_elevators` sends one
+`set_teleport_zones` call with every realized cabin as a `TeleportZone` (`name` and `destinations` as the
+mechanism shim knows them, `hold` at the cabin center facing the door, `entry` outside the door side at the
+cabin half-size along the door normal plus the 0.3 m doorway depth plus half of `PED_RADIUS`, facing the cabin,
+`wait` on the same normal a further `CABIN_DOOR_THRESHOLD` (0.6 m) plus `PED_RADIUS` out, clear of the reach in
+which a body reopens a loaded cabin, `footprint` the cabin corners with the door side pulled in by the door
+inset plus half the door width plus `PED_RADIUS`, the band in which a body blocks the closing door, `open`
+false, the state the shim spawns its cabin doors in, and `delay` -1, so the engine never teleports a rider
+itself), an empty list when the world goes. Door changes go out as one `set_zone_access` batch per mechanism
+tick. A ride ends in `pedestrian_teleport`, which maps the published
 pedestrian names to engine agent ids (the scenario or flow name, else the id itself) and calls `teleport_agents`
 with engine-frame poses and the pedestrian's facing. The engine then moves the agent, the physics sim follows
 from the next engine frame, and the interpolation snaps a teleported agent instead of sliding it from the
