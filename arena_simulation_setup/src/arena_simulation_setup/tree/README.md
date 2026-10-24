@@ -60,7 +60,7 @@ walks it calling `destination()`.
 | `DynamicPathResolver` | [tree/__init__.py:191](__init__.py#L191) | `DynamicPath` whose value can change at runtime (e.g. `DynamicPaths.WORLD`); optional transform `fn` |
 | `DynamicPathListResolver` | [tree/__init__.py](__init__.py) | `DynamicPathList` whose paths can change at runtime (`DynamicPaths.LINKED`), the first path holding the asset wins; optional transform `fn` |
 | `NetResolver` | [tree/__init__.py:212](__init__.py#L212) | Batches same-tick `resolve()` requests; calls `ros2 run arena_assets arena_assets -s net <provider> fetch`. `locate()` instead runs a non-fetching `... exists` check. Constructor takes `formats=` (defaults to the `ARENA_MODELS_FORMATS` env filter; pass `formats=()` to opt out) and `ttl=` (defaults to `ARENA_MODELS_TTL`, seconds). `listall(network=True)` caches the bucket listing at `ARENA_ASSETS_DIR/<provider>/.listing` for `ARENA_MODELS_TTL` regardless of the payload `ttl=`, and `listall_async` shares one in-flight fetch per provider. `expire(identifier=None)` writes `1` into the `.ttl` of one complete entry, or of every one in the bucket and drops its listings, so the next `resolve()` refetches while an unreachable bucket still serves the old copy (`arena asset expire`). `NetResolver.all(_T, providers=NETWORK_PROVIDERS, ...)` builds one instance per bucket name |
-| `LocalResolver` | [tree/__init__.py](__init__.py) | Reads and writes a subdirectory of the local root (`$ARENA_ASSETS_DIR_LOCAL`, looked up at every use, never cached): `resolve()` checks existence, `destination()` is the write target |
+| `LocalResolver` | [tree/__init__.py](__init__.py) | Reads and writes a subdirectory of the local root (`$ARENA_ASSETS_DIR_LOCAL`, looked up at every use, never cached): `resolve()` checks existence, `listall_async()` walks it in a child process at every call, `destination()` is the write target |
 | `FallbackResolver` | [tree/__init__.py:406](__init__.py#L406) | Write target only: implements `destination()` and nothing else, so `resolve()`/`locate()` always return `None` and it can never shadow a real source |
 
 ### `DynamicPaths` singleton
@@ -71,7 +71,7 @@ walks it calling `destination()`.
 |---|---|
 | `DynamicPaths.WORLD` | `/dev/null` (set at runtime to the active world directory) |
 | `DynamicPaths.LINKED` | empty (set at runtime to the directories of the worlds the active world links levels from) |
-| `DynamicPaths.ARENA` | `$ARENA_ASSETS_DIR_LOCAL` or `$ARENA_ASSETS_DIR/local` |
+| `DynamicPaths.ARENA` | `$ARENA_ASSETS_DIR_LOCAL` or `$ARENA_ASSETS_DIR/local`, looked up at every read until a path is assigned |
 
 `DynamicPaths.as_resolvers(T)` returns three resolvers for a given `Identifier`
 type: `WORLD / 'assets'`, the `assets/` of every `LINKED` world, then `ARENA`.

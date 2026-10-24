@@ -31,7 +31,7 @@ from arena_simulation_setup.tree import (
 
 from .legacy import is_legacy, upgrade
 from .Map import Map
-from .model import FORMAT, Level, World
+from .model import FORMAT, LEGACY_FORMAT, Level, World
 from .parse import parse_world
 from .Scenario import ScenarioView
 from .write import to_yaml, write_world
@@ -91,6 +91,13 @@ class WorldView(PathView):
     @property
     def kg_path(self) -> Path:
         return self.path / KG_FILE
+
+    @property
+    def world_format(self) -> str:
+        """FORMAT when world.yaml is format 2, else LEGACY_FORMAT."""
+        if self.world_path.exists() and not is_legacy(yaml.safe_load(self.world_path.read_text(encoding='utf-8'))):
+            return FORMAT
+        return LEGACY_FORMAT
 
     def mtime(self, sources: Iterable[Path] = ()) -> float:
         """The newest modification time of this world's files and those of the linked worlds in `sources`, 0.0 without any."""
@@ -190,8 +197,8 @@ class WorldView(PathView):
                 world.linked_kg = merge_linked(world.linked_kg, linked.kg, world, renames)
         return world
 
-    def load(self, validate: bool = True, level_filter: set[str] | None = None, derive: str = 'auto') -> World:
-        """The World on disk, format 2 or format 1 through the legacy loader, its `from:` levels read from the worlds they name, restricted to `level_filter` when given, its KG derived under `derive`."""
+    def load(self, validate: bool = True, level_filter: set[str] | None = None, derive: str = 'auto', notes: list[str] | None = None) -> World:
+        """The World on disk, format 2 or format 1 through the legacy loader, its `from:` levels read from the worlds they name, restricted to `level_filter` when given, its KG derived under `derive`, validation warnings appended to `notes`."""
         from .membership import derive as derive_kg
 
         data, kg, _ = self.read()
@@ -205,7 +212,9 @@ class WorldView(PathView):
             world.levels = {level_id: level for level_id, level in world.levels.items() if level_id in level_filter}
         world.apply_elevator_door_sides()
         if validate:
-            world.validate(loaded_level_ids=set(world.levels) if world.levels.keys() != all_ids else None)
+            warned = world.validate(loaded_level_ids=set(world.levels) if world.levels.keys() != all_ids else None)
+            if notes is not None:
+                notes.extend(warned)
             if world.kg is not None:
                 check_kg(world, world.kg)
         world.kg = derive_kg(world, derive)
@@ -544,6 +553,15 @@ class ComposedResolver(ResolverBase[WorldIdentifier]):
     def invalidate(self) -> None:
         super().invalidate()
         self._parts.clear()
+
+
+def world_dir(raw: str) -> Path:
+    """The world directory touch_world takes: an existing directory, else a name under $ARENA_DIR/arena_simulation_setup/worlds, else under the current directory."""
+    path = Path(raw).expanduser()
+    if path.is_dir():
+        return path.resolve()
+    base = Path(os.environ['ARENA_DIR']) / 'arena_simulation_setup' / 'worlds' if 'ARENA_DIR' in os.environ else Path.cwd()
+    return base / raw
 
 
 def _world_search_roots() -> list[Path]:

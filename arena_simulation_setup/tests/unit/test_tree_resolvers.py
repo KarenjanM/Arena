@@ -14,6 +14,7 @@ import attrs
 import pytest
 
 from arena_simulation_setup.tree import (
+    DynamicPaths,
     FallbackResolver,
     Identifier,
     SimplePathResolver,
@@ -280,3 +281,22 @@ def test_expired_net_entry_is_refetched_but_still_served_stale(tmp_path):
     done = subprocess.run([sys.executable, '-c', script], env=env, capture_output=True, text=True, check=True)
     assert done.stdout.splitlines()[-2:] == ['True 1 False', 'True True']
     assert (entry / '.ttl').read_text() == '1'
+
+
+def test_arena_dynamic_path_reads_the_local_root_at_every_use_until_assigned(tmp_path: Path) -> None:
+    previous_env = os.environ.get("ARENA_ASSETS_DIR_LOCAL")
+    previous = DynamicPaths.ARENA._assigned
+    DynamicPaths.ARENA._assigned = None
+    try:
+        os.environ["ARENA_ASSETS_DIR_LOCAL"] = str(tmp_path / "first")
+        assert DynamicPaths.ARENA.path == tmp_path / "first"
+        os.environ["ARENA_ASSETS_DIR_LOCAL"] = str(tmp_path / "second")
+        assert DynamicPaths.ARENA.path == tmp_path / "second"
+        DynamicPaths.ARENA.path = tmp_path / "pinned"
+        assert DynamicPaths.ARENA.path == tmp_path / "pinned"
+    finally:
+        DynamicPaths.ARENA._assigned = previous
+        if previous_env is None:
+            del os.environ["ARENA_ASSETS_DIR_LOCAL"]
+        else:
+            os.environ["ARENA_ASSETS_DIR_LOCAL"] = previous_env

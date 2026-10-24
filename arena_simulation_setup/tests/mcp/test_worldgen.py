@@ -14,6 +14,7 @@ pytest.importorskip("arena_mcp")
 from arena_mcp.core.errors import ToolError
 from arena_simulation_setup.mcp import worldgen
 from arena_simulation_setup.tree.World import WorldView
+from arena_simulation_setup.tree.World.Map import preview_resolution
 from arena_simulation_setup.generative.world import WorldGenerator
 from mcp.server.mcpserver import MCPServer
 
@@ -86,6 +87,12 @@ def test_preview_rejects_unknown_generators_fields_and_sketches_for_sketchless_g
         worldgen.worldgen_preview("empty", config={"width": "wide"})
 
 
+def test_preview_renders_at_the_shared_preview_resolution():
+    report, _ = worldgen.worldgen_preview("empty", config={"width": 120.0, "height": 20.0})
+    assert report["map"]["resolution"] == pytest.approx(preview_resolution(max(report["diagnostics"]["extent"])))
+    assert report["map"]["resolution"] > 0.05
+
+
 def test_preview_with_the_same_seed_is_deterministic():
     first, _ = worldgen.worldgen_preview("barn", seed=11)
     second, _ = worldgen.worldgen_preview("barn", seed=11)
@@ -113,14 +120,18 @@ def test_save_of_barn_writes_its_scenario(writable_root):
     assert (Path(saved["path"]) / "scenarios" / "barn" / "scenario.yaml").is_file()
 
 
-def test_save_refuses_an_existing_world_unless_overwrite(writable_root):
+def test_save_refuses_an_existing_world_unless_overwrite_which_saves_in_place(writable_root):
     worldgen.worldgen_save("twice", "empty", config={"width": 5.0, "height": 5.0})
     with pytest.raises(ToolError, match="already exists"):
         worldgen.worldgen_save("twice", "empty")
-    (writable_root / "worlds" / "twice" / "stale.txt").write_text("left over")
+    target = writable_root / "worlds" / "twice"
+    (target / "scenarios" / "kept").mkdir(parents=True)
+    (target / "scenarios" / "kept" / "scenario.yaml").write_text("format: arena-scenario/2\n")
     saved = worldgen.worldgen_save("twice", "empty", config={"width": 9.0, "height": 5.0}, overwrite=True)
-    assert not (Path(saved["path"]) / "stale.txt").exists()
+    assert Path(saved["path"]) == target
+    assert (target / "scenarios" / "kept" / "scenario.yaml").read_text() == "format: arena-scenario/2\n"
     assert saved["diagnostics"]["extent"][0] == pytest.approx(9.0)
+    assert WorldView(target).load(validate=True).levels
 
 
 @pytest.mark.parametrize("name", ["", ".", "..", ".hidden", "a/b", "../escape", "a\\b"])

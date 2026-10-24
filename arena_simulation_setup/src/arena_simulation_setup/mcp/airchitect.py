@@ -18,6 +18,8 @@ import pydantic
 
 from arena_mcp.core import JOBS, Domain, JobHandle, ToolError
 
+from .worlds import level_preview, path_component, world_verdict
+
 DEFAULT_URL = "http://localhost:3000"
 DEPLOY_HINT = "deploy the stack on the host with `cd ~/airchitect && ./airchitect deploy up --cpu --arena text_kg`, or point AIRCHITECT_URL at a running webapp"
 DOMAINS = ("residential", "hospital", "office")
@@ -42,13 +44,6 @@ domain = Domain(
     airchitect_generate runs the whole pipeline as a job and saves the world under the writable world root, checked with strict parsing, NAV@r and a preview.
     Stage responses of every job are kept as JSON under $ARENA_DATA_DIR/mcp/airchitect/<run id>/.""",
 )
-
-
-def world_name(name: str) -> str:
-    """The name when it is one safe path component, else a ToolError."""
-    if not name or name in (".", "..") or name.startswith(".") or "/" in name or "\\" in name or "\0" in name:
-        raise ToolError(f"world name {name!r} must be one path component, not empty and not starting with a dot", hint="use letters, digits, '_' or '-'")
-    return name
 
 
 def runs_root() -> Path:
@@ -162,7 +157,7 @@ def target_dir(name: str, overwrite: bool) -> Path:
     """The writable world directory for name, refusing an existing world unless overwrite."""
     from arena_simulation_setup.tree.World import WorldIdentifier
 
-    target = Path(WorldIdentifier(world_name(name)).resolve_write_sync().path)
+    target = Path(WorldIdentifier(path_component(name)).resolve_write_sync().path)
     if target.exists() and any(target.iterdir()) and not overwrite:
         raise ToolError(f"world {name!r} already exists at {target}", hint="pass overwrite=True to replace it, or pick another name")
     return target
@@ -199,54 +194,34 @@ def install_zip(data: bytes, name: str, *, overwrite: bool) -> Path:
     return target
 
 
-def robot_radius(given: float | None) -> tuple[float, str]:
-    """The NAV@r radius: given, else the jackal definition's, else the metric's default."""
-    from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS
-    from arena_simulation_setup.metrics.nav_at_r import robot_radius as radius_of
-
-    if given is not None:
-        return float(given), "given"
-    try:
-        return radius_of("jackal"), "jackal"
-    except LookupError as exc:
-        return DEFAULT_RADIUS, f"nav_at_r default, jackal not found ({exc})"
-
-
 def check_world(path: Path, radius: float | None, out: Path) -> dict[str, object]:
-    """Strict parse and validation, NAV@r per level and a preview PNG per level written to out."""
-    import yaml
-    from arena_simulation_setup.metrics.nav_at_r import nav_at_r
-    from arena_simulation_setup.tree.World import WorldView, parse_world
+    """The strict verdict, NAV@r per level and a preview PNG per level written to out."""
+    from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS, nav_at_r
+    from arena_simulation_setup.tree.World import WorldView
 
     out.mkdir(parents=True, exist_ok=True)
-    report: dict[str, object] = {}
+    view = WorldView(path)
+    verdict = world_verdict(view, None)
+    report: dict[str, object] = {"validation": {key: verdict[key] for key in ("format", "valid", "reason", "warnings") if key in verdict}}
+    value = DEFAULT_RADIUS if radius is None else float(radius)
     try:
-        parse_world(yaml.safe_load((path / "world.yaml").read_text(encoding="utf-8")))
-        WorldView(path).load(validate=True)
+        results = nav_at_r(view, radius=value, image=out / "nav_at_r.png")
     except Exception as exc:
-        report["validation"] = {"valid": False, "error": f"{type(exc).__name__}: {exc}"}
-    else:
-        report["validation"] = {"valid": True}
-    value, source = robot_radius(radius)
-    try:
-        results = nav_at_r(WorldView(path), radius=value, image=out / "nav_at_r.png")
-    except Exception as exc:
-        report["nav_at_r"] = {"radius": value, "radius_source": source, "error": f"{type(exc).__name__}: {exc}"}
+        report["nav_at_r"] = {"radius": value, "error": f"{type(exc).__name__}: {exc}"}
     else:
         report["nav_at_r"] = {
             "radius": value,
-            "radius_source": source,
             "levels": {level: {"value": result.asdict()["value"], "components": result.components, "largest_share": result.largest_share, "cut_off_zones": list(result.cut_off_zones), "traversable_area": result.traversable_area} for level, result in results.items()},
         }
     previews: list[str] = []
     try:
-        world = WorldView(path).load(validate=False)
+        world = view.load(validate=False)
         for level_id, level in world.levels.items():
-            if not level.zones and not level.walls:
+            rendered = level_preview(level)
+            if rendered is None:
                 continue
-            png, _ = level.render(resolution=0.05)
             preview = out / f"preview_{level_id}.png"
-            preview.write_bytes(png)
+            preview.write_bytes(rendered[0])
             previews.append(str(preview))
     except Exception as exc:
         report["preview_error"] = f"{type(exc).__name__}: {exc}"
@@ -449,16 +424,16 @@ async def airchitect_generate(
     floorplan_tries: Annotated[int, pydantic.Field(ge=1, le=10, description="floor plans to request, the one with the fewest dropped graph edges, then the fewest auto doors, is kept")] = 3,
     scenario_prompt: Annotated[str | None, pydantic.Field(description="run the scenario stage with this description and export its scenario")] = None,
     overwrite: bool = False,
-    nav_radius: Annotated[float | None, pydantic.Field(description="robot radius for NAV@r, the jackal definition's when omitted")] = None,
+    nav_radius: Annotated[float | None, pydantic.Field(description="robot radius for NAV@r, the nav_at_r default when omitted")] = None,
     resume: Annotated[str | None, pydantic.Field(description="run id of an earlier airchitect_generate job: its completed stages are reused in the same session")] = None,
 ) -> dict[str, object]:
     """Run prompt, floor plan tries, decoration, optional scenario and zip export as a job, then save and check the world."""
-    world_name(name)
+    path_component(name)
     _check_domain(domain)
     await asyncio.to_thread(target_dir, name, overwrite)
     listing = await asyncio.to_thread(stack_models)
     chosen = pick_models(listing, models, required=("prompt", "floorplan", "decoration", *(("scenario",) if scenario_prompt else ())))
-    if resume is not None and not (runs_root() / world_name(resume) / "run.json").is_file():
+    if resume is not None and not (runs_root() / path_component(resume, "run id") / "run.json").is_file():
         raise ToolError(f"no airchitect run {resume!r} under {runs_root()}", hint="the run id is the job id of the earlier airchitect_generate")
 
     async def body(handle: JobHandle) -> dict[str, object]:
@@ -601,9 +576,9 @@ async def airchitect_kg_edit(uuid: str, stage: Stage, instruction: Annotated[str
 
 
 @domain.tool(destructive=True, open_world=True)
-async def airchitect_export(uuid: str, name: WorldName, overwrite: bool = False, nav_radius: Annotated[float | None, pydantic.Field(description="robot radius for NAV@r, the jackal definition's when omitted")] = None) -> dict[str, object]:
+async def airchitect_export(uuid: str, name: WorldName, overwrite: bool = False, nav_radius: Annotated[float | None, pydantic.Field(description="robot radius for NAV@r, the nav_at_r default when omitted")] = None) -> dict[str, object]:
     """Export a session's newest plan (scenario, else decoration, else floor plan) into the writable world root as a job, with the generate checks."""
-    world_name(name)
+    path_component(name)
     await asyncio.to_thread(target_dir, name, overwrite)
     plan, scenario, source = latest_plan(await session_records(uuid))
 
@@ -641,7 +616,7 @@ async def airchitect_ingest(world: Annotated[str, pydantic.Field(description="Ar
     try:
         data = await asyncio.to_thread(bundle, world)
     except FileNotFoundError as exc:
-        raise ToolError(f"world {world!r} does not load: {exc}", hint="worlds_list shows the resolvable worlds") from exc
+        raise ToolError(f"world {world!r} does not load: {exc}", hint="assets_ls with kind world lists the resolvable worlds") from exc
     status, raw = await asyncio.to_thread(http, "POST", "world/ingest", data=data, content_type="application/zip", timeout=120.0)
     if status != 200:
         raise ToolError(f"world/ingest answered HTTP {status}: {raw.decode(errors='replace')[:2000]}")

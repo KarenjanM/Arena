@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
@@ -9,6 +8,8 @@ import pydantic
 import yaml
 
 from arena_mcp.core import ROS, Domain, ToolError, media, tg
+
+from .worlds import path_component
 
 if TYPE_CHECKING:
     from arena_simulation_setup.generative.world import WorldGenerator, WorldGeneratorType
@@ -29,13 +30,6 @@ Config = Annotated[dict[str, object] | None, pydantic.Field(description="generat
 Sketch = Annotated[str | None, pydantic.Field(description="sketch text for generators with a sketch field, overrides config['sketch']")]
 Seed = Annotated[int, pydantic.Field(description="random seed, negative for a nondeterministic run")]
 WorldName = Annotated[str, pydantic.Field(description="world name, one path component")]
-
-
-def world_name(name: str) -> str:
-    """The name when it is one safe path component, else a ToolError."""
-    if not name or name in (".", "..") or name.startswith(".") or "/" in name or "\\" in name or "\0" in name:
-        raise ToolError(f"world name {name!r} must be one path component, not empty and not starting with a dot", hint="use letters, digits, '_' or '-'")
-    return name
 
 
 def _generator(name: str) -> WorldGeneratorType:
@@ -128,11 +122,13 @@ def worldgen_generators() -> list[dict[str, object]]:
 @domain.tool(read_only=True)
 def worldgen_preview(generator: GeneratorName, config: Config = None, sketch: Sketch = None, seed: Seed = 0) -> list:
     """Run a generator in process: diagnostics, warnings by sketch row/col, normalized sketch, episode binding and the rendered map."""
+    from arena_simulation_setup.tree.World.Map import preview_resolution
+
     _, world, report = _compute(generator, config, sketch, seed)
     level = world.all_levels[0]
     diagnostics = cast("dict[str, object]", report["diagnostics"])
     extent = cast("list[float]", diagnostics["extent"])
-    resolution = max(0.05, max(extent) / media.MAX_SIDE)
+    resolution = preview_resolution(max(extent))
     png, origin = level.render(resolution=resolution)
     report["map"] = {"resolution": resolution, "origin": [float(origin[0]), float(origin[1])]}
     return [report, media.png(png)]
@@ -140,17 +136,15 @@ def worldgen_preview(generator: GeneratorName, config: Config = None, sketch: Sk
 
 @domain.tool(destructive=True)
 def worldgen_save(name: WorldName, generator: GeneratorName, config: Config = None, sketch: Sketch = None, seed: Seed = 0, overwrite: bool = False) -> dict[str, object]:
-    """Generate and save a world under the writable world root. The result carries the path, diagnostics and the episode binding for worldgen_queue."""
+    """Generate and save a world under the writable world root, with overwrite over an existing one in place. The result carries the path, diagnostics and the episode binding for worldgen_queue."""
     from arena_simulation_setup.generative.world.world_generator import save_generated
     from arena_simulation_setup.tree.World import WorldIdentifier
 
-    view = WorldIdentifier(world_name(name)).resolve_write_sync()
+    view = WorldIdentifier(path_component(name)).resolve_write_sync()
     target = Path(view.path)
     if target.exists() and any(target.iterdir()) and not overwrite:
-        raise ToolError(f"world {name!r} already exists at {target}", hint="pass overwrite=True to replace it, or pick another name")
+        raise ToolError(f"world {name!r} already exists at {target}", hint="pass overwrite=True to save over it in place, or pick another name")
     active, world, report = _compute(generator, config, sketch, seed)
-    if target.exists() and overwrite:
-        shutil.rmtree(target)
     try:
         path = save_generated(view, world, active.files())
     except ValueError as exc:
@@ -214,7 +208,7 @@ async def worldgen_queue(name: WorldName, env_id: int | None = None, binding: An
     request = QueueEpisode.Request(
         action=QueueEpisode.Request.MERGE,
         keep_modules=True,
-        world=world_name(name),
+        world=path_component(name),
         tm_robots=str(binding.get("tm_robots") or ""),
         tm_obstacles=str(binding.get("tm_obstacles") or ""),
         robots_params=leaves("robots_params"),

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import os
 
 import pytest
@@ -11,13 +10,6 @@ from arena_mcp.core import ToolError
 
 from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.mcp import assets
-
-
-def _has_importers() -> bool:
-    try:
-        return importlib.util.find_spec("arena_assets.importers") is not None
-    except ModuleNotFoundError:
-        return False
 
 
 sourced = pytest.mark.skipif(not os.environ.get("ARENA_WS_DIR"), reason="needs a sourced Arena workspace")
@@ -58,21 +50,5 @@ def test_pull_of_a_world_absent_from_the_bucket_fails():
         assets.assets_pull("world", "mcp_no_such_world_anywhere")
 
 
-@pytest.mark.skipif(_has_importers(), reason="arena_assets.importers is installed")
-def test_import_tools_fail_with_a_hint_without_the_registry():
-    with pytest.raises(ToolError, match="not installed") as raised:
-        assets.assets_import_sources()
-    assert raised.value.hint
-    with pytest.raises(ToolError, match="not installed"):
-        assets.assets_import_items("world", "barn")
-
-
-@pytest.mark.skipif(not _has_importers(), reason="arena_assets.importers is not installed")
-def test_import_sources_follow_the_registry():
-    from arena_assets.importers import IMPORTERS
-
-    rows = assets.assets_import_sources()
-    assert {(row["kind"], row["source"]) for row in rows} == {(meta.kind, meta.name) for meta in IMPORTERS}
-    assert all(row["kind"] == "world" for row in assets.assets_import_sources(kind="world"))
-    with pytest.raises(ToolError, match="no importer kind"):
-        assets.assets_import_items("spaceship", "x")
+def test_domain_serves_only_the_arena_asset_verbs():
+    assert sorted(spec.name for spec in assets.domain.tools) == ["assets_find", "assets_kinds", "assets_ls", "assets_pull", "assets_push"]

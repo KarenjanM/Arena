@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import fnmatch
 import re
 import tempfile
 import typing
@@ -22,12 +21,11 @@ domain = Domain(
     "worlds",
     """Worlds, scenarios, knowledge graphs and the task grammar of arena_simulation_setup, offline on the files.
     A world name resolves like the runtime: ARENA_WORLD_PATH roots, the writable local root $ARENA_ASSETS_DIR_LOCAL/worlds, the installed worlds, then the world buckets.
-    A name may carry a level filter, name[0,1], or compose worlds as one, a,b[1]. worlds_write and worlds_scenario_write only write into the writable local root.""",
+    A name may carry a level filter, name[0,1], or compose worlds as one, a,b[1]. worlds_write and worlds_scenario_write only write into the writable local root.
+    assets_ls and assets_find with kind world list the worlds and every resolver's verdict.""",
 )
 
 NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
-PREVIEW_PIXELS = 1500
-MIN_RESOLUTION = 0.05
 
 WorldName = Annotated[str, Field(description="world name as the runtime resolves it, optionally with a level filter name[0,1], or a composition a,b[1]")]
 LevelId = Annotated[str | None, Field(description="one level id, all levels side by side when omitted")]
@@ -39,47 +37,36 @@ def _resolve(name: str) -> tuple[WorldView, set[str] | None]:
     try:
         return resolve_world(name)
     except (FileNotFoundError, ValueError) as exc:
-        raise ToolError(f"world {name!r} does not resolve: {str(exc).splitlines()[0]}", hint="worlds_list shows the resolvable worlds, worlds_find every resolver's verdict") from exc
+        raise ToolError(f"world {name!r} does not resolve: {str(exc).splitlines()[0]}", hint="assets_ls with kind world lists the resolvable worlds, assets_find every resolver's verdict") from exc
 
 
-def _format(view: WorldView) -> str:
-    from arena_simulation_setup.tree.World import FORMAT
-    from arena_simulation_setup.tree.World.legacy import is_legacy
-
-    if view.world_path.exists() and not is_legacy(yaml.safe_load(view.world_path.read_text(encoding="utf-8"))):
-        return FORMAT
-    return "arena-world/1"
-
-
-def _check(world: World, filtered: bool) -> dict[str, object]:
-    from arena_simulation_setup.tree.World.view import check_kg
-
-    try:
-        notes = world.validate(loaded_level_ids=set(world.levels) if filtered else None)
-        if world.kg is not None:
-            check_kg(world, world.kg)
-    except Exception as exc:
-        return {"valid": False, "reason": str(exc)}
-    return {"valid": True, "warnings": notes}
+def path_component(value: str, what: str = "world name") -> str:
+    """The value when it is one path component of letters, digits, '_', '.' and '-', else a ToolError."""
+    if not NAME.fullmatch(value):
+        raise ToolError(f"{what} {value!r} is not one path component of letters, digits, '_', '.' and '-'", hint=f"pick a plain {what}")
+    return value
 
 
 def _load(view: WorldView, levels: set[str] | None, derive: str = "auto") -> tuple[World, dict[str, object]]:
-    """The world as the runtime loads it, with the strict verdict taken before the KG is derived."""
-    from arena_simulation_setup.tree.World import derive as derive_kg
+    """The world as the runtime loads it with its strict verdict."""
+    from arena_simulation_setup.tree.World import DERIVE_MODES
 
+    if derive not in DERIVE_MODES:
+        raise ToolError(f"kg.derive {derive!r} is not one of {', '.join(DERIVE_MODES)}", hint="derive is auto, all or off")
+    notes: list[str] = []
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        world = view.load(validate=False, level_filter=levels, derive="off")
+        try:
+            world = view.load(validate=True, level_filter=levels, derive=derive, notes=notes)
+            verdict: dict[str, object] = {"valid": True, "warnings": notes}
+        except Exception as exc:
+            world = view.load(validate=False, level_filter=levels, derive=derive)
+            verdict = {"valid": False, "reason": str(exc)}
     if levels is not None:
         missing = sorted(levels - set(world.levels))
         if missing:
             raise ToolError(f"world {view.name!r} has no level {', '.join(missing)}", hint="worlds_inspect without a level filter lists the levels")
-    verdict = _check(world, levels is not None)
-    try:
-        world.kg = derive_kg(world, derive)
-    except ValueError as exc:
-        raise ToolError(str(exc), hint="derive is auto, all or off") from exc
-    return world, {"format": _format(view), **verdict}
+    return world, {"format": view.world_format, **verdict}
 
 
 def _loaded(name: str, derive: str = "auto") -> tuple[WorldView, World, dict[str, object]]:
@@ -102,22 +89,22 @@ def _extent(level: Level) -> dict[str, list[float]] | None:
     return {"min": [round(v, 3) for v in low], "max": [round(v, 3) for v in high], "size": [round(high[0] - low[0], 3), round(high[1] - low[1], 3)]}
 
 
-def _render(level: Level) -> tuple[Image, dict[str, object]] | None:
-    """The level drawn by the renderer touch_world and WorldView.save use, at a resolution that keeps it within PREVIEW_PIXELS."""
+def level_preview(level: Level) -> tuple[bytes, dict[str, object]] | None:
+    """The level drawn by the renderer touch_world and WorldView.save use at the preview resolution, as PNG bytes and its placement."""
+    from arena_simulation_setup.tree.World.Map import preview_resolution
+
     extent = _extent(level)
     if extent is None:
         return None
-    resolution = max(MIN_RESOLUTION, max(extent["size"]) / PREVIEW_PIXELS)
+    resolution = preview_resolution(max(extent["size"]))
     png, origin = level.render(resolution=resolution)
-    return media.png(png), {"level": level.id, "resolution": resolution, "origin": [float(origin[0]), float(origin[1])]}
+    return png, {"level": level.id, "resolution": resolution, "origin": [float(origin[0]), float(origin[1])]}
 
 
-def _kg_summary(scene: Scene | None, view: WorldView) -> dict[str, object] | None:
+def _kg_summary(scene: Scene, view: WorldView) -> dict[str, object]:
     from arena_simulation_setup.kg import DERIVED
     from arena_simulation_setup.tree.World import connections
 
-    if scene is None:
-        return None
     return {
         "file": str(view.kg_path) if view.kg_path.exists() else None,
         "uses": scene.uses,
@@ -161,7 +148,7 @@ def _summary(view: WorldView, world: World, verdict: dict[str, object]) -> dict[
         "levels": [_level_summary(level) for level in world.levels.values()],
         "schedules": names["schedule"],
         "signals": names["signal"],
-        "kg": _kg_summary(world.kg, view),
+        "kg": _kg_summary(typing.cast("Scene", world.kg), view),
         "scenarios": sorted(scenario.name for scenario in view.scenario.listall()),
     }
 
@@ -169,14 +156,8 @@ def _summary(view: WorldView, world: World, verdict: dict[str, object]) -> dict[
 def _nouns(world: World) -> dict[str, str]:
     from arena_simulation_setup.tree.World import describe
 
-    if world.kg is None:
-        return {}
-    return {zone.name: text for level in world.levels.values() for zone in level.zones if (text := describe(world.kg, zone.name))}
-
-
-def _component(value: str, what: str) -> None:
-    if not NAME.fullmatch(value):
-        raise ToolError(f"{what} {value!r} is not one path component of letters, digits, '_', '.' and '-'", hint=f"pick a plain {what}")
+    scene = typing.cast("Scene", world.kg)
+    return {zone.name: text for level in world.levels.values() for zone in level.zones if (text := describe(scene, zone.name))}
 
 
 def _writable(view: WorldView) -> None:
@@ -187,54 +168,6 @@ def _writable(view: WorldView) -> None:
         raise ToolError(f"world {view.name!r} lives at {view.path}, outside the writable root {root}", hint="write a copy into the writable root with worlds_write first")
 
 
-@domain.tool(read_only=True, open_world=True)
-def worlds_list(
-    network: Annotated[bool, Field(description="also list the world buckets, a remote listing cached for ARENA_MODELS_TTL")] = False,
-    pattern: Annotated[str | None, Field(description="glob over world names, e.g. hospital*")] = None,
-) -> list[dict[str, object]]:
-    """Every resolvable world with the resolver it resolves from and the later ones it shadows."""
-    from arena_simulation_setup.tree import PathResolverBase
-    from arena_simulation_setup.tree.World import WorldIdentifier
-    from arena_simulation_setup.tree.World.view import ComposedResolver
-
-    rows: dict[str, dict[str, object]] = {}
-    shadows: dict[str, list[str]] = {}
-    for resolver in WorldIdentifier._resolvers:
-        if isinstance(resolver, ComposedResolver):
-            names = sorted(entry.name for entry in resolver.root.iterdir() if entry.is_dir()) if resolver.root.is_dir() else []
-        else:
-            names = [identifier.name for identifier in resolver.listall(network=network)]
-        for name in names:
-            if pattern is not None and not fnmatch.fnmatchcase(name, pattern):
-                continue
-            if name in rows:
-                shadows[name].append(repr(resolver))
-                continue
-            path = resolver.root / name if isinstance(resolver, ComposedResolver) else resolver.path / name if isinstance(resolver, PathResolverBase) else None
-            shadows[name] = []
-            rows[name] = {"name": name, "resolver": repr(resolver), "path": str(path) if path is not None and path.exists() else None, "shadows": shadows[name]}
-    return [rows[name] for name in sorted(rows)]
-
-
-@domain.tool(read_only=True, open_world=True)
-def worlds_find(name: WorldName) -> dict[str, object]:
-    """Every world resolver's verdict for one name (hit, miss, shadowed, stale), without downloading, like `arena asset find world`."""
-    from arena_simulation_setup.tree import Verdict
-    from arena_simulation_setup.tree.World import WorldIdentifier
-
-    base, levels = WorldIdentifier.split_filter(name)
-    try:
-        verdicts = WorldIdentifier(base).probe_sync()
-    except (FileNotFoundError, ValueError) as exc:
-        raise ToolError(f"world {name!r} cannot be probed: {exc}", hint="a composition names worlds that resolve, worlds_find each part") from exc
-    return {
-        "world": base,
-        "levels": sorted(levels) if levels is not None else None,
-        "resolves": any(verdict.verdict in (Verdict.HIT, Verdict.STALE) for verdict in verdicts),
-        "verdicts": [{"resolver": repr(verdict.resolver), "verdict": verdict.verdict.value, "path": str(verdict.path) if verdict.path is not None else None} for verdict in verdicts],
-    }
-
-
 @domain.tool(read_only=True)
 def worlds_inspect(name: WorldName) -> list:
     """Levels with extent and the names of their zones, doors, elevators, objects, humans, lights, sounds and microphones, schedules, signals, KG summary, scenarios, strict verdict, then a preview image per level."""
@@ -243,9 +176,9 @@ def worlds_inspect(name: WorldName) -> list:
     images: list[Image] = []
     previews: list[dict[str, object]] = []
     for level in world.levels.values():
-        rendered = _render(level)
+        rendered = level_preview(level)
         if rendered is not None:
-            images.append(rendered[0])
+            images.append(media.png(rendered[0]))
             previews.append(rendered[1])
     return [{**summary, "previews": previews}, *images]
 
@@ -262,11 +195,11 @@ def worlds_preview(name: WorldName, level: LevelId = None) -> list:
         origins = world.level_origins() if len(world.levels) > 1 else dict.fromkeys(world.level_ids, (0.0, 0.0))
         target = world.compact_world(origins)
         target.id = ",".join(world.level_ids)
-    rendered = _render(target)
+    rendered = level_preview(target)
     if rendered is None:
         raise ToolError(f"world {view.name!r} has no zones or walls to draw", hint="worlds_inspect shows what the levels hold")
-    image, info = rendered
-    return [{"world": view.name, **info}, image]
+    png, info = rendered
+    return [{"world": view.name, **info}, media.png(png)]
 
 
 @domain.tool(read_only=True)
@@ -282,22 +215,23 @@ def worlds_validate(
         raise ToolError("pass exactly one of name, path and yaml_text")
     if name is not None:
         view, levels = _resolve(name)
-        return _validate(view, levels)
+        return world_verdict(view, levels)
     if path is not None:
         target = Path(path).expanduser()
         if target.is_file():
             target = target.parent
         if not target.is_dir():
             raise ToolError(f"{path} is not a world directory or world.yaml", hint="pass the directory holding world.yaml")
-        return _validate(WorldView(target.resolve()), None)
+        return world_verdict(WorldView(target.resolve()), None)
     with tempfile.TemporaryDirectory() as staging:
         view = WorldView(Path(staging) / "world")
         view.path.mkdir()
         view.world_path.write_text(typing.cast(str, yaml_text), encoding="utf-8")
-        return {**_validate(view, None), "path": None}
+        return {**world_verdict(view, None), "path": None}
 
 
-def _validate(view: WorldView, levels: set[str] | None) -> dict[str, object]:
+def world_verdict(view: WorldView, levels: set[str] | None) -> dict[str, object]:
+    """The strict verdict on a world directory: format, validity with the reason or the warnings, and its levels."""
     from arena_simulation_setup.tree.World import WorldFormatError
 
     try:
@@ -308,12 +242,16 @@ def _validate(view: WorldView, levels: set[str] | None) -> dict[str, object]:
 
 
 @domain.tool(destructive=True)
-def worlds_migrate(name: Annotated[str, Field(description="a world name, rewritten in place where it resolves")]) -> dict[str, object]:
-    """Rewrite a format 1 world in place as format 2, deleting the per-level files, and return the upgrade warnings."""
-    from arena_simulation_setup.tree.World import FORMAT
+def worlds_migrate(name: Annotated[str, Field(description="a world directory, or a world name under $ARENA_DIR/arena_simulation_setup/worlds, as touch_world takes it")]) -> dict[str, object]:
+    """Rewrite a format 1 world in place as format 2, deleting the per-level files, and return the upgrade warnings, like touch_world --migrate."""
+    from arena_simulation_setup.tree.World import FORMAT, WorldView
+    from arena_simulation_setup.tree.World.view import world_dir
 
-    view, _ = _resolve(name)
-    if _format(view) == FORMAT:
+    path = world_dir(name)
+    if not path.is_dir():
+        raise ToolError(f"world {name!r} not found at {path}", hint="pass a world directory, or a name under $ARENA_DIR/arena_simulation_setup/worlds")
+    view = WorldView(path)
+    if view.world_format == FORMAT:
         return {"world": view.name, "path": str(view.path), "migrated": False, "reason": "already format 2"}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -334,7 +272,7 @@ def worlds_write(
     from arena_simulation_setup.tree.World import FORMAT, WorldIdentifier
     from arena_simulation_setup.tree.World.legacy import is_legacy
 
-    _component(name, "world name")
+    path_component(name)
     try:
         data = yaml.safe_load(yaml_text)
     except yaml.YAMLError as exc:
@@ -374,7 +312,7 @@ def worlds_write(
 def worlds_nav_at_r(
     name: WorldName,
     robot: Annotated[str | None, Field(description="robot name in arena_robots or a robot directory, its caps/mobile.yaml radius is r")] = None,
-    radius: Annotated[float | None, Field(description="footprint radius r in meters, the Jackal radius 0.267 when neither robot nor radius is given")] = None,
+    radius: Annotated[float | None, Field(description="footprint radius r in meters, the nav_at_r default radius when neither robot nor radius is given")] = None,
     walls_only: Annotated[bool, Field(description="ignore static entities, to tell layout faults from furniture blockages")] = False,
     start: Annotated[list[float] | None, Field(description="[x, y] in meters in each level's frame, adds the single-start share")] = None,
 ) -> list:
@@ -433,11 +371,10 @@ def worlds_kg_check(name: WorldName) -> dict[str, object]:
 
     view, world, _ = _loaded(name, "off")
     problems: list[str] = []
-    if world.kg is not None:
-        try:
-            check_kg(world, world.kg)
-        except ValueError as exc:
-            problems = str(exc).removeprefix(f"{KG_FILE}: ").split("; ")
+    try:
+        check_kg(world, typing.cast("Scene", world.kg))
+    except ValueError as exc:
+        problems = str(exc).removeprefix(f"{KG_FILE}: ").split("; ")
     return {"world": view.name, "kg": str(view.kg_path) if view.kg_path.exists() else None, "problems": problems}
 
 
@@ -459,6 +396,8 @@ def worlds_vocabularies(uses: Annotated[list[str] | None, Field(description="pac
 @domain.tool(read_only=True)
 def worlds_scenarios(name: WorldName) -> list[dict[str, object]]:
     """The scenarios of a world with their file and format."""
+    from arena_simulation_setup.tree.World.Scenario import LEGACY_SCENARIO_FORMAT
+
     view, _ = _resolve(name)
     rows = []
     for identifier in sorted(view.scenario.listall(), key=lambda identifier: identifier.name):
@@ -468,7 +407,7 @@ def worlds_scenarios(name: WorldName) -> list[dict[str, object]]:
         except (OSError, yaml.YAMLError) as exc:
             rows.append({"scenario": identifier.name, "path": scenario.scenario_path, "format": None, "reason": str(exc)})
             continue
-        rows.append({"scenario": identifier.name, "path": scenario.scenario_path, "format": raw.get("format", "arena-scenario/1") if isinstance(raw, dict) else None})
+        rows.append({"scenario": identifier.name, "path": scenario.scenario_path, "format": raw.get("format", LEGACY_SCENARIO_FORMAT) if isinstance(raw, dict) else None})
     return rows
 
 
@@ -546,7 +485,7 @@ def worlds_scenario_write(
     """Validate a format 2 scenario against its world and save it as scenarios/<scenario>/scenario.yaml of a world in the writable root."""
     from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT
 
-    _component(scenario, "scenario name")
+    path_component(scenario, "scenario name")
     view, loaded, _ = _loaded(world)
     _writable(view)
     try:

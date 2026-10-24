@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import attrs
 import pytest
-from arena_simulation_setup.tree import SimplePathResolver
+from arena_simulation_setup.tree import LocalResolver, SimplePathResolver
 
 
 @attrs.define(frozen=True)
@@ -62,4 +64,32 @@ def test_listing_is_cached_until_invalidated(tree: Path) -> None:
 
 def test_missing_directory_lists_empty(tmp_path: Path) -> None:
     resolver = SimplePathResolver(_Ident, path=tmp_path / "nope")
+    assert asyncio.run(resolver.listall_async()) == []
+
+
+@pytest.fixture
+def local_root(tmp_path: Path) -> Iterator[Path]:
+    previous = os.environ.get("ARENA_ASSETS_DIR_LOCAL")
+    os.environ["ARENA_ASSETS_DIR_LOCAL"] = str(tmp_path)
+    try:
+        yield tmp_path
+    finally:
+        if previous is None:
+            del os.environ["ARENA_ASSETS_DIR_LOCAL"]
+        else:
+            os.environ["ARENA_ASSETS_DIR_LOCAL"] = previous
+
+
+def test_local_listing_walks_like_the_base_and_sees_every_write(local_root: Path, tree: Path) -> None:
+    resolver = LocalResolver(_Ident, subdir="")
+    assert set(asyncio.run(resolver.listall_async())) == set(resolver.listall())
+    (tree / "fresh").mkdir()
+    (tree / "fresh" / "thing.yaml").touch()
+    assert any("fresh" in ident.parts for ident in asyncio.run(resolver.listall_async()))
+
+
+def test_local_listing_follows_the_variable_at_every_call(local_root: Path, tree: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    resolver = LocalResolver(_Ident, subdir="")
+    assert asyncio.run(resolver.listall_async())
+    os.environ["ARENA_ASSETS_DIR_LOCAL"] = str(tmp_path_factory.mktemp("elsewhere"))
     assert asyncio.run(resolver.listall_async()) == []

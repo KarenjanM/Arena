@@ -24,7 +24,6 @@ setup(
         ],
         'arena_mcp.domains': [
             'jobs = arena_mcp.domains.jobs:domain',
-            'airchitect = arena_mcp.domains.airchitect:domain',
             'system = arena_mcp.domains.system:domain',
             'workspace = arena_mcp.domains.workspace:domain',
             'ros = arena_mcp.domains.ros:domain',

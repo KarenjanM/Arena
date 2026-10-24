@@ -46,6 +46,7 @@ if typing.TYPE_CHECKING:
     from arena_simulation_setup.kg import Scene
 
 FORMAT = 'arena-world/2'
+LEGACY_FORMAT = 'arena-world/1'
 MICROPHONE_PLACEMENT_TOLERANCE_M = 0.05
 WORLD_LIGHTING_MODES = ('authored', 'auto')
 AUTO_CEILING_LIGHTS = CeilingLights(fixture='panel', spacing=2.4, lumens=7200.0, cct_K=6500.0)

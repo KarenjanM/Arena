@@ -38,25 +38,64 @@ Scripts live under [scripts/](scripts). To fetch a single asset by identifier, u
 
 ## MCP domains
 
-The package contributes two domains to the `arena_mcp` server, listed with
-`python3 -m arena_mcp ls worlds` and `python3 -m arena_mcp ls assets`.
+The package contributes four domains to the `arena_mcp` server, listed with
+`python3 -m arena_mcp ls <domain>`.
 
 - `worlds` works offline on the files through the same resolvers and loaders
-  the runtime uses: list and find worlds, inspect one with a preview image per
-  level, validate (strict format 2, the legacy loader for format 1), migrate,
-  write, NAV@r with its component maps, the KG with its check and the
-  vocabulary packages, scenarios (list, show, validate against the world's
-  zones, write), and the task and condition grammar parsed and rendered back
-  to text. A world name takes a level filter, `name[0,1]`, or a composition,
-  `a,b[1]`. `worlds_write` and `worlds_scenario_write` only write into the
-  writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds`, a scenario only into a
-  world that lives there. `arena://worlds/{name}` serves the inspect summary.
+  the runtime uses: inspect a world with a preview image per level, validate
+  (strict format 2, the legacy loader for format 1), migrate a world directory
+  or repo world as `touch_world --migrate` does, write, NAV@r with its
+  component maps, the KG with its check and the vocabulary packages, scenarios
+  (list, show, validate against the world's zones, write), and the task and
+  condition grammar parsed and rendered back to text. A world name takes a
+  level filter, `name[0,1]`, or a composition, `a,b[1]`. `worlds_write` and
+  `worlds_scenario_write` only write into the writable local root
+  `$ARENA_ASSETS_DIR_LOCAL/worlds`, a scenario only into a world that lives
+  there. `arena://worlds/{name}` serves the inspect summary. Previews render
+  at the world generator node's pixel budget.
 - `assets` runs the `arena asset` verbs: kinds, find, ls, pull, and push with
   the preflight that refuses references nobody else could resolve (marked
-  destructive and open-world, it needs `GCS_ACCESS_TOKEN`). The import tools
-  list and convert upstream datasets when `arena_assets.importers` is
-  installed and fail with a hint otherwise. `assets_import` returns a job,
-  followed with the `jobs` tools.
+  destructive and open-world, it needs `GCS_ACCESS_TOKEN`). `assets_ls` and
+  `assets_find` with kind `world` list the worlds and every resolver's verdict.
+- `worldgen` runs the world generators in process: preview with diagnostics,
+  save under the writable world root (in place over an existing world with
+  `overwrite`, as the generator node saves), and queue a world on an env with
+  its episode binding.
+- `airchitect` drives the external airchitect generation stack through its
+  webapp HTTP API, the stack's only published endpoint. The base URL is
+  `AIRCHITECT_URL` (default `http://localhost:3000`), reached from the
+  container over host networking. The domain is always served. While the stack
+  is down every tool fails within seconds with the deploy command
+  (`cd ~/airchitect && ./airchitect deploy up --cpu --arena text_kg`), so a
+  stack started after the server is picked up without a restart.
+  - `airchitect_status` checks readiness: the models per stage with their
+    defaults, and backend availability from `models/score`.
+  - A session is a uuid in the stack's Redis, kept for one hour after its last
+    write, with the stages `prompt`, `floorplan`, `decoration` and `scenario`.
+    Stage requests are deferred, so every stage run is a job that polls the
+    stage record until the stack stores `completed` or `error`.
+  - `airchitect_generate` runs the whole pipeline as one job: prompt, several
+    floor plan tries keeping the one with the fewest graph edges left without a
+    door and then the fewest `door_auto_*` doors, decoration, the scenario
+    stage when a scenario prompt is given, and the zip export. The zip is
+    unpacked into the writable world root
+    (`$ARENA_ASSETS_DIR_LOCAL/worlds/<name>`), an existing world is replaced
+    only with `overwrite`, and the world is checked with the `worlds` verdict,
+    NAV@r per level (the `nav_at_r` default radius unless given) and a preview
+    per level.
+  - Every job keeps its stage requests and responses as JSON, the exported
+    `world.zip`, the previews and the NAV@r images under
+    `$ARENA_DATA_DIR/mcp/airchitect/<run id>/`, where the run id is the id of
+    the job that started it. `resume` takes that id and reuses the completed
+    stages in the same session.
+  - `airchitect_session`, `airchitect_stage`, `airchitect_kg_edit` and
+    `airchitect_export` inspect, rerun, edit and export an existing session.
+    `airchitect_ingest` seeds a session from an Arena world, its linked levels
+    written out.
+  - Job progress names the current stage, and `jobs_status`, `jobs_log`,
+    `jobs_wait` and `jobs_cancel` follow a run. Cost is reported as
+    unavailable: the stack exposes it only in its SSE events, and only when it
+    runs with `COST_DEBUG=1`.
 
 ## Human assets and skeletal articulation
 

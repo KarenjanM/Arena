@@ -13,15 +13,15 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("arena_mcp")
-pytest.importorskip("arena_simulation_setup")
 
 import yaml
-from arena_simulation_setup.tree.World import WorldIdentifier, WorldView, parse_world
-
 from arena_mcp.core.errors import ToolError
-from arena_mcp.domains import airchitect
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError as SdkToolError
+
+from arena_simulation_setup.mcp import airchitect
+from arena_simulation_setup.metrics.nav_at_r import DEFAULT_RADIUS
+from arena_simulation_setup.tree.World import WorldIdentifier, WorldView, parse_world
 
 HOTEL_RUNS = Path("/home/arena/tmp/showcase/hotel/runs")
 
@@ -70,17 +70,6 @@ def _record(graph, doors_by_level):
 
 
 @pytest.fixture
-def writable_root(tmp_path):
-    previous = os.environ.get("ARENA_ASSETS_DIR_LOCAL")
-    os.environ["ARENA_ASSETS_DIR_LOCAL"] = str(tmp_path / "local")
-    yield tmp_path / "local"
-    if previous is None:
-        del os.environ["ARENA_ASSETS_DIR_LOCAL"]
-    else:
-        os.environ["ARENA_ASSETS_DIR_LOCAL"] = previous
-
-
-@pytest.fixture
 def closed_url():
     previous = os.environ.get("AIRCHITECT_URL")
     with socket.socket() as probe:
@@ -108,16 +97,6 @@ def _world_zip(source: Path, extra: dict[str, bytes] | None = None) -> bytes:
 @pytest.fixture(scope="module")
 def real_world() -> Path:
     return Path(WorldIdentifier("map_empty").resolve_sync().path)
-
-
-@pytest.mark.parametrize("name", ["", ".", "..", ".hidden", "a/b", "../escape", "a\\b"])
-def test_world_name_rejects_anything_but_one_path_component(name):
-    with pytest.raises(ToolError, match="one path component"):
-        airchitect.world_name(name)
-
-
-def test_world_name_accepts_plain_names():
-    assert airchitect.world_name("hotel_b-2") == "hotel_b-2"
 
 
 def test_floorplan_selection_keeps_the_hotel_b_try_the_old_driver_kept():
@@ -157,17 +136,17 @@ def test_floorplan_selection_matches_the_recorded_runs(run):
     assert {score["try"]: (len(score["dropped_edges"]), len(score["auto_doors"])) for score in scores} == recorded
 
 
-def test_install_zip_unpacks_a_real_world_into_the_writable_root(writable_root, real_world):
+def test_install_zip_unpacks_a_real_world_into_the_local_root(local_root, real_world):
     data = _world_zip(real_world, {"graph.yaml": b"nodes: []\nedges: []\n"})
     path = airchitect.install_zip(data, "from_zip", overwrite=False)
-    assert path == writable_root / "worlds" / "from_zip"
+    assert path == local_root / "worlds" / "from_zip"
     assert (path / "world.yaml").read_bytes() == (real_world / "world.yaml").read_bytes()
     assert (path / "graph.yaml").is_file()
     assert WorldView(path).load(validate=True).levels
     assert [entry.name for entry in path.parent.iterdir()] == ["from_zip"]
 
 
-def test_install_zip_refuses_an_existing_world_unless_overwrite(writable_root, real_world):
+def test_install_zip_refuses_an_existing_world_unless_overwrite(local_root, real_world):
     data = _world_zip(real_world)
     path = airchitect.install_zip(data, "twice", overwrite=False)
     (path / "stale.txt").write_text("left over")
@@ -180,15 +159,15 @@ def test_install_zip_refuses_an_existing_world_unless_overwrite(writable_root, r
 
 
 @pytest.mark.parametrize("member", ["../evil.yaml", "/etc/evil.yaml", "a/../../evil.yaml"])
-def test_install_zip_rejects_paths_that_leave_the_world(writable_root, real_world, member):
+def test_install_zip_rejects_paths_that_leave_the_world(local_root, real_world, member):
     data = _world_zip(real_world, {member: b"x"})
     with pytest.raises(ToolError, match="unsafe path"):
         airchitect.install_zip(data, "unsafe", overwrite=False)
-    assert not (writable_root / "worlds" / "unsafe").exists()
-    assert not (writable_root / "evil.yaml").exists()
+    assert not (local_root / "worlds" / "unsafe").exists()
+    assert not (local_root / "evil.yaml").exists()
 
 
-def test_install_zip_rejects_archives_without_a_root_world_yaml(writable_root, real_world):
+def test_install_zip_rejects_archives_without_a_root_world_yaml(local_root, real_world):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.write(real_world / "world.yaml", "nested/world.yaml")
@@ -196,16 +175,15 @@ def test_install_zip_rejects_archives_without_a_root_world_yaml(writable_root, r
         airchitect.install_zip(buffer.getvalue(), "nested", overwrite=False)
     with pytest.raises(ToolError, match="not a zip"):
         airchitect.install_zip(b"<html>error page</html>", "nested", overwrite=False)
-    assert not (writable_root / "worlds" / "nested").exists()
+    assert not (local_root / "worlds" / "nested").exists()
 
 
 def test_check_world_validates_measures_nav_at_r_and_writes_previews(tmp_path, real_world):
     world = tmp_path / "world"
     shutil.copytree(real_world, world, ignore_dangling_symlinks=True)
     report = airchitect.check_world(world, 0.3, tmp_path / "run")
-    assert report["validation"] == {"valid": True}
+    assert report["validation"]["valid"] is True and report["validation"]["warnings"] == []
     assert report["nav_at_r"]["radius"] == pytest.approx(0.3)
-    assert report["nav_at_r"]["radius_source"] == "given"
     levels = report["nav_at_r"]["levels"]
     assert levels and all(0.0 < level["value"] <= 1.0 for level in levels.values())
     assert report["previews"] and all(Path(preview).read_bytes().startswith(b"\x89PNG") for preview in report["previews"])
@@ -220,14 +198,15 @@ def test_check_world_reports_a_world_that_fails_strict_parsing(tmp_path, real_wo
     (world / "world.yaml").write_text(yaml.safe_dump(data))
     report = airchitect.check_world(world, 0.3, tmp_path / "run")
     assert report["validation"]["valid"] is False
-    assert "unexpected_key" in report["validation"]["error"]
+    assert "unexpected_key" in report["validation"]["reason"]
 
 
-def test_robot_radius_defaults_to_a_jackal_definition_or_the_metric_default():
-    value, source = airchitect.robot_radius(None)
-    assert value > 0
-    assert source == "jackal" or source.startswith("nav_at_r default")
-    assert airchitect.robot_radius(0.5) == (0.5, "given")
+def test_check_world_measures_nav_at_r_at_the_metric_default_radius_when_none_is_given(tmp_path, real_world):
+    world = tmp_path / "world"
+    shutil.copytree(real_world, world, ignore_dangling_symlinks=True)
+    report = airchitect.check_world(world, None, tmp_path / "run")
+    assert report["nav_at_r"]["radius"] == DEFAULT_RADIUS
+    assert report["nav_at_r"]["levels"]
 
 
 def test_bundle_zips_a_world_the_ingest_endpoint_can_read(real_world):
@@ -326,7 +305,7 @@ def test_status_through_the_server_fails_fast_when_the_webapp_is_down(closed_url
     assert time.monotonic() - start < 5.0
 
 
-def test_generate_checks_the_name_and_the_target_before_contacting_the_stack(writable_root, real_world, closed_url):
+def test_generate_checks_the_name_and_the_target_before_contacting_the_stack(local_root, real_world, closed_url):
     with pytest.raises(ToolError, match="one path component"):
         asyncio.run(airchitect.airchitect_generate("../escape", "a hotel", "residential"))
     with pytest.raises(ToolError, match="no domain"):

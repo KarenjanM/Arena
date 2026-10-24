@@ -18,7 +18,9 @@ from PIL import Image as PilImage
 
 from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.mcp import worlds
-from arena_simulation_setup.tree.World import FORMAT
+from arena_simulation_setup.tree.World import FORMAT, LEGACY_FORMAT
+from arena_simulation_setup.tree.World.Map import PREVIEW_MIN_RESOLUTION, PREVIEW_PIXEL_BUDGET
+from arena_simulation_setup.tree.World.Scenario import LEGACY_SCENARIO_FORMAT
 
 PNG = b"\x89PNG\r\n\x1a\n"
 
@@ -37,28 +39,16 @@ def _split(result: list) -> tuple[dict, list[Image]]:
     return head, images
 
 
-def test_list_names_installed_worlds_with_their_resolver():
-    rows = {row["name"]: row for row in worlds.worlds_list(pattern="map_*")}
-    assert "map_empty" in rows
-    assert all(name.startswith("map_") for name in rows)
-    assert rows["map_empty"]["path"] == str(ASS_DIR / "worlds" / "map_empty")
-    assert rows["map_empty"]["resolver"].startswith("SimplePathResolver")
+@pytest.mark.parametrize("name", ["", ".", "..", ".hidden", "-dash", "a/b", "../escape", "a\\b", "a\0b", "a,b[1]"])
+def test_path_component_rejects_anything_but_one_plain_path_component(name):
+    with pytest.raises(ToolError, match="one path component"):
+        worlds.path_component(name)
 
 
-def test_list_marks_a_local_world_shadowing_the_installed_one(local_root):
-    (local_root / "worlds" / "map_empty").mkdir(parents=True)
-    shutil.copy(ASS_DIR / "worlds" / "map_empty" / "world.yaml", local_root / "worlds" / "map_empty" / "world.yaml")
-    row = next(row for row in worlds.worlds_list(pattern="map_empty"))
-    assert row["resolver"].startswith("LocalResolver")
-    assert row["path"] == str(local_root / "worlds" / "map_empty")
-    assert any(entry.startswith("SimplePathResolver") for entry in row["shadows"])
-
-
-def test_find_reports_the_hit_of_an_installed_world():
-    found = worlds.worlds_find("map_empty[0]")
-    assert found["world"] == "map_empty" and found["levels"] == ["0"] and found["resolves"]
-    hits = [verdict for verdict in found["verdicts"] if verdict["verdict"] == "hit"]
-    assert hits[0]["path"] == str(ASS_DIR / "worlds" / "map_empty")
+def test_path_component_accepts_plain_names_and_names_what_it_checks():
+    assert worlds.path_component("hotel_b-2.v1") == "hotel_b-2.v1"
+    with pytest.raises(ToolError, match="scenario name"):
+        worlds.path_component("a/b", "scenario name")
 
 
 def test_inspect_reports_names_kg_scenarios_and_a_preview():
@@ -85,8 +75,30 @@ def test_inspect_with_a_level_filter_keeps_only_those_levels():
 
 
 def test_inspect_of_an_unknown_world_fails_with_a_hint():
-    with pytest.raises(ToolError, match="worlds_list"):
+    with pytest.raises(ToolError) as raised:
         worlds.worlds_inspect("mcp_no_such_world_anywhere")
+    assert "assets_ls" in (raised.value.hint or "") and "assets_find" in (raised.value.hint or "")
+
+
+def test_inspect_of_an_invalid_world_carries_the_strict_reason(local_root):
+    duplicate = {**BOX, "levels": [{**BOX["levels"][0], "doors": [{"name": "box", "span": [[6, 1], [6, 2]]}]}]}
+    (local_root / "worlds" / "mcp_twin").mkdir(parents=True)
+    (local_root / "worlds" / "mcp_twin" / "world.yaml").write_text(yaml.safe_dump(duplicate))
+    summary, images = _split(worlds.worlds_inspect("mcp_twin"))
+    assert summary["valid"] is False and "unique" in summary["reason"]
+    assert [level["zones"] for level in summary["levels"]] == [["box", "nook"]]
+    assert summary["kg"]["derived_facts"] > 0
+    assert len(images) == 1
+
+
+def test_preview_fits_a_large_level_into_the_pixel_budget(local_root):
+    hall = {"format": FORMAT, "levels": [{"id": "0", "zones": [{"name": "hall", "polygon": [[0, 0], [200, 0], [200, 40], [0, 40]], "walls": "outline"}]}]}
+    worlds.worlds_write("mcp_hall", yaml.safe_dump(hall))
+    info, (image,) = _split(worlds.worlds_preview("mcp_hall"))
+    assert info["resolution"] == pytest.approx(200 / PREVIEW_PIXEL_BUDGET)
+    assert max(_size(image)) <= PREVIEW_PIXEL_BUDGET + 20
+    small, _ = _split(worlds.worlds_preview("sbend_corridor"))
+    assert small["resolution"] >= PREVIEW_MIN_RESOLUTION
 
 
 def test_preview_lays_levels_side_by_side_or_draws_one():
@@ -118,17 +130,24 @@ def _legacy_world(root):
 def test_validate_reads_a_format_1_directory_through_the_legacy_loader(tmp_path):
     root = _legacy_world(tmp_path / "bare")
     verdict = worlds.worlds_validate(path=str(root))
-    assert verdict["format"] == "arena-world/1"
+    assert verdict["format"] == LEGACY_FORMAT
     assert verdict["levels"] == ["0"]
 
 
-def test_migrate_rewrites_a_format_1_world_in_place(local_root):
-    root = _legacy_world(local_root / "worlds" / "mcp_bare")
-    done = worlds.worlds_migrate("mcp_bare")
+def test_migrate_rewrites_a_format_1_world_directory_in_place(tmp_path):
+    root = _legacy_world(tmp_path / "mcp_bare")
+    done = worlds.worlds_migrate(str(root))
     assert done["migrated"] and done["path"] == str(root)
     assert yaml.safe_load((root / "world.yaml").read_text())["format"] == FORMAT
     assert not (root / "0" / "world.yaml").exists()
-    assert not worlds.worlds_migrate("mcp_bare")["migrated"]
+    assert not worlds.worlds_migrate(str(root))["migrated"]
+
+
+def test_migrate_takes_only_what_touch_world_takes(local_root):
+    root = _legacy_world(local_root / "worlds" / "mcp_resolved_only")
+    with pytest.raises(ToolError, match="not found"):
+        worlds.worlds_migrate("mcp_resolved_only")
+    assert (root / "0" / "world.yaml").is_file()
 
 
 def test_write_saves_into_the_local_root_and_refuses_to_clobber(local_root):
@@ -208,6 +227,13 @@ def test_vocabularies_list_the_packages_and_build_a_schema():
     assert "contains" in union["verbs"] and union["schema"]["properties"]["format"]["const"] == "arena-kg/1"
     with pytest.raises(ToolError, match="unknown package"):
         worlds.worlds_vocabularies(uses=["nope@9"])
+
+
+def test_scenarios_list_a_scenario_without_format_as_format_1(local_root):
+    worlds.worlds_write("mcp_old_scene", yaml.safe_dump(BOX))
+    (local_root / "worlds" / "mcp_old_scene" / "scenarios" / "old").mkdir(parents=True)
+    (local_root / "worlds" / "mcp_old_scene" / "scenarios" / "old" / "scenario.yaml").write_text(yaml.safe_dump({"robots": []}))
+    assert [row["format"] for row in worlds.worlds_scenarios("mcp_old_scene")] == [LEGACY_SCENARIO_FORMAT]
 
 
 def test_scenarios_and_one_scenario_with_its_instruction():
@@ -297,7 +323,8 @@ def test_server_serves_the_worlds_domain_with_images(tmp_path):
             return tools, inspected, missing, resource
 
     tools, inspected, missing, resource = asyncio.run(session())
-    assert {"worlds_list", "worlds_inspect", "worlds_write", "worlds_nav_at_r", "worlds_condition_parse"} <= tools
+    assert {"worlds_inspect", "worlds_validate", "worlds_write", "worlds_nav_at_r", "worlds_condition_parse"} <= tools
+    assert not {"worlds_list", "worlds_find"} & tools
     assert not inspected.is_error
     assert [block.type for block in inspected.content] == ["text", "image"]
     assert json.loads(inspected.content[0].text)["levels"][0]["id"] == "0"

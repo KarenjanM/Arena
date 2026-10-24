@@ -80,10 +80,26 @@ def local_root() -> Path:
     return Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local'))
 
 
+class LocalRootPath(DynamicPath):
+    """local_root() at every read, or the path assigned to it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._assigned: Path | None = None
+
+    @property
+    def path(self) -> Path:
+        return self._assigned if self._assigned is not None else local_root()
+
+    @path.setter
+    def path(self, value: Path) -> None:
+        self._assigned = value
+
+
 class DynamicPaths:
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
-    ARENA = DynamicPath(local_root())
+    ARENA = LocalRootPath()
 
     @classmethod
     def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
@@ -328,7 +344,8 @@ class LocalResolver(PathResolverBase[IdentifierT], typing.Generic[IdentifierT]):
         return next((root / candidate for candidate in self._candidates(identifier.relpath()) if (root / candidate).exists()), None)
 
     async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
-        return list(self.listall(**kwargs))
+        self._listall_cache = None
+        return await super().listall_async(**kwargs)
 
     def destination(self, identifier: IdentifierT) -> Path | None:
         return self.path / identifier.relpath()
