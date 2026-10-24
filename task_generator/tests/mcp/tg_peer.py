@@ -67,6 +67,7 @@ def _peer_class():
             self.sounds: list[object] = []
             self.submitted: list[tuple[str, str]] = []
             self.phase_count = 0
+            self.stops = 0
             self.streamed: list[object] = []
             self.ped_moves: list[object] = []
             self.humansim: list[tuple[str, object]] = []
@@ -233,7 +234,14 @@ def _peer_class():
                 response.success = False
                 response.error_msg = f"unknown robot {request.robot!r}"
                 return response
-            task = TaskRequest.parse(yaml.safe_load(request.task_yaml))
+            try:
+                task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
+            except Exception as exc:
+                response.success = False
+                response.error_msg = str(exc)
+                return response
+            if not task.phases:
+                self.stops += 1
             first = self.phase_count
             self.phase_count += len(task.phases)
             response.phase_indices = list(range(first, self.phase_count))

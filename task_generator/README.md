@@ -84,7 +84,7 @@ with `python3 -m arena_mcp ls episode` and `python3 -m arena_mcp ls entities`.
 - `episode` ([mcp/episode.py](task_generator/mcp/episode.py)): reset
   (blocking until the new episode runs), run through the `RunEpisode` action as
   a job on a managed env (`task.episode.auto_reset` false, an auto-advancing
-  env takes no goals; `jobs_wait` for the outcome, `jobs_cancel` cancels the
+  env answers busy; `jobs_wait` for the outcome, `jobs_cancel` cancels the
   goal), wait for
   an episode state, current and queued records, the history of records with
   their final outcomes, queueing the next episode, task modes with their
@@ -110,5 +110,7 @@ is a runtime hold, not an episode tool.
 behind `episode_submit_task` and the goals of the `robots` domain: a `phases:`
 list or `{phases, conditions}` mapping in the scenario format, parsed by
 `TaskRequest.parse` and handed to `RobotManager.submit_task`, answering with the
-episode-wide phase indices. With `frame_id` set to the map frame, goto poses
-are shifted into scenario coordinates the way an rviz goal handle's are.
+episode-wide phase indices. Goto poses are map-frame and shifted into scenario
+coordinates the way an rviz goal handle's are. An empty phase list stops the
+robot: `RobotManager.stop_task` drops its unfinished phases and cancels the
+in-flight adapter goals.

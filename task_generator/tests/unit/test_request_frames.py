@@ -30,3 +30,16 @@ def test_spawn_poses_are_shifted_from_the_map_frame_into_the_world_frame():
     assert (pose.position.x, pose.position.y) == pytest.approx((1.0, 3.0))
     with pytest.raises(ValueError, match="map frame"):
         TaskGenerator._pose_from_request(holder, _stamped("odom", 6.0, 10.0))
+
+
+def test_submitted_goto_poses_are_shifted_from_the_map_frame_into_the_world_frame():
+    from arena_simulation_setup.shared.task import TaskRequest
+
+    holder = types.SimpleNamespace(_realizer=Realizer(Realizer._Configuration(x=5.0, y=7.0, prefix="env_0")))
+    holder._ezilear_phases = lambda phases: TaskGenerator._ezilear_phases(holder, phases)
+    task = TaskRequest.parse([{"goto": [6.0, 10.0, 0.0]}, {"loop": [{"goto": [5.0, 7.0, 0.0]}, {"goto": "kitchen"}]}])
+    TaskGenerator._ezilear_phases(holder, task.phases)
+    assert (task.phases[0].pose.position.x, task.phases[0].pose.position.y) == pytest.approx((1.0, 3.0))
+    first, named = task.phases[1].phases
+    assert (first.pose.position.x, first.pose.position.y) == pytest.approx((0.0, 0.0))
+    assert named.pose is None and named.target == "kitchen"

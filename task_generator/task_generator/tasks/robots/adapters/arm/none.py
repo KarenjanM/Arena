@@ -9,6 +9,7 @@ from arena_robots.clients.reach_pose import ReachPoseClient
 from arena_robots.task_kinds import TaskKind
 from arena_robots_msgs.action import ReachPose
 
+from task_generator.tasks.robots._reach_sampling import reach_frame
 from task_generator.tasks.robots.adapters import Adapter, AdapterMeta
 from task_generator.tasks.robots.adapters.arm import park_arms
 from task_generator.tasks.robots.request import ReachPhase, TaskPhase
@@ -34,7 +35,7 @@ class NoneArmAdapter(Adapter):
         assert isinstance(phase, ReachPhase), f"NoneArmAdapter only accepts REACH_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
         goal = ReachPose.Goal()
         if phase.target is not None:
-            goal.target.header.frame_id = phase.frame or robot.base_frame
+            goal.target.header.frame_id = reach_frame(phase.frame or robot.base_frame, robot.frame)
             goal.target.header.stamp = robot.node.sim_time.to_msg()
             goal.target.pose = phase.target.to_msg()
         if phase.named_target is not None:

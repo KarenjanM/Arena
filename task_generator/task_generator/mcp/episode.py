@@ -12,8 +12,9 @@ from typing import TYPE_CHECKING, Annotated, Literal, TypedDict, cast
 
 from pydantic import Field
 
-from arena_mcp.core import JOBS, LATCHED, ROS, Domain, ToolError, fleet, msgs, tg
-from arena_mcp.core.ros import PARAM_TYPES, param_to_python, python_to_param
+from arena_mcp.core import JOBS, LATCHED, ROS, Domain, ToolError, msgs, robot_ns, tg
+from arena_mcp.core.envs import SUBMIT_TASK_TIMEOUT_S
+from arena_mcp.core.ros import python_to_param
 
 if TYPE_CHECKING:
     from rcl_interfaces.msg import Parameter, ParameterDescriptor
@@ -34,7 +35,7 @@ domain = Domain(
 
 HISTORY = 200
 RESET_TIMEOUT = 120.0
-BUSY = "RunEpisode is single-flight: wait for the running episode (episode_wait until=terminal) or cancel the job that runs it"
+BUSY = "RunEpisode is single-flight: wait for the running episode (episode_wait until=terminal) or cancel the job that runs it, an env with task.episode.auto_reset true runs its own episodes and is always busy"
 
 CATALOGS = {
     "worlds": ("QueryWorlds", "query/worlds"),
@@ -76,7 +77,9 @@ def _json(text: str, empty: object) -> object:
 
 
 def _params(params: Iterable[Parameter]) -> dict[str, object]:
-    return {param.name: msgs.jsonable(param_to_python(param.value)) for param in params}
+    from rclpy.parameter import parameter_value_to_python
+
+    return {param.name: msgs.jsonable(parameter_value_to_python(param.value)) for param in params}
 
 
 def record(msg: EpisodeRecord) -> dict[str, object]:
@@ -190,7 +193,7 @@ async def episode_reset(
 
     msg = await _until(started, timeout_s, f"no episode after {base} started", "episode_wait until=running keeps waiting, a world swap can take longer")
     if msg.outcome_state == _state("fatal"):
-        raise ToolError(f"the reset failed: {msg.outcome_info}", hint=f"worlds_find {msg.world} shows what each resolver answers" if world else "episode_history shows the failed record")
+        raise ToolError(f"the reset failed: {msg.outcome_info}", hint=f"assets_find world {msg.world} shows what each resolver answers" if world else "episode_history shows the failed record")
     return record(msg)
 
 
@@ -203,12 +206,9 @@ async def episode_run(
     """Run one episode of a managed env (task.episode.auto_reset false) through the RunEpisode action as a job with no result timeout; the result carries state, info, episode_id and the record, jobs_cancel cancels the goal."""
     from task_generator_msgs.action import RunEpisode
 
+    from task_generator.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN
+
     node = await tg(env_id)
-    if (await ROS.get_params(node, ["task.episode.auto_reset"]))["task.episode.auto_reset"]:
-        raise ToolError(
-            f"{node} advances its own episodes (task.episode.auto_reset is true), so it takes no RunEpisode goals",
-            hint="follow its episodes with episode_reset and episode_wait, or launch with args={'task.episode.auto_reset': False} to drive each episode with episode_run",
-        )
     episodes = await _episodes(node)
     goal = RunEpisode.Goal(world=world, seed=seed)
     wrapper, handle = await ROS.send_goal(RunEpisode, f"{node}/lifecycle/run_episode", goal, hint=BUSY)
@@ -218,8 +218,10 @@ async def episode_run(
         job.progress(goal_id=bytes(handle.goal_id.uuid).hex())
         response = await wrapper.await_result(handle)
         result = response.result
-        if result.state == RunEpisode.Result.SKIPPED and result.info == "busy":
+        if result.state == RunEpisode.Result.SKIPPED and result.info == RUN_EPISODE_BUSY:
             raise ToolError("the env was already running an episode", hint=BUSY)
+        if result.state == RunEpisode.Result.SKIPPED and result.info == RUN_EPISODE_SHUTTING_DOWN:
+            raise ToolError(f"{node} is shutting down and runs no more episodes", hint="runtime_envs lists the envs still up, runtime_spawn_env adds one")
         out: dict[str, object] = {"env": node, "state": states.get(result.state, str(result.state)), "info": result.info, "episode_id": result.episode_id}
         found = _by_id(episodes).get(result.episode_id)
         if found is not None:
@@ -420,7 +422,9 @@ async def episode_queue(
 
 
 def _entry(leaf: str, descriptor: ParameterDescriptor, value: object) -> dict[str, object]:
-    entry: dict[str, object] = {"name": leaf, "type": PARAM_TYPES.get(descriptor.type, "unset"), "value": msgs.jsonable(value)}
+    from rclpy.parameter import Parameter as RclpyParameter
+
+    entry: dict[str, object] = {"name": leaf, "type": RclpyParameter.Type(descriptor.type).name.lower(), "value": msgs.jsonable(value)}
     if descriptor.description:
         entry["description"] = descriptor.description
     if descriptor.additional_constraints:
@@ -444,13 +448,14 @@ def _bucket(prefixes: Mapping[str, str], names: list[str], entries: list[dict[st
 def _fleet_only() -> list[str]:
     from task_generator.tasks.robots import composite
 
-    return sorted(composite._COMPOSITE_EXTRA)
+    return composite.extra_tm_kinds()
 
 
 def _namespaces[K: enum.Enum, V](registry: TaskModeRegistry[K, V]) -> dict[str, str]:
     return {key.value: str(registry.meta(key).namespace) for key in sorted(registry.keys(), key=lambda key: key.value)}
 
 
+@functools.cache
 def _registry_modes() -> dict[str, object]:
     from arena_rclpy_mixins.ROSParamServer import ROSParamServer
     from rcl_interfaces.srv import ListParameters
@@ -475,6 +480,7 @@ def _registry_modes() -> dict[str, object]:
 
 async def _live_modes(node: str) -> dict[str, object]:
     from rcl_interfaces.srv import DescribeParameters, GetParameters
+    from rclpy.parameter import parameter_value_to_python
 
     registered = await _registered(node)
     out: dict[str, object] = {"source": "live", "env": node}
@@ -486,7 +492,7 @@ async def _live_modes(node: str) -> dict[str, object]:
             continue
         described = await ROS.call(DescribeParameters, f"{node}/describe_parameters", DescribeParameters.Request(names=names))
         values = await ROS.call(GetParameters, f"{node}/get_parameters", GetParameters.Request(names=names))
-        entries = [_entry(name, descriptor, param_to_python(value)) for name, descriptor, value in zip(names, described.descriptors, values.values, strict=True)]
+        entries = [_entry(name, descriptor, parameter_value_to_python(value)) for name, descriptor, value in zip(names, described.descriptors, values.values, strict=True)]
         out[axis] = _bucket(prefixes, names, entries)
     out["fleet_only_robots"] = _fleet_only()
     return out
@@ -608,29 +614,20 @@ async def episode_catalog(
 
 @domain.tool()
 async def episode_submit_task(
-    task_yaml: Annotated[str, Field(description="a phases list or {phases, conditions} mapping in the scenario.yaml format, poses in the world frame with levels laid out")],
+    task_yaml: Annotated[str, Field(description="a phases list or {phases, conditions} mapping in the scenario.yaml format, poses in the map frame, an empty list stops the robot")],
     env_id: EnvId = None,
     robot: Annotated[str | None, Field(description="robot name, optional when the env has one robot")] = None,
 ) -> dict[str, object]:
     """Hand a robot a task in the running episode, dropping its unfinished phases; returns the episode-wide phase indices it got."""
-    import yaml
-    from arena_simulation_setup.shared.task import TaskRequest
+    from arena_rclpy_mixins.shared import Namespace
     from task_generator_msgs.srv import SubmitTask
 
-    try:
-        TaskRequest.parse(yaml.safe_load(task_yaml) or [])
-    except (yaml.YAMLError, ValueError, TypeError, KeyError) as exc:
-        raise ToolError(f"task does not parse: {exc}", hint="see the phases: grammar in tasks/robots/README.md of task_generator") from exc
     node = await tg(env_id)
-    if robot is None:
-        robots = await fleet(env_id)
-        if len(robots) != 1:
-            raise ToolError(f"{len(robots)} robots in the env, pass robot", hint=f"robots: {[entry['name'] for entry in robots]}")
-        robot = robots[0]["name"]
-    response = await ROS.call(SubmitTask, f"{node}/runtime/submit_task", SubmitTask.Request(robot=robot, task_yaml=task_yaml), timeout=30.0)
+    name = str(Namespace(await robot_ns(env_id, robot)).robot_ns)
+    response = await ROS.call(SubmitTask, f"{node}/runtime/submit_task", SubmitTask.Request(robot=name, task_yaml=task_yaml), timeout=SUBMIT_TASK_TIMEOUT_S)
     if not response.success:
         raise ToolError(f"task rejected: {response.error_msg}")
-    return {"env": node, "robot": robot, "phase_indices": list(response.phase_indices)}
+    return {"env": node, "robot": name, "phase_indices": list(response.phase_indices)}
 
 
 @domain.resource("arena://episode/{env_id}/current", mime_type="application/json", description="current and queued episode records of an env")

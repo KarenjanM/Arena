@@ -8,7 +8,7 @@ from tg_peer import ENV, PLAIN_ENV, Peers, fqn
 
 @pytest.fixture(scope="package")
 def loop(rclpy_context: object) -> asyncio.AbstractEventLoop:
-    """One event loop for the directory, the shared ROS node binds to the loop it starts on."""
+    """One event loop for every test in the directory, with the shared ROS node started on it."""
     from arena_mcp.core import ROS
 
     event_loop = asyncio.new_event_loop()

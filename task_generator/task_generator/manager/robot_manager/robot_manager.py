@@ -351,6 +351,13 @@ class RobotManager(NodeInterface):
             self._publish_goal_task.cancel()
             self._publish_goal_task = None
 
+    def stop_task(self) -> None:
+        """Drop the unfinished phases and cancel every in-flight adapter goal."""
+        self._stop_current_task()
+        for adapter in self._adapter_instances:
+            adapter.cancel_goals()
+        self.node.on_task_submitted(self)
+
     def _outcome_for_phase(self, phase: TaskPhase) -> tuple[int | None, str | None]:
         """Return (status, reason) for the phase that just completed."""
         from task_generator.tasks.robots.request import kind_of

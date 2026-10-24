@@ -80,22 +80,12 @@ def test_run_rejects_a_second_goal_and_cancel_cancels_the_goal(run, peers):
         run(asyncio.sleep(0.05))
 
 
-def test_run_refuses_an_env_that_advances_its_own_episodes(run, peers):
-    node = f"/arena/env_{ENV}/task_generator_node"
-    run(ROS.set_params(node, {"task.episode.auto_reset": True}))
-    try:
-        with pytest.raises(ToolError, match="advances its own episodes") as refused:
-            run(episode.episode_run(env_id=ENV))
-        assert "episode_wait" in str(refused.value)
-    finally:
-        run(ROS.set_params(node, {"task.episode.auto_reset": False}))
-
-
 def test_run_fails_the_job_when_the_node_answers_busy(run):
     job = run(episode.episode_run(env_id=ENV, world="busy_result"))
     done = run(JOBS.wait(job["id"], 20)).as_dict()
     assert done["state"] == "failed"
     assert "already running" in done["error"]
+    assert "auto_reset" in done["error"]
 
 
 def test_history_keeps_terminal_outcomes_through_auto_reset_bursts(run, peers):
@@ -145,7 +135,7 @@ def test_current_reports_current_queued_and_resetting(run):
 def test_queue_without_modules_keeps_them_and_types_params_by_declaration(run, peers):
     modes = run(episode.episode_task_modes(env_id=ENV, source="live"))
     doubles = [(mode, entry) for mode, entries in modes["robots"].items() for entry in entries if entry["type"] == "double"]
-    pairs = [(mode, entry) for mode, entries in modes["obstacles"].items() for entry in entries if entry["type"] == "int_array"]
+    pairs = [(mode, entry) for mode, entries in modes["obstacles"].items() for entry in entries if entry["type"] == "integer_array"]
     robots_mode, double = doubles[0]
     obstacles_mode, pair = pairs[0]
     queued = run(episode.episode_queue(env_id=ENV, tm_robots=robots_mode, tm_obstacles=obstacles_mode, robots_params={double["name"]: 3}, obstacles_params={pair["name"]: [1, 2]}))
@@ -230,18 +220,28 @@ def test_catalog_lists_each_kind_from_its_query_service(run):
     assert world["world"] == "map_empty"
 
 
-def test_submit_task_parses_locally_and_returns_phase_indices(run, peers):
+def test_submit_task_returns_phase_indices_and_passes_the_node_error_through(run, peers):
     task = "- goto: [1.0, 2.0, 0.0]\n- goto: [3.0, 2.0, 1.5]\n  tolerance_radius: 0.5\n"
     first = run(episode.episode_submit_task(task, env_id=ENV))
     assert first["robot"] == ROBOT
     second = run(episode.episode_submit_task("phases:\n  - goto: [0.0, 0.0, 0.0]\n", env_id=ENV, robot=ROBOT))
     assert second["phase_indices"] == [first["phase_indices"][-1] + 1]
     calls = len(peers.humansim.submitted)
-    with pytest.raises(ToolError, match="does not parse"):
+    with pytest.raises(ToolError, match="task rejected: .*wobble"):
         run(episode.episode_submit_task("- goto: [1, 2, 0]\n  wobble: 3\n", env_id=ENV))
-    assert len(peers.humansim.submitted) == calls
-    with pytest.raises(ToolError, match="unknown robot"):
+    assert len(peers.humansim.submitted) == calls + 1
+    with pytest.raises(ToolError, match="no robot 'ghost'"):
         run(episode.episode_submit_task(task, env_id=ENV, robot="ghost"))
+    assert len(peers.humansim.submitted) == calls + 1
+
+
+def test_submit_task_with_an_empty_phase_list_stops_the_robot(run, peers):
+    stops = peers.humansim.stops
+    for task_yaml in ("[]", ""):
+        stopped = run(episode.episode_submit_task(task_yaml, env_id=ENV))
+        assert stopped["phase_indices"] == []
+        assert peers.humansim.submitted[-1] == (ROBOT, task_yaml)
+    assert peers.humansim.stops == stops + 2
 
 
 def test_both_domains_install_into_one_server_and_dispatch_by_name(run):

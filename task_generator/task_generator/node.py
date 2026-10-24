@@ -55,7 +55,7 @@ from std_msgs.msg import Bool, Int16, String
 from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest, RecordedTopics
 
 from task_generator.constants import Constants
-from task_generator.constants.runtime import Configuration, migrate_deprecated_params
+from task_generator.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN, Configuration, migrate_deprecated_params
 from task_generator.interactive import MarkerHub
 from task_generator.interactive.colors import RobotColors
 from task_generator.interactive.entities import EntityHandles
@@ -1141,8 +1141,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _robot_phases(self, manager: "RobotManager") -> dict:
         """The runner's phases and condition spans plus `map_poses`, the realized goto pose per phase (null without one)."""
-        from task_generator.tasks.robots.request import GoToPhase
-
         data = manager.runner.serialize()
         data["map_poses"] = [list(self._realizer.realize(s.phase.pose).to_2d()) if isinstance(s.phase, GoToPhase) and s.phase.pose is not None else None for s in manager.runner.phases]
         return data
@@ -2014,13 +2012,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             return response
         try:
             task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
-            if request.frame_id:
-                if not _is_map_frame(request.frame_id):
-                    raise ValueError(f"frame {request.frame_id!r} is neither the env map frame nor empty for scenario coordinates")
-                self._ezilear_phases(task.phases)
+            self._ezilear_phases(task.phases)
             async with self._reset_lock:
                 first = len(manager.runner.phases)
-                await manager.submit_task(task)
+                if task.phases:
+                    await manager.submit_task(task)
+                else:
+                    manager.stop_task()
                 response.phase_indices = list(range(first, len(manager.runner.phases)))
             response.success = True
         except Exception as e:
@@ -2089,7 +2087,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                 goal_handle.abort()
             return task_generator_msgs.action.RunEpisode.Result(
                 state=task_generator_msgs.action.RunEpisode.Result.SKIPPED,
-                info="shutting down" if self._shutting_down else "busy",
+                info=RUN_EPISODE_SHUTTING_DOWN if self._shutting_down else RUN_EPISODE_BUSY,
             )
 
         if not world:

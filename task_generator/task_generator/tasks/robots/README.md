@@ -105,7 +105,8 @@ share one definition. [`request.py`](request.py) re-exports them with
   rejects a signal the robot's adapter cannot send (`Adapter.signals`). With
   neither pose nor target the phase holds the robot where it starts.
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
-  result.
+  result. A reach pose's `frame` (the base frame by default) is a robot link,
+  put under the robot's TF prefix unless it already carries it.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 
@@ -189,8 +190,8 @@ fleet's robot names differ from the last allocation.
 - **`RobotManager`** ([`manager/robot_manager/robot_manager.py`](../../manager/robot_manager/robot_manager.py)):
   one per spawned robot. Owns the bound adapters, the task runner with this
   episode's phases, the goal-republish loop, and the tf-backed `pose`
-  property. Entry points used from here: `submit_task`, `move`, `is_done`,
-  `accepts`.
+  property. Entry points used from here: `submit_task`, `stop_task`, `move`,
+  `is_done`, `accepts`.
 - **`RobotsManager`** ([`manager/robot_manager/robots_manager.py`](../../manager/robot_manager/robots_manager.py)):
   diff-driven fleet lifecycle. Parses the `robot` ROS param (comma-
   separated list of robot names, `model[count]`, or `.yaml` setup refs),

@@ -1,7 +1,7 @@
 # Submit a task to one robot, appended to the episode's phases.
+# An empty phases list stops the robot and cancels its in-flight goal.
 string robot              # robot name as in state/robots
-string task_yaml          # phases list or {phases, conditions}, scenario format
-string frame_id           # goto frame: map as rviz goals, empty = scenario
+string task_yaml          # phases list or {phases, conditions}, map-frame poses
 ---
 bool success
 string error_msg          # empty on success

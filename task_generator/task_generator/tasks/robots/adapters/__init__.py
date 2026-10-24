@@ -256,6 +256,12 @@ class Adapter(ABC):
         robot: RobotManager,
     ) -> None: ...
 
+    def cancel_goals(self) -> None:
+        """Cancel the in-flight goal of every client."""
+        for client in self._clients.values():
+            if client.is_done() is False:
+                client.cancel()
+
     def on_phase_tick(
         self,
         phase: TaskPhase,
