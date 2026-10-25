@@ -22,7 +22,6 @@ import numpy as np
 import PIL.Image
 import rclpy.logging
 import rclpy.qos
-import shapely
 import visualization_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -40,7 +39,7 @@ from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import MapSource, map_source
 
 from . import markers, mechanism_map
-from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
+from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy, door_mask
 from .world_manager import WorldManager
 
 if TYPE_CHECKING:
@@ -428,25 +427,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         resolution = float(map_yaml['resolution'])
         origin_world = list(map_yaml.get('origin', [0, 0, 0]))
 
-        data = np.full(width * height, -1, dtype=np.int8)
         polys = [p for d in description.all_doors for p in render_door_polygons(d)] + [p for e in description.all_elevators for p in render_elevator_polygons(e)]
-        for poly in polys:
-            if poly.is_empty:
-                continue
-            # Buffer carves into adjacent walls so global costmap inflation
-            # doesn't fully close the opening.
-            poly = poly.buffer(_DOOR_MASK_BUFFER_M)
-            min_x, min_y, max_x, max_y = poly.bounds
-            col_min = max(0, int((min_x - origin_world[0]) / resolution))
-            col_max = min(width, int((max_x - origin_world[0]) / resolution) + 1)
-            row_min = max(0, int((min_y - origin_world[1]) / resolution))
-            row_max = min(height, int((max_y - origin_world[1]) / resolution) + 1)
-            for row in range(row_min, row_max):
-                cy = origin_world[1] + (row + 0.5) * resolution
-                for col in range(col_min, col_max):
-                    cx = origin_world[0] + (col + 0.5) * resolution
-                    if poly.covers(shapely.Point(cx, cy)):
-                        data[row * width + col] = 0
+        data = door_mask(polys, description.all_walls, width, height, resolution, (float(origin_world[0]), float(origin_world[1])), _DOOR_MASK_BUFFER_M)
 
         shifted_origin = self._environment_manager.realize(Position(x=float(origin_world[0]), y=float(origin_world[1])))
         assert isinstance(shifted_origin, Position)

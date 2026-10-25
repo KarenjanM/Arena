@@ -378,6 +378,28 @@ class MultiLevelMap:
 # END TYPES
 
 
+def door_mask(openings: Iterable[shapely.Polygon], walls: Iterable[Wall], width: int, height: int, resolution: float, origin: tuple[float, float], buffer: float) -> np.ndarray:
+    """Row-major cells, 0 within `buffer` of an opening and -1 elsewhere, cells a wall line touches always -1."""
+    blocked = shapely.MultiLineString([[(wall.start.x, wall.start.y), (wall.end.x, wall.end.y)] for wall in walls]).buffer(resolution)
+    data = np.full(width * height, -1, dtype=np.int8)
+    for opening in openings:
+        if opening.is_empty:
+            continue
+        poly = opening.buffer(buffer).difference(blocked)
+        min_x, min_y, max_x, max_y = poly.bounds
+        col_min = max(0, int((min_x - origin[0]) / resolution))
+        col_max = min(width, int((max_x - origin[0]) / resolution) + 1)
+        row_min = max(0, int((min_y - origin[1]) / resolution))
+        row_max = min(height, int((max_y - origin[1]) / resolution) + 1)
+        for row in range(row_min, row_max):
+            cy = origin[1] + (row + 0.5) * resolution
+            for col in range(col_min, col_max):
+                cx = origin[0] + (col + 0.5) * resolution
+                if poly.covers(shapely.Point(cx, cy)):
+                    data[row * width + col] = 0
+    return data
+
+
 def RLE_1D(grid: np.ndarray) -> list[list[int]]:
     """
     run-length encode walls in 1D (occupancy grid -> run_length[segments][rows])
