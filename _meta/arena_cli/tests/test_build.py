@@ -1,8 +1,9 @@
-"""Tests for the mount check that picks the uv link mode in arena build."""
+"""Tests for the uv link-mode mount check and the package selection of arena build and rebuild."""
 
 from pathlib import Path
 
 from arena_cli.build import _mount_point
+from arena_cli.cli import _select_args
 
 
 def test_mount_point_matches_within_one_mount(tmp_path: Path) -> None:
@@ -17,3 +18,12 @@ def test_mount_point_resolves_missing_build_base(tmp_path: Path) -> None:
 
 def test_mount_point_differs_across_mounts() -> None:
     assert _mount_point("/proc/self") != _mount_point("/")
+
+
+def test_select_args_cleans_named_packages_and_builds_dependents() -> None:
+    assert _select_args(["foo", "bar"]) == ["--packages-select", "foo", "bar"]
+    assert _select_args(["foo", "bar"], above=True) == ["--packages-above", "foo", "bar"]
+
+
+def test_select_args_keeps_explicit_flags() -> None:
+    assert _select_args(["--packages-select-regex", "arena_.*"], above=True) == ["--packages-select-regex", "arena_.*"]
