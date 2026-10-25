@@ -5,12 +5,13 @@ import math
 import pytest
 
 from arena_humansim.core.interaction_kinds import InteractionType, MembershipRole
+from arena_humansim.utils.types import InteractionOutcome
 from arena_humansim_msgs.msg import InteractionFrame
 
 from arena_simulation_setup.utils.affordance import AffordanceKind, conflicts, placed_slots
 from arena_simulation_setup.utils.geometry import Pose
 
-from task_generator.simulators.human.arena_humansim.arena_humansim import conflict_offsets, held_seats, reach_radius, seat_capacity, seat_height, seat_violation, slot_height
+from task_generator.simulators.human.arena_humansim.arena_humansim import SeatHold, conflict_offsets, held_seats, reach_radius, seat_capacity, seat_height, seat_holds, seat_violation, slot_height
 
 SOFA = placed_slots(
     {
@@ -74,6 +75,20 @@ def test_held_seats_lists_the_seats_of_sit_and_lie_participants_only():
         member_seat=[0, -1, 2, -1, 3],
     )
     assert held_seats(frame) == {"env_0/sofa": [0, 2], "env_0/bench": []}
+
+
+def test_seat_holds_map_active_sit_and_lie_participants_to_their_seats():
+    frame = InteractionFrame(
+        interaction_id=[1, 2, 3, 4],
+        interaction_type=[InteractionType.SIT_ON, InteractionType.LIE_ON, InteractionType.SIT_ON, InteractionType.QUEUE_USE],
+        outcome=[InteractionOutcome.ACTIVE, InteractionOutcome.ACTIVE, InteractionOutcome.FORMING, InteractionOutcome.ACTIVE],
+        object_id=["env_0/sofa", "env_0/bed", "env_0/bench", "env_0/desk"],
+        member_offset=[0, 2, 3, 4, 5],
+        member_id=[7, 8, 9, 10, 11],
+        member_role=[MembershipRole.PARTICIPANT, MembershipRole.QUEUED, MembershipRole.PARTICIPANT, MembershipRole.PARTICIPANT, MembershipRole.PARTICIPANT],
+        member_seat=[1, -1, 0, 2, 3],
+    )
+    assert seat_holds(frame) == {7: SeatHold(InteractionType.SIT_ON, "env_0/sofa", 1), 9: SeatHold(InteractionType.LIE_ON, "env_0/bed", 0)}
 
 
 def test_conflicts_pair_the_overlapping_slots_both_ways():

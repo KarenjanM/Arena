@@ -36,6 +36,8 @@ def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, ori
     adapter._agent_types = {}
     adapter._agent_type_paths = {}
     adapter._pose_profiles = {}
+    adapter._seats = {}
+    adapter._seat_holds = {}
     adapter._realizer = Realizer(Realizer._Configuration(x=origin[0], y=origin[1], prefix="env_0"))
     return adapter
 
