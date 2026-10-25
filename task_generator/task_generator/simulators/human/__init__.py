@@ -29,6 +29,7 @@ from arena_runtime.sim import BaseSim
 from arena_runtime_msgs.msg import LockstepChannel
 from arena_simulation_setup.tree.assets.Human import HumanIdentifier
 from arena_simulation_setup.utils.models import ModelType
+from geometry_msgs.msg import Point as PointMsg
 from geometry_msgs.msg import Pose as PoseMsg
 from geometry_msgs.msg import Quaternion as QuaternionMsg
 from rcl_interfaces.msg import Parameter as ParameterMsg
@@ -43,6 +44,7 @@ from task_generator.simulators.human.gestures import Channel, GestureLayer, Gest
 from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
+from task_generator.simulators.human.support import TYPICAL_BODY, BodyMeasurements, Support, load_body, supported_pose
 from task_generator.simulators.human.utils import (
     KnownObstacle,
     KnownObstacles,
@@ -193,6 +195,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._driven = DrivenJoints()
         self._drivers: dict[str, tuple[Roller, ...]] = {}
+        self._bodies: dict[str, BodyMeasurements] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
         self.node.create_subscription(
@@ -287,6 +290,16 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw)
             ped.joint_state.name, ped.joint_state.position = with_driven(ped.joint_state.name, ped.joint_state.position, angles)
 
+        possessed = self._possession.possessed(now_sec)
+        for ped in out.pedestrians:
+            support = self._support(ped)
+            if support is None or ped.name in possessed:
+                continue
+            yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
+            angles = dict(zip(ped.joint_state.name, ped.joint_state.position, strict=True))
+            (x, y, z), (qx, qy, qz, qw) = supported_pose(support, self._body_for(ped.model_uri), angles, ped.pose.position.x, ped.pose.position.y, yaw)
+            ped.pose = PoseMsg(position=PointMsg(x=float(x), y=float(y), z=float(z)), orientation=QuaternionMsg(x=float(qx), y=float(qy), z=float(qz), w=float(qw)))
+
         self._arena_peds_publisher.publish(out)
         self._animation_states_publisher.publish(animation)
 
@@ -314,6 +327,25 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 ),
             )
         return state
+
+    def _support(self, ped: Pedestrian) -> Support | None:
+        """Seat or bed the ped rests on, None while it is on its feet."""
+        return None
+
+    def _body_for(self, model_uri: str) -> BodyMeasurements:
+        """Measurements of a ped model, read once per model, typical ones for an asset built without them."""
+        body = self._bodies.get(model_uri)
+        if body is None:
+            try:
+                body = load_body(model_uri)
+            except (TypeError, ValueError, OSError, yaml.YAMLError) as e:
+                self._logger.warning(f"body measurements of {model_uri!r} rejected ({e})")
+                body = None
+            if body is None:
+                self._logger.warning(f"{model_uri!r} has no body measurements, rebuild its asset: seated and lying bodies use typical ones")
+                body = TYPICAL_BODY
+            self._bodies[model_uri] = body
+        return body
 
     def _drivers_for(self, model_uri: str) -> tuple[Roller, ...]:
         """Drivers of a ped model's rig.yaml, read once per model, none when the file is rejected."""

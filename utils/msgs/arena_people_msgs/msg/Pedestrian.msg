@@ -5,6 +5,7 @@ string name
 uint32 id
 
 # Spatial information
+# Body frame: origin at the soles under the pelvis, z up the body.
 geometry_msgs/Pose pose
 geometry_msgs/Twist twist
 
@@ -40,8 +41,3 @@ string model_uri
 int32 interaction_id -1
 # Kind of that interaction, meaningful only when interaction_id >= 0.
 uint8 interaction_type
-
-# Height of the surface the ped rests on (seat cushion, mattress) while it holds a SIT_ON/LIE_ON interaction,
-# m above pose.position.z (its floor). NO_SUPPORT = on its feet, or the surface is unknown.
-float32 NO_SUPPORT = -1.0
-float32 support_height -1.0

@@ -88,6 +88,20 @@ A model whose bundle ships a `rig.yaml` with `drivers:` (wheelchair bundles: `l_
 set on top, whoever filled the field: [`drivers.py`](drivers.py) rolls each wheel over the distance its contact
 point covered since the last message, see the Driven joints section of [`JOINTS.md`](JOINTS.md).
 
+## Resting on furniture
+
+`Pedestrian.pose` is the ped's body frame: the origin at the soles under the pelvis, z up the body. Every renderer
+moves its character along that z axis until its lowest sole point is at body height 0, so a walker stands on the floor
+and a sit clip, which folds the legs under hips kept at standing height, lowers the body as the legs fold.
+
+A backend reports the seat or bed a ped rests on through `_support()` (humansim: the seat an agent is parked on, with its
+surface height), and `publish_arena_peds` places it with [`support.py`](support.py) from its joint angles and the
+character's measurements (`pelvis_clearance` and `legs` in the asset annotation, measured by the arena-assets human
+build, typical values with a warning for an asset built before them). A sitter whose planted pelvis would end below its
+seat's surface plus the seated clearance is lifted to it. A lying ped is tipped onto its back, the head away from its
+yaw, with the pelvis over its seat at the mattress plus the lying clearance. A possessed ped is left as its stream sends
+it.
+
 ## Fitting a gait profile from a clip
 
 The walk and run poses `GaitGenerator` emits come from the gait profiles in [`profiles/`](profiles/)
@@ -469,10 +483,9 @@ Each seat also has the height of the surface a body rests on, which stays in the
 its z range, which the asset build measures; a scenario seat's is its `z`, else that of the sit slot it lies in or
 within 15 cm of, so a lying seat along a bed gives its mattress as `z`. Both add the object's own z. The engine parks an
 arrived agent exactly on its seat, and the latched `interactions` frame names the seat each participant of an active
-`SIT_ON` or `LIE_ON` holds (`seat_holds()`). An agent parked on its held seat reports that seat's height as
-`Pedestrian.support_height`, for the renderer to set the body on the surface. An agent on its feet, on a generated ring
-slot, beside a full object or on a seat of unknown height gets `Pedestrian.NO_SUPPORT`, and the renderer leaves the body
-where the clip puts it.
+`SIT_ON` or `LIE_ON` holds (`seat_holds()`). An agent parked on its held seat rests on that seat's surface (see
+Resting on furniture). An agent on its feet, on a generated ring slot, beside a full object or on a seat of unknown height
+stays where the clip puts it.
 
 The adapter follows the engine's latched `interactions` frame and reports the seat indices the participants of
 every `SIT_ON` and `LIE_ON` hold on an object with annotated seats through `held_seats()`, by object sim path,

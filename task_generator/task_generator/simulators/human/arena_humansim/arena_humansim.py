@@ -122,6 +122,7 @@ from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human import PED_RADIUS, BaseHumanSimulator, HumanSimulatorOptions, Segment
 from task_generator.simulators.human.itinerary import STIMULUS_TELEPORTED, ItineraryDriver, Stop, semantic_atom
+from task_generator.simulators.human.support import Support
 
 from .agent import ArenaHumanDynamicObstacle, agent_type_def, agent_type_stimuli, flow_agent_template, path_agent_type_name
 
@@ -212,7 +213,7 @@ class Seat:
     height: float
 
 
-SEAT_PARK_TOLERANCE = 0.05  # m, humansim parks an arrived agent exactly on its seat
+SEAT_PARK_TOLERANCE = 0.05  # m
 
 
 def seat_holds(frame: InteractionFrameMsg) -> dict[int, SeatHold]:
@@ -470,6 +471,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._seat_slots: dict[str, list[AffordanceSlot]] = {}
         self._seats: dict[str, list[Seat]] = {}
         self._seat_holds: dict[int, SeatHold] = {}
+        self._supports: dict[int, Support] = {}
         self._seat_violation_reported = False
         self.node.create_subscription(
             InteractionFrameMsg,
@@ -551,14 +553,19 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._seat_holds = holds
         self._apply_held_seats(held)
 
-    def _support_height(self, agent_id: int, ex: float, ey: float) -> float:
-        """Height of the seat surface the agent is parked on, NaN while it is on its feet or the height is unknown."""
+    def _parked_support(self, agent_id: int, ex: float, ey: float) -> Support | None:
+        """The seat the agent is parked on, None while it is on its feet or the seat's height is unknown."""
         hold = self._seat_holds.get(agent_id)
         seats = self._seats.get(hold.object_id, []) if hold is not None else []
         if hold is None or not 0 <= hold.seat < len(seats):
-            return math.nan
+            return None
         seat = seats[hold.seat]
-        return seat.height if math.dist((ex, ey), (seat.x, seat.y)) <= SEAT_PARK_TOLERANCE else math.nan
+        if math.isnan(seat.height) or math.dist((ex, ey), (seat.x, seat.y)) > SEAT_PARK_TOLERANCE:
+            return None
+        return Support(kind="lie" if hold.kind == InteractionType.LIE_ON else "sit", height=seat.height)
+
+    def _support(self, ped: Pedestrian) -> Support | None:
+        return self._supports.get(ped.id)
 
     def _apply_held_seats(self, held: dict[str, list[int]]) -> None:
         if held == self._held_seats:
@@ -1037,6 +1044,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         peds = Pedestrians()
         peds.header = msg.header
         gestures_by_id = self._agent_gestures
+        self._supports = {}
         n = len(msg.agent_id)
         gait_phase = msg.gait_phase if len(msg.gait_phase) == n else [0.0] * n
         gait_cadence = msg.gait_cadence if len(msg.gait_cadence) == n else [0.0] * n
@@ -1072,8 +1080,8 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             ped.gestures = gestures
             ped.interaction_id = int(interaction_id)
             ped.interaction_type = int(interaction_type)
-            support_height = self._support_height(agent_id, ex, ey)
-            ped.support_height = Pedestrian.NO_SUPPORT if math.isnan(support_height) else support_height
+            if (support := self._parked_support(agent_id, ex, ey)) is not None:
+                self._supports[agent_id] = support
 
             peds.pedestrians.append(ped)  # pyright: ignore[reportAttributeAccessIssue]
         return peds
