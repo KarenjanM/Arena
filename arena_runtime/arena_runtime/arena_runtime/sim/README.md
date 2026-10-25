@@ -359,9 +359,9 @@ are what Arena sends it.
   the body twist divided by the gain and taken at the pivot, so it tracks the
   command like a wheel-odometry twist does while the IMU reports the body rate.
 - `sim.flatsim.dynamics:=rigid|kinematic`: a runtime argument, the same for
-  every env. `rigid` (default) lets walls, obstacles and pedestrians stop or
-  push the robot, `kinematic` lets it pass through. Collision events come from
-  the task generator's collision tracker in both.
+  every env. `rigid` (default) lets walls and obstacles stop or push the robot
+  while pedestrians touch it without pushing, `kinematic` lets it pass through.
+  Collision events come from the task generator's collision tracker in both.
 - Sensors: `laserscan`, `pointcloud`, `imu` and `contact` specs, each at its
   own update rate rounded to whole physics steps, and every sensor publishes
   once more when an episode reset ends (`republish`). Lidar and camera geometry

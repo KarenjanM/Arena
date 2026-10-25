@@ -364,7 +364,7 @@ Default is `gazebo`. Valid values:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sim.flatsim.dynamics` | `rigid` | Runtime argument. `rigid`: walls, obstacles and pedestrians stop or push the robot. `kinematic`: the robot passes through and only the collision tracker reports. |
+| `sim.flatsim.dynamics` | `rigid` | Runtime argument. `rigid`: walls and obstacles stop or push the robot, pedestrians touch it without pushing. `kinematic`: the robot passes through and only the collision tracker reports. |
 
 ### sim.isaac.*
 
