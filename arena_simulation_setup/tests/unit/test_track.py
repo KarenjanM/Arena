@@ -7,11 +7,6 @@ import numpy as np
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def _gate():
-    pytest.importorskip("arena_simulation_setup.shared.track")
-
-
 def _two_segments():
     from arena_simulation_setup.shared.track import Track
 

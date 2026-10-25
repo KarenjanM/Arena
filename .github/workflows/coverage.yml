@@ -107,6 +107,7 @@ jobs:
         if: steps.diff.outputs.gated == 'true'
         run: |
           source /opt/ros/jazzy/setup.bash
+          export PATH=/opt/venv/bin:$PATH
           export CCACHE_BASEDIR=$GITHUB_WORKSPACE
           colcon build --symlink-install --packages-up-to $PACKAGES --cmake-args -DPython3_EXECUTABLE=/opt/venv/bin/python -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           ccache --show-stats
