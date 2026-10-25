@@ -76,18 +76,18 @@ def _mine(registry: HoldRegistry, caller: str) -> collections.Counter[str]:
     return collections.Counter({entry.reason: entry.count for entry in registry.holds if entry.caller_id == caller})
 
 
-async def _next_holders() -> asyncio.Future[HoldRegistry]:
+async def _published(total: int) -> HoldRegistry:
     from arena_runtime_msgs.msg import HoldRegistry
 
-    await _latest(HoldRegistry, "holders")
-    return (await ROS.cache(HoldRegistry, HOLDERS, qos=LATCHED)).next()
-
-
-async def _published(future: asyncio.Future[HoldRegistry]) -> HoldRegistry:
-    from arena_runtime_msgs.msg import HoldRegistry
-
-    with contextlib.suppress(TimeoutError):
-        return await asyncio.wait_for(future, 2.0)
+    cache = await ROS.cache(HoldRegistry, HOLDERS, qos=LATCHED)
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        arrived = cache.next()
+        last = cache.last
+        if isinstance(last, HoldRegistry) and sum(entry.count for entry in last.holds) == total:
+            return last
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(arrived, deadline - time.monotonic())
     return await _latest(HoldRegistry, "holders")
 
 
@@ -271,9 +271,8 @@ async def runtime_hold(reason: Annotated[str, Field(description="label of the ho
         raise ToolError("reason must not be empty")
     caller = await _caller()
     async with _OWN.lock:
-        published = await _next_holders()
         response = await _hold_call(LifecycleHold.Request.ACQUIRE, caller, reason)
-        registry = await _published(published)
+        registry = await _published(response.hold_count)
     return {"caller_id": caller, "paused": response.paused, "hold_count": response.hold_count, "own": dict(_mine(registry, caller)), "holders": _holders(registry)}
 
 
@@ -297,9 +296,8 @@ async def runtime_release(reason: Annotated[str | None, Field(description="relea
         paused = None
         hold_count = sum(entry.count for entry in registry.holds)
         for target in targets:
-            published = await _next_holders()
             response = await _hold_call(LifecycleHold.Request.RELEASE, caller, target)
-            registry = await _published(published)
+            registry = await _published(response.hold_count)
             hold_count, paused = response.hold_count, response.paused
     if paused is None:
         paused = (await _latest(Bool, "paused")).data

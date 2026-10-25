@@ -141,6 +141,11 @@ class FaceWatch:
         self._subscriptions = []
 
 
+def frame_floor(last: Time | None, period: Time) -> Time | None:
+    """Earliest sim time of the next lockstep frame: one period after the last beat, where the scheduler next freezes on the cam."""
+    return None if last is None else last + period
+
+
 class CamNode(ArenaMixinNode):
     """Standalone node that plays a `Camera` timeline against the selected viewports."""
 
@@ -271,8 +276,8 @@ class CamNode(ArenaMixinNode):
 
     async def _run_follower(self) -> None:
         """Ride the active lockstep run instead of driving the sim: register a hard
-        cam channel at 1/fps, pulse one window per frame, then capture the frozen
-        tick, so frames are gate-exact with every producer's window data arrived."""
+        cam channel at 1/fps, capture the tick the run froze on for the cam, then
+        pulse that stamp, so frames are gate-exact with every producer's window data arrived."""
         topic = f"{self.get_fully_qualified_name()}/lockstep"
         channel = LockstepChannel(
             name="cam",
@@ -287,7 +292,7 @@ class CamNode(ArenaMixinNode):
             return
         self._beat_pub = self.create_publisher(LockstepHeartbeat, topic, 10)
         self._follower = True
-        self._lockstep_time = self.sim_time
+        self._lockstep_time = None
         self.get_logger().info(f"riding active lockstep run: cam gated at {self._fps:g} fps")
         try:
             await self._timeline.run(self)
@@ -511,15 +516,9 @@ class CamNode(ArenaMixinNode):
             fov = FOV_DEFAULT  # left open, each camera would film through its own lens
         min_sim_time = None
         if self._follower:
-            # cover the next frame window so the scheduler advances one period and
-            # freezes at its gate, then capture that frozen tick
             await self._await_resumed()
-            assert self._lockstep_time is not None and self._beat_pub is not None
-            self._lockstep_time = self._lockstep_time + Time.from_float(1.0 / self._fps)
-            beat = LockstepHeartbeat()
-            beat.header.stamp = self._lockstep_time.to_msg()
-            self._beat_pub.publish(beat)
-            min_sim_time = self._lockstep_time.to_msg()
+            floor = frame_floor(self._lockstep_time, Time.from_float(1.0 / self._fps))
+            min_sim_time = None if floor is None else floor.to_msg()
         elif self._lockstep:
             step_req = LifecycleStep.Request()
             step_req.seconds = 1.0 / self._fps
@@ -531,10 +530,18 @@ class CamNode(ArenaMixinNode):
                 return False
             self._lockstep_time = self._lockstep_time + Time.from_float(step_res.advanced)
             min_sim_time = self._lockstep_time.to_msg()
-        grabbed = await asyncio.gather(*(self._grab(endpoint, position, quat, world_orientation, fov, min_sim_time) for endpoint in self._endpoints))
-        return all(grabbed)
+        stamps = await asyncio.gather(*(self._grab(endpoint, position, quat, world_orientation, fov, min_sim_time) for endpoint in self._endpoints))
+        if any(stamp is None for stamp in stamps):
+            return False
+        if self._follower:
+            assert self._beat_pub is not None
+            self._lockstep_time = max(Time.from_msg(stamp) for stamp in stamps if stamp is not None)
+            beat = LockstepHeartbeat()
+            beat.header.stamp = self._lockstep_time.to_msg()
+            self._beat_pub.publish(beat)
+        return True
 
-    async def _grab(self, endpoint: _Endpoint, position: Vec3, quat: Quat, world_orientation: bool, fov: float, min_sim_time: RosTime | None) -> bool:
+    async def _grab(self, endpoint: _Endpoint, position: Vec3, quat: Quat, world_orientation: bool, fov: float, min_sim_time: RosTime | None) -> RosTime | None:
         while True:
             res = await self.capture(endpoint, position, quat, world_orientation, fov, min_sim_time)
             if res is not None and res.success:
@@ -546,14 +553,14 @@ class CamNode(ArenaMixinNode):
                 continue
             detail = "service timed out" if res is None else res.message
             self.get_logger().warning(f"{endpoint.ns} capture failed ({detail}), stopping record")
-            return False
+            return None
         assert endpoint.recorder is not None
         try:
             endpoint.recorder.write(res.image)
         except (ValueError, OSError) as e:
             self.get_logger().warning(f"{endpoint.ns} frame not encoded ({e}), stopping record")
-            return False
-        return True
+            return None
+        return res.image.header.stamp
 
     async def _call(self, client: ClientWrapper, req: object) -> bool:
         try:

@@ -439,3 +439,28 @@ def test_load_hands_the_validation_warnings_to_notes(tmp_path):
     world = WorldView(tmp_path).load(level_filter={"2"}, notes=notes)
     assert world.level_ids == ["2"]
     assert any("3_elevator" in note for note in notes)
+
+
+def _cabin_in_wall_face() -> Level:
+    return _world(
+        zones=[{"name": "hall", "polygon": [[2.0, 0.0], [8.0, 0.0], [8.0, 6.0], [2.0, 6.0]]}],
+        walls=[
+            {"path": [[2.0, 0.0], [4.25, 0.0]]},
+            {"path": [[5.75, 0.0], [8.0, 0.0]]},
+            {"path": [[4.0, 0.0], [4.0, -2.0], [6.0, -2.0]]},
+            {"path": [[6.0, 0.0], [6.0, -2.0]]},
+        ],
+        elevators=[{"name": "lift", "position": [5.0, -1.0], "door_side": "+y"}],
+    ).levels["0"]
+
+
+def test_render_grid_keeps_the_wall_jambs_beside_an_elevator_doorway_narrower_than_its_cabin():
+    resolution = 0.05
+    grid, (ox, oy) = _cabin_in_wall_face().render_grid(resolution=resolution)
+
+    def free(x: float, y: float) -> bool:
+        return bool(grid[grid.shape[0] - 1 - int((y - oy) / resolution), int((x - ox) / resolution)] > 0)
+
+    assert free(5.0, 0.0) and free(5.0, -1.0) and free(4.5, -1.5)
+    for x in (4.1, 5.9):
+        assert not all(free(x, y) for y in (-0.05, 0.0, 0.05))

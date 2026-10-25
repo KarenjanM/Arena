@@ -704,7 +704,8 @@ class Level:
 
         map_kwargs: dict[str, typing.Any] = {
             'rooms': shapely.MultiPolygon([zone.shape() for zone in self.zones if len(zone.polygon) >= 3]),
-            'doors': shapely.MultiPolygon([poly for door in self.doors for poly in render_door_polygons(door)] + [poly for elevator in self.elevators for poly in render_elevator_polygons(elevator)]),
+            'doors': shapely.MultiPolygon([poly for door in self.doors for poly in render_door_polygons(door)]),
+            'cabins': shapely.MultiPolygon([poly for elevator in self.elevators for poly in render_elevator_polygons(elevator)]),
             'walls': shapely.MultiLineString([[(wall.start.x, wall.start.y), (wall.end.x, wall.end.y)] for wall in self.all_walls]),
             'padding': 5,
         }

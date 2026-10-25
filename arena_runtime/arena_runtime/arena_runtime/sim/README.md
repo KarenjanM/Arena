@@ -231,8 +231,9 @@ stamped with the observation time its action was computed for, so a
 lockstep run steps exactly one planner tick per action: obs at the frozen
 boundary, action, step. The `none`, `manual`, and `test_collision` bringups
 keep fire-and-forget goto_pose and stay ungated. `arena cam ... lockstep=true` recording registers `cam`
-(hard, 1/fps) for the take when a lockstep run is active, so the recording
-is gated like any other producer and frame-exact at any target rtf. With no
+(hard, 1/fps) for the take when a lockstep run is active and captures each
+frame at the tick the run froze on for it before beating that stamp, so the
+recording is gated like any other producer and frame-exact at any target rtf. With no
 run active it holds and steps the sim itself. Beats republish
 `LockstepHeartbeat` coverage stamps, and a wall-clock grace watchdog publishes
 forward keepalives through legitimately silent phases (MoveIt planning,
@@ -359,9 +360,9 @@ are what Arena sends it.
   the body twist divided by the gain and taken at the pivot, so it tracks the
   command like a wheel-odometry twist does while the IMU reports the body rate.
 - `sim.flatsim.dynamics:=rigid|kinematic`: a runtime argument, the same for
-  every env. `rigid` (default) lets walls, obstacles and pedestrians stop or
-  push the robot, `kinematic` lets it pass through. Collision events come from
-  the task generator's collision tracker in both.
+  every env. `rigid` (default) lets walls and obstacles stop or push the robot
+  while pedestrians touch it without pushing, `kinematic` lets it pass through.
+  Collision events come from the task generator's collision tracker in both.
 - Sensors: `laserscan`, `pointcloud`, `imu` and `contact` specs, each at its
   own update rate rounded to whole physics steps, and every sensor publishes
   once more when an episode reset ends (`republish`). Lidar and camera geometry

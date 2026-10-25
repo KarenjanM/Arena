@@ -44,7 +44,7 @@ def generate_launch_description():
         name='sim.flatsim.dynamics',
         default_value='rigid',
         choices=['rigid', 'kinematic'],
-        description='sim flatsim only. rigid = walls, obstacles and pedestrians stop or push the robot, kinematic = the robot passes through and only the collision tracker reports.',
+        description='sim flatsim only. rigid = walls and obstacles stop or push the robot and pedestrians touch it without pushing, kinematic = the robot passes through and only the collision tracker reports.',
     )
 
     viewport = {
