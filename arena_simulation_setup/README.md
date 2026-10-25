@@ -57,6 +57,9 @@ The package contributes four domains to the `arena_mcp` server, listed with
   the preflight that refuses references nobody else could resolve (marked
   destructive and open-world, it needs `GCS_ACCESS_TOKEN`). `assets_ls` and
   `assets_find` with kind `world` list the worlds and every resolver's verdict.
+  `assets_import_sources` lists the datasets `arena asset import` converts
+  from, `assets_import_items` one dataset's item ids, and `assets_import` runs
+  the import of chosen items as a job whose result lists the item paths.
 - `worldgen` runs the world generators in process: preview with diagnostics,
   save under the writable world root (in place over an existing world with
   `overwrite`, as the generator node saves), and queue a world on an env with
