@@ -89,8 +89,8 @@ def _walk(root: str, rel: str = "", skip_top: frozenset[str] = frozenset()) -> I
                 yield r, False
 
 
-def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple[str, bool]], link_source: Callable[[str], bool]) -> _Part:
-    """Copy src into dst, hardlinking files unchanged since prev or, where link_source says so, from src. A dst of None only counts."""
+def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple[str, bool]], link_source: Callable[[str], bool], by_content: bool) -> _Part:
+    """Copy src into dst, hardlinking files unchanged since prev (same mtime, or same content where by_content) or, where link_source says so, from src. A dst of None only counts."""
     part = _Part()
     if dst is not None:
         os.makedirs(dst, exist_ok=True)
@@ -125,7 +125,7 @@ def _freeze(src: str, dst: str | None, prev: str | None, entries: Iterable[tuple
             if dst is not None:
                 os.link(s, d)
             part.changed += counted and not (ps is not None and os.path.samestat(ps, ss))
-        elif p is not None and ps is not None and stat.S_ISREG(ps.st_mode) and ps.st_size == ss.st_size and (ps.st_mtime_ns == ss.st_mtime_ns or filecmp.cmp(p, s, shallow=False)):
+        elif p is not None and ps is not None and stat.S_ISREG(ps.st_mode) and ps.st_size == ss.st_size and (ps.st_mtime_ns == ss.st_mtime_ns or (by_content and filecmp.cmp(p, s, shallow=False))):
             if dst is not None:
                 os.link(p, d)
         else:
@@ -195,18 +195,18 @@ def _release() -> str:
         stores: list[str] = []
         venv = os.environ.get("ARENA_VENV_DIR", "/opt/venv")
         sources = {
-            "src": ("src", src, lambda: _without_git_stores(src, _walk(src, skip_top=frozenset({"Arena/_assets"})), stores), lambda rel: False),
-            "build": ("build", os.path.join(ws, "build"), lambda: _walk(os.path.join(ws, "build"), skip_top=frozenset({".forks", ".uv-cache"})), planner_venv),
-            "install": ("install", os.path.join(ws, "install"), lambda: _walk(os.path.join(ws, "install")), lambda rel: False),
-            "venv": (os.path.join("src", "Arena", ".venv"), venv, lambda: _walk(venv), lambda rel: False),
-            "uv-python": ("uv-python", os.path.join(ws, ".uv-python"), lambda: _walk(os.path.join(ws, ".uv-python")), lambda rel: False),
+            "src": ("src", src, lambda: _without_git_stores(src, _walk(src, skip_top=frozenset({"Arena/_assets"})), stores), lambda rel: False, True),
+            "build": ("build", os.path.join(ws, "build"), lambda: _walk(os.path.join(ws, "build"), skip_top=frozenset({".forks", ".uv-cache"})), planner_venv, False),
+            "install": ("install", os.path.join(ws, "install"), lambda: _walk(os.path.join(ws, "install")), lambda rel: False, False),
+            "venv": (os.path.join("src", "Arena", ".venv"), venv, lambda: _walk(venv), lambda rel: False, True),
+            "uv-python": ("uv-python", os.path.join(ws, ".uv-python"), lambda: _walk(os.path.join(ws, ".uv-python")), lambda rel: False, True),
         }
         t1 = time.monotonic()
         repos = _repos(src)
         if latest is not None and prev is not None and _meta(latest).get("format") == _FORMAT and repos == _meta(latest).get("repos"):
             prev_parts = _meta(latest).get("parts", {})
-            for name, (dest, path, entries, link_source) in sources.items():
-                p = _freeze(path, None, os.path.join(prev, dest), entries(), link_source)
+            for name, (dest, path, entries, link_source, by_content) in sources.items():
+                p = _freeze(path, None, os.path.join(prev, dest), entries(), link_source, by_content)
                 if p.changed or p.files != prev_parts.get(name, {}).get("files"):
                     break
             else:
@@ -222,9 +222,9 @@ def _release() -> str:
         tmp = os.path.join(root, f".tmp-{release}")
         stores.clear()
         parts: dict[str, _Part] = {}
-        for name, (dest, path, entries, link_source) in sources.items():
+        for name, (dest, path, entries, link_source, by_content) in sources.items():
             ts = time.monotonic()
-            parts[name] = _freeze(path, os.path.join(tmp, dest), os.path.join(prev, dest) if prev else None, entries(), link_source)
+            parts[name] = _freeze(path, os.path.join(tmp, dest), os.path.join(prev, dest) if prev else None, entries(), link_source, by_content)
             p = parts[name]
             print(f"release: {name:<9} {p.files:>7} files, {p.changed:>6} changed, {p.bytes / 1e6:>9.1f} MB copied, {time.monotonic() - ts:5.1f}s", flush=True)
         for store in stores:
