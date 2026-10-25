@@ -153,7 +153,7 @@ Bump the Ruff version with `pre-commit autoupdate`.
 
 The container is this or last week's `ghcr.io/voshch/arena-ci:jazzy-<ISO week>` when one exists, else plain `ros:jazzy`. A push to `jazzy` without this week's image dispatches [`.github/workflows/ci-image.yml`](.github/workflows/ci-image.yml), which runs [`.github/ci/provision.sh`](.github/ci/provision.sh) on a clean `ros:jazzy` and publishes the result. The image records the rosdep keys it was provisioned for, and [`.github/ci/system-deps.sh --purge-dropped`](.github/ci/system-deps.sh) purges what only a since-dropped key installed before installing the current ones, so a run in the image installs the same set as a run in plain `ros:jazzy`. Build objects go through ccache and downloads through the uv cache, both content-addressed. The package must be public for runs to pull it.
 
-[`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the changed lines under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. Changes outside `GATED` end the job after the diff.
+[`.github/workflows/coverage.yml`](.github/workflows/coverage.yml) gates the changed lines under the `GATED` paths (inside a submodule, the diff between the old and new pin): at least 90% of them must be covered, a partially taken branch counting as uncovered. It builds and tests the packages that own the `GATED` paths, found by [`.github/ci/owning-packages.sh`](.github/ci/owning-packages.sh) from the nearest `package.xml`. Changes outside `GATED` end the job after the diff.
 
 ## Troubleshooting
 
