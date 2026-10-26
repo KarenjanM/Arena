@@ -1,5 +1,6 @@
 """Forks: isolated containers on frozen releases of the dev tree."""
 
+import contextlib
 import dataclasses
 import datetime
 import fcntl
@@ -30,6 +31,7 @@ _RCFILE = "/opt/arena_ws/src/Arena/_meta/docker/features/docker/rcfile"
 _FORK_RE = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}")
 _OVERLAYS = ("src", "build", "install", "venv", "uv-python")
 _FORMAT = 2
+_PRUNE_GRACE_S = 600
 _DEV_SRC = "/opt/arena_ws/.dev-src"
 _SOURCED = 'source /opt/arena_ws/source >/dev/null; eval "$1"'
 
@@ -65,6 +67,14 @@ def _release_ids() -> list[str]:
     if not os.path.isdir(root):
         return []
     return sorted(e for e in os.listdir(root) if not e.startswith(".") and e != "latest" and os.path.isdir(os.path.join(root, e)))
+
+
+@contextlib.contextmanager
+def _releases_lock() -> Iterator[None]:
+    os.makedirs(_releases(), exist_ok=True)
+    with open(os.path.join(_releases(), ".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
 
 
 def _meta(release: str) -> dict:
@@ -180,9 +190,7 @@ def _release() -> str:
     t_build = time.monotonic() - t0
 
     root = _releases()
-    os.makedirs(root, exist_ok=True)
-    with open(os.path.join(root, ".lock"), "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with _releases_lock():
         latest = _latest()
         prev = os.path.join(root, latest) if latest else None
         venvs = {pkg for pkg in os.listdir(os.path.join(ws, "build")) if os.path.isfile(os.path.join(ws, "build", pkg, "venv", "pyvenv.cfg"))}
@@ -253,10 +261,12 @@ def _release() -> str:
 
 
 def _prune() -> None:
-    """Delete releases neither latest nor used by a fork."""
+    """Delete releases neither latest, used by a fork, nor frozen in the last ten minutes. Caller holds the releases lock."""
     keep = {_latest()} | {pathlib.Path(_root(), name, "release").read_text().strip() for name in os.listdir(_root()) if os.path.isfile(os.path.join(_root(), name, "release"))}
+    fresh = time.time() - _PRUNE_GRACE_S
     for rid in _release_ids():
-        if rid not in keep:
+        meta = os.path.join(_releases(), rid, "release.json")
+        if rid not in keep and (not os.path.isfile(meta) or os.path.getmtime(meta) < fresh):
             shutil.rmtree(os.path.join(_releases(), rid))
             print(f"release: {rid} pruned, no fork uses it", flush=True)
 
@@ -392,7 +402,8 @@ def _delete(fork: str, forks: dict[str, dict[str, str]]) -> None:
     if features.engine(["run", "--rm", "--user", "0", "--entrypoint", "rm", "-v", f"{_env('HOST_ARENA_WS_DIR')}/build/.forks:/forks", _env("ARENA_IMAGE"), "-rf", f"/forks/{fork}"]):
         raise CLIError(f"could not delete build/.forks/{fork}")
     print(f"{fork}: {forks[fork]['kind']} deleted ({time.monotonic() - t0:.1f}s)", flush=True)
-    _prune()
+    with _releases_lock():
+        _prune()
 
 
 def _pool(n: int) -> list[str]:
