@@ -11,7 +11,8 @@ from arena_humansim_msgs.msg import InteractionFrame
 from arena_simulation_setup.utils.affordance import AffordanceKind, conflicts, placed_slots
 from arena_simulation_setup.utils.geometry import Pose
 
-from task_generator.simulators.human.arena_humansim.arena_humansim import SeatHold, conflict_offsets, held_seats, reach_radius, seat_capacity, seat_height, seat_holds, seat_violation, slot_height
+from task_generator.simulators.human.arena_humansim.arena_humansim import SeatHold, conflict_offsets, held_seats, reach_radius, seat_approach, seat_capacity, seat_height, seat_holds, seat_reach, seat_slot, seat_violation, slot_height
+from task_generator.simulators.human.support import seat_stand
 
 SOFA = placed_slots(
     {
@@ -52,8 +53,8 @@ def test_scenario_seat_height_is_its_z_else_the_slot_it_lies_in():
 
 def test_scenario_seat_just_off_its_slot_still_takes_its_height():
     slots = placed_slots({AffordanceKind.SIT: [{"bbox": [[0.0, 0.5], [0.0, 0.5], [0.0, 0.45]], "yaw": "-y"}, {"bbox": [[0.4, 1.0], [0.0, 0.5], [0.0, 0.6]], "yaw": "-y"}]})
-    assert seat_height(Pose.parse({"x": 0.25, "y": -0.05}), slots) == 0.45  # 5 cm outside the first slot
-    assert seat_height(Pose.parse({"x": 0.45, "y": 0.25}), slots) == 0.45  # inside both, nearer the first's center
+    assert seat_height(Pose.parse({"x": 0.25, "y": -0.05}), slots) == 0.45
+    assert seat_height(Pose.parse({"x": 0.45, "y": 0.25}), slots) == 0.45
     assert seat_height(Pose.parse({"x": 0.55, "y": 0.25}), slots) == 0.6
     assert math.isnan(seat_height(Pose.parse({"x": 0.25, "y": -0.5}), slots))
 
@@ -107,3 +108,24 @@ def test_seat_violation_names_a_seat_outside_the_slots():
 
 def test_seat_violation_ignores_objects_without_annotated_slots():
     assert seat_violation({}, {"env_0/bench": [0, 0]}) is None
+
+
+def test_seat_reach_is_where_the_slot_box_ends_ahead_and_behind():
+    slot = placed_slots({AffordanceKind.SIT: [{"bbox": [[-0.25, 0.25], [-0.3, 0.1], [0.0, 0.45]], "yaw": "-y"}]})[0]
+    seat = Pose.parse({"x": 0.0, "y": -0.1, "yaw": -math.pi / 2})
+    assert seat_reach(seat, slot) == pytest.approx(0.2)
+    assert seat_reach(seat, slot, behind=True) == pytest.approx(0.2)
+    assert seat_reach(Pose.parse({"x": 0.1, "y": 0.0, "yaw": 0.0}), slot) == pytest.approx(0.15)
+    assert seat_reach(Pose.parse({"x": 0.0, "y": -0.5, "yaw": -math.pi / 2}), slot) == 0.0
+
+
+def test_seat_standing_point_clears_the_slot_edge_and_the_object_box():
+    seat = Pose.parse({"x": 0.0, "y": -0.1, "yaw": -math.pi / 2})
+    assert seat_approach(seat, 0.2, [[-0.3, 0.3], [-0.35, 0.4], [0.0, 0.8]]) == pytest.approx(seat_stand(0.2))
+    assert seat_approach(seat, 0.2, [[-0.5, 0.5], [-1.2, 1.3], [0.0, 0.8]]) == pytest.approx(1.1)
+    assert seat_approach(seat, None, [[-0.5, 0.5], [-1.2, 1.3], [0.0, 0.8]]) == 0.0
+
+
+def test_scenario_seat_takes_the_slot_it_lies_in():
+    assert seat_slot(Pose.parse({"x": 0.0, "y": 0.4}), SOFA) is not None
+    assert seat_slot(Pose.parse({"x": 3.0, "y": 3.0}), SOFA) is None
