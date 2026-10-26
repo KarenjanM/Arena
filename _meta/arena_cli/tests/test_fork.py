@@ -5,6 +5,7 @@ import os
 import pathlib
 import socket
 import subprocess
+import time
 from collections.abc import Iterator
 
 import pytest
@@ -70,6 +71,11 @@ def ws(tmp_path: pathlib.Path) -> Iterator[pathlib.Path]:
 
 def releases(ws: pathlib.Path) -> pathlib.Path:
     return ws / "build" / ".forks" / "releases"
+
+
+def age(release: pathlib.Path) -> None:
+    old = time.time() - 2 * fork._PRUNE_GRACE_S
+    os.utime(release / "release.json", (old, old))
 
 
 def same_inode(a: pathlib.Path, b: pathlib.Path) -> bool:
@@ -210,6 +216,7 @@ def test_release_freezes_every_part_and_reuses_a_matching_release(ws: pathlib.Pa
 
 def test_release_after_edit_links_unchanged_files_and_prunes_the_unused_parent(ws: pathlib.Path) -> None:
     first = fork._release()
+    age(releases(ws) / first)
     write(ws / "src" / "Arena" / "pkg" / "a.py", "a = 10\n")
     second = fork._release()
     assert second != first
@@ -220,6 +227,17 @@ def test_release_after_edit_links_unchanged_files_and_prunes_the_unused_parent(w
     assert os.stat(rel / "src" / "Arena" / "pkg" / "b.py").st_nlink == 1
     assert fork._release_ids() == [second]
     assert fork._latest() == second
+
+
+def test_prune_keeps_a_fresh_unused_release_and_drops_it_once_aged(ws: pathlib.Path) -> None:
+    first = fork._release()
+    write(ws / "src" / "Arena" / "pkg" / "a.py", "a = 10\n")
+    second = fork._release()
+    assert fork._release_ids() == [first, second]
+    age(releases(ws) / first)
+    with fork._releases_lock():
+        fork._prune()
+    assert fork._release_ids() == [second]
 
 
 def test_release_after_edit_shares_inodes_with_a_parent_a_fork_holds(ws: pathlib.Path) -> None:
@@ -259,6 +277,7 @@ def test_release_follows_a_new_commit(ws: pathlib.Path) -> None:
 
 def test_release_clears_an_abandoned_freeze(ws: pathlib.Path) -> None:
     first = fork._release()
+    age(releases(ws) / first)
     write(releases(ws) / ".tmp-20200101-000000" / "src" / "half.txt", "half\n")
     write(ws / "src" / "Arena" / "pkg" / "a.py", "a = 10\n")
     second = fork._release()
