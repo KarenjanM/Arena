@@ -133,6 +133,7 @@ class GazeboHost(SimLifecycle):
         self._logger = logger
         self._dt = physics_dt
         self._rtf_boosted = False
+        self._batch_target: Time | None = None
         self._stats: world_stats_pb2.WorldStatistics | None = None
         self._gz_node = gz.transport13.Node()
         self._gz_node.subscribe(world_stats_pb2.WorldStatistics, _WORLD_STATS_TOPIC, self._on_stats)
@@ -217,6 +218,9 @@ class GazeboHost(SimLifecycle):
         # returning to free-run: restore gz's realtime pacing
         if self._rtf_boosted:
             self._rtf_boosted = not await self._set_physics_rtf(1.0)
+        if self._batch_target is not None:
+            await self._await_batches_done(self._batch_target)
+            self._batch_target = None
         async with self._semaphore:
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
@@ -261,7 +265,7 @@ class GazeboHost(SimLifecycle):
             chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
             await self._send_multi_step(chunk, seconds)
             await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
-        await self._await_batches_done(target)
+        self._batch_target = target
         return n * self._dt
 
     async def _await_batches_done(self, target: Time) -> None:

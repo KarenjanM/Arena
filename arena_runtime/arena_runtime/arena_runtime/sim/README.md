@@ -178,7 +178,10 @@ default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). A step of more than one
 tick first raises gz `real_time_factor` so the limiter does not pace it, and
-the next unpause restores it. A single-tick step leaves the factor alone. Isaac calls
+the next unpause restores it. A single-tick step leaves the factor alone. A step
+returns once `/clock` carries its target, and the next unpause first waits for
+`/world/default/stats` to report gz paused at or past that target, since gz undoes
+an unpause that lands while a batch is still running. Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
 publishes `/clock` and drains its sensor and control pumps every 20 ms of sim
@@ -189,8 +192,8 @@ The dummy host adds the delta to its synthetic clock, so `sim:=dummy` runs the
 whole control plane without a physics engine. The flatsim host sends
 `control_world` with `multi_step` to its server and awaits `/clock` reaching
 the time the server returns (see [flatsim backend](#flatsim-backend)). The
-dummy host is what
-[`tests/ros/`](../../tests/ros/) exercises, the gate math itself is
+dummy, flatsim and gazebo hosts are what
+[`tests/ros/`](../../tests/ros/) exercises (gazebo against a headless gz server on an empty world), the gate math itself is
 [`lockstep_gates.py`](../lockstep_gates.py) and has ROS-free unit tests.
 
 `arena_node` exposes it as `sim_lifecycle/step` (valid only while holds are
