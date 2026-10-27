@@ -370,11 +370,12 @@ _LOCKSTEP_SPEC = Sub(
 
 
 _SERVICE_TIMEOUT_S = 30
+_DISCOVERY_WAIT_S = 10
 
 
-def _srv_guard(service: str, unreachable: str) -> str:
-    """Shell test that prints `unreachable` and exits 1 unless `service` is advertised."""
-    return f'ros2 service list 2>/dev/null | grep -qx {service} || {{ echo "{unreachable}"; exit 1; }}'
+def _graph_guard(kind: str, name: str, unreachable: str) -> str:
+    """Shell test that waits up to _DISCOVERY_WAIT_S for `name` in `ros2 <kind> list`, else prints `unreachable` and exits 1."""
+    return f'end=$((SECONDS + {_DISCOVERY_WAIT_S})); until ros2 {kind} list 2>/dev/null | grep -qx {name}; do (( SECONDS < end )) || {{ echo "{unreachable}"; exit 1; }}; sleep 0.5; done'
 
 
 def _srv_call(service: str, request: str) -> str:
@@ -398,6 +399,8 @@ def lockstep(args: list[str]) -> None:
     the scheduler gates on, under caller "cli" (global, all envs). A CHANNEL
     is a preset name (engine, peds) or a raw 'name|topic|type|period_s|role'
     spec; {env} expands per env. No args clears the cli registration.
+    Every action waits up to 10 s for the runtime's service or topic to
+    show in the ROS graph before it reports "lockstep unreachable".
     """
     if not args or args[0] not in ("run", "on", "off", "pause", "resume", "status", "gate"):
         raise CLIError("lockstep needs one of: run, on, off, pause, resume, status, gate")
@@ -405,13 +408,13 @@ def lockstep(args: list[str]) -> None:
     unreachable = "lockstep unreachable"
 
     def srv_guard(name: str) -> str:
-        return _srv_guard(f"/arena/sim_lifecycle/lockstep/{name}", unreachable)
+        return _graph_guard("service", f"/arena/sim_lifecycle/lockstep/{name}", unreachable)
 
     if action == "status":
         _exec(
             "bash",
             "-c",
-            f'ros2 topic list 2>/dev/null | grep -qx /arena/state/lockstep || {{ echo "{unreachable}"; exit 1; }}; ros2 topic echo /arena/state/lockstep --once --qos-durability transient_local --qos-reliability reliable',
+            f'{_graph_guard("topic", "/arena/state/lockstep", unreachable)}; ros2 topic echo /arena/state/lockstep --once --qos-durability transient_local --qos-reliability reliable',
         )
     if action == "off":
         stop = _srv_call("/arena/sim_lifecycle/lockstep/stop", "std_srvs/srv/Trigger")
@@ -475,7 +478,7 @@ def cleanup(args: list[str]) -> None:
     if len(args) != 1 or not args[0].isdigit():
         raise CLIError("cleanup takes one non-negative integer ENV_ID")
     call = _srv_call("/arena/cleanup_env", f'arena_runtime_msgs/srv/CleanupEnv "{{env_id: {args[0]}}}"')
-    _exec("bash", "-c", f'{_srv_guard("/arena/cleanup_env", "arena runtime unreachable")}; {call}; grep -q "success=True" <<< "$R" && echo "env {args[0]} cleaned up" || {{ grep -oE "error_msg=.*" <<< "$R"; exit 1; }}')
+    _exec("bash", "-c", f'{_graph_guard("service", "/arena/cleanup_env", "arena runtime unreachable")}; {call}; grep -q "success=True" <<< "$R" && echo "env {args[0]} cleaned up" || {{ grep -oE "error_msg=.*" <<< "$R"; exit 1; }}')
 
 
 @verb("build", passthrough=True, complete=Packages())
