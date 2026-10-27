@@ -363,6 +363,10 @@ class CamNode(ArenaMixinNode):
 
         subs: dict[str, rclpy.subscription.Subscription] = {}
         views: collections.deque[FaceView] = collections.deque(maxlen=1)
+
+        def on_view(msg: FaceView) -> None:
+            views.append(msg)
+
         target: tuple[str, str] | None = None
         error = f"no face roster answered within {timeout:.0f} s, is hri_producer running?"
         loop = asyncio.get_running_loop()
@@ -377,7 +381,7 @@ class CamNode(ArenaMixinNode):
                 except LookupError as e:
                     error = str(e)
                 else:
-                    subs[faces.view_topic(*target)] = self.create_subscription(FaceView, faces.view_topic(*target), views.append, 10)
+                    subs[faces.view_topic(*target)] = self.create_subscription(FaceView, faces.view_topic(*target), on_view, 10)
             if target is not None and views:
                 return FaceWatch(self, target[1], views[-1], list(subs.values()))
             await asyncio.sleep(0.2)
