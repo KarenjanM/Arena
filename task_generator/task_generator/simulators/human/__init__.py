@@ -36,7 +36,7 @@ from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_manager import AnimationManager
-from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, with_driven
+from task_generator.simulators.human.drivers import DrivenJoints, JoystickDriver, Roller, has_joystick, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.possession import PossessionTable
 from task_generator.simulators.human.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
@@ -173,6 +173,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._driven = DrivenJoints()
         self._drivers: dict[str, tuple[Roller, ...]] = {}
+        self._joystick = JoystickDriver()
+        self._joysticks: dict[str, JoystickDriver | None] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
         self.node.create_subscription(
@@ -223,6 +225,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             out.header.stamp = stamp
 
         current_ids: set[int] = {ped.id for ped in out.pedestrians}
+        for stale in self._joystick.known() - current_ids:
+            self._joystick.forget(stale)
         for stale in sorted(set(self._gait_prev_stamp) - current_ids):
             self._gestures.forget(stale)
             self._gait.forget(stale)
@@ -255,12 +259,17 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             ped.gait_phase = self._gait.phase(ped.id)
             animation.peds.append(self._animation_state(ped))
 
+        pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
         for ped in out.pedestrians:
             drivers = self._drivers_for(ped.model_uri)
-            if not drivers:
+            joystick = self._joystick_for(ped.model_uri)
+            if not drivers and joystick is None:
                 continue
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
-            angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw)
+            angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw) if drivers else {}
+            if joystick is not None:
+                speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
+                angles.update(joystick.advance(ped.id, yaw, speed, pose_sec))
             ped.joint_state.name, ped.joint_state.position = with_driven(ped.joint_state.name, ped.joint_state.position, angles)
 
         self._arena_peds_publisher.publish(out)
@@ -302,6 +311,17 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 drivers = ()
             self._drivers[model_uri] = drivers
         return drivers
+
+    def _joystick_for(self, model_uri: str) -> JoystickDriver | None:
+        """Shared joystick driver for supported models, including cached negative lookups."""
+        if model_uri not in self._joysticks:
+            try:
+                joystick = self._joystick if has_joystick(model_uri) else None
+            except (ValueError, OSError, yaml.YAMLError) as e:
+                self._logger.warning(f"rig joystick drivers of {model_uri!r} rejected ({e}), its joystick stays still")
+                joystick = None
+            self._joysticks[model_uri] = joystick
+        return self._joysticks[model_uri]
 
     def _pose_profile_for(self, agent_type: str) -> PoseProfile:
         """Pose profile of an agent type (a yaml path or a builtin name), resolved once per type, default when empty or unknown."""
@@ -442,6 +462,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _close_stream_gate(self) -> None:
         self._stream_gate = False
+        self._joystick.clear()
         self._possession.clear()
         self._warned_unknown.clear()
         self._warned_bad_joints.clear()

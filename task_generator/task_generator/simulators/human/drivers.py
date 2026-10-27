@@ -22,7 +22,7 @@ class Roller:
 
 
 def parse_drivers(rig: object, source: str) -> tuple[Roller, ...]:
-    """Drivers of a parsed rig.yaml document, in file order."""
+    """Distance drivers in file order; joint_state drivers are supplied by the caller."""
     if not isinstance(rig, dict):
         raise ValueError(f"{source}: a rig file is a mapping, got {type(rig).__name__}")
     section = rig.get("drivers", {})
@@ -30,6 +30,8 @@ def parse_drivers(rig: object, source: str) -> tuple[Roller, ...]:
         raise ValueError(f"{source}: drivers takes {{<wire joint>: {{from: distance, radius: <m>, lateral: <m>}}}}, got {section!r}")
     rollers: list[Roller] = []
     for joint, spec in section.items():
+        if isinstance(spec, dict) and spec.get("from") == "joint_state":
+            continue
         if not isinstance(spec, dict) or spec.get("from") != "distance":
             raise ValueError(f"{source}: driver {joint!r} takes {{from: distance, radius: <m>, lateral: <m>}}, got {spec!r}")
         radius = float(spec.get("radius", 0.0))
@@ -47,6 +49,20 @@ def load_drivers(model_uri: str) -> tuple[Roller, ...]:
     if not rig_path.is_file():
         return ()
     return parse_drivers(yaml.safe_load(rig_path.read_text()), str(rig_path))
+
+
+def has_joystick(model_uri: str) -> bool:
+    """Whether the model declares both joystick axes supplied through joint_state."""
+    if not model_uri:
+        return False
+    rig_path = Path(model_uri).with_name(RIG_FILE)
+    if not rig_path.is_file():
+        return False
+    rig = yaml.safe_load(rig_path.read_text())
+    if not isinstance(rig, dict) or not isinstance(rig.get("drivers", {}), dict):
+        raise ValueError(f"{rig_path}: rig and drivers must be mappings")
+    drivers = rig.get("drivers", {})
+    return all(isinstance(drivers.get(joint), dict) and drivers[joint].get("from") == "joint_state" for joint in ("joystick_pitch", "joystick_roll"))
 
 
 def with_driven(names: Sequence[str], positions: Sequence[float], angles: Mapping[str, float]) -> tuple[list[str], list[float]]:
@@ -85,3 +101,52 @@ class DrivenJoints:
         """Drop a despawned ped's pose and angles."""
         self._pose.pop(agent_id, None)
         self._angles.pop(agent_id, None)
+
+
+class JoystickDriver:
+    """Electric-chair joystick angles from signed forward speed and sampled yaw rate."""
+
+    def __init__(self) -> None:
+        self._previous: dict[int, tuple[float, float, float]] = {}
+
+    def advance(self, agent_id: int, yaw: float, speed: float, pose_sec: float) -> dict[str, float]:
+        """Sample yaw over 0.2 s of pose time, holding the last rate between samples."""
+        previous = self._previous.get(agent_id)
+        if previous is None or pose_sec < previous[1]:
+            angular_speed = 0.0
+            self._previous[agent_id] = (yaw, pose_sec, angular_speed)
+        else:
+            previous_yaw, previous_time, angular_speed = previous
+            dt = pose_sec - previous_time
+            if dt >= 0.2 - 1e-9:
+                delta_yaw = math.remainder(yaw - previous_yaw, math.tau)
+                angular_speed = delta_yaw / dt
+                self._previous[agent_id] = (yaw, pose_sec, angular_speed)
+
+        pitch = roll = 0.0
+        if speed > 0.02:
+            pitch = 0.75
+            if angular_speed > 0.1:
+                roll = -0.4
+            elif angular_speed < -0.1:
+                roll = 0.4
+        elif speed < -0.02:
+            pitch = -0.75
+        else:
+            if angular_speed > 0.02:
+                roll = -0.75
+            elif angular_speed < -0.02:
+                roll = 0.75
+        return {"joystick_pitch": pitch, "joystick_roll": roll}
+
+    def known(self) -> set[int]:
+        """Ids with sampled joystick state."""
+        return set(self._previous)
+
+    def forget(self, agent_id: int) -> None:
+        """Drop a despawned ped's sample."""
+        self._previous.pop(agent_id, None)
+
+    def clear(self) -> None:
+        """Discard all samples when the scenario resets."""
+        self._previous.clear()

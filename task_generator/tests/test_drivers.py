@@ -6,8 +6,15 @@ import math
 from pathlib import Path
 
 import pytest
-
-from task_generator.simulators.human.drivers import DrivenJoints, Roller, load_drivers, parse_drivers, with_driven
+from task_generator.simulators.human.drivers import (
+    DrivenJoints,
+    JoystickDriver,
+    Roller,
+    has_joystick,
+    load_drivers,
+    parse_drivers,
+    with_driven,
+)
 from task_generator.simulators.human.possession import bare_joint_names_valid
 
 _RIG = """
@@ -17,6 +24,7 @@ drivers:
   r_wheel: {bone: WheelR, from: distance, radius: 0.3, lateral: -0.28, axis: [0.0, 1.0, 0.0]}
 """
 _CHAIR = (Roller("l_wheel", 0.3, 0.28), Roller("r_wheel", 0.3, -0.28))
+_JOYSTICK = "  joystick_pitch: {bone: Joystick, from: joint_state, axis: [0.0, 1.0, 0.0]}\n  joystick_roll: {bone: Joystick, from: joint_state, axis: [1.0, 0.0, 0.0]}\n"
 
 
 def _bundle(root: Path, rig: str | None) -> str:
@@ -56,6 +64,25 @@ def test_malformed_drivers_are_rejected_with_the_expected_form(rig: str, message
 
 def test_a_driver_without_lateral_sits_on_the_centerline() -> None:
     assert parse_drivers({"drivers": {"wheel": {"from": "distance", "radius": 0.1}}}, "rig") == (Roller("wheel", 0.1, 0.0),)
+
+
+def test_joint_state_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: Path) -> None:
+    assert not has_joystick(_bundle(tmp_path / "manual", _RIG))
+    model_uri = _bundle(tmp_path / "electric", _RIG + _JOYSTICK)
+    assert has_joystick(model_uri)
+    wheels = load_drivers(model_uri)
+    assert wheels == _CHAIR
+    driven = DrivenJoints()
+    driven.advance(7, wheels, 0.0, 0.0, 0.0)
+    angles = driven.advance(7, wheels, 0.3, 0.0, 0.0)
+    names, positions = with_driven(["joystick_pitch"], [0.75], angles)
+    assert dict(zip(names, positions, strict=True)) == pytest.approx(
+        {
+            "joystick_pitch": 0.75,
+            "l_wheel": 1.0,
+            "r_wheel": 1.0,
+        }
+    )
 
 
 def test_straight_travel_turns_both_wheels_by_distance_over_radius() -> None:
@@ -125,3 +152,15 @@ def test_driven_angles_append_to_the_gait_joints_and_replace_their_own_earlier_v
 
 def test_driven_joints_stay_outside_the_possession_claim_set() -> None:
     assert not bare_joint_names_valid(["l_wheel"])
+
+
+def test_joystick_accumulates_pose_time_and_holds_rate_on_repeated_frames() -> None:
+    joystick = JoystickDriver()
+    straight = {"joystick_pitch": 0.75, "joystick_roll": 0.0}
+    left = {"joystick_pitch": 0.75, "joystick_roll": -0.4}
+    assert joystick.advance(1, 0.0, 0.4, 0.0) == straight
+    assert joystick.advance(1, 0.1, 0.4, 0.1) == straight
+    assert joystick.advance(1, 0.2, 0.4, 0.2) == left
+    assert joystick.advance(1, 0.2, 0.4, 0.2) == left
+    assert joystick.advance(1, 0.2, 0.4, 0.3) == left
+    assert joystick.advance(1, 0.2, 0.4, 0.4) == straight
