@@ -22,7 +22,7 @@ class Roller:
 
 
 def parse_drivers(rig: object, source: str) -> tuple[Roller, ...]:
-    """Distance drivers in file order; joint_state drivers are supplied by the caller."""
+    """Distance drivers in file order; velocity drivers are computed by the caller."""
     if not isinstance(rig, dict):
         raise ValueError(f"{source}: a rig file is a mapping, got {type(rig).__name__}")
     section = rig.get("drivers", {})
@@ -30,7 +30,7 @@ def parse_drivers(rig: object, source: str) -> tuple[Roller, ...]:
         raise ValueError(f"{source}: drivers takes {{<wire joint>: {{from: distance, radius: <m>, lateral: <m>}}}}, got {section!r}")
     rollers: list[Roller] = []
     for joint, spec in section.items():
-        if isinstance(spec, dict) and spec.get("from") == "joint_state":
+        if isinstance(spec, dict) and spec.get("from") == "velocity":
             continue
         if not isinstance(spec, dict) or spec.get("from") != "distance":
             raise ValueError(f"{source}: driver {joint!r} takes {{from: distance, radius: <m>, lateral: <m>}}, got {spec!r}")
@@ -52,7 +52,7 @@ def load_drivers(model_uri: str) -> tuple[Roller, ...]:
 
 
 def has_joystick(model_uri: str) -> bool:
-    """Whether the model declares both joystick axes supplied through joint_state."""
+    """Whether the model declares both joystick axes as velocity drivers."""
     if not model_uri:
         return False
     rig_path = Path(model_uri).with_name(RIG_FILE)
@@ -62,7 +62,7 @@ def has_joystick(model_uri: str) -> bool:
     if not isinstance(rig, dict) or not isinstance(rig.get("drivers", {}), dict):
         raise ValueError(f"{rig_path}: rig and drivers must be mappings")
     drivers = rig.get("drivers", {})
-    return all(isinstance(drivers.get(joint), dict) and drivers[joint].get("from") == "joint_state" for joint in ("joystick_pitch", "joystick_roll"))
+    return all(isinstance(drivers.get(joint), dict) and drivers[joint].get("from") == "velocity" for joint in ("joystick_pitch", "joystick_roll"))
 
 
 def with_driven(names: Sequence[str], positions: Sequence[float], angles: Mapping[str, float]) -> tuple[list[str], list[float]]:

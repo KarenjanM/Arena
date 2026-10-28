@@ -24,7 +24,7 @@ drivers:
   r_wheel: {bone: WheelR, from: distance, radius: 0.3, lateral: -0.28, axis: [0.0, 1.0, 0.0]}
 """
 _CHAIR = (Roller("l_wheel", 0.3, 0.28), Roller("r_wheel", 0.3, -0.28))
-_JOYSTICK = "  joystick_pitch: {bone: Joystick, from: joint_state, axis: [0.0, 1.0, 0.0]}\n  joystick_roll: {bone: Joystick, from: joint_state, axis: [1.0, 0.0, 0.0]}\n"
+_JOYSTICK = "  joystick_pitch: {bone: Joystick, from: velocity, axis: [0.0, 1.0, 0.0]}\n  joystick_roll: {bone: Joystick, from: velocity, axis: [1.0, 0.0, 0.0]}\n"
 
 
 def _bundle(root: Path, rig: str | None) -> str:
@@ -66,7 +66,7 @@ def test_a_driver_without_lateral_sits_on_the_centerline() -> None:
     assert parse_drivers({"drivers": {"wheel": {"from": "distance", "radius": 0.1}}}, "rig") == (Roller("wheel", 0.1, 0.0),)
 
 
-def test_joint_state_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: Path) -> None:
+def test_velocity_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: Path) -> None:
     assert not has_joystick(_bundle(tmp_path / "manual", _RIG))
     model_uri = _bundle(tmp_path / "electric", _RIG + _JOYSTICK)
     assert has_joystick(model_uri)

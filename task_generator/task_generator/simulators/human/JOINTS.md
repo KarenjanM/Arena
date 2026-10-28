@@ -142,13 +142,13 @@ stream itself carries only the 40. Renderers resolve them through `BONE_MAP` lik
 any other wire joint and skip them on a skeleton without the bone. The ros4hri URDF
 has no such joints, so the RViz skeleton ignores them.
 
-A `from: joint_state` driver declares an externally supplied angle instead of a
-distance-integrated wheel. Its rig entry contains `bone`, `from` and the bone-local
-`axis`, without `radius` or `lateral`. Electric wheelchair bundles use
-`joystick_pitch` (Y axis, positive forward) and `joystick_roll` (X axis, positive
-right) on the same `Joystick` bone. The runtime supplies these angles in radians;
-the wheel integrator leaves them untouched and renderers resolve their bone-map
-entries as usual.
+A `from: velocity` driver takes its angle from the ped's forward speed and yaw
+rate instead of integrating a wheel over distance. Its rig entry contains `bone`,
+`from` and the bone-local `axis`, without `radius` or `lateral`. Electric
+wheelchair bundles use `joystick_pitch` (Y axis, positive forward) and
+`joystick_roll` (X axis, positive right) on the same `Joystick` bone. The publisher
+computes these angles in radians, the wheel integrator leaves them untouched and
+renderers resolve their bone-map entries as usual.
 
 `JoystickDriver` in `drivers.py` supplies the electric chair's two joystick
 angles after gait generation, alongside the wheel angles. It estimates yaw rate
@@ -156,7 +156,7 @@ over a 0.2 s pose-timestamp window and holds the last rate between samples,
 including repeated frames. Its per-agent cache is discarded on despawn and reset.
 The publisher enables it through `_joystick_for(model_uri)` when the model's
 `rig.yaml` declares both `joystick_pitch` and `joystick_roll` with
-`from: joint_state`, regardless of agent type. Model support (including negative
+`from: velocity`, regardless of agent type. Model support (including negative
 lookups) is cached; all supported models share the same driver instance.
 
 ### Wrists (v4)
