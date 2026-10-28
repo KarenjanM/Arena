@@ -564,6 +564,12 @@ A streamed segment emits `round(duration * fps)` frames, a discrete `look` /
 (odd dimensions are padded to even), so keep the viewport size fixed during a
 take: a resize stops the recording at the last good frame.
 
+A failed capture is retried on the same frame, up to 3 attempts. A capture that
+still fails, a resize, a lockstep hold or step that fails, or an ffmpeg error
+stops the take at the last good frame, logs the reason, and makes `arena cam`
+exit 1 (`Camera.record` returns False), so a short or empty file never counts as
+a finished take.
+
 Recording is camera-locked by default: the camera path is deterministic but the
 scene advances at the sim's own rate, so pause the sim first for a fully
 reproducible take. Pass `lockstep=True` (CLI: `--lockstep`) for physics-lockstep
