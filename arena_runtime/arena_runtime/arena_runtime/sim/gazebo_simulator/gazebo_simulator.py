@@ -59,7 +59,6 @@ from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenc
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import (
     effective_control_yaml,
-    odom_relay_node,
     robot_controllers,
     twist_stamper_node,
 )
@@ -1036,6 +1035,9 @@ class GazeboSimulator(BaseSim):
             )
         )
 
+        control_spec = robot_config.model_params.control
+        is_ros2_control = control_spec is not None and control_spec.is_ros2_control
+        ros2_control_spec = control_spec if is_ros2_control else None
         launch_description.add_action(
             launch_ros.actions.Node(
                 package="pose_to_tf",
@@ -1048,23 +1050,22 @@ class GazeboSimulator(BaseSim):
                         "parent_frame": robot.frame.tf(robot_config.model_params.odom_frame),
                         "child_frame": robot.frame.tf(robot_config.model_params.base_frame),
                         "pose_topic": "pose",
+                        "odom_in_topic": (ros2_control_spec.odom_topic if ros2_control_spec is not None and ros2_control_spec.odom_topic != "odom" else ""),
                     }
                 ],
             )
         )
 
-        control_spec = robot_config.model_params.control
-        if control_spec is not None and control_spec.is_ros2_control:
-            if not control_spec.controllers:
+        if is_ros2_control:
+            assert ros2_control_spec is not None
+            if not ros2_control_spec.controllers:
                 raise ValueError(f"control.mode=ros2_control but no controllers declared for {robot.name}")
             launch_description.add_action(
                 twist_stamper_node(
-                    control_spec.cmd_vel_topic,
+                    ros2_control_spec.cmd_vel_topic,
                     robot.frame.tf(robot_config.model_params.base_frame),
                 )
             )
-            if control_spec.odom_topic != "odom":
-                launch_description.add_action(odom_relay_node(control_spec.odom_topic))
 
         launch_description.add_action(
             launch_ros.actions.Node(
