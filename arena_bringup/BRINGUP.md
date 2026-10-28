@@ -39,8 +39,8 @@ already up) and is the canonical entry point for most sessions.
 ### 1. Smoke check - dummy sim, empty map
 
 No physics engine. Useful for verifying that the ROS graph comes up without
-hardware or GPU. The `sim` argument defaults to `gazebo`; pass `sim:=dummy`
-explicitly for this plumbing-only mode.
+hardware or GPU. The `sim` argument defaults to the installed simulator (see
+[sim:=](#sim)), so pass `sim:=dummy` explicitly for this plumbing-only mode.
 
 ```bash
 arena launch \
@@ -53,7 +53,7 @@ arena launch \
 
 | Arg | Implication |
 |---|---|
-| `sim:=dummy` | No physics engine; a `map->dummy` static TF is published instead. Must be explicit - the default is `gazebo`. |
+| `sim:=dummy` | No physics engine, a `map->dummy` static TF is published instead. Explicit, the default is the installed simulator. |
 | `world:=map_empty` | Loads the empty map from `arena_simulation_setup` |
 | `robot:=jackal` | Single jackal; `mobile` adapter defaults to `none` (dummy sim has no nav2) |
 | `task.robots:=explore` | Robot gets fresh random goals continuously |
@@ -351,14 +351,14 @@ task.episode.fail_on_collision:=true  # abort the episode as FAILED when the rob
 
 ### sim:=
 
-Default is `gazebo`. Valid values:
+Default is `arena settings sim [auto|dummy|<simulator>]`, read by every launch when it starts. `auto` (the default setting) takes the first installed simulator in `SIM_ORDER` ([defaults.py](arena_bringup/defaults.py)), or `dummy` when none is installed. A setting naming a simulator that is no longer installed falls back to `auto` with a warning. Valid values:
 
 | Value | Meaning |
 |---|---|
-| `gazebo` (default) | gz-sim 8, dart physics, ogre renderer. `human` defaults to `arena` (arena_humansim). |
+| `gazebo` | gz-sim 8, dart physics, ogre renderer. `human` defaults to `arena` (arena_humansim). |
 | `isaac` | Isaac Sim via `arena feature isaac launch`. `mobile` defaults to `nav2`. |
 | `flatsim` | [flatsim](../flatsim/README.md) server, 2D Box2D with no renderer, one world for every env. Needs `arena feature flatsim install`. Odom, tf, laserscans, point clouds, IMU and contacts are computed from geometry, camera images are absent. `human` defaults to `arena`, `mobile` to `nav2`. |
-| `dummy` | No physics engine; a static `map->dummy` TF is published. For plumbing-only checks (no GPU, no controllers). Must be passed explicitly. |
+| `dummy` | No physics engine; a static `map->dummy` TF is published. For plumbing-only checks (no GPU, no controllers). The default when no simulator is installed. |
 
 ### sim.flatsim.*
 
