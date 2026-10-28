@@ -6,6 +6,7 @@ from collections.abc import Callable
 from types import ModuleType
 
 from arena_cli import asset as _asset_mod
+from arena_cli import bg as _bg
 from arena_cli import complete as _complete
 from arena_cli import features as _features
 from arena_cli import fork as _fork_mod
@@ -148,7 +149,11 @@ def _select_args(args: list[str], above: bool = False) -> list[str]:
 
 
 def _supervisor(*argv: str) -> None:
-    _exec("python3", "-m", "arena_bringup.supervisor", *argv)
+    detached, rest = _bg.take_flag(list(argv))
+    if detached:
+        _bg.launch_supervisor(rest, _bg.state_dir(), _bg.log_dir())
+        return
+    _exec("python3", "-m", _bg.SUPERVISOR, *argv)
 
 
 _LAUNCH_FILES: dict[str, Source] = {"task.config": Files(), "task.scenario.file": Files(), "task.params": Files(), "record.dir": Files()}
@@ -167,7 +172,8 @@ SUPERVISOR_KNOBS = Kv(
         **{f"viz.{k}": v for k, v in _viz_mod.VIZ_KV.keys.items()},
     }
 )
-LAUNCH_SPEC = Union(SUPERVISOR_KNOBS, RUNTIME_ARGS, ENV_ARGS)
+BG_FLAG = Flags({_bg.FLAG: "run detached, output to a log file"})
+LAUNCH_SPEC = Union(BG_FLAG, SUPERVISOR_KNOBS, RUNTIME_ARGS, ENV_ARGS)
 
 
 @verb("launch", passthrough=True, complete=LAUNCH_SPEC)
@@ -178,6 +184,8 @@ def launch(args: list[str]) -> None:
     envs against it (errors on sim:= mismatch). Otherwise starts
     arena_runtime.launch.py, spawns N envs, and attaches rviz unless
     headless:=true.
+    `--bg` detaches the whole launch, logging to the ROS log dir, and
+    returns. `arena runtime down` stops it.
     """
     _supervisor(*args)
 
@@ -193,39 +201,78 @@ def demo(args: list[str]) -> None:
     _supervisor(*merged, *args)
 
 
-@verb("runtime", passthrough=True, complete=RUNTIME_ARGS)
-def runtime(args: list[str]) -> None:
-    """Start the runtime only (sim + arena_node, no envs).
+RUNTIME_HELP = """Start the runtime only (sim + arena_node, no envs), or stop the background one.
 
-    Fails if another /arena node is already up. Attach envs afterwards
-    with `arena env`.
-    """
-    _exec("ros2", "launch", "arena_bringup", "arena_runtime.launch.py", *args)
+Usage:
+  arena runtime [--bg] [KEY:=VALUE ...]   start the runtime, fails if another /arena node is up
+  arena runtime down                      stop every background launch and viz of this ROS domain
+
+`--bg` detaches the runtime, logging to the ROS log dir, and returns. Attach
+envs afterwards with `arena env`. `down` sends SIGINT to each `--bg` process
+(`arena runtime`, `arena launch` and `arena viz`), again up to three times
+while one survives, and refuses when none runs. A foreground runtime stops with
+Ctrl-C in its terminal."""
+
+
+@verb("runtime", passthrough=True, help_text=RUNTIME_HELP, complete=Union(BG_FLAG, Static({"down": "stop the background launches and viz"}), RUNTIME_ARGS))
+def runtime(args: list[str]) -> int | None:
+    if args and args[0] == "down":
+        if args[1:]:
+            raise CLIError(f"arena runtime down takes no arguments, got {args[1]!r}")
+        return _bg.stop(_bg.state_dir())
+    detached, rest = _bg.take_flag(args)
+    if not detached:
+        _exec("ros2", "launch", "arena_bringup", "arena_runtime.launch.py", *args)
+    state = _bg.state_dir()
+    live = _bg.running(state, "launch")
+    if live:
+        raise CLIError(f"a background launch is running (pid {live[0]['pid']}), stop it with 'arena runtime down' first")
+    _bg.launch_supervisor([*rest, "env.n:=0", "viz:=false", "human.steering:=false"], state, _bg.log_dir())
+    return None
 
 
 ENV_HELP = f"""Attach one task-generator env, or act on a running one.
 
 Usage:
   arena env [KEY:=VALUE ...]              attach a new env to the running runtime
+  arena env --bg [KEY:=VALUE ...]         have the runtime spawn and own a new env
+  arena env ENV down                      shut env ENV down (by id)
   arena env [ENV] semantics [...]         read and set the semantic state of a running env
 
 Attaching waits forever (10s warning cadence) for /arena/register_env if the
 runtime is not up yet, KEY:=VALUE tokens go to task_generator.launch.py.
+`--bg` waits the same way for /arena/spawn_env, then until the env is ACTIVE,
+prints its id and log path and returns. The env lives until `arena env ENV
+down` or until the runtime stops.
+`down` asks any env, attached or spawned, to shut itself down through its
+lifecycle. `arena cleanup ENV` removes an env's sim entities instead.
 
 {_semantics_mod.HELP}"""
 
-ENV_SUBCOMMANDS = {"semantics": _semantics_mod.HELP.splitlines()[0]}
+ENV_SUBCOMMANDS = {"down": "shut the env down", "semantics": _semantics_mod.HELP.splitlines()[0]}
 
 
-@verb("env", passthrough=True, help_text=ENV_HELP, complete=Sub({"semantics": _semantics_mod.FLAGS}, fallback=Union(ENV_ARGS, Sub({"semantics": _semantics_mod.FLAGS}))))
+@verb("env", passthrough=True, help_text=ENV_HELP, complete=Sub({"semantics": _semantics_mod.FLAGS}, fallback=Union(BG_FLAG, ENV_ARGS, Sub({"down": Nothing(), "semantics": _semantics_mod.FLAGS}))))
 def env_(args: list[str]) -> int | None:
     split = _semantics_mod.split_env(args)
     if split is not None:
         return _semantics_mod.run(*split)
+    if "down" in args:
+        if len(args) != 2 or args[1] != "down" or not args[0].isdigit():
+            raise CLIError("usage: arena env ENV down, ENV a non-negative integer env id")
+        return _despawn(int(args[0]))
+    detached, args = _bg.take_flag(args)
     stray = [a for a in args if ":=" not in a and not a.startswith("-")]
     if stray:
         raise CLIError(f"arena env: {stray[0]!r} is neither a launch argument (KEY:=VALUE) nor an env followed by a subcommand. Subcommands:\n{_listing(list(ENV_SUBCOMMANDS.items()))}\nRun 'arena env --help' for the forms.")
+    if detached:
+        return _bg.spawn_env(args)
     _exec("ros2", "launch", "task_generator", "task_generator.launch.py", *args)
+
+
+def _despawn(env_id: int) -> None:
+    call = _srv_call("/arena/despawn_env", f'arena_runtime_msgs/srv/DespawnEnv "{{env_id: {env_id}}}"')
+    _exec("bash", "-c", f'{_graph_guard("service", "/arena/despawn_env", "arena runtime unreachable")}; {call}; grep -q "success=True" <<< "$R" && echo "env {env_id} shutting down" || {{ grep -oE "error_msg=.*" <<< "$R"; exit 1; }}')
 
 
 _register(
