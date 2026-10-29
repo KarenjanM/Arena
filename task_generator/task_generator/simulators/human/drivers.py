@@ -65,20 +65,6 @@ def has_joystick(model_uri: str) -> bool:
     return all(isinstance(drivers.get(joint), dict) and drivers[joint].get("from") == "velocity" for joint in ("joystick_pitch", "joystick_roll"))
 
 
-def has_joystick(model_uri: str) -> bool:
-    """Whether the model declares both joystick axes as velocity drivers."""
-    if not model_uri:
-        return False
-    rig_path = Path(model_uri).with_name(RIG_FILE)
-    if not rig_path.is_file():
-        return False
-    rig = yaml.safe_load(rig_path.read_text())
-    if not isinstance(rig, dict) or not isinstance(rig.get("drivers", {}), dict):
-        raise ValueError(f"{rig_path}: rig and drivers must be mappings")
-    drivers = rig.get("drivers", {})
-    return all(isinstance(drivers.get(joint), dict) and drivers[joint].get("from") == "velocity" for joint in ("joystick_pitch", "joystick_roll"))
-
-
 def with_driven(names: Iterable[str], positions: Sequence[float], angles: Mapping[str, float]) -> tuple[list[str], list[float]]:
     """Joint names and positions with the driven angles set, same-named entries replaced."""
     merged = dict(zip(names, positions, strict=True))
