@@ -85,7 +85,7 @@ cam.add("establishing", radius=8)
 cam.play()
 ```
 
-All angle arguments are **radians**. fov is radians (0 = keep current).
+All angle arguments are **radians**. fov is the horizontal field of view in radians (0 = keep current).
 `sweep_deg` / `start_deg` are accepted as degree conveniences on verbs that
 support them.
 
