@@ -6,8 +6,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import arena_runtime_msgs.msg
 import arena_runtime_msgs.srv
+import attrs
 import geometry_msgs.msg
 import launch
 import launch.actions
@@ -18,26 +20,26 @@ import nav2_msgs.srv
 import nav_msgs.msg
 import numpy as np
 import PIL.Image
+import rclpy.logging
 import rclpy.qos
-import shapely
 import visualization_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
-from arena_rclpy_mixins.Async import ClientWrapper
+from arena_rclpy_mixins.Async import ClientWrapper, LaunchHandle
 from arena_rclpy_mixins.shared import FrameNamespace
 from arena_runtime._node import NodeInterface
-from arena_simulation_setup.shared import Position
-from arena_simulation_setup.tree import DynamicPaths
+from arena_simulation_setup.shared import Door, Position, Wall
 from arena_simulation_setup.tree.World import Level, World, WorldIdentifier, WorldView
 from arena_simulation_setup.tree.World.model import render_door_polygons, render_elevator_polygons
+from arena_simulation_setup.tree.World.view import point_world_assets
 
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.realizer import Realizer
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.utils.flags import MapSource, map_source
 
-from . import markers
-from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy
+from . import markers, mechanism_map
+from .utils import MultiLevelMap, WorldLayers, WorldMap, WorldOccupancy, door_mask
 from .world_manager import WorldManager
 
 if TYPE_CHECKING:
@@ -49,8 +51,38 @@ _DEFAULT_RESOLUTION = 0.05
 _DOOR_MASK_BUFFER_M = 0.2
 
 
+def map_server_launch_description(namespace: str, log_spec: str) -> launch.LaunchDescription:
+    """The map_server bringup with its lifecycle manager under namespace, logging by the rule set log_spec."""
+    return launch.LaunchDescription(
+        [
+            launch.actions.GroupAction(
+                [
+                    launch_ros.actions.PushRosNamespace(namespace),
+                    NodeLogLevelExtension.SetGlobalLogLevelAction(log_spec),
+                    launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py'))),
+                ]
+            ),
+        ]
+    )
+
+
 class MapServerHandler(NodeInterface):
     """Handler functions for the map server lifecycle."""
+
+    _map_server_launch: LaunchHandle | None
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._map_server_launch = None
+
+    async def launch_map_server(self, log_spec: str) -> None:
+        """Replace any running map_server bringup with a fresh one in the node namespace."""
+        if self._map_server_launch is not None:
+            await self._map_server_launch.shutdown()
+        self._map_server_launch = await self.node.do_launch_tracked(map_server_launch_description(self.node.get_fully_qualified_name(), log_spec))
+
+    def _env_log_spec(self) -> str:
+        return self.node.conf.General.LOG_LEVEL.value or rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
 
     async def ensure_map_server(self):
         """Restart the map server if it is not active."""
@@ -75,7 +107,7 @@ class MapServerHandler(NodeInterface):
 
             self._logger.warn('relaunching map server...')
 
-            await self.node.do_launch(launch.LaunchDescription([launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py')))]))
+            await self.launch_map_server(self._env_log_spec())
 
         self._logger.info('map server launched.')
 
@@ -83,7 +115,9 @@ class MapServerHandler(NodeInterface):
 class WorldManagerROS(MapServerHandler, WorldManager):
     """Initialize the WorldManager."""
 
-    node: "TaskGenerator"
+    @property
+    def node(self) -> "TaskGenerator":
+        return super().node
 
     _environment_manager: EnvironmentManager
 
@@ -96,6 +130,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     _map_server_present: bool
     _map_render_memo: dict[str, tuple[bytes, str]]
     _static_markers: list[visualization_msgs.msg.Marker] | None
+    _served_map: tuple[bytes, str, Level] | None
+    _mechanism_map_enabled: bool
+    _mechanism_agents: tuple[str, ...]
+    _mechanism_blocked: frozenset[str]
+    _mechanism_served: frozenset[str]
+    _mechanism_task: asyncio.Task | None
 
     def _load_multi_level_map(self, world_view: WorldView, level_ids: Sequence[str]) -> MultiLevelMap | None:
         maps: dict[str, WorldMap] = {}
@@ -183,7 +223,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
     async def apply_world(self, world_name: str) -> bool:
         """Synchronously swap to `world_name`. Must be called inside `_run_reset_cycle`'s hold."""
-        bare_name, level_filter = WorldIdentifier.parse(world_name)
+        bare_name, level_filter = WorldIdentifier.split_filter(world_name)
         world_view = await WorldIdentifier(bare_name).resolve()
         mtime = world_view.mtime(self._world_sources if world_name == self._world_name else ())
 
@@ -207,14 +247,15 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         source = map_source(self.node)
         disk_mode = source is MapSource.DISK
         disk_level = ""
+        disk_map: WorldMap | None = None
         if disk_mode:
             disk_levels = list(multi_level_map.level_ids) if multi_level_map is not None else []
-            if len(world.level_ids) != 1 or len(disk_levels) != 1:
+            if multi_level_map is None or len(world.level_ids) != 1 or len(disk_levels) != 1:
                 raise RuntimeError(f"debug.map_source:=disk requires a single-level world with one on-disk map; world {world_name!r} has {len(world.level_ids)} level(s), {len(disk_levels)} disk map(s)")
             disk_level = disk_levels[0]
-            disk_map = multi_level_map.get_map(disk_level)
+            disk_map = multi_level_map.select_map(disk_level)
 
-        if disk_mode:
+        if disk_map is not None:
             world_map = disk_map
         else:
             world_map = WorldMap.from_world_description(compacted_description, resolution=_DEFAULT_RESOLUTION, time=self.node.sim_time, _level_origins=level_origins)
@@ -245,10 +286,11 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         self._logger.warn(f'Loading World {world_name}')
 
-        DynamicPaths.WORLD.path = world_view.path
-        DynamicPaths.LINKED.paths = list(world.sources)
+        point_world_assets(world_view.path, world.sources)
         static_footprints = await asyncio.gather(*(o.footprint() for o in world.all_static_entities))
         self.update_world(world_map=world_map, world_description=world, multi_level_map=multi_level_map, static_footprints=static_footprints)
+        self._mechanism_blocked = frozenset()
+        self._mechanism_served = frozenset()
 
         self._world_name = world_name
         self._world_mtime = world_view.mtime(world.sources)
@@ -264,8 +306,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                 await self._push_world_to_map_server(compacted_description, level_origins=level_origins)
 
         await self._environment_manager.reset(purge=ObstacleLayer.WORLD)
-        detected_walls = {}
-        if disk_mode:
+        detected_walls: dict[str, Sequence[Wall]] = {}
+        if disk_map is not None:
             if any(level.pedestrian_walls for level in world.all_levels):
                 detected_walls = {disk_level: tuple(disk_map.detect_walls())}
         await self._environment_manager.spawn_world_obstacles(self._world, detected_walls=detected_walls, world_map=world_map)
@@ -273,8 +315,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
         return True
 
-    async def _load_map_to_server(self, png_bytes: bytes, map_yaml_text: str, description: Level) -> None:
-        """Shift+LoadMap+door-mask. Caller guarantees map_server is present."""
+    async def _load_png_to_server(self, png_bytes: bytes, map_yaml_text: str) -> None:
+        """Shift+LoadMap. Caller guarantees map_server is present."""
         tmp_map = self._shift_map(png_bytes, map_yaml_text)
         try:
             map_yaml = os.path.join(tmp_map.name, 'map.yaml')
@@ -286,7 +328,80 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             raise RuntimeError(f'failed to load map for world {self._world_name}: service timed out')
         if response.result > 0:
             raise RuntimeError(f'failed to load map for world {self._world_name}: status code {response.result}')
+
+    async def _load_map_to_server(self, png_bytes: bytes, map_yaml_text: str, description: Level) -> None:
+        """Shift+LoadMap+door-mask. Caller guarantees map_server is present. Applies the mechanism map if enabled."""
+        self._served_map = (png_bytes, map_yaml_text, description)
+        blocked = self._mechanism_blocked if self._mechanism_map_enabled else frozenset()
+        await self._load_png_to_server(self._paint_blocked(png_bytes, map_yaml_text, blocked), map_yaml_text)
+        self._mechanism_served = blocked
         self._publish_door_mask(description, png_bytes, map_yaml_text)
+
+    def _world_doors(self) -> list[tuple[str, Door]]:
+        """(realized name, door shifted into the flattened map frame) for every loaded door."""
+        realizer: Realizer = self.node._realizer
+        doors: list[tuple[str, Door]] = []
+        for level_id, level in self._world.levels.items():
+            ox, oy = self._map.level_origins.get(level_id, (0.0, 0.0))
+            for door in level.all_doors:
+                shifted = attrs.evolve(door, start=Position(door.start.x + ox, door.start.y + oy), end=Position(door.end.x + ox, door.end.y + oy))
+                doors.append((str(realizer.prefix(door.name, level_id)), shifted))
+        return doors
+
+    def _paint_blocked(self, png_bytes: bytes, map_yaml_text: str, blocked: frozenset[str]) -> bytes:
+        if not blocked:
+            return png_bytes
+        segments = [((d.start.x, d.start.y), (d.end.x, d.end.y), d.width) for name, d in self._world_doors() if name in blocked]
+        return mechanism_map.paint_segments(png_bytes, map_yaml_text, segments)
+
+    def set_mechanism_map(self, enabled: bool, agents: Sequence[str]) -> None:
+        """Enable/disable the mechanism-aware planner map for the robot names/sim paths in `agents`."""
+        self._mechanism_map_enabled = enabled
+        self._mechanism_agents = tuple(agents)
+        if not enabled:
+            self._mechanism_blocked = frozenset()
+            self._schedule_mechanism_push()
+            return
+        simulator = self.node._simulator
+        if simulator is None:
+            self._logger.warning('mechanism map: no simulator yet')
+            return
+        try:
+            snapshots = simulator.semantics_snapshot()
+        except Exception as exc:
+            self._logger.warning(f'mechanism map: no semantics snapshot yet ({exc!r})')
+            return
+        self._update_mechanism_map(snapshots)
+
+    def _update_mechanism_map(self, snapshots: "Sequence[SemanticEntitySnapshot]") -> None:
+        if not self._mechanism_map_enabled:
+            return
+        self._mechanism_blocked = mechanism_map.blocked_doors(self._world_doors(), snapshots, self._mechanism_agents)
+        self._schedule_mechanism_push()
+
+    def _schedule_mechanism_push(self) -> None:
+        if self._mechanism_blocked == self._mechanism_served or not self._map_server_present or self._served_map is None:
+            return
+        if self._mechanism_task is not None and not self._mechanism_task.done():
+            return
+        try:
+            self._mechanism_task = asyncio.get_running_loop().create_task(self._mechanism_push_loop())
+        except RuntimeError:
+            self._mechanism_task = None
+
+    async def _mechanism_push_loop(self) -> None:
+        """Reload the served map until it matches the latest blocked-door set (latest wins)."""
+        try:
+            while self._served_map is not None and self._mechanism_served != self._mechanism_blocked:
+                blocked = self._mechanism_blocked
+                png_bytes, map_yaml_text, description = self._served_map
+                async with self._map_server_lock:
+                    await self._load_png_to_server(self._paint_blocked(png_bytes, map_yaml_text, blocked), map_yaml_text)
+                self._mechanism_served = blocked
+                self._publish_door_mask(description, png_bytes, map_yaml_text)
+                self._logger.info(f'mechanism map: {len(blocked)} door(s) served as occupied: {sorted(blocked)}')
+        except Exception as exc:
+            self._logger.error(f'mechanism map push failed: {exc!r}')
 
     async def _push_world_to_map_server(self, description: Level, level_origins: dict[str, tuple[float, float]] | None = None) -> None:
         """Render+load the computed map. Caller guarantees map_server is present."""
@@ -305,7 +420,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         png_bytes: bytes,
         map_yaml_text: str,
     ) -> None:
-        """Publish an OccupancyGrid: 0 inside door polygons, -1 elsewhere. Aligned to the static map."""
+        """Publish an OccupancyGrid: 0 inside door polygons, -1 elsewhere, without the doors the mechanism map serves as blocked. Aligned to the static map."""
         img = PIL.Image.open(io.BytesIO(png_bytes))
         width, height = img.size
 
@@ -313,25 +428,9 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         resolution = float(map_yaml['resolution'])
         origin_world = list(map_yaml.get('origin', [0, 0, 0]))
 
-        data = np.full(width * height, -1, dtype=np.int8)
-        polys = [p for d in description.all_doors for p in render_door_polygons(d)] + [p for e in description.all_elevators for p in render_elevator_polygons(e)]
-        for poly in polys:
-            if poly.is_empty:
-                continue
-            # Buffer carves into adjacent walls so global costmap inflation
-            # doesn't fully close the opening.
-            poly = poly.buffer(_DOOR_MASK_BUFFER_M)
-            min_x, min_y, max_x, max_y = poly.bounds
-            col_min = max(0, int((min_x - origin_world[0]) / resolution))
-            col_max = min(width, int((max_x - origin_world[0]) / resolution) + 1)
-            row_min = max(0, int((min_y - origin_world[1]) / resolution))
-            row_max = min(height, int((max_y - origin_world[1]) / resolution) + 1)
-            for row in range(row_min, row_max):
-                cy = origin_world[1] + (row + 0.5) * resolution
-                for col in range(col_min, col_max):
-                    cx = origin_world[0] + (col + 0.5) * resolution
-                    if poly.covers(shapely.Point(cx, cy)):
-                        data[row * width + col] = 0
+        doors = mechanism_map.mask_doors(description.all_doors, self._world_doors(), self._mechanism_served)
+        polys = [p for d in doors for p in render_door_polygons(d)] + [p for e in description.all_elevators for p in render_elevator_polygons(e)]
+        data = door_mask(polys, description.all_walls, width, height, resolution, (float(origin_world[0]), float(origin_world[1])), _DOOR_MASK_BUFFER_M)
 
         shifted_origin = self._environment_manager.realize(Position(x=float(origin_world[0]), y=float(origin_world[1])))
         assert isinstance(shifted_origin, Position)
@@ -356,10 +455,11 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         msg = visualization_msgs.msg.MarkerArray()
         if self._static_markers is None:
             self._static_markers = markers.static_markers(self._world, realizer, stamp)
-            msg.markers.extend(markers.deleteall_markers())
-        msg.markers.extend(self._static_markers)
-        msg.markers.extend(markers.mechanism_markers(self._world, realizer, snapshots, stamp))
+            msg.markers.extend(markers.deleteall_markers())  # pyright: ignore[reportAttributeAccessIssue]
+        msg.markers.extend(self._static_markers)  # pyright: ignore[reportAttributeAccessIssue]
+        msg.markers.extend(markers.mechanism_markers(self._world, realizer, snapshots, stamp))  # pyright: ignore[reportAttributeAccessIssue]
         self._world_markers_pub.publish(msg)
+        self._update_mechanism_map(snapshots)
 
     def refresh_world_markers(self, snapshots: "Sequence[SemanticEntitySnapshot]") -> None:
         """Republish the world overlay from the held description, rebuilding the static layers."""
@@ -370,18 +470,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         """Idempotent: lazy-launch map_server and push the current world. Safe to call concurrently."""
         async with self._map_server_lock:
             if not self._map_server_present:
-                await self.node.do_launch(
-                    launch.LaunchDescription(
-                        [
-                            launch.actions.GroupAction(
-                                [
-                                    launch_ros.actions.PushRosNamespace(self.node.get_fully_qualified_name()),
-                                    launch.actions.IncludeLaunchDescription(launch.launch_description_sources.PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('arena_bringup'), 'launch/utils/map_server.launch.py'))),
-                                ]
-                            ),
-                        ]
-                    )
-                )
+                await self.launch_map_server(self._env_log_spec())
                 self._map_server_present = True
             if self._cli is None:
                 self._cli = self.node.create_client_wrapper(
@@ -391,7 +480,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
             await self._cli.ensure()
             await self.ensure_map_server()
             if self._world_name:
-                bare_wn, wn_filter = WorldIdentifier.parse(self._world_name)
+                bare_wn, wn_filter = WorldIdentifier.split_filter(self._world_name)
                 world_view = await WorldIdentifier(bare_wn).resolve()
                 loaded = world_view.load(level_filter=wn_filter, derive=self.node.conf.Arena.KG_DERIVE.value or 'auto')
                 origins = world_view.level_origins()
@@ -421,6 +510,12 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._map_server_lock = asyncio.Lock()
         self._map_render_memo = {}
         self._static_markers = None
+        self._served_map = None
+        self._mechanism_map_enabled = False
+        self._mechanism_agents = ()
+        self._mechanism_blocked = frozenset()
+        self._mechanism_served = frozenset()
+        self._mechanism_task = None
         self._world_markers_pub = self.node.create_publisher(
             visualization_msgs.msg.MarkerArray,
             'world_markers',

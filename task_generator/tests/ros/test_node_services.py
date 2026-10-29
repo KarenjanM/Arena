@@ -474,3 +474,23 @@ def test_reset_episode_in_flight_resolves_skipped() -> None:
         assert stub._task.force_reset_called is False
 
     asyncio.run(run())
+
+
+def test_a_tearing_down_node_refuses_new_episodes() -> None:
+    import asyncio
+    import threading
+
+    import task_generator_msgs.action
+    from rclpy.action import GoalResponse
+    from task_generator.node import EpisodeRuntime, TaskGenerator
+
+    stub = type("Stub", (), {})()
+    stub._episodes = EpisodeRuntime()
+    stub._heartbeat_stop = threading.Event()
+    stub._tick_loop_task = stub._check_status_task = stub._episode_task = None
+    stub._task = stub._robots_manager = stub._simulator = None
+    asyncio.run(TaskGenerator.teardown(stub))
+
+    assert TaskGenerator._goal_callback(stub, None) == GoalResponse.REJECT
+    result = asyncio.run(TaskGenerator._run_episode(stub))
+    assert (result.state, result.info) == (task_generator_msgs.action.RunEpisode.Result.SKIPPED, "shutting down")

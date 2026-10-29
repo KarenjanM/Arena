@@ -2,7 +2,7 @@
 
 rosidl interfaces for the world generator: one service that previews or saves a world, plus the box-drawing alphabet the sketch editor draws with.
 
-The generator itself lives in [`arena_simulation_setup/utils/generative`](../../../arena_simulation_setup/src/arena_simulation_setup/utils/generative/README.md); the rviz front end is the World Generator panel in [`task_generator_gui`](../../task_generator_gui/).
+The generator itself lives in [`arena_simulation_setup/generative/world`](../../../arena_simulation_setup/src/arena_simulation_setup/generative/world/README.md); the rviz front end is the World Generator panel in [`task_generator_gui`](../../task_generator_gui/).
 
 `Alphabet` publishes the glyph table, the ASCII shorthand with its arms, and the characters that mean an empty cell, so an editor hardcodes none of them. `.` is one of the void characters: it clears a cell and is printed, so a client testing for whitespace would treat an erased cell as drawn.
 

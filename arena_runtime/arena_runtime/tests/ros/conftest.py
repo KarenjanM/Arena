@@ -1,20 +1,29 @@
-"""In-process ArenaNode on the dummy or flatsim host plus a probe node, for lockstep tests without gz."""
+"""In-process ArenaNode on the dummy, flatsim or gazebo host plus a probe node, for lockstep tests."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+import shutil
+import signal
+import subprocess
 import typing
+from pathlib import Path
 
 import pytest
 
 DT = 0.02
 LATCHED_DEPTH = 1
+GZ_WORLD = f"""<?xml version="1.0"?>
+<sdf version="1.9"><world name="default"><physics type="ode"><max_step_size>{DT}</max_step_size><real_time_factor>1.0</real_time_factor></physics></world></sdf>
+"""
 
 
 class Rig:
-    def __init__(self, arena: typing.Any, probe: typing.Any, executor: typing.Any) -> None:
+    def __init__(self, arena: typing.Any, probe: typing.Any, executor: typing.Any, servers: typing.Sequence[typing.Any] = ()) -> None:
         self.arena = arena
+        self.servers = list(servers)
         self.probe = probe
         self.executor = executor
         self._extra: list[typing.Any] = []
@@ -52,7 +61,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
     from arena_rclpy_mixins.spin import create_executor
     from arena_rclpy_mixins.Time import Time
     from arena_runtime_msgs.msg import LockstepHeartbeat, LockstepRegistration, LockstepStatus
-    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LockstepRegister, LockstepStart
+    from arena_runtime_msgs.srv import LifecycleHold, LifecycleStep, LifecycleUnpauseWindow, LockstepRegister, LockstepStart
     from std_msgs.msg import Bool
     from std_srvs.srv import Trigger
 
@@ -73,6 +82,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             self.beat = self.create_publisher(LockstepHeartbeat, self.beat_topic, 10)
             self.hold = self.create_client_wrapper(LifecycleHold, "/arena/sim_lifecycle/hold", timeout=5.0)
             self.step = self.create_client_wrapper(LifecycleStep, "/arena/sim_lifecycle/step", timeout=5.0)
+            self.window = self.create_client_wrapper(LifecycleUnpauseWindow, "/arena/sim_lifecycle/unpause_window", timeout=5.0)
             self.start = self.create_client_wrapper(LockstepStart, "/arena/sim_lifecycle/lockstep/start", timeout=5.0)
             self.register = self.create_client_wrapper(LockstepRegister, "/arena/sim_lifecycle/lockstep/register", timeout=5.0)
             self.stop = self.create_client_wrapper(Trigger, "/arena/sim_lifecycle/lockstep/stop", timeout=5.0)
@@ -101,12 +111,17 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
             msg.header.stamp = Time.from_float(stamp).to_msg()
             self.beat.publish(msg)
 
-        async def register_channels(self, channels: list, caller: str = "probe") -> LockstepRegister.Response:
+        async def register_channels(self, channels: list, caller: str = "probe", env: str = "") -> LockstepRegister.Response:
             request = LockstepRegister.Request()
-            request.registration = LockstepRegistration(caller=caller, env="", channels=channels)
+            request.registration = LockstepRegistration(caller=caller, env=env, channels=channels)
             response = await self.register.call_timeout(request)
             assert response is not None
             return response
+
+        async def set_window(self, caller: str, acquire: bool) -> None:
+            action = LifecycleUnpauseWindow.Request.ACQUIRE if acquire else LifecycleUnpauseWindow.Request.RELEASE
+            response = await self.window.call_timeout(LifecycleUnpauseWindow.Request(action=action, caller_id=caller))
+            assert response is not None and response.success, response.error_msg if response is not None else "timeout"
 
         async def start_run(self, target_rtf: float = 0.0, ungated: bool = False) -> None:
             response = await self.start.call_timeout(LockstepStart.Request(target_rtf=target_rtf, ungated=ungated))
@@ -131,7 +146,7 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
     probe = Probe()
     executor.add_node(arena)
     executor.add_node(probe)
-    rig = Rig(arena, probe, executor)
+    rig = Rig(arena, probe, executor, servers)
     loop = asyncio.get_running_loop()
     spin = loop.run_in_executor(None, executor.spin)
     try:
@@ -147,6 +162,8 @@ async def _run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], sim: st
     finally:
         with contextlib.suppress(Exception):
             await asyncio.wait_for(arena.teardown(), timeout=5.0)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(arena.kill_launches(), timeout=10.0)
         if arena._clock_task is not None:
             arena._clock_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -182,3 +199,32 @@ def flatsim_rig() -> typing.Callable[[typing.Callable[[Rig], typing.Awaitable[No
         asyncio.run(asyncio.wait_for(_run(scenario, "flatsim"), timeout=timeout))
 
     return run
+
+
+@pytest.fixture()
+def gazebo_rig(tmp_path: Path) -> typing.Iterator[typing.Callable[[typing.Callable[[Rig], typing.Awaitable[None]]], None]]:
+    """Runs `scenario(rig)` against a spinning ArenaNode(sim=gazebo), a running headless gz server on an empty world and its /clock bridge."""
+    if shutil.which("gz") is None:
+        pytest.skip("gz is not on PATH")
+    pytest.importorskip("ros_gz_interfaces")
+    world = tmp_path / "default.sdf"
+    world.write_text(GZ_WORLD)
+    processes = [
+        subprocess.Popen(["gz", "sim", "-s", "-r", str(world)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True),
+        subprocess.Popen(["ros2", "run", "ros_gz_bridge", "parameter_bridge", "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True),
+    ]
+
+    def run(scenario: typing.Callable[[Rig], typing.Awaitable[None]], *, timeout: float = 120.0) -> None:
+        asyncio.run(asyncio.wait_for(_run(scenario, "gazebo"), timeout=timeout))
+
+    try:
+        yield run
+    finally:
+        for process in processes:
+            os.killpg(process.pid, signal.SIGINT)
+        for process in processes:
+            try:
+                process.wait(timeout=15.0)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()

@@ -15,7 +15,6 @@ keys:
 simulator key  →  action
 ──────────────────────────────────────────────────────────────────
 dummy          →  empty GroupAction (no nodes)
-isaac          →  empty GroupAction (no nodes)
 arena          →  arena_humansim/arena_humansim.launch.py
 ```
 

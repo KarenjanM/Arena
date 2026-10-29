@@ -14,6 +14,7 @@ from arena_robots_msgs.action import PlayGesture, ReachPose
 from arena_viz.kinds import DisplayKind
 from arena_viz.style import StyleSpec
 
+from task_generator.tasks.robots._reach_sampling import reach_frame, sample_reach_target
 from task_generator.tasks.robots.adapters import Adapter, AdapterDisplayHint, AdapterMeta
 from task_generator.tasks.robots.adapters.arm import park_arms
 from task_generator.tasks.robots.request import PlayGesturePhase, ReachPhase
@@ -49,14 +50,13 @@ _log = logging.getLogger(__name__)
 )
 class MoveItArmAdapter(Adapter):
     kind: ClassVar[str] = "moveit"
+    bringup: MoveItArmBringup
 
     async def dispatch_phase(self, phase: TaskPhase, robot: RobotManager) -> None:
         if isinstance(phase, ReachPhase):
             goal = ReachPose.Goal()
             goal.instance = phase.instance
             if phase.random:
-                from task_generator.tasks.robots._reach_sampling import sample_reach_target
-
                 arms = robot.robot_view.effective_caps(robot.robot.resolved_request, frames=robot.robot.frames).arm
                 if not arms:
                     raise ValueError(f"random ReachPhase requested but robot {robot.name!r} has no arm cap")
@@ -71,7 +71,9 @@ class MoveItArmAdapter(Adapter):
                 rng = robot.node.conf.General.RNG.stream("arm", robot.name)
                 goal.target = sample_reach_target(arm, robot.frame, rng)
             elif phase.target is not None:
-                goal.target = phase.target
+                goal.target.header.frame_id = reach_frame(phase.frame or robot.base_frame, robot.frame)
+                goal.target.header.stamp = robot.node.sim_time.to_msg()
+                goal.target.pose = phase.target.to_msg()
             elif phase.named_target is not None:
                 goal.named_target = phase.named_target
             goal.position_tolerance = float(phase.position_tolerance or 0.0)

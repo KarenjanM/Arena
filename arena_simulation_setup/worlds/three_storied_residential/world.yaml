@@ -11,7 +11,7 @@ levels:
   walls:
   - {path: [[0.0, 0.0], [4.0, 0.0], [4.0, 1.55]], material: Paint_Matte}
   - {path: [[4.0, 2.45], [4.0, 4.0], [0.0, 4.0], [0.0, 0.0]], material: Paint_Matte}
-  - {path: [[4.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0], [4.0, 2.45]], material: Plaster_Wall}
+  - {path: [[6.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0], [4.0, 2.45]], material: Plaster_Wall}
   - {path: [[4.0, 1.55], [4.0, 0.0]], material: Plaster_Wall}
   doors:
   - name: door_edge_1_1
@@ -21,7 +21,7 @@ levels:
     - {predicate: blocked}
     - {preset: pressure_plate, params: {position: [4.0, 2.0], drives: door_edge_1_1, press_on: alarm}}
   elevators:
-  - {name: 1_elevator, position: [5.0, 0.0], door_side: +y, destinations: [2_elevator]}
+  - {name: 1_elevator, position: [5.0, -1.0], door_side: +y, destinations: [2_elevator]}
   objects:
   - {name: Bed_A_1, pose: [2.0, 2.9944], model: Residential/Bed_A}
   - {name: Night_Table_A_0, pose: [0.67, 3.7706], model: Residential/Night_Table_A}
@@ -43,12 +43,12 @@ levels:
   walls:
   - {path: [[0.0, 0.0], [4.0, 0.0], [4.0, 1.55]], material: Paint_Matte}
   - {path: [[4.0, 2.45], [4.0, 6.0], [0.0, 6.0], [0.0, 0.0]], material: Paint_Matte}
-  - {path: [[4.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0], [4.0, 2.45]], material: Paint_Matte}
+  - {path: [[6.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0], [4.0, 2.45]], material: Paint_Matte}
   - {path: [[4.0, 1.55], [4.0, 0.0]], material: Paint_Matte}
   doors:
   - {name: door_edge_2_1, span: [[4.0, 1.55], [4.0, 2.45]]}
   elevators:
-  - {name: 2_elevator, position: [5.0, 0.0], door_side: +y, destinations: [3_elevator]}
+  - {name: 2_elevator, position: [5.0, -1.0], door_side: +y, destinations: [3_elevator]}
   objects:
   - {name: Sofa_B_0, pose: [2.0, 1.3, 3.14159], model: Residential/Sofa_B}
   - {name: Table_Television_0, pose: [2.0, 5.6], model: Residential/Table_Television}
@@ -67,12 +67,12 @@ levels:
   walls:
   - {path: [[0.0, 0.0], [4.0, 0.0], [4.0, 1.55]], material: Paint_Matte}
   - {path: [[4.0, 2.45], [4.0, 4.0], [0.0, 4.0], [0.0, 0.0]], material: Paint_Matte}
-  - {path: [[4.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0], [4.0, 2.45]], material: Paint_Matte}
+  - {path: [[6.0, 0.0], [8.0, 0.0], [8.0, 4.0], [4.0, 4.0], [4.0, 2.45]], material: Paint_Matte}
   - {path: [[4.0, 1.55], [4.0, 0.0]], material: Paint_Matte}
   doors:
   - {name: door_edge_3_1, span: [[4.0, 1.55], [4.0, 2.45]]}
   elevators:
-  - {name: 3_elevator, position: [5.0, 0.0], door_side: +y, destinations: [1_elevator]}
+  - {name: 3_elevator, position: [5.0, -1.0], door_side: +y, destinations: [1_elevator]}
   objects:
   - {name: Bed_A_0, pose: [2.0, 2.99], model: Residential/Bed_A}
   - {name: Dresser_B_0, pose: [0.31, 2.0, 1.570796], model: Residential/Dresser_B}

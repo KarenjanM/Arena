@@ -50,6 +50,17 @@ def test_parse_rejects_unknown_keys():
         TaskPhase.parse({"goto": [0.0, 0.0], "speed": 1.0})
 
 
+@pytest.mark.parametrize("value", [{"goto": [0.0, 0.0], "hold_time": [1.0]}, {"goto": [0.0, 0.0], "conditions": 3}, {"loop": 3}])
+def test_parse_rejects_wrong_field_types(value):
+    with pytest.raises(TypeError):
+        TaskPhase.parse(value)
+
+
+def test_request_parse_rejects_non_list_phases():
+    with pytest.raises(TypeError):
+        TaskRequest.parse({"phases": 3})
+
+
 def test_parse_gesture_random_normalizes_to_none():
     assert TaskPhase.parse({"gesture": "random"}).gesture is None
     assert TaskPhase.parse({"gesture": ""}).gesture is None
@@ -64,6 +75,14 @@ def test_parse_reach_forms():
     assert random.random and random.planning_time == 2.0
     posed = TaskPhase.parse({"reach": [0.4, 0.0, 0.3, 0.0, 0.0, 0.0], "frame": "base_link"})
     assert posed.target is not None and posed.frame == "base_link"
+
+
+def test_reach_pose_survives_serialization_in_full():
+    phase = ReachPhase(target=Pose(Position(0.4, 0.1, 0.9), Orientation.from_euler((0.1, 0.5, -0.3))), frame="base_link")
+    again = TaskPhase.parse(phase.serialize())
+    assert isinstance(again, ReachPhase) and again.target is not None and again.frame == "base_link"
+    assert list(again.target.position) == pytest.approx([0.4, 0.1, 0.9])
+    assert again.target.orientation.to_euler() == pytest.approx((0.1, 0.5, -0.3))
 
 
 def test_reach_requires_exactly_one_target():
@@ -190,3 +209,20 @@ def test_request_with_loop_round_trips():
     assert request.kind is None
     assert TaskRequest.parse(request.serialize()) == request
     assert request.serialize()["phases"][0]["loop"] == [{"goto": [10.0, 18.0, 0.0]}, {"goto": [10.0, 2.0, 0.0]}]
+
+
+def test_parse_goto_zone_dispatch_pose_remembers_its_zone():
+    import numpy as np
+
+    from arena_simulation_setup.utils.geometry import PointResolver
+    from arena_simulation_setup.utils.resolution import activate_resolver
+
+    square = [Position(0.0, 0.0), Position(2.0, 0.0), Position(2.0, 2.0), Position(0.0, 2.0)]
+    resolver = PointResolver(lookup={"lobby": square}.get, rng=np.random.default_rng(0), candidates=lambda: ["lobby"])
+    with activate_resolver(resolver):
+        zoned = TaskPhase.parse({"goto": "kitchen", "pose": "lobby"})
+    literal = TaskPhase.parse({"goto": "kitchen", "pose": [1.0, 1.0, 0.0]})
+    assert isinstance(zoned, GoToPhase) and isinstance(literal, GoToPhase)
+    assert zoned.pose_zone == "lobby"
+    assert 0.0 <= zoned.pose.position.x <= 2.0 and 0.0 <= zoned.pose.position.y <= 2.0
+    assert literal.pose_zone == ""

@@ -12,7 +12,7 @@ from arena_simulation_setup.shared import DynamicObstacle, EpisodeCondition, Lig
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.tree import Identifier, PathView
 from arena_simulation_setup.tree.assets.Animation import AnimationIdentifier, referenced_clips
-from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, converter
+from arena_simulation_setup.utils.cattrs import ArenaConverter, Parseable, Serializable, converter
 
 ROBOT_KEYS = frozenset({"start", "level", "goal_level", "phases", "conditions"})
 
@@ -53,11 +53,56 @@ class RegionAssignment:
     config: dict = attrs.Factory(dict)  # type-specific params
 
 
+STIMULUS_KEYS = frozenset({"agents", "need", "intensity"})
+
+
+@attrs.frozen
+class StimulusAction(Serializable):
+    """Raise `need` by `intensity` on each named pedestrian agent."""
+
+    agents: tuple[str, ...]
+    need: str
+    intensity: float = 1.0
+
+    def __attrs_post_init__(self) -> None:
+        if not self.agents or not all(isinstance(agent, str) and agent for agent in self.agents):
+            raise ValueError(f"stimulus 'agents' must be a non-empty list of agent names, got {self.agents!r}")
+        if not isinstance(self.need, str) or not self.need:
+            raise ValueError(f"stimulus 'need' must be a non-empty string, got {self.need!r}")
+
+    @classmethod
+    def parse(cls, value: object) -> "StimulusAction":
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, dict):
+            raise ValueError(f"a stimulus is a mapping, got {value!r}")
+        unknown = sorted(set(value) - STIMULUS_KEYS)
+        if unknown:
+            raise ValueError(f"stimulus has unknown keys {unknown}, expected some of {sorted(STIMULUS_KEYS)}")
+        agents = value.get("agents")
+        if not isinstance(agents, list | tuple):
+            raise ValueError(f"stimulus 'agents' must be a list of agent names, got {agents!r}")
+        need = value.get("need")
+        if not isinstance(need, str):
+            raise ValueError(f"stimulus 'need' must be a non-empty string, got {need!r}")
+        return cls(agents=tuple(agents), need=need, intensity=float(value.get("intensity", 1.0)))
+
+    def serialize(self) -> dict:
+        result: dict = {"agents": list(self.agents), "need": self.need}
+        if self.intensity != 1.0:
+            result["intensity"] = self.intensity
+        return result
+
+
+converter.register_structure_hook(StimulusAction, lambda value, _: StimulusAction.parse(value))
+
+
 @attrs.define
 class TimelineEntry(Parseable):
-    """One scenario timeline entry: exactly one trigger (at/every/when) plus a set action list."""
+    """One scenario timeline entry: exactly one trigger (at/every/when) plus `set` and `stimulus` actions, at least one."""
 
     set: list[dict] = attrs.field(factory=list)
+    stimulus: list[StimulusAction] = attrs.field(factory=list)
     at: float | None = None
     every: float | None = None
     offset: float = 0.0
@@ -68,11 +113,23 @@ class TimelineEntry(Parseable):
         triggers = [name for name, value in (("at", self.at), ("every", self.every), ("when", self.when)) if value is not None]
         if len(triggers) != 1:
             raise ValueError(f"timeline entry must set exactly one of 'at', 'every', 'when'; got {triggers}")
+        if not self.set and not self.stimulus:
+            raise ValueError("timeline entry needs at least one action in 'set' or 'stimulus'")
         if isinstance(self.when, str):
             parse_atom(self.when)
 
+    @classmethod
+    def parse(cls, value: object) -> "TimelineEntry":
+        if isinstance(value, dict) and "stimulus" in value:
+            stimulus = value["stimulus"]
+            if not isinstance(stimulus, list):
+                raise ValueError(f"timeline entry 'stimulus' must be a list, got {stimulus!r}")
+            value = {**value, "stimulus": [StimulusAction.parse(item) for item in stimulus]}
+        return super().parse(value)
+
 
 SCENARIO_FORMAT = "arena-scenario/2"
+LEGACY_SCENARIO_FORMAT = "arena-scenario/1"
 SCENARIO_KEYS = frozenset({"format", "objects", "humans", "sounds", "lights", "robots", "regions", "timeline", "conditions"})
 
 
@@ -95,6 +152,12 @@ class Scenario:
             if light.name in names:
                 raise ValueError(f'duplicate scenario light {light.name!r}')
             names.add(light.name)
+        humans = sorted(human.name for human in self.humans)
+        for index, entry in enumerate(self.timeline):
+            for stimulus in entry.stimulus:
+                for agent in stimulus.agents:
+                    if agent not in humans:
+                        raise ValueError(f'timeline[{index}]: stimulus {stimulus.need!r} names agent {agent!r}, which is not a scenario human, expected one of {humans}')
 
 
 def parse_scenario(raw: object, c: ArenaConverter = converter) -> Scenario:
@@ -164,8 +227,11 @@ def upgrade_scenario(raw: object) -> tuple[dict, list[str]]:
         if "goal_floor" in robot:
             robot["goal_level"] = robot.pop("goal_floor")
         goal = robot.pop("goal", None)
+        via = robot.pop("via", None)
         if goal is not None and not robot.get("phases"):
-            robot["phases"] = [{"goto": goal}]
+            robot["phases"] = [{"goto": goal, **({"via": via} if via else {})}]
+        elif via:
+            up.warn(f"robot via {via!r} applies only to a robot goal without phases, dropped")
         for key in ("level", "goal_level"):
             if key in robot and not robot[key]:
                 robot.pop(key)

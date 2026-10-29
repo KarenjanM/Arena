@@ -1,0 +1,15 @@
+format: arena-scenario/2
+robots:
+- start: [3.0, 18.0, 0.0]
+  phases:
+  - {goto: [19.0, 18.0, 0.0]}
+timeline:
+- {at: 3.0, set: [{entity: turnstile, field: locked, value: 'true'}]}
+- {at: 12.0, set: [{entity: turnstile, field: locked, value: 'false'}]}
+- {at: 20.0, set: [{entity: turnstile, field: pressed, value: 'true'}]}
+conditions:
+- {op: eventually, p: robot in platform, text: Get through the turnstile.}
+- op: never_during
+  p: robot in r_gate
+  q: turnstile/0.state == closing
+  text: Never stand in the turnstile while it is closing.

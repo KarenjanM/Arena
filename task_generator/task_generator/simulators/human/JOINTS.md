@@ -199,8 +199,10 @@ opposite leg).
   Limb pairs share one canonical profile with the right side evaluated at `phi + pi`,
   so L/R antiphase is exact by construction. Antiphase means `l(phi) = r(phi + pi)`,
   NOT `l = -r`: the profiles carry nonzero means (hips average forward-flexed, elbows
-  ~18 deg bent). Torso roll/yaw, the spine/chest triples, collars, ankles (both
-  DOFs), wrists, and shoulder azimuth/twist stay 0.0 (the baked profile predates the spine
+  ~18 deg bent). The sagittal ankle is `-(hip + knee)`, which keeps the stance foot
+  flat (the hip, knee and ankle hinges are parallel at wire zero), and the ankle limit
+  lets the swing foot trail. Torso roll/yaw, the spine/chest triples, collars, ankle
+  yaw, wrists, and shoulder azimuth/twist stay 0.0 (the baked profile predates the spine
   stack and stays lumped on the waist triple).
 - **run** (`RUNNING`): the same profiles at 1.6x amplitude, `cadence` higher.
 - **idle** (`IDLE` and the behavior states `PANIC/SURPRISED/CURIOUS/THREATENING` for now):
@@ -337,18 +339,24 @@ URDF frame before `robot_state_publisher` sees them, via `rviz_utils/hri/rig.py`
 
 ## 3. Other renderers
 
-- **Isaac**: `peds` `bone_map.py` speaks the semantic convention (same-sign flexion,
-  antiphase baked into the values). `BONE_MAP` is regenerated from the contract rig by
-  `tests/peds/test_bone_map_parity.py`: shoulder azimuth/twist on the Arm bones, the
+- **Isaac**: `peds` `bone_map.py` reads `BONE_MAP` from the `bone_map.json` that
+  `arena_people_msgs` installs, so a joint added there needs no Isaac change. The map
+  speaks the semantic convention (same-sign flexion, antiphase baked into the values).
+  `tests/peds/test_bone_map_parity.py` regenerates it from the contract rig: shoulder azimuth/twist on the Arm bones, the
   spine stack 1:1 onto the LowerBack/Spine/Spine1 chain (waist triple -> LowerBack,
   spine triple -> Spine, chest triple -> Spine1 -- the pre-stack 0.5/0.3/0.2 weighted
   spread of the lumped waist is retired), head DOFs over neck plus head, ankles on the
   Foot bones, wrists on the Hand bones. Axes come from the measured-probe procedure, not eyeballing.
   `ExternalPoseProvider` replaces mapped bones with the wire pose instead of composing
-  it over the walking clip.
+  it over the walking clip. Its neutral legs are the skin's bind rest with thigh and
+  shank swung to hang straight down under the hip socket and the foot keeping its bind
+  orientation, the contract's wire zero. Each tick the ped stands on its lowest sole point: the
+  converter stores a heel and a toe point per foot in `meta.json` (`soles`), and the
+  root z is set so the lowest of them is at the floor. Rigs on wheels have none and keep
+  the actor SDF ground offset. MuJoCo and Gazebo plant the same way.
 - **Gazebo**: `arena_gz_plugins` `PedSkeletonPlugin` renders the wire `joint_state`
-  per bone through `utils/msgs/arena_people_msgs/bone_map.json` (the JSON twin of
-  `BONE_MAP`, kept equal by `test_bone_map_parity.py`) onto the bundle's neutral
-  stance (first frame of its `neutral` clip, else of its `idle` clip), via the
+  per bone through the same `utils/msgs/arena_people_msgs/bone_map.json` onto the bundle's neutral
+  stance (first frame of its `neutral` clip, else of its `idle` clip, with the legs
+  hanging straight down from the skin's bind rest), via the
   `BoneTransforms` actor component of the gz-sim overlay. Without the overlay or the
   bone map it follows `animation_state`/pose and scrubs the walk clip.

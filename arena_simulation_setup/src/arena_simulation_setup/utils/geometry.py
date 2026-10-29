@@ -57,6 +57,19 @@ _EulerIndices: dict[str, tuple[int, int, int]] = {
 }
 
 
+AXES: dict[str, float] = {
+    '+x': 0.0,
+    '+y': math.pi / 2,
+    '-x': math.pi,
+    '-y': -math.pi / 2,
+    'xy': math.pi / 4,
+}
+
+
+def _yaw_gap(a: float, b: float) -> float:
+    return abs(math.remainder(a - b, 2 * math.pi))
+
+
 @attrs.define
 class Vector3:
     x: float = attrs.field(converter=float)
@@ -68,10 +81,10 @@ class Vector3:
         yield self.y
         yield self.z
 
-    def __add__(self, other: Position) -> Position:
+    def __add__(self, other: Vector3) -> Position:
         return Position(x=self.x + other.x, y=self.y + other.y, z=self.z + other.z)
 
-    def __sub__(self, other: Position) -> Position:
+    def __sub__(self, other: Vector3) -> Position:
         return Position(x=self.x - other.x, y=self.y - other.y, z=self.z - other.z)
 
     def __mul__(self, other: float) -> Position:
@@ -159,14 +172,19 @@ class Orientation(Parseable, Idempotent):
     z: float = attrs.field(converter=float)
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Quaternion | Sequence[float] | float) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Quaternion | Sequence[float] | float | str) -> Self:
         """
         parse value into Orientation
-        formats: yaw, [roll, pitch, yaw], [w,x,y,z]
+        formats: yaw, axis (+x, +y, -x, -y, xy), [roll, pitch, yaw], [w,x,y,z]
         """
 
         if isinstance(value, geometry_msgs.msg.Quaternion):
             return cls.from_msg(typing.cast(geometry_msgs.msg.Quaternion, value))
+
+        if isinstance(value, str):
+            if value not in AXES:
+                raise ValueError(f"orientation axis must be one of {', '.join(AXES)}, got {value!r}")
+            return cls.from_euler((0, 0, AXES[value]), order='xyz')
 
         if isinstance(value, Sequence):
             if len(value) == 4:
@@ -175,8 +193,8 @@ class Orientation(Parseable, Idempotent):
             if len(value) == 3:
                 return cls.from_euler((value[0], value[1], value[2]))
 
-        if isinstance(value, float):
-            return cls.from_euler((0, 0, value), order='xyz')
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return cls.from_euler((0, 0, float(value)), order='xyz')
 
         raise ValueError(f"could not parse Orientation from {value}")
 
@@ -291,7 +309,7 @@ class Pose(Parseable, Idempotent):
     orientation: Orientation = attrs.field(converter=Orientation.converter, factory=lambda: Orientation(1, 0, 0, 0))
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, object]) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Pose | Sequence[float] | Sequence[Sequence[float]] | Mapping[str, float]) -> Self:
         """
         parse value into Pose
         formats: [x,y], [x,y,yaw], [x,y,z,roll,pitch,yaw], [x,y,z,w,x,y,z], [[*position], [*orientation]], {x,y[,z][,roll][,pitch][,yaw]}, zone ref name
@@ -367,17 +385,76 @@ class Pose(Parseable, Idempotent):
 
 
 @attrs.define
+class Facing(Parseable, Idempotent):
+    """
+    allowed facing directions, any one of its orientations
+    """
+
+    orientations: list[Orientation] = attrs.field(
+        converter=lambda value: [item if isinstance(item, Orientation) else Orientation.parse(item) for item in value],
+        validator=attrs.validators.min_len(1),
+    )
+
+    @classmethod
+    def parse(cls, value: Sequence[float | str] | float | str) -> Self:
+        """
+        parse value into Facing
+        formats: an orientation as yaw or axis, or a list of them
+        """
+        if isinstance(value, (str, int, float)):
+            return cls([Orientation.parse(value)])
+        if isinstance(value, Sequence):
+            return cls([Orientation.parse(item) for item in value])
+        raise ValueError(f"could not parse Facing from {value}")
+
+    @property
+    def yaws(self) -> list[float]:
+        """
+        yaw angles in radians
+        """
+        return [orientation.to_yaw() for orientation in self.orientations]
+
+    def contains(self, yaw: float, tolerance: float = 1e-6) -> bool:
+        """
+        whether yaw is one of the allowed directions
+        """
+        return any(_yaw_gap(yaw, allowed) <= tolerance for allowed in self.yaws)
+
+    def nearest(self, yaw: float) -> Orientation:
+        """
+        allowed orientation closest to yaw
+        """
+        return min(self.orientations, key=lambda orientation: _yaw_gap(yaw, orientation.to_yaw()))
+
+    def sample(self, rng: np.random.Generator) -> Orientation:
+        """
+        one allowed orientation, uniformly
+        """
+        return self.orientations[int(rng.integers(len(self.orientations)))]
+
+    def serialize(self) -> float | str | list[float | str]:
+        """
+        yaws, an exact axis as its name, a single one unwrapped
+        """
+        items = [next((axis for axis, angle in AXES.items() if _yaw_gap(yaw, angle) < 1e-9), yaw) for yaw in self.yaws]
+        return items[0] if len(items) == 1 else items
+
+
+@attrs.define
 class PositionRadius(Position, Idempotent):
     radius: float = attrs.field(converter=float, default=1.0)
 
     @classmethod
-    def parse(cls, value: geometry_msgs.msg.Point | Sequence[float]) -> Self:
+    def parse(cls, value: geometry_msgs.msg.Point | Sequence[float] | Mapping[str, float]) -> Self:
         """
         parse value into PositionRadius
         formats: [x,y], [x,y,radius], [x,y,z,radius]
         """
         if isinstance(value, geometry_msgs.msg.Point):
             return cls(value.x, value.y, value.z, 1.0)
+
+        if isinstance(value, Mapping):
+            raise TypeError(f"PositionRadius must be [x,y], [x,y,radius] or [x,y,z,radius], got {value}")
 
         if len(value) == 2:
             return cls(value[0], value[1])

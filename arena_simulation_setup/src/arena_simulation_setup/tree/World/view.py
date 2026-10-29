@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import os
 import re
@@ -12,10 +13,15 @@ import yaml
 from typing_extensions import Self
 
 from arena_simulation_setup import ARENA_ASSETS_DIR, ASS_DIR
+from arena_simulation_setup.shared import Schedule, Signal
 from arena_simulation_setup.tree import (
     WORLD_PROVIDERS,
+    DynamicPathListResolver,
+    DynamicPathResolver,
+    DynamicPaths,
     FallbackResolver,
     Identifier,
+    LocalResolver,
     NetResolver,
     PathView,
     References,
@@ -25,7 +31,7 @@ from arena_simulation_setup.tree import (
 
 from .legacy import is_legacy, upgrade
 from .Map import Map
-from .model import FORMAT, Level, World
+from .model import FORMAT, LEGACY_FORMAT, Level, World
 from .parse import parse_world
 from .Scenario import ScenarioView
 from .write import to_yaml, write_world
@@ -36,8 +42,22 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 KG_FILE = 'kg.yaml'
+LEVEL_ORIGINS_FILE = 'level_origins.yaml'
 LEGACY_GRAPH_FILE = 'graph.yaml'
 _NOT_LEVELS = frozenset({'scenarios', 'assets', 'map'})
+
+_LinkedT = typing.TypeVar('_LinkedT', Schedule, Signal)
+
+
+def _adopt_linked(kind: str, where: Path, own: list[_LinkedT], theirs: Iterable[_LinkedT], scope: list[Schedule | Signal]) -> None:
+    names = {item.name: item for item in own}
+    for item in theirs:
+        if item.name not in names:
+            own.append(item)
+            names[item.name] = item
+            scope.append(item)
+        elif names[item.name] != item:
+            raise ValueError(f'{kind} {item.name!r} of {where} differs from the one this world already has')
 
 
 class WorldView(PathView):
@@ -45,7 +65,7 @@ class WorldView(PathView):
     def scenario(self) -> type[Identifier[ScenarioView]]:
         class ScenarioIdentifier(Identifier[ScenarioView]):
             @classmethod
-            def listall(cls, **kwargs: object) -> Iterator[Self]:
+            def listall(cls, **kwargs: bool) -> Iterator[Self]:
                 scenarios_dir = self.path / 'scenarios'
                 if not scenarios_dir.is_dir():
                     yield from ()
@@ -53,7 +73,7 @@ class WorldView(PathView):
                 yield from (cls(entry.name) for entry in os.scandir(scenarios_dir) if entry.is_dir())
 
             @classmethod
-            async def listall_async(cls, **kwargs: object) -> list[Self]:
+            async def listall_async(cls, **kwargs: bool) -> list[Identifier[ScenarioView]]:
                 return list(cls.listall(**kwargs))
 
             def load(self, path: Path, /, **kwargs: object) -> ScenarioView:
@@ -71,6 +91,13 @@ class WorldView(PathView):
     @property
     def kg_path(self) -> Path:
         return self.path / KG_FILE
+
+    @property
+    def world_format(self) -> str:
+        """FORMAT when world.yaml is format 2, else LEGACY_FORMAT."""
+        if self.world_path.exists() and not is_legacy(yaml.safe_load(self.world_path.read_text(encoding='utf-8'))):
+            return FORMAT
+        return LEGACY_FORMAT
 
     def mtime(self, sources: Iterable[Path] = ()) -> float:
         """The newest modification time of this world's files and those of the linked worlds in `sources`, 0.0 without any."""
@@ -162,23 +189,16 @@ class WorldView(PathView):
                 for kind, names in linked.levels[source_id].refs().items():
                     renames.update({f'{kind}:{name}': f'{kind}:{level.prefix}{name}' for name in names})
         for (where, _), (linked, _) in groups.items():
-            for kind, own, theirs in (('schedule', world.schedules, linked.schedules), ('signal', world.signals, linked.signals)):
-                names = {item.name: item for item in own}
-                for item in theirs:
-                    if item.name not in names:
-                        own.append(item)
-                        names[item.name] = item
-                        world.linked_scope.append(item)
-                    elif names[item.name] != item:
-                        raise ValueError(f'{kind} {item.name!r} of {where} differs from the one this world already has')
+            _adopt_linked('schedule', where, world.schedules, linked.schedules, world.linked_scope)
+            _adopt_linked('signal', where, world.signals, linked.signals, world.linked_scope)
         for linked, renames in groups.values():
             if linked.kg is not None:
                 world.kg = merge_linked(world.kg, linked.kg, world, renames)
                 world.linked_kg = merge_linked(world.linked_kg, linked.kg, world, renames)
         return world
 
-    def load(self, validate: bool = True, level_filter: set[str] | None = None, derive: str = 'auto') -> World:
-        """The World on disk, format 2 or format 1 through the legacy loader, its `from:` levels read from the worlds they name, restricted to `level_filter` when given, its KG derived under `derive`."""
+    def load(self, validate: bool = True, level_filter: set[str] | None = None, derive: str = 'auto', notes: list[str] | None = None) -> World:
+        """The World on disk, format 2 or format 1 through the legacy loader, its `from:` levels read from the worlds they name, restricted to `level_filter` when given, its KG derived under `derive`, validation warnings appended to `notes`."""
         from .membership import derive as derive_kg
 
         data, kg, _ = self.read()
@@ -192,7 +212,9 @@ class WorldView(PathView):
             world.levels = {level_id: level for level_id, level in world.levels.items() if level_id in level_filter}
         world.apply_elevator_door_sides()
         if validate:
-            world.validate(loaded_level_ids=set(world.levels) if world.levels.keys() != all_ids else None)
+            warned = world.validate(loaded_level_ids=set(world.levels) if world.levels.keys() != all_ids else None)
+            if notes is not None:
+                notes.extend(warned)
             if world.kg is not None:
                 check_kg(world, world.kg)
         world.kg = derive_kg(world, derive)
@@ -312,14 +334,50 @@ class WorldView(PathView):
 
     def level_origins(self) -> dict[str, tuple[float, float]] | None:
         """Per-level offsets that flatten all levels into a single map frame, None for a single-level world."""
+        stored = self.path / LEVEL_ORIGINS_FILE
+        if stored.is_file():
+            return {str(level_id): (float(x), float(y)) for level_id, (x, y) in yaml.safe_load(stored.read_text(encoding='utf-8')).items()}
         world = self.load(validate=False)
         if len(world.levels) <= 1:
             return None
         return world.level_origins()
 
 
-def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> Path:
-    """Write `world` as it runs into `directory`: format 2 with its levels under `lighting` and linked levels written out, plus every semantic fact, stated and derived."""
+@contextlib.contextmanager
+def world_assets(view: WorldView, world: World | None = None) -> Iterator[None]:
+    """Point world-local asset resolution at `view` and its linked worlds for the block, then restore the previous paths."""
+    sources = list((world if world is not None else view.load(validate=False)).sources)
+    previous = DynamicPaths.WORLD.path, list(DynamicPaths.LINKED.paths)
+    point_world_assets(view.path, sources)
+    try:
+        yield
+    finally:
+        point_world_assets(*previous)
+
+
+def point_world_assets(path: Path | None, linked: Iterable[Path]) -> None:
+    """Point world-local resolution of every asset kind at `path` (None for no world) and the worlds in `linked`."""
+    DynamicPaths.WORLD.path = path if path is not None else Path('/dev/null')
+    DynamicPaths.LINKED.paths = list(linked)
+    for resolver in _dynamic_path_resolvers():
+        resolver.invalidate()
+
+
+def _dynamic_path_resolvers() -> Iterator[ResolverBase]:
+    """Every resolver registered on an Identifier kind that reads its root from DynamicPaths, each once."""
+    seen: set[int] = set()
+    kinds: list[type] = [Identifier]
+    while kinds:
+        kind = kinds.pop()
+        kinds.extend(kind.__subclasses__())
+        for resolver in kind._resolvers:
+            if isinstance(resolver, DynamicPathResolver | DynamicPathListResolver) and id(resolver) not in seen:
+                seen.add(id(resolver))
+                yield resolver
+
+
+def save_snapshot(world: World, directory: Path, lighting: str = 'authored', level_origins: dict[str, tuple[float, float]] | None = None) -> Path:
+    """Write `world` as it runs into `directory`: levels under `lighting`, links written out, every fact and the runtime's `level_origins`."""
     from arena_simulation_setup.kg import dump as dump_kg
 
     realized = attrs.evolve(world, levels={level_id: attrs.evolve(level.with_lighting(lighting), source='', prefix='') for level_id, level in world.levels.items()}, sources=[], linked_kg=None, linked_scope=[])
@@ -327,6 +385,8 @@ def save_snapshot(world: World, directory: Path, lighting: str = 'authored') -> 
     files = {'world.yaml': write_world(realized)}
     if realized.kg is not None:
         files[KG_FILE] = to_yaml(dump_kg(realized.kg))
+    if level_origins is not None:
+        files[LEVEL_ORIGINS_FILE] = yaml.safe_dump({level_id: [float(x), float(y)] for level_id, (x, y) in level_origins.items()}, sort_keys=False)
     for name, text in files.items():
         partial = directory / f'.{name}.partial'
         partial.write_text(text, encoding='utf-8')
@@ -400,7 +460,7 @@ class WorldIdentifier(Identifier[WorldView]):
         return WorldView(path)
 
     @classmethod
-    def parse(cls, raw: str) -> 'tuple[str, set[str] | None]':
+    def split_filter(cls, raw: str) -> 'tuple[str, set[str] | None]':
         """Parse a world identifier with optional level filter.
 
         ``'myworld'`` returns ``('myworld', None)``.
@@ -433,7 +493,7 @@ async def composite_world(raw: str) -> tuple[dict, list[WorldView]]:
     views: list[WorldView] = []
     seen: dict[str, int] = {}
     for part in composite_parts(raw):
-        name, wanted = WorldIdentifier.parse(part)
+        name, wanted = WorldIdentifier.split_filter(part)
         if not name:
             raise ValueError(f'world {raw!r} has an empty entry, write it as <world>[,<world>...]')
         view = await WorldIdentifier(name).resolve()
@@ -466,6 +526,10 @@ class ComposedResolver(ResolverBase[WorldIdentifier]):
         self._root = root
         self._parts: dict[WorldIdentifier, tuple[list[WorldView], list[tuple[Path, float, float]]]] = {}
 
+    @property
+    def root(self) -> Path:
+        return self._root
+
     async def resolve(self, identifier: WorldIdentifier) -> Path | None:
         if len(composite_parts(identifier.name)) < 2:
             return None
@@ -491,13 +555,23 @@ class ComposedResolver(ResolverBase[WorldIdentifier]):
         self._parts.clear()
 
 
+def world_dir(raw: str) -> Path:
+    """The world directory touch_world takes: an existing directory, else a name under $ARENA_DIR/arena_simulation_setup/worlds, else under the current directory."""
+    path = Path(raw).expanduser()
+    if path.is_dir():
+        return path.resolve()
+    base = Path(os.environ['ARENA_DIR']) / 'arena_simulation_setup' / 'worlds' if 'ARENA_DIR' in os.environ else Path.cwd()
+    return base / raw
+
+
 def _world_search_roots() -> list[Path]:
-    """Extra world roots from ARENA_WORLD_PATH (colon-separated), searched before the canonical tree."""
+    """Extra world roots from ARENA_WORLD_PATH (colon-separated), searched before the writable local root and the canonical tree."""
     return [Path(p) for p in os.environ.get('ARENA_WORLD_PATH', '').split(':') if p]
 
 
 WorldIdentifier.use(ComposedResolver(ARENA_ASSETS_DIR / '_composed'))
 WorldIdentifier.use(*(SimplePathResolver(WorldIdentifier, root) for root in _world_search_roots()))
+WorldIdentifier.use(LocalResolver(WorldIdentifier, 'worlds'))
+WorldIdentifier.use(DynamicPathResolver(WorldIdentifier, DynamicPaths.IMPORTED, fn=lambda p: p / 'worlds'))
 WorldIdentifier.use(SimplePathResolver(WorldIdentifier, ASS_DIR / 'worlds'))
 WorldIdentifier.use(*NetResolver.all(WorldIdentifier, providers=WORLD_PROVIDERS, formats=(), annotated=False))
-WorldIdentifier.use(FallbackResolver(WorldIdentifier, ASS_DIR / 'worlds'))

@@ -16,7 +16,7 @@ import attrs
 import yaml
 
 from arena_simulation_setup import ASS_DIR, DOMAIN_DEFAULT
-from arena_simulation_setup.tree import DynamicPaths, NetResolver, PathResolverBase
+from arena_simulation_setup.tree import NetResolver, PathResolverBase
 from arena_simulation_setup.tree.assets.Sound import SoundIdentifier, SoundView
 from arena_simulation_setup.tree.World import WorldIdentifier
 
@@ -403,18 +403,15 @@ class SoundLibrary:
             self._world = path
 
     def _point_at(self, path: Path | None) -> None:
-        from arena_simulation_setup.tree.World import WorldView
+        from arena_simulation_setup.tree.World.view import WorldView, point_world_assets
 
-        DynamicPaths.WORLD.path = path if path is not None else Path("/dev/null")
-        DynamicPaths.LINKED.paths = list(WorldView(path).load(validate=False).sources) if path is not None and (path / "world.yaml").exists() else []
-        for resolver in SoundIdentifier._resolvers:
-            resolver.invalidate()
+        point_world_assets(path, WorldView(path).load(validate=False).sources if path is not None and (path / "world.yaml").exists() else [])
         self._assets.clear()
         self._missing.clear()
 
     def use_world_named(self, world: str) -> None:
         """use_world on the named world's resolved path, a level filter ignored. Raises the world resolver's errors."""
-        self.use_world(Path(WorldIdentifier(WorldIdentifier.parse(world)[0]).resolve_sync().path))
+        self.use_world(Path(WorldIdentifier(WorldIdentifier.split_filter(world)[0]).resolve_sync().path))
 
     def kinds(self) -> Mapping[str, Kind]:
         with self._lock:

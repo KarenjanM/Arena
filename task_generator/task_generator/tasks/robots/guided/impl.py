@@ -1,3 +1,4 @@
+import typing
 from collections.abc import Awaitable, Callable
 
 import geometry_msgs.msg as geometry_msgs
@@ -6,7 +7,7 @@ from visualization_msgs.msg import Marker
 from task_generator.interactive.hub import Menu, planar_marker, static_marker, visual
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Pose
-from task_generator.tasks import TaskContext
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots.guided import chain
 from task_generator.tasks.robots.random.impl import TM_Random
 from task_generator.tasks.robots.request import GoToPhase, TaskPhase, TaskRequest
@@ -54,16 +55,13 @@ class TM_Guided(TM_Random):
         self._rebuild_markers()
 
         for robot in self._ctx.robots.values():
-            phases: list[TaskPhase] = [GoToPhase(pose=wp) for wp in self._waypoints] or [GoToPhase(pose=robot.start_pos)]
-            await robot.submit_task(TaskRequest(phases=phases), robot.start_pos if from_start else None)
+            start = self._start_poses.get(robot.name, robot.start_pos)
+            phases: list[TaskPhase] = [GoToPhase(pose=wp) for wp in self._waypoints] or [GoToPhase(pose=start)]
+            await robot.submit_task(TaskRequest(phases=phases), start if from_start else None)
 
     async def _reset_waypoints(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
         self._waypoints = []
-
-        for robot in self._ctx.robots.values():
-            self._start_poses[robot.name] = robot.start_pos
-
         await self._publish_chain(from_start=True)
 
     @property
@@ -104,8 +102,7 @@ class TM_Guided(TM_Random):
 
         if len(self._waypoints) > 1:
             line = visual(Marker.LINE_STRIP, (_LINE_WIDTH, 0.0, 0.0), (r, g, b, 0.5))
-            for waypoint in self._waypoints:
-                line.points.append(realizer.realize(waypoint).position.to_msg())
+            line.points = [realizer.realize(waypoint).position.to_msg() for waypoint in self._waypoints]
             anchor = geometry_msgs.Pose()
             anchor.orientation.w = 1.0
             hub.put(static_marker(chain.line_name(scope), anchor, [line]), menu=[clear_menu])
@@ -131,6 +128,6 @@ class TM_Guided(TM_Random):
     async def _clear_chain(self) -> None:
         await self._reset_waypoints()
 
-    def __init__(self, **kwargs: TaskContext) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
         self._waypoints = []

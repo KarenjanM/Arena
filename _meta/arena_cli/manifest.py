@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 import json
 import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from arena_cli import complete
@@ -63,7 +65,7 @@ def _show_args(package: str, file: str) -> dict[str, dict[str, str]]:
     return args
 
 
-def _enum_names(keys: object) -> list[str]:
+def _enum_names(keys: Iterable[enum.Enum]) -> list[str]:
     return sorted(k.value for k in list(keys))
 
 
@@ -86,7 +88,21 @@ def _asset_names() -> tuple[dict[str, list[str]], list[str]]:
     return values, deps
 
 
-def _values() -> tuple[dict[str, list[str]], list[str]]:
+def _import_sources() -> dict[str, dict[str, str]]:
+    """Registered importer names with descriptions per kind, empty when arena_assets is unavailable."""
+    import json
+    import subprocess
+
+    proc = subprocess.run(["ros2", "run", "arena_assets", "arena_assets", "-s", "import", "--json"], capture_output=True, text=True, check=False)
+    if proc.returncode:
+        return {}
+    sources: dict[str, dict[str, str]] = {}
+    for row in json.loads(proc.stdout):
+        sources.setdefault(row["kind"], {})[row["name"]] = row["description"]
+    return sources
+
+
+def _values() -> tuple[dict[str, list[str] | dict[str, str]], list[str]]:
     import task_generator.tasks.modules
     import task_generator.tasks.obstacles
     import task_generator.tasks.robots
@@ -97,7 +113,7 @@ def _values() -> tuple[dict[str, list[str]], list[str]]:
     from task_generator.tasks import registry
 
     arena = Path(os.environ["ARENA_DIR"])
-    values = {
+    values: dict[str, list[str] | dict[str, str]] = {
         "sim": _enum_names(runtime_sim.SimulatorRegistry.keys()),
         "human": _enum_names(human_sim.HumanSimulatorRegistry.keys()),
         "task.robots": _enum_names(registry.ROBOTS_MODES.keys()),
@@ -111,7 +127,8 @@ def _values() -> tuple[dict[str, list[str]], list[str]]:
     deps += [str(arena / "arena_robots" / ".gitmodules"), str(arena / "arena_planners" / ".gitmodules")]
     asset_values, asset_deps = _asset_names()
     values.update(asset_values)
-    deps += [*asset_deps, os.environ["ARENA_ASSETS_DIR_LOCAL"], str(arena / "arena_simulation_setup" / "worlds")]
+    values.update({f"asset.import.{kind}": names for kind, names in _import_sources().items()})
+    deps += [*asset_deps, os.environ["ARENA_ASSETS_DIR_LOCAL"], os.environ["ARENA_ASSETS_DIR_IMPORTED"], str(arena / "arena_simulation_setup" / "worlds")]
     return values, deps
 
 
@@ -119,7 +136,7 @@ def _uninstalled_robots(arena: Path) -> set[str]:
     from arena_cli.features import robots
 
     status = robots.submodule_status(arena)
-    return {name for name, paths in robots.robot_submodules(arena).items() if any(status.get(p) == "uninit" for p in paths)}
+    return {name for name, paths in robots.robot_submodules(arena).items() if not all(status.get(p) == "init" for p in paths)}
 
 
 def _installed_planners(arena: Path) -> list[str]:
@@ -127,7 +144,7 @@ def _installed_planners(arena: Path) -> list[str]:
 
     paths = registry.submodule_paths(arena)
     status = registry.submodule_status(arena)
-    return [n for n in registry.all_planners(arena) if not any(status.get(p) == "uninit" for p in paths.get(n, []))]
+    return [n for n in registry.all_planners(arena) if all(status.get(p) == "init" for p in paths.get(n, []))]
 
 
 def build(ws: str) -> dict:

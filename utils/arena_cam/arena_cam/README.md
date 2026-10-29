@@ -85,7 +85,7 @@ cam.add("establishing", radius=8)
 cam.play()
 ```
 
-All angle arguments are **radians**. fov is radians (0 = keep current).
+All angle arguments are **radians**. fov is the horizontal field of view in radians (0 = keep current).
 `sweep_deg` / `start_deg` are accepted as degree conveniences on verbs that
 support them.
 
@@ -259,16 +259,16 @@ Skeleton for a new streamed verb:
 
 ```python
 from .registry import primitive
-from .camera import _Segment, _Cursor
+from .camera import _Cursor, _ParamSource, _pick, _Segment
 
 @primitive("my_verb")
 class _MyVerb(_Segment):
-    def __init__(self, duration: float, ease: str) -> None:
+    def __init__(self, duration: float = 2.0, ease: str = "inout") -> None:
         super().__init__(duration, ease, False)
 
     @classmethod
-    def from_params(cls, params: dict) -> "_MyVerb":
-        return cls(params.get("duration", 2.0), params.get("ease", "inout"))
+    def from_params(cls, params: _ParamSource) -> "_MyVerb":
+        return cls(**_pick(params, ("duration", "ease")))
 
     def plan(self, cursor: _Cursor):
         # return (sampler, end_cursor)
@@ -564,6 +564,12 @@ A streamed segment emits `round(duration * fps)` frames, a discrete `look` /
 (odd dimensions are padded to even), so keep the viewport size fixed during a
 take: a resize stops the recording at the last good frame.
 
+A failed capture is retried on the same frame, up to 3 attempts. A capture that
+still fails, a resize, a lockstep hold or step that fails, or an ffmpeg error
+stops the take at the last good frame, logs the reason, and makes `arena cam`
+exit 1 (`Camera.record` returns False), so a short or empty file never counts as
+a finished take.
+
 Recording is camera-locked by default: the camera path is deterministic but the
 scene advances at the sim's own rate, so pause the sim first for a fully
 reproducible take. Pass `lockstep=True` (CLI: `--lockstep`) for physics-lockstep
@@ -626,3 +632,25 @@ spinner thread of its own and grabs the viewport's LdrColor AOV after the pose h
 settled for a few renders, so a capture costs a handful of frames.
 `Cam` waits up to 10 seconds for the services and logs an error if they are
 absent.
+
+---
+
+## MCP domain
+
+`arena_cam.mcp` contributes the `view` domain to the Arena MCP server.
+`python3 -m arena_mcp ls view` lists its tools. They drive the sim viewport
+(`/arena/viewport`) by default and an env's rviz camera with `surface: rviz`,
+through the same addressing (`surfaces`) and look-at math (`curves`) as `cam`.
+
+A view is `eye` and `target`, or `top_down` meters above `target`, optionally
+following a robot by its base frame (`follow`, `mode` as in `track`). Poses are
+in the env frame and are shifted by the env's registry `reference` for the sim
+viewport, the way `cam` localizes shots. While following, they are relative to
+the robot. `view_available` reports which viewports are up, the node serving
+each and the simulator, and names the missing Gazebo GUI when that is why none
+is up.
+
+`view_record` runs `arena cam <name> --record --lockstep` as a job
+(`jobs_status`, `jobs_wait`), which rides an active lockstep run or steps the sim
+itself. The job result lists the written files. `arena://view/shots` lists the
+verbs and shots it takes.

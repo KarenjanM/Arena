@@ -3,11 +3,13 @@ import itertools
 import math
 from collections.abc import Sequence
 
+import attrs
 import numpy as np
 import scipy.ndimage
 import shapely
 import shapely.affinity
 from arena_runtime._node import NodeInterface
+from arena_simulation_setup.shared import Elevator
 from arena_simulation_setup.tree.World import Level, World
 
 from task_generator.shared import Position, PositionRadius
@@ -15,12 +17,48 @@ from task_generator.shared import Position, PositionRadius
 from .utils import MultiLevelMap, WorldMap, WorldOccupancy
 
 _UNKNOWN_FOOTPRINT_RADIUS = 1.0
+_CABIN_BACK_CLEARANCE = 0.45
+_CABIN_DOOR_STANDOFF = 1.2
+_CABIN_ROBOT_MARGIN = 0.1
+_DOOR_OUTWARD = {'+x': (1.0, 0.0), '-x': (-1.0, 0.0), '+y': (0.0, 1.0), '-y': (0.0, -1.0)}
+
+
+def _door_standoff(robot_radius: float) -> float:
+    return max(_CABIN_DOOR_STANDOFF, robot_radius + _CABIN_ROBOT_MARGIN)
+
+
+@attrs.frozen
+class ElevatorHop:
+    """One elevator ride: board `board_name` on `board_level`, get off at `dest_name` on `dest_level`. Positions in the map frame."""
+
+    board_level: str
+    board_name: str
+    board_position: Position
+    dest_level: str
+    dest_name: str
+    dest_position: Position | None
+    target: str  # authored destination token for the boarding elevator's `target` field, '' for single-destination elevators
+    radius: float  # inscribed cabin radius: the robot centre within it counts as inside the cabin
+
+
+@attrs.frozen
+class ElevatorRide:
+    """Map-frame drive geometry of one hop for a robot disc of a given radius."""
+
+    hop: ElevatorHop
+    board_target: Position  # near the boarding cabin's back wall, the robot's disc inside the cabin
+    board_approach: Position  # straight out from the boarding cabin's door
+    dest_exit: Position | None  # straight out from the destination cabin's door
+    door_standoff: float  # distance of the approach and exit points beyond their door face
+    boarding_radius: float  # Elevator.boarding_radius of the boarding cabin for that robot radius
 
 
 def _occupancy_to_available(occupancy: np.ndarray, safe_dist_cells: float) -> np.ndarray:
     """Return (row, col) cells whose Euclidean safe_dist_cells neighbourhood is fully not-full. Off-map counts as full."""
     free = np.pad(WorldOccupancy.not_full(occupancy), 1, constant_values=False)
-    clearance = scipy.ndimage.distance_transform_edt(free)[1:-1, 1:-1]
+    distances = scipy.ndimage.distance_transform_edt(free)
+    assert isinstance(distances, np.ndarray)
+    clearance = distances[1:-1, 1:-1]
     return np.transpose(np.where(clearance > safe_dist_cells))
 
 
@@ -125,25 +163,94 @@ class WorldManager(NodeInterface):
                 return level_id
         return ""
 
-    def _elevator_boarding(self, level_id: str, elevator_name: str, agent_radius: float) -> tuple[Position, float] | None:
+    def _elevator_position(self, level_id: str, elevator_name: str) -> Position | None:
         level = self._world.get_level(level_id)
         if level is None:
             return None
         ox, oy = self._map.level_origins.get(level_id, (0.0, 0.0))
         for elevator in level.all_elevators:
             if elevator.name == elevator_name:
-                return Position(x=elevator.position.x + ox, y=elevator.position.y + oy, z=elevator.position.z), elevator.boarding_radius(agent_radius)
+                return Position(x=elevator.position.x + ox, y=elevator.position.y + oy, z=elevator.position.z)
         return None
 
-    def elevator_route(self, from_level: str, to_level: str, agent_radius: float) -> list[tuple[Position, float]]:
-        """Boarding-elevator positions (map frame) with their boarding radius for a disc of agent_radius, to ride from from_level to to_level, BFS over the elevator graph.
+    def find_elevator(self, name: str) -> tuple[str, Elevator] | None:
+        """(level id, elevator) for an authored elevator name, optionally `<level_id>.<name>`; None if unknown."""
+        if '.' in name:
+            level_id, bare = name.split('.', 1)
+            level = self._world.get_level(level_id)
+            if level is not None:
+                for elevator in level.all_elevators:
+                    if elevator.name == bare:
+                        return level_id, elevator
+        for level_id, level in self._world.levels.items():
+            for elevator in level.all_elevators:
+                if elevator.name == name:
+                    return level_id, elevator
+        return None
 
-        Empty when the levels are the same or no elevator path connects them.
-        """
+    def elevator_position(self, name: str) -> Position | None:
+        """Map-frame cabin centre of an authored elevator name (optionally `<level_id>.<name>`), None if unknown."""
+        found = self.find_elevator(name)
+        return None if found is None else self._elevator_position(found[0], found[1].name)
+
+    def elevator_destinations(self, elevator: Elevator) -> list[tuple[str, str, str]]:
+        """Loaded destinations of an elevator as (level id, cabin name, authored name) in authored order, those on unloaded levels dropped."""
+        cabins = self._world.elevator_levels()
+        return [(cabins[cabin], cabin, cabin) for cabin in elevator.destinations if cabin in cabins]
+
+    def _hop(self, board_level: str, elevator: Elevator, destination: tuple[str, str, str], n_destinations: int) -> ElevatorHop:
+        dest_level, dest_name, token = destination
+        board_position = self._elevator_position(board_level, elevator.name)
+        assert board_position is not None
+        return ElevatorHop(
+            board_level=board_level,
+            board_name=elevator.name,
+            board_position=board_position,
+            dest_level=dest_level,
+            dest_name=dest_name,
+            dest_position=self._elevator_position(dest_level, dest_name),
+            target=token if n_destinations > 1 else '',
+            radius=min(elevator.size[0], elevator.size[1]) / 2.0,
+        )
+
+    def _level_elevator(self, level_id: str, name: str) -> Elevator | None:
+        level = self._world.get_level(level_id)
+        return None if level is None else next((elevator for elevator in level.all_elevators if elevator.name == name), None)
+
+    def elevator_ride(self, hop: ElevatorHop, robot_radius: float) -> ElevatorRide:
+        """Ride target, door legs and boarding radius of `hop` for a robot disc of `robot_radius`."""
+        board = self._level_elevator(hop.board_level, hop.board_name)
+        assert board is not None
+        dest = self._level_elevator(hop.dest_level, hop.dest_name)
+        return ElevatorRide(
+            hop=hop,
+            board_target=self._cabin_back_target(board, hop.board_position, robot_radius),
+            board_approach=self._cabin_door_standoff(board, hop.board_position, robot_radius),
+            dest_exit=None if dest is None or hop.dest_position is None else self._cabin_door_standoff(dest, hop.dest_position, robot_radius),
+            boarding_radius=board.boarding_radius(robot_radius),
+            door_standoff=_door_standoff(robot_radius),
+        )
+
+    @staticmethod
+    def _cabin_door_standoff(elevator: Elevator, centre: Position, robot_radius: float) -> Position:
+        """Point straight out from the cabin's door face, `_CABIN_DOOR_STANDOFF` or the robot radius plus a margin away."""
+        ox, oy = _DOOR_OUTWARD.get(str(elevator.door_side), (1.0, 0.0))
+        out = (elevator.size[0] if ox else elevator.size[1]) / 2.0 + _door_standoff(robot_radius)
+        return Position(x=centre.x + ox * out, y=centre.y + oy * out, z=centre.z)
+
+    @staticmethod
+    def _cabin_back_target(elevator: Elevator, centre: Position, robot_radius: float) -> Position:
+        """Point on the door axis, `_CABIN_BACK_CLEARANCE` or the robot radius plus a margin in front of the back wall, never past the centre."""
+        ox, oy = _DOOR_OUTWARD.get(str(elevator.door_side), (1.0, 0.0))
+        half_depth = (elevator.size[0] if ox else elevator.size[1]) / 2.0
+        inset = max(0.0, half_depth - max(_CABIN_BACK_CLEARANCE, robot_radius + _CABIN_ROBOT_MARGIN))
+        return Position(x=centre.x - ox * inset, y=centre.y - oy * inset, z=centre.z)
+
+    def elevator_hops(self, from_level: str, to_level: str) -> list[ElevatorHop]:
+        """Elevator rides (map frame) from from_level to to_level by BFS over every elevator's destinations, empty if none connect them."""
         if not from_level or not to_level or from_level == to_level:
             return []
-        cabins = self._world.elevator_levels()
-        prev: dict[str, tuple[str, str]] = {}
+        prev: dict[str, ElevatorHop] = {}
         visited = {from_level}
         queue = collections.deque([from_level])
         while queue:
@@ -154,27 +261,48 @@ class WorldManager(NodeInterface):
             if level is None:
                 continue
             for elevator in level.elevators:
-                for destination in elevator.destinations:
-                    dest_level = cabins.get(destination)
-                    if dest_level is not None and dest_level not in visited:
+                destinations = self.elevator_destinations(elevator)
+                for destination in destinations:
+                    dest_level = destination[0]
+                    if dest_level not in visited:
                         visited.add(dest_level)
-                        prev[dest_level] = (level_id, elevator.name)
+                        prev[dest_level] = self._hop(level_id, elevator, destination, len(destinations))
                         queue.append(dest_level)
         if to_level not in prev:
             return []
-        hops: list[tuple[str, str]] = []
+        hops: list[ElevatorHop] = []
         cursor = to_level
         while cursor != from_level:
-            source_level, boarding = prev[cursor]
-            hops.append((source_level, boarding))
-            cursor = source_level
+            hop = prev[cursor]
+            hops.append(hop)
+            cursor = hop.board_level
         hops.reverse()
-        stops: list[tuple[Position, float]] = []
-        for source_level, boarding in hops:
-            stop = self._elevator_boarding(source_level, boarding, agent_radius)
-            if stop is not None:
-                stops.append(stop)
-        return stops
+        return hops
+
+    def elevator_hop(self, name: str, *, to: str = '', toward: Position | None = None) -> ElevatorHop:
+        """One explicit ride on the authored elevator `name` to `to`, its only destination, or the cabin closest to `toward`."""
+        found = self.find_elevator(name)
+        if found is None:
+            raise ValueError(f"via: unknown elevator {name!r}")
+        board_level, elevator = found
+        destinations = self.elevator_destinations(elevator)
+        if not destinations:
+            raise ValueError(f"via: elevator {name!r} has no loaded destination")
+        if to:
+            matches = [d for d in destinations if to in (d[2], d[1], f'{d[0]}.{d[1]}')]
+            if not matches:
+                raise ValueError(f"via: elevator {name!r} has no destination {to!r} (destinations: {[d[2] for d in destinations]})")
+            chosen = matches[0]
+        elif len(destinations) == 1 or toward is None:
+            chosen = destinations[0]
+        else:
+
+            def distance(destination: tuple[str, str, str]) -> float:
+                position = self._elevator_position(destination[0], destination[1])
+                return math.inf if position is None else math.hypot(position.x - toward.x, position.y - toward.y)
+
+            chosen = min(destinations, key=distance)
+        return self._hop(board_level, elevator, chosen, len(destinations))
 
     @property
     def map(self) -> WorldMap:

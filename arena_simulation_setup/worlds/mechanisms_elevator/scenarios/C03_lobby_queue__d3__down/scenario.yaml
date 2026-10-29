@@ -1,0 +1,65 @@
+format: arena-scenario/2
+humans:
+- name: queuer_1
+  model: casual_female_caucasian_young
+  pose: [3.0, 8.6, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.0, y: 8.6, level: '1'}
+  - {x: 6.0, y: 4.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: queuer_2
+  model: worker_male_caucasian_young
+  pose: [3.7, 8.2, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.7, y: 8.2, level: '1'}
+  - {x: 7.0, y: 4.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: queuer_3
+  model: Office/office_female_caucasian_young
+  pose: [3.0, 7.8, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.0, y: 7.8, level: '1'}
+  - {x: 8.0, y: 4.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: queuer_4
+  model: male_adult_medical_01
+  pose: [3.7, 7.4, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.7, y: 7.4, level: '1'}
+  - {x: 9.0, y: 4.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: queuer_5
+  model: female_adult_medical_01
+  pose: [3.0, 7.0, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.0, y: 7.0, level: '1'}
+  - {x: 10.0, y: 4.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+- name: queuer_6
+  model: worker_male_asian_middleage
+  pose: [3.7, 6.6, 1.5708]
+  agent: {agent_type: adult}
+  waypoints:
+  - {x: 3.7, y: 6.6, level: '1'}
+  - {x: 11.0, y: 4.0, level: '0'}
+  waypoint_mode: once
+  level: '1'
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '1'
+  goal_level: '0'
+conditions:
+- {op: eventually, p: robot in l0_lobby, text: Arrive on the other floor.}
+- {op: before, p: queuer_1 in elev_a1_cabin, q: robot in elev_a1_cabin, text: The head of the queue boards before the robot.}

@@ -37,6 +37,8 @@ to `ctx.start_pose`. Subclass overrides chain `super().on_reset(...)` before
 any post-teleport work. The episode's first phase is dispatched before `on_reset`
 runs, so an override that cancels the in-flight action sends `robot.active_dispatch_phase()`
 again after the teleport (rosnav_rl, external) or redispatches it on a later tick (Nav2).
+`cancel_goals()` cancels every client's in-flight goal, `RobotManager.stop_task` calls it on
+each bound adapter.
 
 ## Existing kinds
 
@@ -154,8 +156,8 @@ An adapter that does not subclass `MobileAdapter` mounts the node in
 
 ```python
 class MyMobileAdapter(Adapter):
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, robot_manager: RobotManager, **bringup_kwargs: object) -> None:
+        super().__init__(robot_manager, **bringup_kwargs)
         mobile = self.rm.robot.model.resolve_sync().caps.mobile
         self._collision = CollisionTrackerNode(self.rm, mobile.polygons_dict, footprint=mobile.footprint)
         self.rm.node.executor.add_node(self._collision)

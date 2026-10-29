@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 import typing
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
 import attrs
@@ -35,7 +35,7 @@ WORLD_PROVIDERS: Sequence[str] = providers('WORLD_BUCKETS', 'arena-worlds-prod-p
 BENCHMARK_PROVIDERS: Sequence[str] = providers('BENCHMARK_BUCKETS', 'arena-benchmarks-prod-public')
 
 
-async def _subprocess_output(args: Sequence[str], **kwargs: object) -> bytes:
+async def _subprocess_output(args: Sequence[str], **kwargs: typing.Any) -> bytes:
     process = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
@@ -75,16 +75,55 @@ class DynamicPathList:
         self.paths: list[Path] = []
 
 
+def local_root() -> Path:
+    """The writable local asset root, ARENA_ASSETS_DIR_LOCAL as set at call time."""
+    return Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local'))
+
+
+def imported_root() -> Path:
+    """The imported asset root, ARENA_ASSETS_DIR_IMPORTED else ARENA_ASSETS_DIR/_imported as set at call time, an empty value counting as unset."""
+    imported = os.getenv('ARENA_ASSETS_DIR_IMPORTED')
+    if imported:
+        return Path(imported)
+    return Path(os.getenv('ARENA_ASSETS_DIR') or ARENA_ASSETS_DIR) / '_imported'
+
+
+class RootPath(DynamicPath):
+    """root() at every read, or the path assigned to it."""
+
+    def __init__(self, root: Callable[[], Path]) -> None:
+        super().__init__()
+        self._root = root
+        self._assigned: Path | None = None
+
+    @property
+    def path(self) -> Path:
+        return self._assigned if self._assigned is not None else self._root()
+
+    @path.setter
+    def path(self, value: Path) -> None:
+        self._assigned = value
+
+
+class LocalRootPath(RootPath):
+    """local_root() at every read, or the path assigned to it."""
+
+    def __init__(self) -> None:
+        super().__init__(local_root)
+
+
 class DynamicPaths:
     WORLD = DynamicPath()
     LINKED = DynamicPathList()
-    ARENA = DynamicPath(Path(os.getenv('ARENA_ASSETS_DIR_LOCAL', ARENA_ASSETS_DIR / 'local')))
+    ARENA = LocalRootPath()
+    IMPORTED = RootPath(imported_root)
 
     @classmethod
     def as_resolvers(cls, _T: type[IdentifierT], /) -> Iterable[ResolverBase[IdentifierT]]:
         yield DynamicPathResolver(_T, cls.WORLD, fn=lambda p: p / 'assets')
         yield DynamicPathListResolver(_T, cls.LINKED, fn=lambda p: p / 'assets')
         yield DynamicPathResolver(_T, cls.ARENA)
+        yield DynamicPathResolver(_T, cls.IMPORTED)
 
 
 IdentifierT = typing.TypeVar('IdentifierT', bound='IdentifierProtocol')
@@ -94,7 +133,7 @@ IdentifierT = typing.TypeVar('IdentifierT', bound='IdentifierProtocol')
 class References(typing.Protocol):
     """A loaded asset that names further assets, so closures can walk through it."""
 
-    def identifiers(self) -> Iterable[IdentifierProtocol]: ...
+    def identifiers(self) -> Iterable[Identifier]: ...
 
 
 class Verdict(enum.Enum):
@@ -150,13 +189,13 @@ class ResolverBase(abc.ABC, typing.Generic[IdentifierT]):
     def invalidate(self):
         self._cache.clear()
 
-    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, **kwargs: bool) -> Iterator[IdentifierT]:
         """
         List all local assets available. Builds the cache in the process.
         """
         return iter(())
 
-    async def listall_async(self, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
         """Non-blocking variant for callers on an event loop. Default: sync listall."""
         return list(self.listall(**kwargs))
 
@@ -200,7 +239,9 @@ for path, _, files in os.walk(root):
 """
 
     def _identify(self, relpath: Path, files: Iterable[str]) -> tuple[IdentifierT | None, list[IdentifierT]]:
-        """The directory itself as an asset, else the assets among the files it holds."""
+        """The directory itself as an asset, else the assets among the files it holds, hidden entries never."""
+        if any(part.startswith('.') for part in relpath.parts):
+            return None, []
         try:
             return self._IdentifierT.from_relpath(relpath), []
         except Exception:
@@ -208,7 +249,7 @@ for path, _, files in os.walk(root):
 
         found: list[IdentifierT] = []
         for file in files:
-            if file.lower() == 'readme.md':
+            if file.lower() == 'readme.md' or file.startswith('.'):
                 continue
             try:
                 found.append(self._IdentifierT.from_relpath(relpath / file))
@@ -216,7 +257,7 @@ for path, _, files in os.walk(root):
                 pass
         return None, found
 
-    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, **kwargs: bool) -> Iterator[IdentifierT]:
         source = self.path
         if not source.is_dir():
             yield from ()
@@ -230,7 +271,7 @@ for path, _, files in os.walk(root):
                 continue
             yield from found
 
-    async def listall_async(self, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
         source = self.path
         if self._listall_cache is not None and self._listall_cache[0] == source:
             return list(self._listall_cache[1])
@@ -305,6 +346,29 @@ class DynamicPathResolver(PathResolverBase[IdentifierT], typing.Generic[Identifi
         return self._fn(self._dynamic_path.path)
 
 
+class LocalResolver(PathResolverBase[IdentifierT], typing.Generic[IdentifierT]):
+    """Reads and writes `subdir` of the local root, which is looked up again at every use."""
+
+    def __init__(self, _T: type[IdentifierT], /, subdir: str, **kwargs: object) -> None:
+        super().__init__(_T, **kwargs)
+        self._subdir = subdir
+
+    @property
+    def path(self) -> Path:
+        return local_root() / self._subdir
+
+    async def resolve(self, identifier: IdentifierT) -> Path | None:
+        root = self.path
+        return next((root / candidate for candidate in self._candidates(identifier.relpath()) if (root / candidate).exists()), None)
+
+    async def listall_async(self, **kwargs: bool) -> list[IdentifierT]:
+        self._listall_cache = None
+        return await super().listall_async(**kwargs)
+
+    def destination(self, identifier: IdentifierT) -> Path | None:
+        return self.path / identifier.relpath()
+
+
 class DynamicPathListResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
     """
     Resolve asset paths from a dynamic list of disk locations, the first one holding the asset wins.
@@ -325,7 +389,7 @@ class DynamicPathListResolver(ResolverBase[IdentifierT], typing.Generic[Identifi
                 return found
         return None
 
-    def listall(self, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, **kwargs: bool) -> Iterator[IdentifierT]:
         for resolver in self._resolvers():
             yield from resolver.listall(**kwargs)
 
@@ -374,6 +438,20 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
     def is_stale(self, identifier: IdentifierT) -> bool:
         return identifier in self._stale
 
+    def expire(self, identifier: IdentifierT | None = None) -> int:
+        """Expire one complete cache entry, or every one in the bucket plus its listings."""
+        if identifier is None:
+            for listing in self.path.glob(f'{self._LISTING_FILE}*'):
+                listing.unlink()
+            entries = [marker.parent for marker in self.path.rglob(self._TTL_MARKER)]
+        else:
+            entries = [self.path / identifier.relpath()]
+        expired = [entry for entry in entries if entry.is_dir() and self._complete(entry)]
+        for entry in expired:
+            (entry / self._TTL_MARKER).write_text('1')
+        self.invalidate()
+        return len(expired)
+
     def _complete(self, candidate: Path) -> bool:
         """Fully fetched once: the marker is written only after a successful fetch."""
         if not candidate.is_dir():
@@ -391,7 +469,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         return candidate
 
     @classmethod
-    async def check_output_async(cls, args: Iterable[str], **kwargs: object) -> bytes:
+    async def check_output_async(cls, args: Iterable[str], **kwargs: typing.Any) -> bytes:
         return await _subprocess_output(list(args), **kwargs)
 
     async def _batch_request(self, relpath: str) -> Path | None:
@@ -597,7 +675,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
             except Exception:
                 pass
 
-    def listall(self, *, network: bool = False, **kwargs: object) -> Iterator[IdentifierT]:
+    def listall(self, *, network: bool = False, **kwargs: bool) -> Iterator[IdentifierT]:
         """
         List all assets available. When *network* is True, also queries the
         remote provider (bucket listing cached on disk for ARENA_MODELS_TTL seconds).
@@ -606,7 +684,7 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         if network:
             yield from self._parse_listing(self._listing())
 
-    async def listall_async(self, *, network: bool = False, **kwargs: object) -> list[IdentifierT]:
+    async def listall_async(self, *, network: bool = False, **kwargs: bool) -> list[IdentifierT]:
         result = await super(SimplePathResolver, self).listall_async(**kwargs)
         if network:
             result.extend(self._parse_listing(await self._listing_async()))
@@ -616,9 +694,19 @@ class NetResolver(SimplePathResolver[IdentifierT], ResolverBase[IdentifierT], ty
         return f"{super().__repr__()}(net={self._provider})"
 
     @classmethod
-    def all(cls, _T: type[IdentifierT], /, providers: Iterable[str] = NETWORK_PROVIDERS, **kwargs: object) -> Iterable[Self]:
+    def all(
+        cls,
+        _T: type[IdentifierT],
+        /,
+        providers: Iterable[str] = NETWORK_PROVIDERS,
+        *,
+        formats: Iterable[str] | None = None,
+        ttl: int | None = None,
+        annotated: bool = True,
+        list_prefix: str = '',
+    ) -> Iterable[Self]:
         for provider in providers:
-            yield cls(_T, provider=provider, **kwargs)
+            yield cls(_T, provider=provider, formats=formats, ttl=ttl, annotated=annotated, list_prefix=list_prefix)
 
 
 class FallbackResolver(ResolverBase[IdentifierT], typing.Generic[IdentifierT]):
@@ -666,12 +754,12 @@ class IdentifierProtocol(typing.Protocol[T_co]):
         ...
 
     @classmethod
-    def listall(cls, **kwargs: object) -> Iterator[Self]:
+    def listall(cls, **kwargs: bool) -> Iterator[Self]:
         """List all local assets available."""
         ...
 
     @classmethod
-    async def listall_async(cls, **kwargs: object) -> list[Self]:
+    async def listall_async(cls, **kwargs: bool) -> list[Self]:
         """Non-blocking listall for callers on an event loop."""
         ...
 
@@ -788,7 +876,7 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
     def load(self, path: Path, /, **kwargs: object) -> T:
         """Load the asset referenced by this identifier."""
 
-    def serialize(self) -> str:
+    def serialize(self) -> str | tuple[str, dict]:
         return self.shortname
 
     # Class Methods
@@ -817,7 +905,7 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
         return super().instance_or(cls.parse)(*args, **kwargs)
 
     @classmethod
-    def listall(cls, **kwargs: object) -> Iterator[Self]:
+    def listall(cls, **kwargs: bool) -> Iterator[Self]:
         seen: set[str] = set()
         for resolver in cls._resolvers:
             for identifier in resolver.listall(**kwargs):
@@ -826,7 +914,7 @@ class Identifier(IdentifierProtocol[T], Parseable, Serializable, Idempotent, typ
                     yield identifier
 
     @classmethod
-    async def listall_async(cls, **kwargs: object) -> list[Self]:
+    async def listall_async(cls, **kwargs: bool) -> list[Self]:
         seen: set[str] = set()
         result: list[Self] = []
         for resolver in cls._resolvers:
@@ -1012,6 +1100,7 @@ class ModifiersDomainAssetIdentifier(DomainAssetIdentifier[T], typing.Generic[T]
 
     def serialize(self) -> str | tuple[str, dict]:
         base = super().serialize()
+        assert isinstance(base, str)
         if self.modifiers is None:
             return base
         return (base, self.modifiers)

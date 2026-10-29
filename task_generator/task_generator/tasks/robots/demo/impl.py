@@ -1,10 +1,12 @@
 import enum
 import math
+import typing
 
 from arena_rclpy_mixins.declarations import declare_double, declare_enum, declare_int
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 
 from task_generator.shared import Orientation, Pose, Position, PositionRadius
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 from task_generator.tasks.robots.request import GoToPhase, PlayGesturePhase, TaskPhase, TaskRequest
 
@@ -68,16 +70,17 @@ class TM_Demo(TM_Robots):
     _gesture_p: ROSParamT[str]
     _orientation_p: ROSParamT[_Orientation]
 
-    def __init__(self, **kwargs: object) -> None:
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
         super().__init__(**kwargs)
-        declare_int(self.node, str(self.namespace("vertices")), 4, label="Vertices", lo=3, hi=20)
-        declare_double(self.node, str(self.namespace("radius")), 1.5, label="Radius (m)", lo=0.5, hi=10.0)
+        declare_int(self.node, str(self.namespace("vertices")), 4, label="Vertices", description="Corners of the regular polygon each robot drives, at least 3.", lo=3, hi=20)
+        declare_double(self.node, str(self.namespace("radius")), 1.5, label="Radius (m)", description="Distance in m from the polygon center to each corner.", lo=0.5, hi=10.0)
         declare_enum(
             self.node,
             str(self.namespace("gesture")),
             "<random>",
             choices=["<random>", *_available_gestures()],
             label="Gesture",
+            description="Gesture played at every corner, <random> draws one per corner.",
         )
         declare_enum(
             self.node,
@@ -85,6 +88,7 @@ class TM_Demo(TM_Robots):
             _Orientation.RADIAL_IN.value,
             choices=[o.value for o in _Orientation],
             label="Orientation",
+            description="Heading at each corner: tangent faces the next corner, radial_in the center, radial_out away from it.",
         )
         self._vertices_p = self.node.ROSParam[int](self.namespace("vertices"))
         self._radius_p = self.node.ROSParam[float](self.namespace("radius"))

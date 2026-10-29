@@ -8,6 +8,7 @@ import contextlib
 import errno
 import faulthandler
 import gc
+import os
 import signal
 import socket
 import threading
@@ -31,6 +32,7 @@ if typing.TYPE_CHECKING:
 
 _LOOP_STALL_S = 10.0
 _LOOP_BEAT_S = 1.0
+_TEARDOWN_DEADLINE_S = 120.0
 
 
 class _EntitylessNode:
@@ -43,7 +45,7 @@ class _EntitylessNode:
 def create_executor() -> rclpy.executors.Executor:
     """EventsExecutor with an entityless node slot."""
     executor = EventsExecutor()
-    executor.add_node(_EntitylessNode())
+    executor.add_node(_EntitylessNode())  # pyright: ignore[reportArgumentType]
     return executor
 
 
@@ -107,9 +109,8 @@ def _shutdown_executor_on_signal(executor: rclpy.executors.Executor) -> Iterator
         signal.signal(signal.SIGINT, signal.SIG_IGN if signalled.is_set() else previous[signal.SIGINT])
 
 
-def spin_node(node: rclpy.node.Node, **kwargs: object) -> None:
+def spin_node(node: rclpy.node.Node, *, executor: rclpy.executors.Executor | None = None) -> None:
     """Spin a single node until shutdown, on the given executor or the global one."""
-    executor = kwargs.get("executor")
     if executor is None:
         executor = rclpy.get_global_executor()
     with _shutdown_executor_on_signal(executor) as shutdown, spin_context():
@@ -240,10 +241,19 @@ async def async_main(
 
     teardown_started = asyncio.Event()
 
+    def _teardown_overrun() -> None:
+        faulthandler.dump_traceback(all_threads=True)
+        os.write(2, f"teardown did not finish within {_TEARDOWN_DEADLINE_S:.0f}s, exiting\n".encode())
+        os._exit(1)
+
+    teardown_deadline = threading.Timer(_TEARDOWN_DEADLINE_S, _teardown_overrun)
+    teardown_deadline.daemon = True
+
     async def _graceful_shutdown(cause: str) -> None:
         if teardown_started.is_set():
             return
         teardown_started.set()
+        teardown_deadline.start()
         node.get_logger().info(f"{cause}, tearing down")
         try:
             await asyncio.wait_for(node.teardown(), timeout=5.0)
@@ -315,11 +325,12 @@ async def async_main(
         _close_subprocess_transports()
         gc.collect()
         rclpy.try_shutdown()
+        teardown_deadline.cancel()
     return teardown_started.is_set()
 
 
 def run_main(
-    node_cls: type[ArenaMixinNode],
+    node_cls: Callable[..., ArenaMixinNode],
     /,
     *args: object,
     aiomonitor: bool = False,

@@ -1,0 +1,23 @@
+name: door_holder
+extends: adult
+mode: behavior_tree
+
+initial_sequence: hold
+
+sequences:
+  hold:
+    steps:
+      stand_in_doorway:
+        kind: go_to
+        target: door
+        duration: {mean: 8.0, std: 2.0, clip_low: 4.0, clip_high: 14.0}
+    then: leave
+
+  leave:
+    steps:
+      walk_off:
+        kind: go_to
+        target: door_holder_exit
+      stay:
+        duration: {mean: 3600.0}
+    then: leave

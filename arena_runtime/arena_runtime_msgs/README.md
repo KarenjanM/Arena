@@ -1,6 +1,6 @@
 # arena_runtime_msgs
 
-rosidl interfaces for `arena_node` (the runtime). Env registry, lifecycle holds, world placement, namespace cleanup, env shutdown, env purge.
+rosidl interfaces for `arena_node` (the runtime). Env registry, lifecycle holds, world placement, env cleanup, env shutdown, lockstep.
 
 Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live in [`task_generator_msgs`](../../utils/msgs/task_generator_msgs/README.md) instead.
 
@@ -17,13 +17,13 @@ Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live
 | `LifecycleStep.srv` | Advance the held sim by an exact sim-time delta (quantized to physics steps). |
 | `LockstepRegister.srv` | Register (or replace, or clear) a caller's set of lockstep data channels. |
 | `LockstepStart.srv` | Start or reconfigure the lockstep scheduler, paced to a target RTF, gated or ungated. |
-| `CleanupNamespace.srv` | Delete sim entities under a validated `env_<id>{_,/}` prefix. |
+| `CleanupEnv.srv` | Delete the sim entities of `env_id`, under the prefix the active simulator derives from it. |
 
 ## Messages (`msg/`)
 
 | File | Purpose |
 |---|---|
-| `EnvRecord.msg` | Single env entry: `env_id`, `fqn`, `placed`, `reference`, `slot_extent`, `extent`, `draining`. |
+| `EnvRecord.msg` | Single env entry: `env_id`, `fqn`, `extent`, `reference`, `slot_extent`, `prespawn`, `placed`, `ready`, `last_heartbeat`. |
 | `EnvRegistry.msg` | Snapshot of all non-draining `EnvRecord`s. Published latched on `state/envs`. |
 | `Heartbeat.msg` | Liveness ping from a managed env's `task_generator_node`. |
 | `HoldEntry.msg` | One `(caller_id, reason, count)` triple. |
@@ -36,9 +36,3 @@ Per-env episode types (`EpisodeRecord`, `RunEpisode`, query/spawn services) live
 | `ShutdownRequest.msg` | Broadcast asking `env_id` to shut down (reason carried as a string). |
 | `SimState.msg` | Sim lifecycle liveness: `alive`, `reason`, wall-time `header.stamp` of the transition. Published latched on `state/sim`. |
 | `WorldExtent.msg` | World bounding box submitted with `ConfirmWorld`. |
-
-## Actions (`action/`)
-
-| File | Purpose |
-|---|---|
-| `PurgeEnv.action` | Delete entities under an arbitrary prefix and stream `purging` / `done` feedback. |

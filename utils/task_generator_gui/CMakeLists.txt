@@ -15,6 +15,7 @@ find_package(rviz_common REQUIRED)
 find_package(rviz_default_plugins REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(task_generator_msgs REQUIRED)
+find_package(arena_runtime_msgs REQUIRED)
 find_package(world_generator_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(rcl_interfaces REQUIRED)
@@ -53,6 +54,7 @@ ament_target_dependencies(task_generator_panel
   rviz_default_plugins
   geometry_msgs
   task_generator_msgs
+  arena_runtime_msgs
   world_generator_msgs
   std_srvs
   rcl_interfaces

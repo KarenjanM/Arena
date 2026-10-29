@@ -102,7 +102,7 @@ the result from `Level.all_walls`.
 | `door_side` | inferred | cabin face the door opens on (`+x`, `-x`, `+y`, `-y`), inferred from the nearest wall (<= 1 m) at load when absent, `+x` without one |
 | `material` | elevator default | `MaterialIdentifier` |
 | `destinations` | `[]` | names of the cabins a ride goes to, on any level. The runtime rides to the first |
-| `activation_distance` | `3.0` | metres |
+| `activation_distance` | `3.0` | metres, the reach of an outside call while the cabin is empty; a cabin with a rider aboard reopens only for a body within 0.6 m of its door |
 | `transition_time` | `1.0` | seconds |
 | `hold_time` | `2.0` | seconds |
 | `travel_time` | `3.0` | seconds between levels |
@@ -130,7 +130,7 @@ whole world. See `WorldMicrophone` in
 
 ### `kg.yaml`
 
-The optional KG: zone types and descriptions, which zone holds
+The optional KG: zone types, descriptions and purposes, which zone holds
 which thing, which door joins which zones, relations and intent constraints,
 see [AUTHORING.md](../AUTHORING.md#kg). A world that links levels
 also reads the `kg.yaml` of every world it links from.
@@ -240,6 +240,8 @@ Resolved by `World.scenario` property which returns a per-world
 `ScenarioIdentifier` class
 ([tree/World/view.py](../src/arena_simulation_setup/tree/World/view.py)).
 `ScenarioView.load()` tries `scenario.yaml` first, then `scenario.json`.
+A scenario `generate_scenario` wrote carries its `GENERATED_MARKER` header, see
+[generative/scenario](../src/arena_simulation_setup/generative/scenario/README.md).
 
 ```yaml
 format: arena-scenario/2
@@ -297,14 +299,20 @@ behavior (sequences, interactions, needs), see
 `humansim/arena_humansim/config/agent_types/README.md` and the
 `hospital_1/scenarios/showcase` scenario for a worked example.
 
-`objects` (`Obstacle`) also takes `light: {lit, light_on, level}` for the lights its
+`objects` (`Obstacle`) also takes `light: {lit, light_on, dim}` for the lights its
 object annotation carries (see [AUTHORING.md](../AUTHORING.md#lights)), `scale: [x, y, z]` (default identity),
 `level` (multi-level worlds) and a `humansim:` block (`type`, `capacity`,
 `interaction_radius`, `formation`, `satisfies`, `seats`) that becomes its
 humansim `WorldObject` info. `humans` (`DynamicObstacle`) also takes
 `velocity` (m/s, default `1.0`), `waypoint_mode` (`repeat`, `reverse`, `once`,
 `random`), `level`, the humansim `agent:` block and a `hunav:` block for the
-HuNav backend. Any other key fails the load.
+HuNav backend. A human's `track: ./<file>.csv` names a recorded track beside the
+scenario ([shared/track.py](../src/arena_simulation_setup/shared/track.py)), which `human:=replay` plays in
+place of simulating the pedestrian, and `prespawn: true` stands it on its first pose until the track begins.
+Its `stays:` list the timed legs of each continuous stay of that track (`start`, entry `pose` and `velocity`,
+`legs: [[x, y, speed, dwell], ...]`), which the scenario importers write for a path follower.
+Any other key fails the load. A waypoint is `[x, y[, z]]`,
+`{x, y[, z][, level]}` or a zone name.
 
 `sounds` is a list of `Sound` entries, same schema as a world level's
 `sounds:` but episode-scoped (attached at reset, gone at the next one).
@@ -313,8 +321,16 @@ HuNav backend. Any other key fails the load.
 `lights:` but episode-scoped, with `attach` naming one of the scenario's
 own `objects`. `dome` and `sun` stay in the world.
 
-`timeline` is a list of scripted `set` actions fired on `at`/`every`/`when`
-triggers. See [AUTHORING.md, Scenario timelines](../AUTHORING.md#scenario-timelines).
+Every placed entry (object, human, waypoint, sound, light, robot `start`)
+sits on one floor by the same rule. A zone name as its `pose`, `position` or
+waypoint samples the zone wherever it lies, whatever the entry's `level`.
+Otherwise its point is local to its own `level`, else to the level of what
+holds it (a waypoint's human, an attached sound's or light's object), else to
+the sole level the env runs. Entries a world level lists sit on that level
+and take no `level`.
+
+`timeline` is a list of scripted `set` and `stimulus` actions fired on
+`at`/`every`/`when` triggers. See [AUTHORING.md, Scenario timelines](../AUTHORING.md#scenario-timelines).
 
 `regions` is a mapping of name to source/sink spawner consumed by the
 arena_humansim backend:
@@ -375,7 +391,8 @@ An atom is one of these bare forms (no `env_N/` prefix): `<entity>.<field> ==
 world's rendered wall grid on the segment between them, doors open), `<ped>
 plays <clip>` (the pedestrian publishes that gesture clip) and `not <atom>`. A
 subject is `robot` (the robot being judged), another robot's name or a
-pedestrian's name.
+pedestrian's name, and a `within` subject may also be a point `x,y` (no
+spaces).
 Every robot is also an entity of kind `robot` with the fields `phase`, `met`,
 `failed`, `dropped` and `violated`, so `robot_1.phase == 2` is a valid atom.
 A world entity (zone, door, elevator, schedule, sound) is named
@@ -403,21 +420,52 @@ Resolvers run in order, first hit wins
 ([tree/World/view.py](../src/arena_simulation_setup/tree/World/view.py), bottom of file):
 
 1. Each `ARENA_WORLD_PATH` root (colon-separated env var), if set.
-2. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
-3. One `NetResolver` per `WORLD_BUCKETS` provider (default
+2. The writable local root `$ARENA_ASSETS_DIR_LOCAL/worlds` (default
+   `$ARENA_ASSETS_DIR/local/worlds`), a `LocalResolver` that reads the variable
+   again at every use. It is also the only write target
+   (`resolve_write_path()` / `resolve_write_sync()`), so every saved world lands
+   here: the world generator node, `save_generated`, `WorldView.save` on a
+   `resolve_write_sync()` view and the `worlds` MCP tools. A world written here
+   under the name of a shipped world shadows the shipped one.
+3. `ASS_DIR / 'worlds'`, the worlds shipped in this package, existence-checked.
+4. One `NetResolver` per `WORLD_BUCKETS` provider (default
    `arena-worlds-prod-public`), fetching into `$ARENA_ASSETS_DIR/<bucket>/<name>/`.
    A world keys off its bare name, so the worlds bucket is itself the namespace.
-4. A `FallbackResolver` rooted at `ASS_DIR / 'worlds'`. It never answers reads
-   and so can never shadow an earlier source. It only supplies a write target
-   (`resolve_write_path()` / `resolve_write_sync()`) for programmatic world creation.
 
 Worlds not shipped in this package are hosted in the public bucket(s) named
 by `WORLD_BUCKETS` and pulled on demand. `arena asset find world <name>`
 prints every resolver's verdict for a name (which one hit, which were
-shadowed). `arena asset pull world <name>` fetches one into the local cache.
+shadowed). `arena asset pull world <name>` fetches one into the local cache, and
+`arena asset expire world <name>` makes the next use download it again.
 `arena asset push world <name>` publishes a locally-authored world after a
 preflight that checks every asset it references would resolve for someone
 else.
+
+`arena asset import world houseexpo <plan id>` writes one HouseExpo floor plan
+as `houseexpo_<plan id>` into the imported worlds root
+(`$ARENA_ASSETS_DIR_IMPORTED/worlds`, else `$ARENA_ASSETS_DIR/_imported/worlds`),
+which `WorldIdentifier` reads after the `ARENA_WORLD_PATH` roots and before the
+shipped worlds. The plan's vertex ring is the free space and its outline the
+walls, so interior walls are the slits of the ring, doors are its gaps and
+there are no door entries. Zones are the upstream room boxes clipped to the
+floor, named `<room type>_<n>` after the n-th box of that category
+(`living_room_0`): a smaller box owns what it shares with a larger one, a box
+listed under several categories is one room named after the first of them by
+name with all of them in `description`, a piece narrower than 0.3 m joins the
+zone beside it, and floor under no box becomes `area_<n>`. All 35,126 plans
+come in one 25 MB archive, downloaded once into
+`$ARENA_ASSETS_DIR/.import/houseexpo` and indexed there, and a bare
+`arena asset import world houseexpo` lists the plan ids. The repository is MIT
+licensed and its plans are built on SUNCG, so the registry lists the source
+with license verdict `unclear`.
+
+`arena asset import world procthor <split>/<index>` (such as `val/0`) writes one
+ProcTHOR-10K house as `procthor_<split>_<index>` into the same imported worlds
+root, with zones named by room type, the walls cut around every door hole and
+the furniture imported through the `ai2thor` object source and placed as static
+entities. An openable door becomes a `hinged` door, as it swings in AI2-THOR, a
+doorframe without a door leaf stays an opening, and a door that does not open
+stays wall.
 
 `WorldIdentifier('hospital_1').resolve()` returns a `WorldView`
 wrapping whichever of the above resolved first. Call `view.load()` to parse

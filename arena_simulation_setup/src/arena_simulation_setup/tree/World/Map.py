@@ -2,7 +2,7 @@ import io
 import logging
 import math
 import typing
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +13,14 @@ import shapely.affinity
 import yaml
 
 from arena_simulation_setup.tree import PathView
+
+PREVIEW_PIXEL_BUDGET = 800
+PREVIEW_MIN_RESOLUTION = 0.05
+
+
+def preview_resolution(size_m: float) -> float:
+    """Meters per pixel that fit `size_m` into PREVIEW_PIXEL_BUDGET pixels, never finer than PREVIEW_MIN_RESOLUTION."""
+    return max(PREVIEW_MIN_RESOLUTION, size_m / PREVIEW_PIXEL_BUDGET)
 
 
 class Map(PathView):
@@ -26,15 +34,27 @@ class Map(PathView):
 
     @classmethod
     def _render_image(
-        cls, rooms: shapely.MultiPolygon, doors: shapely.MultiPolygon, walls: shapely.MultiLineString, resolution: float = 0.01, padding: int = 5, *, static_objects: Iterable[tuple[str, shapely.Polygon]] = (), asset_color: str | None = "grey", asset_name_color: str | None = "blue"
+        cls,
+        rooms: shapely.MultiPolygon,
+        doors: shapely.MultiPolygon,
+        walls: shapely.MultiLineString,
+        resolution: float = 0.01,
+        padding: int = 5,
+        *,
+        static_objects: Iterable[tuple[str, shapely.Polygon]] = (),
+        asset_color: str | None = "grey",
+        asset_name_color: str | None = "blue",
+        cabins: shapely.MultiPolygon | None = None,
     ) -> tuple[PIL.Image.Image, tuple[float, float]]:
+        cabins = cabins if cabins is not None else shapely.MultiPolygon()
         min_x, min_y, max_x, max_y = rooms.bounds
-        if not doors.is_empty:
-            dmin_x, dmin_y, dmax_x, dmax_y = doors.bounds
-            min_x = min(min_x, dmin_x)
-            min_y = min(min_y, dmin_y)
-            max_x = max(max_x, dmax_x)
-            max_y = max(max_y, dmax_y)
+        for openings in (doors, cabins):
+            if not openings.is_empty:
+                dmin_x, dmin_y, dmax_x, dmax_y = openings.bounds
+                min_x = min(min_x, dmin_x)
+                min_y = min(min_y, dmin_y)
+                max_x = max(max_x, dmax_x)
+                max_y = max(max_y, dmax_y)
 
         width = max_x - min_x
         height = max_y - min_y
@@ -62,7 +82,7 @@ class Map(PathView):
             scaling_factor * (min_y + height),
         ]
 
-        def to_pixel_parts(shape: shapely.Geometry) -> object:
+        def to_pixel_parts(shape: shapely.Geometry) -> np.ndarray:
             return shapely.get_parts(shapely.affinity.affine_transform(shape, to_pixels))
 
         def tf(shape: shapely.Geometry) -> shapely.Geometry:
@@ -73,26 +93,35 @@ class Map(PathView):
             shape = shapely.remove_repeated_points(shape)
             return shape
 
-        def as_int(coords: object) -> list[tuple[int, int]]:
+        def as_int(coords: Iterable[Sequence[float]]) -> list[tuple[int, int]]:
             return [(int(math.trunc(x) + padding), int(math.trunc(y) + padding)) for (x, y, *_) in coords]
 
         draw = PIL.ImageDraw.Draw(img)
         for cutout in to_pixel_parts(rooms):
             poly = tf(cutout)
+            assert isinstance(poly, shapely.Polygon)
+            draw.polygon(as_int(poly.exterior.coords), fill='white')
+
+        for cutout in to_pixel_parts(cabins):
+            poly = tf(cutout)
+            assert isinstance(poly, shapely.Polygon)
             draw.polygon(as_int(poly.exterior.coords), fill='white')
 
         for wall in to_pixel_parts(walls):
             line = tf(wall)
+            assert isinstance(line, shapely.LineString)
             draw.line(as_int(line.coords), fill='black', width=1)
 
         for cutout in to_pixel_parts(doors):
             poly = tf(cutout)
+            assert isinstance(poly, shapely.Polygon)
             draw.polygon(as_int(poly.exterior.coords), fill='white')
 
         if asset_color is not None:
             for name, obj in static_objects:
                 logging.debug(f"Drawing asset '{name}' with geometry: {obj} in color {asset_color}")
                 poly = tf(shapely.affinity.affine_transform(obj, to_pixels))
+                assert isinstance(poly, shapely.Polygon)
                 if len(poly.exterior.coords) < 3:
                     logging.warning(f"Skipping asset '{name}' because it has insufficient geometry to draw ({len(poly.exterior.coords)} coordinates).")
                     continue
@@ -106,7 +135,17 @@ class Map(PathView):
 
     @classmethod
     def generate_png(
-        cls, rooms: shapely.MultiPolygon, doors: shapely.MultiPolygon, walls: shapely.MultiLineString, resolution: float = 0.01, padding: int = 5, *, static_objects: Iterable[tuple[str, shapely.Polygon]] = (), asset_color: str | None = "grey", asset_name_color: str | None = "blue"
+        cls,
+        rooms: shapely.MultiPolygon,
+        doors: shapely.MultiPolygon,
+        walls: shapely.MultiLineString,
+        resolution: float = 0.01,
+        padding: int = 5,
+        *,
+        static_objects: Iterable[tuple[str, shapely.Polygon]] = (),
+        asset_color: str | None = "grey",
+        asset_name_color: str | None = "blue",
+        cabins: shapely.MultiPolygon | None = None,
     ) -> tuple[bytes, tuple[float, float]]:
         """
         Generate a PNG image of the map with the given elements.
@@ -121,6 +160,7 @@ class Map(PathView):
             static_objects (Optional[List[Tuple[str, shapely.Polygon]]]): Optional list of (name, Polygon) tuples for static objects to draw.
             asset_color (str | None): Color used to fill static objects.
             asset_name_color (str | None): Color used for static object names.
+            cabins (Optional[shapely.MultiPolygon]): Elevator cabins and doorways, drawn free beneath the walls.
         """
         img, origin = cls._render_image(
             rooms,
@@ -131,6 +171,7 @@ class Map(PathView):
             static_objects=static_objects,
             asset_color=asset_color,
             asset_name_color=asset_name_color,
+            cabins=cabins,
         )
 
         img_bytes = io.BytesIO()
@@ -139,7 +180,17 @@ class Map(PathView):
 
     @classmethod
     def rasterize(
-        cls, rooms: shapely.MultiPolygon, doors: shapely.MultiPolygon, walls: shapely.MultiLineString, resolution: float = 0.01, padding: int = 5, *, static_objects: Iterable[tuple[str, shapely.Polygon]] = (), asset_color: str | None = "grey", asset_name_color: str | None = "blue"
+        cls,
+        rooms: shapely.MultiPolygon,
+        doors: shapely.MultiPolygon,
+        walls: shapely.MultiLineString,
+        resolution: float = 0.01,
+        padding: int = 5,
+        *,
+        static_objects: Iterable[tuple[str, shapely.Polygon]] = (),
+        asset_color: str | None = "grey",
+        asset_name_color: str | None = "blue",
+        cabins: shapely.MultiPolygon | None = None,
     ) -> tuple[np.ndarray, tuple[float, float]]:
         """Like `generate_png` but returns a uint8 grayscale array (255=free, 0=occupied)."""
         img, origin = cls._render_image(
@@ -151,6 +202,7 @@ class Map(PathView):
             static_objects=static_objects,
             asset_color=asset_color,
             asset_name_color=asset_name_color,
+            cabins=cabins,
         )
         return np.asarray(img.convert('L'), dtype=np.uint8), origin
 

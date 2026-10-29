@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from python_qt_binding.QtCore import Qt
+
+if TYPE_CHECKING:
+    from python_qt_binding.QtGui import QKeyEvent
 
 # xkb keycodes (evdev + 8): the physical key, identical under any layout.
 _SCANCODES = {
@@ -56,6 +61,6 @@ _KEYS = {
 }
 
 
-def label(event: object) -> str | None:
+def label(event: QKeyEvent) -> str | None:
     """Logical label of a key event, None when it is not bound."""
     return _SCANCODES.get(event.nativeScanCode()) or _KEYS.get(event.key())

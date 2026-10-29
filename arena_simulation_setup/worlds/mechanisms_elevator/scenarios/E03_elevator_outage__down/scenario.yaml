@@ -1,0 +1,14 @@
+format: arena-scenario/2
+robots:
+- start: [8.0, 3.0, 1.5708]
+  phases:
+  - {goto: [8.0, 3.0, -1.5708]}
+  level: '1'
+  goal_level: '0'
+timeline:
+- {at: 10.0, set: [{entity: elev_a_service, field: active, value: 'true'}]}
+conditions:
+- op: never_during
+  p: robot in elev_a1_cabin
+  q: elev_a_service.active == true
+  text: Never be in the cabin while it is out of service.

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 import yaml
 from arena_simulation_setup.shared.task import GoToPhase
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
-from arena_simulation_setup.tree.World import FORMAT, WorldView, connections, describe, parse_world, zones_of
+from arena_simulation_setup.tree.World import FORMAT, LEGACY_FORMAT, WorldView, connections, describe, parse_world, zones_of
 from arena_simulation_setup.tree.World.legacy import is_legacy, upgrade
 from arena_simulation_setup.tree.World.model import World
 from arena_simulation_setup.tree.World.Scenario import SCENARIO_FORMAT, ScenarioView, upgrade_scenario
+from arena_simulation_setup.tree.World.view import world_dir
 
 GENERATOR = """\
 zones:
@@ -408,3 +410,26 @@ def test_graph_edges_connect_through_the_door_the_world_names_by_room_pair(tmp_p
     fact = world.kg.get_fact('room:room_1', 'connects', 'room:room_0', {'door': 'door:door_room_0__room_1'})
     assert fact is not None and fact.source == 'generated'
     assert world.kg.get_entity('door:door_e0') is None
+
+
+def test_world_format_tells_format_1_directories_from_format_2(tmp_path: Path) -> None:
+    legacy = _world_dir(tmp_path / 'legacy', {'0/world.yaml': LEVEL_0})
+    assert WorldView(legacy).world_format == LEGACY_FORMAT
+    assert WorldView(_world_dir(tmp_path / 'flat', {'world.yaml': HAND_WRITTEN})).world_format == LEGACY_FORMAT
+    current = tmp_path / 'current'
+    current.mkdir()
+    (current / 'world.yaml').write_text(yaml.safe_dump({'format': FORMAT, 'levels': []}), encoding='utf-8')
+    assert WorldView(current).world_format == FORMAT
+
+
+def test_world_dir_takes_a_directory_or_a_name_under_the_repo_worlds(tmp_path: Path) -> None:
+    previous = os.environ.get('ARENA_DIR')
+    os.environ['ARENA_DIR'] = str(tmp_path / 'repo')
+    try:
+        assert world_dir(str(tmp_path)) == tmp_path.resolve()
+        assert world_dir('mcp_named') == tmp_path / 'repo' / 'arena_simulation_setup' / 'worlds' / 'mcp_named'
+    finally:
+        if previous is None:
+            del os.environ['ARENA_DIR']
+        else:
+            os.environ['ARENA_DIR'] = previous

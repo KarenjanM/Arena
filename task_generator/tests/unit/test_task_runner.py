@@ -79,6 +79,17 @@ def test_resubmission_keeps_episode_wide_indices_and_drops_pending():
     assert len(runner.serialize()["phases"]) == 3
 
 
+def test_stop_drops_the_unfinished_phases_and_judges_nothing_after():
+    runner = TaskRunner("r")
+    runner.submit([goto(1.0, 1.0), goto(3.0, 3.0), goto(5.0, 5.0)])
+    runner.step(at(0.0, 1.0, 1.0), ZONES, None, OK)
+    runner.stop()
+    assert runner.done and runner.active_state is None
+    assert runner.outcomes("met") == [0] and runner.outcomes("dropped") == [1, 2]
+    assert runner.step(at(1.0, 3.0, 3.0), ZONES, None, OK).ended is None
+    assert runner.outcomes("met") == [0]
+
+
 def test_begin_episode_clears_everything():
     runner = TaskRunner("r")
     runner.submit([goto(1.0, 1.0)])

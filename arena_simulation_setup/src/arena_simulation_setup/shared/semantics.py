@@ -94,7 +94,7 @@ _PRESETS: dict[str, list[dict]] = {
     ],
     'light': [
         {'predicate': 'lit'},
-        {'state': 'level'},
+        {'state': 'dim'},
         {'state': 'dead_fraction'},
     ],
 }

@@ -11,6 +11,7 @@ from arena_rclpy_mixins.shared import Namespace
 from task_generator.constants import Constants
 from task_generator.shared import Pose
 from task_generator.tasks.context import TaskContext
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
 
@@ -33,7 +34,7 @@ class _ScopedRobotsView:
 def _scoped_ctx(parent: TaskContext, robot_names: typing.Iterable[str]) -> TaskContext:
     """Build a TaskContext whose robots expose only the named subset."""
     names = frozenset(robot_names)
-    scoped_mgr = _ScopedRobotsView(parent.robots_manager, names)  # type: ignore[arg-type]
+    scoped_mgr = _ScopedRobotsView(parent.robots_manager, names)
     return TaskContext(
         environment_manager=parent.environment_manager,
         robots_manager=scoped_mgr,  # type: ignore[arg-type]
@@ -47,8 +48,8 @@ class TM_Composite(TM_Robots):
 
     _sub_modes: list[TM_Robots]
 
-    def __init__(self, *args: object, sub_modes: typing.Sequence[TM_Robots], **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, *, sub_modes: typing.Sequence[TM_Robots], **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
+        super().__init__(**kwargs)
         self._sub_modes = list(sub_modes)
 
     async def reset(self) -> None:
@@ -121,6 +122,11 @@ def get_extra_tm_loader(kind_str: str) -> typing.Callable[[], type[TM_Robots]] |
     return _COMPOSITE_EXTRA.get(kind_str)
 
 
+def extra_tm_kinds() -> list[str]:
+    """Sentinel strings with a registered TM loader, sorted."""
+    return sorted(_COMPOSITE_EXTRA)
+
+
 _register_extra("null", lambda: TM_Null)
 
 
@@ -128,6 +134,7 @@ __all__ = [
     "TM_Composite",
     "TM_Null",
     "_scoped_ctx",
+    "extra_tm_kinds",
     "get_extra_tm_loader",
 ]
 

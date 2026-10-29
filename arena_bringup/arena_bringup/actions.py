@@ -41,9 +41,9 @@ class IsolatedIncludeLaunchDescription(launch.Action):
 
     def __init__(
         self,
-        source: launch.launch_description_source.LaunchDescriptionSource,
+        source: launch.LaunchDescriptionSource | launch.SomeSubstitutionsType,
         *,
-        args: Mapping[str, object] | None = None,
+        args: Mapping[str, launch.SomeSubstitutionsType] | None = None,
     ) -> None:
         super().__init__()
         self._source = source

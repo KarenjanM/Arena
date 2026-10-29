@@ -18,6 +18,7 @@
   <depend>visualization_msgs</depend>
 
   <exec_depend>arena_rclpy_mixins</exec_depend>
+  <exec_depend>arena_assets</exec_depend>
   <exec_depend>arena_bringup</exec_depend>
   <exec_depend>controller_manager_msgs</exec_depend>
   <exec_depend>arena_planners</exec_depend>
@@ -28,6 +29,7 @@
   <exec_depend>task_generator_msgs</exec_depend>
   <exec_depend>arena_viz</exec_depend>
   <exec_depend>interactive_markers</exec_depend>
+  <exec_depend>arena_mcp</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
   <test_depend>python3-hypothesis</test_depend>

@@ -73,7 +73,9 @@ window open) or does not answer it within 10 s, the teleport runs inside an
 unpause window instead and polls TF for up to 2 s per attempt.
 
 `_launch_robot` order: unpause window, one sim step, tracked launch, adapter
-readiness, `bring_up_controllers()`, window close, `adapter.on_controllers_active`.
+readiness, `bring_up_controllers()`, `adapter.on_controllers_active` (arm
+adapters park every arm at its `stow` pose and wait until it settled), window
+close. The first reset then places the robot with its arms already parked.
 Controllers are driven here, not by `controller_manager/spawner`: each round
 reads `list_controllers` and issues the one call the snapshot needs (load an
 absent one, configure an unconfigured one, one grouped STRICT switch for all
@@ -99,11 +101,16 @@ obstacle and robot placement.
 | `forbid(zones)` | mark `PositionRadius` zones as forbidden for subsequent sampling |
 | `forbid_clear()` | clear all dynamically forbidden cells |
 
-`WorldManagerROS` ([`world_manager/world_manager_ros.py:96`](world_manager/world_manager_ros.py#L96))
+`WorldManagerROS` ([`world_manager/world_manager_ros.py:115`](world_manager/world_manager_ros.py#L115))
 extends `WorldManager` with ROS wiring: subscribes to the `map` topic,
 uses `ClientWrapper` to call `map_server/load_map`, and triggers registered
 callbacks when the world changes. The `start()` coroutine must be awaited
 before the first reset.
+
+`require_map_server()` launches `map_server` and its lifecycle manager under
+the task generator namespace, logging by the env's `log_level` rule set. When the server does not report ACTIVE,
+`ensure_map_server()` shuts that bringup down and launches a fresh one in the
+same namespace.
 
 It also publishes the latched `world_markers` MarkerArray
 ([`world_manager/markers.py`](world_manager/markers.py)): zone outlines and
@@ -133,9 +140,21 @@ All obstacle/robot operations go through here.
 | `move_robot(robots)` | teleport robots |
 | `remove_robot(robots)` | remove robots from both layers |
 | `respawn(callback)` | `unuse_obstacles()` → `callback()` → `remove_obstacles(UNUSED)` |
+| `notify_stimulus(agent, stimulus, intensity)` | forwards to the human simulator, `agent` is an engine id or a spawned agent's name or `sim_path` |
 | `reset(purge)` | remove all obstacles at or below `purge` layer |
 | `before_reset_episode()` | delegates to `BaseSim.before_reset_episode()` (pauses sim) |
 | `after_reset_episode()` | delegates to `BaseSim.after_reset_episode()` (unpauses sim) |
+
+It also publishes the latched `affordance_markers` MarkerArray
+([`affordance_markers.py`](affordance_markers.py)) with the placed affordance
+slots of every spawned static obstacle, world and episode alike: per slot its
+box with the top diagonals and an arrow from the box edge for each allowed
+facing, one marker namespace per kind (`sit`). A slot an agent holds, walking up or seated, is pink
+and the slots overlapping it grey, from `AffordanceClaims` over the seats the
+human simulator reports held on the object (`held_seats()`). It is republished
+whenever obstacles spawn or are removed and whenever the held seats change, and
+rviz shows it as the
+Affordances display in the Interaction group, off by default.
 
 **Obstacle/pedestrian removal is split:** `BaseHumanSimulator.unuse_obstacles`
 calls `_remove_obstacles_impl` (the human-sim-side pedestrian removal) and

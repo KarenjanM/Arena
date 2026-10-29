@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
 from arena_simulation_setup.utils.geometry import (
+    Facing,
     Orientation,
     Pose,
     Position,
@@ -148,6 +150,33 @@ def test_orientation_parse_euler_list():
 def test_orientation_parse_yaw_float():
     o = Orientation.parse(math.pi / 2)
     assert o.to_yaw() == pytest.approx(math.pi / 2, abs=1e-6)
+
+
+def test_orientation_parse_yaw_int():
+    o = Orientation.parse(3)
+    assert o.to_yaw() == pytest.approx(3.0, abs=1e-6)
+
+
+@pytest.mark.parametrize(
+    ("axis", "yaw"),
+    [("+x", 0.0), ("+y", math.pi / 2), ("-y", -math.pi / 2), ("xy", math.pi / 4)],
+)
+def test_orientation_parse_axis(axis, yaw):
+    assert Orientation.parse(axis).to_yaw() == pytest.approx(yaw, abs=1e-6)
+
+
+def test_orientation_parse_axis_neg_x_points_backwards():
+    assert abs(Orientation.parse("-x").to_yaw()) == pytest.approx(math.pi, abs=1e-6)
+
+
+def test_orientation_parse_unknown_axis_lists_axes():
+    with pytest.raises(ValueError, match=r"\+x, \+y, -x, -y, xy"):
+        Orientation.parse("+z")
+
+
+def test_orientation_parse_rejects_bool():
+    with pytest.raises(ValueError):
+        Orientation.parse(True)
 
 
 def test_orientation_parse_idempotent():
@@ -366,3 +395,59 @@ def test_scale_parse_idempotent():
     s = Scale(2.0, 3.0, 4.0)
     s2 = converter.structure(s, Scale)
     assert s2 is s
+
+
+# ---------------------------------------------------------------------------
+# Facing
+# ---------------------------------------------------------------------------
+
+
+def test_facing_parse_single_axis():
+    assert Facing.parse("-y").yaws == pytest.approx([-math.pi / 2], abs=1e-6)
+
+
+def test_facing_parse_mixed_list():
+    assert Facing.parse(["+x", 0, 0.7854]).yaws == pytest.approx([0.0, 0.0, 0.7854], abs=1e-6)
+
+
+def test_facing_parse_rejects_empty_list():
+    with pytest.raises(ValueError, match="orientations"):
+        Facing.parse([])
+
+
+def test_facing_structures_through_shared_converter():
+    from arena_simulation_setup.utils.cattrs import converter
+
+    assert converter.structure(["+y", "-x"], Facing).contains(math.pi)
+
+
+def test_facing_serialize_unwraps_single_axis():
+    assert Facing.parse("+y").serialize() == "+y"
+
+
+def test_facing_serialize_names_exact_axes_and_keeps_angles():
+    assert Facing.parse(["-x", math.pi / 2, 0.7854]).serialize() == ["-x", "+y", pytest.approx(0.7854)]
+
+
+def test_facing_serialize_roundtrips():
+    facing = Facing.parse(["xy", 1, -2.5])
+    assert Facing.parse(facing.serialize()).yaws == pytest.approx(facing.yaws, abs=1e-12)
+
+
+def test_facing_contains_wraps_around():
+    facing = Facing.parse("-x")
+    assert facing.contains(-math.pi)
+    assert facing.contains(3 * math.pi)
+    assert not facing.contains(0.0)
+
+
+def test_facing_nearest_crosses_pi():
+    facing = Facing.parse(["+x", "-x"])
+    assert abs(facing.nearest(-3.0).to_yaw()) == pytest.approx(math.pi, abs=1e-6)
+
+
+def test_facing_sample_is_seeded_and_covers_every_direction():
+    facing = Facing.parse(["+x", "+y", "-y"])
+    draws = [round(facing.sample(np.random.default_rng(seed)).to_yaw(), 4) for seed in range(64)]
+    assert draws == [round(facing.sample(np.random.default_rng(seed)).to_yaw(), 4) for seed in range(64)]
+    assert set(draws) == {0.0, 1.5708, -1.5708}

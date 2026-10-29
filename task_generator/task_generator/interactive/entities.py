@@ -25,7 +25,7 @@ class EntityHandles:
     def add(self, obstacle: Obstacle) -> None:
         name = obstacle.sim_path
         self._obstacles[name] = obstacle
-        pose = self._node._realizer.realize(obstacle.pose, obstacle.level).to_msg()
+        pose = self._node._realizer.realize(obstacle.pose, self._level(obstacle)).to_msg()
         body = visual(Marker.CYLINDER, (0.6, 0.6, 0.02), _STATIC_COLOR)
 
         async def on_pose(moved: PoseMsg) -> None:
@@ -40,10 +40,13 @@ class EntityHandles:
     def clear(self) -> None:
         self._obstacles.clear()
 
+    def _level(self, obstacle: Obstacle) -> str:
+        return self._node._realizer.placement_level(obstacle.placement_zone, obstacle.level)
+
     async def _move(self, name: str, pose_msg: PoseMsg) -> None:
         obstacle = self._obstacles[name]
         environment = self._node._environment_manager
-        local = self._node._realizer.ezilear(Pose.from_msg(pose_msg), obstacle.level)
+        local = self._node._realizer.ezilear(Pose.from_msg(pose_msg), self._level(obstacle))
         moved = attrs.evolve(obstacle, pose=local)
         await environment.move_obstacles([moved])
         self._obstacles[name] = moved

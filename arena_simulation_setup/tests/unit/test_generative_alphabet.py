@@ -1,6 +1,5 @@
 import pytest
-
-from arena_simulation_setup.utils.generative import alphabet
+from arena_simulation_setup.generative.world import alphabet
 
 
 def test_light_glyphs_declare_their_own_edges():

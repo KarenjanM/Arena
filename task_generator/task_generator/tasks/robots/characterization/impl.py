@@ -13,6 +13,7 @@ import contextlib
 import dataclasses
 import json
 import traceback
+import typing
 from collections.abc import Callable
 
 import rclpy.publisher
@@ -25,6 +26,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
 from task_generator.shared import Pose
+from task_generator.tasks.mode import TaskModeKwargs
 from task_generator.tasks.robots import TM_Robots
 
 from .schedule import (
@@ -68,8 +70,8 @@ class TM_Characterization(TM_Robots):
     _durations: dict[str, ROSParamT[float]]
     _sweeps: dict[str, ROSParamT[list[float]]]
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[TaskModeKwargs]) -> None:
+        super().__init__(**kwargs)
         self._modes = {name: self.node.ROSParam[bool](self.namespace("modes", name), True) for name in MODES}
         self._durations = {name: self.node.ROSParam[float](self.namespace(name), default) for name, default in DURATION_DEFAULTS.items()}
         self._sweeps = {name: self.node.ROSParam[list[float]](self.namespace(name), list(default), type_=Parameter.Type.DOUBLE_ARRAY) for name, default in SWEEP_DEFAULTS.items()}
@@ -112,7 +114,9 @@ class TM_Characterization(TM_Robots):
                 radius=float(envelope["radius"]),
                 is_holonomic=bool(envelope["is_holonomic"]),
                 **durations,
-                **sweeps,
+                arc_speed_factors=sweeps["arc_speed_factors"],
+                arc_radius_factors=sweeps["arc_radius_factors"],
+                ramp_horizons_s=sweeps["ramp_horizons_s"],
             )
             self._runs[manager.name] = _Run(schedule=schedule, phase_start=now)
             self._last_odom[manager.name] = now

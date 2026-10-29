@@ -1,6 +1,7 @@
 from .membership import DERIVE_MODES, connections, contents, derive, describe, zones_of
 from .model import (
     FORMAT,
+    LEGACY_FORMAT,
     MICROPHONE_PLACEMENT_TOLERANCE_M,
     WORLD_LIGHTING_MODES,
     Level,
@@ -14,7 +15,7 @@ from .model import (
     entity_lights,
 )
 from .parse import WorldFormatError, parse_world
-from .view import WorldIdentifier, WorldView, save_snapshot
+from .view import WorldIdentifier, WorldView, save_snapshot, world_assets
 from .write import write_world
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     'describe',
     'zones_of',
     'FORMAT',
+    'LEGACY_FORMAT',
     'Level',
     'MICROPHONE_PLACEMENT_TOLERANCE_M',
     'WORLD_LIGHTING_MODES',
@@ -35,6 +37,7 @@ __all__ = [
     'WorldMicrophone',
     'WorldView',
     'save_snapshot',
+    'world_assets',
     'Zone',
     'ZoneCeiling',
     'ZoneWalls',

@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from arena_cli.features import robots
+from arena_cli.complete import Context, _expand
+from arena_cli.features import planners, robots
 
 GITMODULES = """\
 [submodule "arena_robots/robots/mpo700/meshes"]
@@ -101,3 +102,58 @@ def test_uri_owner():
     assert robots._uri_owner("robots/mpo700/meshes/body.dae") == "mpo700"
     assert robots._uri_owner("components/lidar/sick_s300/meshes/s300.dae") == "lidar/sick_s300"
     assert robots._uri_owner("configs/walls/brick.yaml") is None
+
+
+def _check_out(arena: Path, path: str) -> None:
+    (arena / path).mkdir(parents=True, exist_ok=True)
+    (arena / path / ".git").write_text("gitdir: elsewhere\n")
+
+
+def test_submodule_status_follows_the_checkout_without_a_git_repository(tmp_path):
+    arena = _arena(tmp_path)
+    _check_out(arena, "arena_robots/arena_robots/robots/mpo700/meshes")
+    assert robots.submodule_status(arena) == {
+        "arena_robots/arena_robots/robots/mpo700/meshes": "init",
+        "arena_robots/arena_robots/components/lidar/sick_s300/meshes": "uninit",
+        "arena_robots/arena_robots/components/arm/ur/meshes": "uninit",
+    }
+
+
+def test_robot_missing_a_default_component_is_pending(tmp_path, capsys):
+    arena = _arena(tmp_path)
+    _check_out(arena, "arena_robots/arena_robots/robots/mpo700/meshes")
+    robots.cmd_ls(arena, None)
+    assert "[ ] mpo700" in capsys.readouterr().out.splitlines()
+    assert "mpo700" not in robots._ready_robots(arena)
+
+
+def test_robot_with_every_submodule_checked_out_is_ready(tmp_path, capsys):
+    arena = _arena(tmp_path)
+    _check_out(arena, "arena_robots/arena_robots/robots/mpo700/meshes")
+    _check_out(arena, "arena_robots/arena_robots/components/lidar/sick_s300/meshes")
+    robots.cmd_ls(arena, None)
+    lines = capsys.readouterr().out.splitlines()
+    assert "[x] mpo700" in lines
+    assert "[x] lidar/sick_s300" in lines
+    assert "[ ] arm/ur" in lines
+    assert "mpo700" in robots._ready_robots(arena)
+
+
+def test_sim_preflight_suite_gives_each_robot_its_own_preflight_stage():
+    suite = planners.preflight_suite(["go1", "boxer"])
+    assert [(stage["name"], stage["robot"]) for stage in suite["stages"]] == [("preflight-go1", "go1"), ("preflight-boxer", "boxer")]
+    assert {stage["config"]["scenario"]["file"] for stage in suite["stages"]} == {"preflight"}
+    assert suite["launch"]["env.bootstrap_timeout"] == 90
+
+
+def test_planner_preflight_suite_keeps_each_contestant_robot():
+    assert [(stage["name"], stage["robot"]) for stage in planners.preflight_suite()["stages"]] == [("preflight", "auto")]
+
+
+_RUNTIME_MANIFEST = {"launch": {"arena_bringup/arena_runtime.launch.py": {"sim": {"desc": "simulator", "default": "gazebo"}}}, "values": {"sim": ["gazebo", "isaac", "mujoco", "flatsim"]}}
+
+
+def test_preflight_verbs_complete_the_simulator() -> None:
+    for spec in (robots.COMMANDS["check"].complete, planners.COMMANDS["test"].complete):
+        assert "sim:=" in {value for value, _desc, _group in _expand(spec, [], "", Context("", _RUNTIME_MANIFEST)).items}
+        assert {"gazebo", "isaac", "mujoco", "flatsim"} <= {value for value, _desc, _group in _expand(spec, [], "sim:=", Context("", _RUNTIME_MANIFEST)).items}

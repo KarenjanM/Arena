@@ -3,10 +3,9 @@ import time
 
 import chromadb
 import numpy as np
+from arena_simulation_setup.utils.llm import genai
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from tqdm import tqdm
-
-from task_generator.utils.gpt import genai
 
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_CFG = genai.types.EmbedContentConfig(task_type="retrieval_document", output_dimensionality=768)
@@ -85,7 +84,7 @@ def get_relevant_bt_nodes(query: str, collection: chromadb.Collection, n_results
 
 
 if __name__ == "__main__":
-    from arena_hunav_sim_bridge import CHROMA_DB_PATH
+    from arena_hunav_sim_bridge import CHROMA_DB_PATH  # pyright: ignore[reportMissingImports]
 
     inference_client = genai.Client()
     chroma_collection = get_chroma_collection(CHROMA_DB_PATH, inference_client)

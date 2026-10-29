@@ -83,7 +83,9 @@ def test_expand_absent_is_empty():
 
 
 def _node(params: dict[str, object]) -> SimpleNamespace:
-    by_prefix = {k: SimpleNamespace(value=v) for k, v in params.items()}
+    from rclpy.parameter import Parameter
+
+    by_prefix = {k: Parameter(k, value=v) for k, v in params.items()}
     return SimpleNamespace(get_parameters_by_prefix=lambda _ns: by_prefix)
 
 

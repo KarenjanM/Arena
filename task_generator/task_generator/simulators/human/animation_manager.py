@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import attrs
-import rclpy
 
 from .clips import AssetClips, ClipSource, joint_mask
 from .gait import GaitGenerator
@@ -14,7 +13,6 @@ from .profile import PoseProfile
 JOINT_NAMES = GaitGenerator.JOINT_NAMES
 
 if TYPE_CHECKING:
-    import rclpy.impl.rcutils_logger
     from arena_simulation_setup.tree.assets.Animation import AnimationClip
     from builtin_interfaces.msg import Time
     from sensor_msgs.msg import JointState
@@ -22,7 +20,13 @@ else:
     try:
         from sensor_msgs.msg import JointState
     except ImportError:
-        JointState = None  # type: ignore[assignment,misc]
+        JointState = None
+
+
+class AnimationLogger(Protocol):
+    def info(self, message: str, /) -> object: ...
+
+    def warning(self, message: str, /) -> object: ...
 
 
 @attrs.define
@@ -36,6 +40,7 @@ class Animation:
     loop_from: int = 0  # looping clips wrap back to this frame, so an intro plays once
     joints: tuple[str, ...] = ()  # joints the clip moves, empty = all (canned clips carry this from annotations)
     reverse: bool = False  # loop forward then backward
+    release: tuple[dict, ...] = ()  # frames played when the clip's gesture slot ends, empty = fade out
 
     def __len__(self) -> int:
         return len(self.frames)
@@ -122,7 +127,7 @@ class AnimationManager:
 
     def __init__(
         self,
-        logger: rclpy.impl.rcutils_logger.RcutilsLogger,
+        logger: AnimationLogger,
         fps: float = 20.0,
         clips: ClipSource | None = None,
     ) -> None:
@@ -213,7 +218,7 @@ class AnimationManager:
                 self._unavailable.add(name)
         return self.animations.get(name)
 
-    def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0, reverse: bool = False) -> Animation:
+    def register_transient(self, name: str, frames: Sequence[dict], fps: float | None = None, loop: bool = False, owner: int | None = None, loop_from: int = 0, reverse: bool = False, release: Sequence[dict] = ()) -> Animation:
         """Register a generated clip (list of {"angles": ...} frames) under ``name``, optionally owned by an agent."""
         fps = self._fps if fps is None else fps
         n_frames = len(frames)
@@ -221,7 +226,7 @@ class AnimationManager:
         assert 0 <= loop_from < n_frames, f"loop_from {loop_from} outside the clip"
         assert not (reverse and not loop), f"Animation {name} is reverse but does not loop"
         cycle = 2 * n_frames - 2 if reverse and n_frames > 1 else n_frames
-        anim = Animation(name=name, frames=list(frames), n_frames=n_frames, duration=cycle / fps, loop=loop, fps=fps, loop_from=loop_from, reverse=reverse)
+        anim = Animation(name=name, frames=list(frames), n_frames=n_frames, duration=cycle / fps, loop=loop, fps=fps, loop_from=loop_from, reverse=reverse, release=tuple(release))
         self.animations[name] = anim
         if owner is not None:
             self._transients.setdefault(owner, set()).add(name)

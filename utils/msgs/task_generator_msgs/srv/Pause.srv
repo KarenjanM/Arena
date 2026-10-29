@@ -1,8 +1,0 @@
-# Pause control action.
-uint8 PAUSE=0
-uint8 UNPAUSE=1
-uint8 TOGGLE=2
-uint8 action
----
-# Resulting state; true when paused after the call.
-bool paused

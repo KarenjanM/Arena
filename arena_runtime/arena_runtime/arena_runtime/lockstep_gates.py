@@ -85,11 +85,14 @@ class ChannelRegistry:
             self.version += 1
         return dropped
 
-    def desired(self, env_ids: Iterable[int]) -> dict[str, tuple[ChannelSpec, str]]:
-        """Union of all registrations keyed by resolved topic, first registrant wins."""
+    def desired(self, env_ids: Iterable[int], skip: Iterable[str] = ()) -> dict[str, tuple[ChannelSpec, str]]:
+        """Union of all registrations keyed by resolved topic, first registrant wins, without the registrations of envs in `skip`."""
         ids = list(env_ids)
+        skipped = list(skip)
         desired: dict[str, tuple[ChannelSpec, str]] = {}
         for reg in self._entries.values():
+            if reg.env and any(env_match(reg.env, env) for env in skipped):
+                continue
             for spec in reg.channels:
                 if not reg.env and '{env}' in spec.topic_template:
                     for env_id in ids:
@@ -190,7 +193,10 @@ class GateLedger:
     def complete(self, channels: Iterable[Channel]) -> None:
         gated = False
         for ch in channels:
-            ch.next_due += ch.period
+            if ch.hard and ch.latest_stamp is not None and ch.latest_stamp + ch.period > self.now:
+                ch.next_due = ch.latest_stamp + ch.period
+            else:
+                ch.next_due += ch.period
             self.counts[ch.topic].due += 1
             gated = gated or ch.hard
         if gated:

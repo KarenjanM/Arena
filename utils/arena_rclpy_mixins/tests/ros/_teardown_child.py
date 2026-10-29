@@ -10,6 +10,7 @@ import traceback
 
 import rclpy
 import rclpy.node
+from arena_rclpy_mixins import spin
 from arena_rclpy_mixins.node import ArenaMixinNode
 from arena_rclpy_mixins.spin import create_executor, spin_context, spin_node, start_loop_watchdog
 from std_msgs.msg import String
@@ -98,6 +99,17 @@ class Deadline(ArenaMixinNode):
         time.sleep(_DEADLINE_BLOCK_S)
 
 
+class Swallow(ArenaMixinNode):
+    """Setup that swallows its cancellation and returns, leaving the app task waiting forever."""
+
+    async def setup(self) -> None:
+        print("READY", flush=True)
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+
+
 class Failing(ArenaMixinNode):
     """An async timer callback raises once the executor spins."""
 
@@ -184,6 +196,9 @@ def main() -> None:
         Stall.run_main("teardown_stall")
     elif mode == "watchdog_deadline":
         Deadline.run_main("teardown_deadline")
+    elif mode == "async_swallowed_cancel":
+        spin._TEARDOWN_DEADLINE_S = 2.0
+        Swallow.run_main("teardown_swallow")
     elif mode == "callback_failure":
         Failing.run_main("teardown_callback_failure")
     elif mode == "sync_events":

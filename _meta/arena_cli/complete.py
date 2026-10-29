@@ -10,7 +10,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ SCHEMA = 1
 LOCK_MAX_AGE_S = 120.0
 
 
-def _table(values: object) -> dict[str, str]:
+def _table(values: Iterable[object]) -> dict[str, str]:
     if isinstance(values, Mapping):
         return {str(k): str(v) for k, v in values.items()}
     return {str(v): "" for v in values}
@@ -40,9 +40,9 @@ class Files:
 class Static:
     """Fixed values, optionally with descriptions. A callable is resolved on demand."""
 
-    values: dict[str, str] | Callable[[], object]
+    values: dict[str, str] | Callable[[], Iterable[object]]
 
-    def __init__(self, values: object) -> None:
+    def __init__(self, values: Iterable[object] | Callable[[], Iterable[object]]) -> None:
         self.values = values if callable(values) else _table(values)
 
     def table(self) -> dict[str, str]:
@@ -57,13 +57,20 @@ class Manifest:
 
 
 @dataclasses.dataclass
+class Dynamic:
+    """Values computed from the words before the cursor, the word under it and the manifest."""
+
+    values: Callable[[list[str], str, Context], Mapping[str, str]]
+
+
+@dataclasses.dataclass
 class Flags:
     """--flags with descriptions. `valued` flags take a free-form next word."""
 
     flags: dict[str, str]
     valued: tuple[str, ...] = ()
 
-    def __init__(self, flags: object, valued: tuple[str, ...] = ()) -> None:
+    def __init__(self, flags: Iterable[object], valued: tuple[str, ...] = ()) -> None:
         self.flags = _table(flags)
         self.valued = valued
 
@@ -114,7 +121,7 @@ class Packages:
 
 
 Source = Static | Manifest | Files | Nothing
-Spec = Source | Flags | Kv | LaunchArgs | Union | Sub | Packages
+Spec = Source | Dynamic | Flags | Kv | LaunchArgs | Union | Sub | Packages
 
 
 def walk(spec: Spec | None) -> Iterator[Spec]:
@@ -198,7 +205,7 @@ def _expand(spec: Spec, words: list[str], cur: str, ctx: Context) -> Result:
     return _expand_flat(spec, words, cur, ctx)
 
 
-def _expand_flat(spec: Source | Flags | Packages, words: list[str], cur: str, ctx: Context) -> Result:
+def _expand_flat(spec: Source | Dynamic | Flags | Packages, words: list[str], cur: str, ctx: Context) -> Result:
     r = Result()
     if isinstance(spec, Nothing) or ":=" in cur:
         return r
@@ -208,6 +215,8 @@ def _expand_flat(spec: Source | Flags | Packages, words: list[str], cur: str, ct
         r.add(spec.table())
     elif isinstance(spec, Manifest):
         r.add(ctx.values(spec.key) or {})
+    elif isinstance(spec, Dynamic):
+        r.add(dict(spec.values(words, cur, ctx)))
     elif isinstance(spec, Flags):
         if words and words[-1] in spec.valued:
             r.stop = True

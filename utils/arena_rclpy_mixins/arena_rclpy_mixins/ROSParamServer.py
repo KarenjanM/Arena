@@ -124,9 +124,7 @@ class _ROSParam(ROSParamT[T]):
     ) -> None:
         self._name = name
 
-        if parse is None:
-            parse = self.identity
-        self._from_param = parse
+        self._from_param = parse if parse is not None else typing.cast(typing.Callable[[object], T], self.identity)
 
         if type_ is not None:
             self._node.rosparam.declare_safe(
@@ -138,6 +136,10 @@ class _ROSParam(ROSParamT[T]):
 
 
 counter = 0
+
+
+class _DeclareOptions(typing.TypedDict, total=False):
+    ignore_override: bool
 
 
 class _rosparam(typing.Generic[T]):
@@ -152,7 +154,7 @@ class _rosparam(typing.Generic[T]):
     class _UNSET: ...
 
     @classmethod
-    def declare_safe(cls, param_name: str, value: object = None, *, descriptor: rcl_interfaces.msg.ParameterDescriptor | None = None, **kwargs: object) -> None:
+    def declare_safe(cls, param_name: str, value: object = None, *, descriptor: rcl_interfaces.msg.ParameterDescriptor | None = None, **kwargs: typing.Unpack[_DeclareOptions]) -> None:
         if cls._node.has_parameter(param_name):
             if descriptor is not None:
                 existing = cls._node.get_parameter(param_name)
@@ -160,7 +162,7 @@ class _rosparam(typing.Generic[T]):
                     descriptor.type = existing.type_.value
                 elif descriptor.type == rclpy.Parameter.Type.DOUBLE.value and existing.type_ == rclpy.Parameter.Type.INTEGER:
                     cls._node.undeclare_parameter(param_name)
-                    cls._node.declare_parameter(param_name, float(existing.value), descriptor=descriptor, ignore_override=True)
+                    cls._node.declare_parameter(param_name, float(typing.cast(int, existing.value)), descriptor=descriptor, ignore_override=True)
                     return
                 cls._node.set_descriptor(param_name, descriptor)
             return
@@ -177,7 +179,7 @@ class _rosparam(typing.Generic[T]):
                     if not already_set:
                         cls._node.set_parameters([rclpy.Parameter(name=param_name, type_=type_enum, value=value)])
             else:
-                cls._node.declare_parameter(param_name, value, **({"descriptor": descriptor} if descriptor is not None else {}), **kwargs)
+                cls._node.declare_parameter(param_name, value, descriptor=descriptor, **kwargs)
         except rclpy.exceptions.ParameterAlreadyDeclaredException:
             pass
 
@@ -274,7 +276,7 @@ class ROSParamServer(rclpy.node.Node):
     def register_param(self, param: ROSParamT[T], value: object, **kwargs: object) -> None:
         del kwargs  # unused
 
-        current_value = self.rosparam[T].get(param.name, value)
+        current_value = self.rosparam[object].get(param.name, value)
 
         self.add_param_callback(
             param.name,
@@ -306,8 +308,8 @@ class ROSParamServer(rclpy.node.Node):
 
         return rcl_interfaces.msg.SetParametersResult(successful=successful, reason="\n".join(reason))
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, node_name: str, *args: object, **kwargs: object) -> None:
+        super().__init__(node_name, *args, **kwargs)
         self.__callbacks = {}
         self.add_on_set_parameters_callback(self._callback)
         self._setup_rosparam()

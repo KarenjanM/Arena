@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import types
 from collections.abc import Callable, Iterable
@@ -21,12 +22,13 @@ import rclpy
 import rclpy.node
 from rcl_interfaces.srv import GetParameters
 
+from arena_bringup.reaper import GRACE_INT_S, GRACE_KILL_S, GRACE_TERM_S, Reaper, _exists, stop
+
 REGISTER_ENV_SERVICE = '/arena/register_env'
 VIZ_MANIFEST_SUFFIX = '/state/viz_manifest'
 
-GRACE_INT_S = float(os.environ.get('ARENA_SHUTDOWN_TIMEOUT', '30'))
-GRACE_TERM_S = 3.0
-GRACE_KILL_S = 5.0
+RUNTIME_DISCOVERY_QUIET_S = 3.0
+RUNTIME_DISCOVERY_MAX_S = 15.0
 _DEPRECATED_KNOBS = {'env_n': 'env.n'}
 
 
@@ -39,9 +41,12 @@ class Supervisor:
         self._node = node
         self._children: dict[str, subprocess.Popen] = {}
         self._signal_count = 0
+        self._reaper = Reaper()
+        self._swept: set[str] = set()
 
     def spawn(self, role: str, cmd: list[str]) -> subprocess.Popen:
         proc = subprocess.Popen(cmd, start_new_session=True)
+        self._reaper.watch(proc.pid)
         self._children[role] = proc
         sys.stderr.write(f'arena launch: spawned {role} (pid={proc.pid})\n')
         return proc
@@ -50,7 +55,16 @@ class Supervisor:
         return self._children.get('runtime')
 
     def alive(self) -> list[tuple[str, subprocess.Popen]]:
-        return [(r, p) for r, p in self._children.items() if p.poll() is None]
+        """Children whose process group still has a member, an exited leader's orphans included."""
+        return [(r, p) for r, p in self._children.items() if p.poll() is None or _exists(p.pid)]
+
+    def sweep_exited(self) -> None:
+        """Stop the process group of every child whose leader exited, in the background."""
+        for role, proc in self._children.items():
+            if role in self._swept or proc.poll() is None:
+                continue
+            self._swept.add(role)
+            threading.Thread(target=stop, args=([proc.pid],), daemon=True).start()
 
     def signal_handler(self, signum: int, _frame: types.FrameType | None) -> None:
         self._signal_count += 1
@@ -66,6 +80,9 @@ class Supervisor:
             os._exit(130)
         sys.stderr.write(f'arena launch: {label} -> {len(snap)} child(ren) (Ctrl-C again to escalate)\n')
         self._signal_pgs(snap, sig)
+
+    def release(self) -> None:
+        self._reaper.release()
 
     def cleanup(self) -> None:
         snap = self.alive()
@@ -85,22 +102,35 @@ class Supervisor:
     @staticmethod
     def _signal_pgs(children: Iterable[tuple[str, subprocess.Popen]], sig: int) -> None:
         for _, proc in children:
-            if proc.poll() is not None:
-                continue
             with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(os.getpgid(proc.pid), sig)
+                os.killpg(proc.pid, sig)
 
     @staticmethod
     def _wait(children: Iterable[tuple[str, subprocess.Popen]], timeout: float) -> bool:
         deadline = time.monotonic() + timeout
-        for _, proc in children:
-            remaining = max(0.0, deadline - time.monotonic())
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                proc.wait(timeout=remaining)
-        return all(p.poll() is not None for _, p in children)
+        while any(p.poll() is None or _exists(p.pid) for _, p in children):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.2)
+        return True
 
     def has_service(self, service: str) -> bool:
         return any(name == service for name, _ in self._node.get_service_names_and_types())
+
+    def discovers(self, service: str, quiet_s: float, within_s: float) -> bool:
+        """Whether service shows up before the ROS graph stops growing for quiet_s, waiting at most within_s."""
+        start = changed = time.monotonic()
+        count = -1
+        while True:
+            names = self._node.get_service_names_and_types()
+            if any(name == service for name, _ in names):
+                return True
+            now = time.monotonic()
+            if len(names) != count:
+                count, changed = len(names), now
+            if now - changed >= quiet_s or now - start >= within_s:
+                return False
+            time.sleep(0.1)
 
     def viz_namespaces(self) -> set[str]:
         return {name[: -len(VIZ_MANIFEST_SUFFIX)] for name, _ in self._node.get_topic_names_and_types() if name.endswith(VIZ_MANIFEST_SUFFIX)}
@@ -223,7 +253,7 @@ def preload_world(args: argparse.Namespace) -> None:
 
 
 def run(args: argparse.Namespace, sup: Supervisor) -> int:
-    if sup.has_service(REGISTER_ENV_SERVICE):
+    if sup.discovers(REGISTER_ENV_SERVICE, RUNTIME_DISCOVERY_QUIET_S, RUNTIME_DISCOVERY_MAX_S):
         if args.sim is not None:
             existing = sup.get_param_string('/arena', 'sim')
             if existing and existing != args.sim:
@@ -291,9 +321,12 @@ def run(args: argparse.Namespace, sup: Supervisor) -> int:
                 )
 
     if runtime is not None:
-        runtime.wait()
+        while runtime.poll() is None:
+            sup.sweep_exited()
+            time.sleep(1.0)
         return runtime.returncode
     while sup.alive():
+        sup.sweep_exited()
         time.sleep(1.0)
     return 0
 
@@ -315,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
         return run(args, sup)
     finally:
         sup.cleanup()
+        sup.release()
         with contextlib.suppress(Exception):
             node.destroy_node()
         with contextlib.suppress(Exception):

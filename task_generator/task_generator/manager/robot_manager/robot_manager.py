@@ -18,11 +18,12 @@ import rclpy
 import rclpy.logging
 import rclpy.node
 import rclpy.publisher
+import rclpy.time
 import rclpy.timer
 import shapely
 import tf2_ros
 from arena_rclpy_mixins.Async import LaunchHandle
-from arena_rclpy_mixins.shared import Namespace
+from arena_rclpy_mixins.shared import FrameNamespace, Namespace
 from arena_robots.Robot import RobotView
 from arena_runtime._node import NodeInterface
 from arena_runtime.sim._interface import SimUnavailable
@@ -40,7 +41,7 @@ if typing.TYPE_CHECKING:
     from arena_simulation_setup.shared.judge import Sample, Zones
 
     from task_generator.tasks.robots.adapters import Adapter, ResetContext
-    from task_generator.tasks.robots.request import GoToPhase, TaskKind, TaskPhase, TaskRequest
+    from task_generator.tasks.robots.request import ElevatorRidePhase, GoToPhase, TaskKind, TaskPhase, TaskRequest
 
 
 _NAV2_QUIET_NODES = (
@@ -71,6 +72,27 @@ _TELEPORT_POLL = 0.02
 _TELEPORT_ATTEMPTS = 3
 _TELEPORT_TICK_CAP = 5
 _TELEPORT_TICK_WAIT = 0.5
+
+
+def log_level_actions(spec: str) -> list[NodeLogLevelExtension.SetGlobalLogLevelAction]:
+    """Rule set for a robot launch: ``spec`` with nav2 and moveit quieted wherever it names no node."""
+    return [
+        NodeLogLevelExtension.SetGlobalLogLevelAction(spec),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES, fallback=True),
+        NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES, fallback=True),
+    ]
+
+
+def footprint_radius(config: RobotView) -> float:
+    """Disc radius of a robot model: the mobile cap's `radius`, else the circumradius of its padded footprint."""
+    mobile = config.mobile
+    if mobile is None:
+        raise ValueError(f"robot model {config.name!r} has no mobile cap, so no footprint radius")
+    if mobile.radius is not None:
+        return mobile.radius
+    if mobile.footprint:
+        return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
+    raise ValueError(f"{mobile.path}: sets neither radius nor footprint")
 
 
 class RobotManager(NodeInterface):
@@ -116,7 +138,9 @@ class RobotManager(NodeInterface):
 
     @property
     def controls_orientation(self) -> bool:
-        return self._adapter.controls_orientation if self._adapter is not None else True
+        from task_generator.tasks.robots.adapters.mobile import MobileAdapter
+
+        return self._adapter.controls_orientation if isinstance(self._adapter, MobileAdapter) else True
 
     @property
     def pose_stamped(self) -> tuple[Pose, rclpy.time.Time] | None:
@@ -176,7 +200,7 @@ class RobotManager(NodeInterface):
 
         self._start_pos = Pose()
         self._goal_pos = Pose()
-        self._robot_radius = 0.25
+        self._robot_radius = footprint_radius(self._config)
 
         self._robot = robot
         self._robot.sim_path = self._environment_manager.realize(robot.name)
@@ -184,7 +208,7 @@ class RobotManager(NodeInterface):
 
         self._publish_goal_task: asyncio.Task | None = None
         self._watchers: list[Callable[[RobotManager], None]] = []
-        self._launch_handle: LaunchHandle | None = None
+        self._launch_handle = None
 
         # Deferred to break the import cycle between this module and
         # task_generator.tasks (which eagerly loads context.py -> RobotManager).
@@ -205,15 +229,15 @@ class RobotManager(NodeInterface):
                 continue
             caps_to_kind[cap] = default_kind
 
-        self._adapters: dict[TaskKind, Adapter] = {}
-        self._adapter_instances: list[Adapter] = []
-        self._cap_adapters: dict[str, str] = {}
+        self._adapters = {}
+        self._adapter_instances = []
+        self._cap_adapters = {}
 
         for cap, kind in caps_to_kind.items():
             if cap not in ADAPTERS:
                 raise AssertionError(f"robot {self._robot.name!r}: no adapter registry for cap {cap!r} (registered caps: {sorted(ADAPTERS)})")
             adapter_cls = ADAPTERS[cap].get(kind)
-            declared_cap = adapter_cls._adapter_meta.cap
+            declared_cap = adapter_cls._meta().cap
             if declared_cap != cap:
                 raise AssertionError(f"adapter {kind!r} declares cap {declared_cap!r} but was selected for cap {cap!r} on robot {self._robot.name!r}")
 
@@ -241,8 +265,9 @@ class RobotManager(NodeInterface):
 
         self._runner = TaskRunner(self._robot.name)
         self._placed = False
-        self._unsupported_kinds_logged: set[TaskKind] = set()
-        self._abort_episode: Callable[[str], None] | None = None
+        self._unsupported_kinds_logged = set()
+        self._abort_episode = None
+        self._cabin_to_clear = ""
 
     def bind_abort(self, fn: Callable[[str], None]) -> None:
         self._abort_episode = fn
@@ -282,11 +307,6 @@ class RobotManager(NodeInterface):
         LaunchService run after spawn_world_obstacles (which it would otherwise starve)."""
         await self._launch_robot(node_names)
 
-        self._robot_radius = self.node.rosparam[float].get(
-            'robot_radius',
-            self._robot_radius,
-        )
-
     @property
     def radius(self) -> float:
         return self._robot_radius
@@ -304,7 +324,7 @@ class RobotManager(NodeInterface):
         return self._robot.name
 
     @property
-    def frame(self) -> Namespace:
+    def frame(self) -> FrameNamespace:
         return self._robot.frame
 
     @property
@@ -330,6 +350,13 @@ class RobotManager(NodeInterface):
         if self._publish_goal_task is not None:
             self._publish_goal_task.cancel()
             self._publish_goal_task = None
+
+    def stop_task(self) -> None:
+        """Drop the unfinished phases and cancel every in-flight adapter goal."""
+        self._stop_current_task()
+        for adapter in self._adapter_instances:
+            adapter.cancel_goals()
+        self.node.on_task_submitted(self)
 
     def _outcome_for_phase(self, phase: TaskPhase) -> tuple[int | None, str | None]:
         """Return (status, reason) for the phase that just completed."""
@@ -357,6 +384,7 @@ class RobotManager(NodeInterface):
     def begin_episode(self) -> None:
         self._runner.begin_episode()
         self._placed = False
+        self._cabin_to_clear = ""
 
     @property
     def placed(self) -> bool:
@@ -391,7 +419,7 @@ class RobotManager(NodeInterface):
     async def _dispatch(self, state_index: int) -> None:
         """Dispatch one phase to its adapter, a hold or ped-target phase first taking its pose from the live state."""
         from task_generator.tasks.robots.adapters.mobile import MobileAdapter
-        from task_generator.tasks.robots.request import GoToPhase, kind_of
+        from task_generator.tasks.robots.request import ElevatorRidePhase, GoToPhase, kind_of
 
         state = self._runner.phases[state_index]
         phase = state.phase
@@ -404,6 +432,8 @@ class RobotManager(NodeInterface):
             state.monitor.phase = phase
             self.node.on_task_submitted(self)
         state.dispatched = True
+        if isinstance(phase, ElevatorRidePhase):
+            self._set_elevator_target(phase)
         kind = kind_of(phase)
         adapter = self._adapters.get(kind)
         if adapter is None:
@@ -433,11 +463,12 @@ class RobotManager(NodeInterface):
 
     async def tick(self, sample: Sample, zones: Zones) -> Transition:
         """Judge the active phase on one tick, applying its outcome and dispatching the next phase."""
-        from task_generator.tasks.robots.request import GoToPhase, kind_of
+        from task_generator.tasks.robots.request import ElevatorRidePhase, GoToPhase, kind_of
 
         state = self._runner.active_state
         if not self._placed:
             return Transition()
+        await self._clear_on_cabin_open()
         if state is None:
             return self._runner.step(sample, zones, None, (None, None))
         if not state.dispatched:
@@ -454,7 +485,15 @@ class RobotManager(NodeInterface):
             dispatched = self.active_dispatch_phase()
             if dispatched is not None:
                 adapter.on_phase_tick(dispatched, self)
-            transition = self._runner.step(sample, zones, action_done, self._outcome_for_phase(state.phase), adapter.signal)
+            ride = state.phase if isinstance(state.phase, ElevatorRidePhase) else None
+            boarded = state.monitor.held
+            transition = self._runner.step(sample, zones, action_done, (None, None) if ride is not None else self._outcome_for_phase(state.phase), adapter.signal)
+            if ride is not None and transition.ended is state:
+                self._set_elevator_target(ride, release=True)
+                if state.outcome == "met":
+                    self._cabin_to_clear = ride.exit_cabin
+            elif ride is not None and state.monitor.held and not boarded:
+                self._set_elevator_target(ride)
         return await self._settle(transition)
 
     async def _settle(self, transition: Transition) -> Transition:
@@ -474,6 +513,24 @@ class RobotManager(NodeInterface):
         if state is not None and not state.dispatched:
             await self._dispatch(state.index)
         return transition
+
+    async def _clear_on_cabin_open(self) -> None:
+        """Run the adapters' `on_cabin_open` once the cabin that delivered the robot reports its door open."""
+        if not self._cabin_to_clear or self.node._semantic_value(self._cabin_to_clear, "cabin_door") != "open":
+            return
+        self._cabin_to_clear = ""
+        results = await asyncio.gather(*(a.on_cabin_open(self) for a in self._adapter_instances), return_exceptions=True)
+        for adapter, result in zip(self._adapter_instances, results, strict=True):
+            if isinstance(result, BaseException):
+                self._logger.error(f"adapter {adapter.kind!r} on_cabin_open failed: {result!r}")
+
+    def _set_elevator_target(self, phase: ElevatorRidePhase, *, release: bool = False) -> None:
+        """Point a multi-destination boarding elevator at the ride's destination, `release` writes '' to hand it back."""
+        if not phase.destination or not phase.target:
+            return
+        value = '' if release else phase.destination
+        if self.node._set_semantic(phase.target, 'target', value):
+            self._logger.debug(f"robot {self.name!r}: elevator {phase.target!r} target -> {value!r}")
 
     @property
     async def is_done(self) -> bool:
@@ -509,6 +566,7 @@ class RobotManager(NodeInterface):
 
     async def submit_task(self, request: TaskRequest, start: Pose | None = None, pedestrians: Iterable[str] = ()) -> None:
         """Resolve a typed TaskRequest and append it to this episode's phases. Phase poses are abstract until dispatch. `start` is the abstract pose the robot begins from, its current pose when omitted, `pedestrians` names the episode's declared pedestrians that are not spawned yet."""
+        from task_generator.manager.robot_manager.elevator_routing import route_phases
         from task_generator.tasks.robots.request import GoToPhase, LoopPhase, kind_of, leaf_phases
 
         if not request.phases:
@@ -518,28 +576,22 @@ class RobotManager(NodeInterface):
         if start is None:
             observed = self.pose
             start = self._environment_manager.ezilear(observed) if observed is not None else self._start_pos
-        current_level = world_manager.level_of_point(start.position.x, start.position.y)
-        boarding_tolerance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
 
-        def route(phase: TaskPhase) -> list[TaskPhase]:
-            nonlocal current_level
+        def resolve(phase: TaskPhase) -> TaskPhase:
             if isinstance(phase, LoopPhase):
-                return [attrs.evolve(phase, phases=[routed for inner in phase.phases for routed in route(inner)])]
-            if not isinstance(phase, GoToPhase):
-                return [phase]
-            phase = self._resolve_target(phase)
-            routed_phases: list[TaskPhase] = []
-            if phase.pose is not None:
-                goal_level = world_manager.level_of_point(phase.pose.position.x, phase.pose.position.y)
-                if current_level and goal_level and goal_level != current_level:
-                    for elevator_position, boarding_radius in world_manager.elevator_route(current_level, goal_level, self.radius):
-                        routed_phases.append(GoToPhase(pose=Pose(position=elevator_position, orientation=phase.pose.orientation), tolerance_radius=min(boarding_tolerance, boarding_radius), tolerance_angle=math.pi))
-                    current_level = goal_level
-            routed_phases.append(phase)
-            return routed_phases
+                return attrs.evolve(phase, phases=[resolve(inner) for inner in phase.phases])
+            return self._resolve_target(phase) if isinstance(phase, GoToPhase) else phase
+
+        routed_phases = route_phases(
+            [resolve(phase) for phase in request.phases],
+            start.position,
+            world_manager,
+            robot_radius=self.radius,
+            goal_tolerance=float(self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value),
+        )
 
         self.node._known_subjects.update(pedestrians)
-        phases = [self._with_defaults(routed) for phase in request.phases for routed in route(phase)]
+        phases = [self._with_defaults(phase) for phase in routed_phases]
         for phase in leaf_phases(phases):
             if isinstance(phase, GoToPhase) and phase.signal:
                 adapter = self._adapters.get(kind_of(phase))
@@ -730,9 +782,8 @@ class RobotManager(NodeInterface):
         await asyncio.gather(*(a.ensure_services() for a in self._adapter_instances))
         launch_description = launch.LaunchDescription()
         current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level))
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(_NAV2_QUIET_RULES))
-        launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(_MOVEIT_QUIET_RULES))
+        for action in log_level_actions(self.node.conf.General.LOG_LEVEL.value or current_log_level):
+            launch_description.add_action(action)
 
         launch_arguments = {
             'robot': self.model_name,
@@ -764,7 +815,7 @@ class RobotManager(NodeInterface):
             tf_buffer=None,
             node_handle=self.node,
         )
-        adapter_actions: list[object] = [
+        adapter_actions: list[launch.Action] = [
             launch_ros.actions.PushRosNamespace(str(self.namespace)),
             *(a.launch_description(adapter_ctx) for a in self._adapter_instances),
         ]
@@ -820,8 +871,8 @@ class RobotManager(NodeInterface):
             ready_timeout = self.node.conf.Robot.READY_TIMEOUT.value
             await asyncio.gather(*(a.await_ready(self, node_paths, ready_timeout) for a in self._adapter_instances))
             await self.bring_up_controllers()
-        for adapter in self._adapter_instances:
-            await adapter.on_controllers_active(self)
+            for adapter in self._adapter_instances:
+                await adapter.on_controllers_active(self)
 
     async def bring_up_controllers(self) -> None:
         """Drive this robot's controllers to active inside the caller's unpause window, raising only on a refusal that outlasts the manager's startup grace."""

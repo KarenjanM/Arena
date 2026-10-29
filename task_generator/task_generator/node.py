@@ -1,10 +1,10 @@
 import array
 import asyncio
 import contextlib
+import enum
 import hashlib
 import json
 import random
-import re
 import threading
 import traceback
 import typing
@@ -23,10 +23,12 @@ import attrs
 import geometry_msgs.msg
 import rclpy
 import rclpy.lifecycle
+import rclpy.qos
 import task_generator_msgs.action
 import task_generator_msgs.msg
 import task_generator_msgs.srv
 import tf2_ros
+import yaml
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
 from arena_rclpy_mixins.shared import Namespace
@@ -35,6 +37,7 @@ from arena_robots.Sensor import SensorType
 from arena_runtime.sim import BaseSim, SimulatorRegistry
 from arena_simulation_setup.shared.conditions import parse_atom
 from arena_simulation_setup.shared.judge import Sample, WallGrid, atom_holds, zone_polygons
+from arena_simulation_setup.shared.task import GoToPhase, LoopPhase, TaskPhase, TaskRequest
 from arena_simulation_setup.tree.World import Level
 from arena_simulation_setup.tree.World.Scenario import EpisodeCondition, TimelineEntry
 from arena_viz.kinds import DisplayKind
@@ -42,6 +45,7 @@ from arena_viz.style import StyleSpec
 from rcl_interfaces.msg import IntegerRange, ParameterDescriptor, ParameterValue
 from rcl_interfaces.msg import Parameter as RclParameter
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.exceptions import InvalidHandle
 from rclpy.impl.implementation_singleton import rclpy_implementation
@@ -51,7 +55,7 @@ from std_msgs.msg import Bool, Int16, String
 from task_generator_msgs.msg import AdapterDisplay, AdapterEntry, AdapterVizManifest, RecordedTopics
 
 from task_generator.constants import Constants
-from task_generator.constants.runtime import Configuration, migrate_deprecated_params
+from task_generator.constants.runtime import RUN_EPISODE_BUSY, RUN_EPISODE_SHUTTING_DOWN, Configuration, migrate_deprecated_params
 from task_generator.interactive import MarkerHub
 from task_generator.interactive.colors import RobotColors
 from task_generator.interactive.entities import EntityHandles
@@ -61,7 +65,7 @@ from task_generator.manager.robot_manager import RobotsManager
 from task_generator.manager.world_manager.world_manager_ros import (
     WorldManagerROS as WorldManager,
 )
-from task_generator.shared import Orientation, Pose, Position
+from task_generator.shared import Obstacle, Orientation, Pose, Position
 from task_generator.simulators.acoustics import AcousticsSimulatorRegistry, BaseAcousticsSimulator
 from task_generator.simulators.hearing import BaseHearing, HearingRegistry
 from task_generator.simulators.human import BaseHumanSimulator, HumanSimulatorRegistry
@@ -76,7 +80,9 @@ from task_generator.utils.static_tf import StaticTransformBroadcaster
 from . import SafeCallbackNode
 
 if typing.TYPE_CHECKING:
+    from arena_rclpy_mixins.node import AiomonitorConfig
     from arena_runtime.sim._semantics import SemanticChange, SemanticEntitySnapshot
+    from std_srvs.srv import Trigger
 
     from task_generator.manager.robot_manager import RobotManager
     from task_generator.shared import SemanticCfg
@@ -97,11 +103,13 @@ _EPISODE_QOS = rclpy.qos.QoSProfile(
 _SIM_TICK_RATE = 30.0
 _ONE_TICK = 1e-6
 _STEP_TIMEOUT = 10.0
-_ENV_PREFIX = re.compile(r"^env_\d+/")
 
 
-def _strip_env(name: str) -> str:
-    return _ENV_PREFIX.sub("", name, count=1)
+class _TimelineState(typing.TypedDict):
+    fired: bool
+    next: float
+    prev: bool
+    rng: random.Random
 
 
 @attrs.define
@@ -143,6 +151,11 @@ class EpisodeRuntime:
     action_in_flight: bool = False
 
 
+def _is_map_frame(frame_id: str) -> bool:
+    """Empty, map, or an env's namespaced map frame (env_0/map), all carrying realized map coordinates."""
+    return frame_id in ("", "map") or frame_id.endswith("/map")
+
+
 def _derive_seed(run_seed: str, world: str, episode_id: int) -> int:
     digest = hashlib.blake2b(
         f"{run_seed}|{world}|{episode_id}".encode(),
@@ -177,6 +190,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     @property
     def robots_manager(self) -> RobotsManager:
+        assert self._robots_manager is not None
         return self._robots_manager
 
     def __init__(self):
@@ -251,13 +265,15 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         # M2 semantics write path: inert-zone field overrides, bare->realized entity
         # name map, and the scenario timeline evaluated on sim time.
-        self._zone_overrides: dict[tuple[str, str], object] = {}
+        self._zone_overrides: dict[tuple[str, str], float | bool | str] = {}
         self._sound_levels: dict[str, float] = {}
         self._semantic_names: dict[str, str] = {}
         self._timeline: list[TimelineEntry] = []
-        self._timeline_state: list[dict[str, object]] = []
+        self._timeline_state: list[_TimelineState] = []
         self._timeline_seed: int = 0
         self._timeline_t0: float | None = None
+        self._stimulus_tasks: set[asyncio.Task] = set()
+        self._stimuli_fired: dict[str, float] = {}
         self._episode_conditions: list[EpisodeCondition] = []
         self._judge_zones: dict = {}
         self._judge_walls: WallGrid | None = None
@@ -351,6 +367,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         self._check_status_task: asyncio.Task | None = None
         self._episode_task: asyncio.Task | None = None
+        self._shutting_down = False
 
         self._publish_bootstrap_queue_state()
         self._pub_state_robots_pending.publish(task_generator_msgs.msg.RobotQueue())
@@ -382,7 +399,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     def _declare_mutable_param(self, name: str, default: object, descriptor: ParameterDescriptor) -> None:
         self.rosparam[type(default)].declare_safe(name, default, descriptor=descriptor)
 
-    def aiomonitor_config(self) -> dict[str, object] | None:
+    def aiomonitor_config(self) -> "AiomonitorConfig | None":
         # Skip when not in debug mode (no client attaches), and offset ports per
         # env_id so concurrent envs don't collide on the default 20101/2/3.
         if not flag_enabled(self, "debug", "aiomonitor"):
@@ -435,6 +452,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             await self.hold("setup")
             try:
                 await self._set_up_managers()
+                assert self._robots_manager is not None
 
                 tm_modules = self.conf.TaskMode.TM_MODULES.value
                 tm_modules.add(Constants.TaskMode.TM_Module.CLEAR_FORBIDDEN_ZONES)
@@ -494,6 +512,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return TransitionCallbackReturn.SUCCESS
 
     async def teardown(self) -> None:
+        self._shutting_down = True
         self._heartbeat_stop.set()
         running = [t for t in (self._tick_loop_task, self._check_status_task, self._episode_task) if t is not None and not t.done()]
         for t in running:
@@ -576,7 +595,6 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             realizer=realizer,
             env_id=self._env_id,
         )
-        self._simulator.set_semantics_callback(self._on_semantics_changed)
         self._simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up human simulator")
@@ -589,6 +607,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             acoustics=self._acoustics_simulator,
             robots_visible=self.conf.Human.ROBOTS_VISIBLE.value,
         )
+        self._simulator.set_semantics_callback(self._on_semantics_changed)
+        self._human_simulator.set_incident_callback(self._compromise)
 
         self._logger.info("Setting up environment manager")
         self._environment_manager = EnvironmentManager(
@@ -626,7 +646,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         names = self.list_parameters(prefixes=[prefix], depth=10).names
         if not names:
             return []
-        params = self.get_parameters(names)
+        params = self.get_parameters(list(names))
         result: list[RclParameter] = []
         for p in params:
             leaf = p.name[len(prefix) + 1 :]
@@ -758,16 +778,47 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         msg.stamp = self.sim_time.to_msg()
         msg.env_id = self._env_id
         msg.world = self._world_manager.loaded_world
+        assert self._simulator is not None
         snapshots = self._simulator.semantics_snapshot()
         self._world_manager.publish_world_markers(snapshots)
         entities = [self._semantic_entity_state_msg(s) for s in snapshots]
         entities.extend(self._zone_semantic_states())
         entities.extend(self._robot_semantic_states())
+        entities.append(self._timeline_semantic_state())
         msg.entities = entities
         self._pub_state_semantics.publish(msg)
 
     def _on_semantics_changed(self, changes: "Sequence[SemanticChange]") -> None:
         self._semantics_dirty = True
+        self._forward_semantic_changes(changes)
+
+    def _forward_semantic_changes(self, changes: "Sequence[SemanticChange]") -> None:
+        """Hand discrete and predicate semantic changes to the human simulator under authored and env-stripped names."""
+        human = self._human_simulator
+        if not changes:
+            return
+        from arena_runtime.sim._semantics import _SEMANTIC_KINDS
+
+        authored = {realized: bare for bare, realized in self._semantic_names.items()}
+        prefix = f"{self._realizer.prefix()}/"
+        for change in changes:
+            kind = _SEMANTIC_KINDS.get(change.kind)
+            if change.field_kind == "state" and (change.field in kind.CONTINUOUS if kind is not None else self._is_number(change.current)):
+                continue
+            entity = authored.get(change.entity) or human.authored_name(change.entity)
+            value = change.current.removeprefix(prefix)
+            human.notify_semantic_change(entity, change.field, value)
+            stripped = change.entity.removeprefix(prefix)
+            if stripped != entity:
+                human.notify_semantic_change(stripped, change.field, value)
+
+    @staticmethod
+    def _is_number(value: str) -> bool:
+        try:
+            float(value)
+        except ValueError:
+            return False
+        return True
 
     # SEMANTICS WRITE PATH
 
@@ -796,7 +847,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return self._semantic_names.get(entity) or str(self._realizer.prefix(entity))
 
     @staticmethod
-    def _coerce_zone_value(role: str, value: str) -> object:
+    def _coerce_zone_value(role: str, value: str) -> float | bool | str:
         if role == "predicate":
             token = value.strip().lower()
             if token in ("true", "false"):
@@ -827,6 +878,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _apply_semantic_checked(self, entity: str, field: str, value: str) -> str:
         """Apply one write to a runtime instance or inert zone. '' on success, else a structured reason."""
+        if self._simulator is None:
+            return "task generator not initialized"
         try:
             if self._simulator.set_semantic_value(entity, field, value):
                 return ""
@@ -862,6 +915,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     def _semantic_value(self, entity: str, field: str) -> str | None:
         """Current stringified value of one semantic field across runtime and inert-zone entities."""
         realized = self._resolve_semantic_entity(entity)
+        assert self._simulator is not None
         for snap in self._simulator.semantics_snapshot():
             if snap.entity != realized:
                 continue
@@ -904,6 +958,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._timeline = []
         self._timeline_state = []
         self._timeline_t0 = None
+        for task in self._stimulus_tasks:
+            task.cancel()
+        self._stimulus_tasks.clear()
+        self._stimuli_fired.clear()
         self._episode_conditions = []
         self._zone_overrides.clear()
         self._sound_levels.clear()
@@ -933,7 +991,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _when_true(self, when: dict | str) -> bool:
         if isinstance(when, str):
-            return atom_holds(parse_atom(when), self._sample, self._judge_zones) is True
+            atom = parse_atom(when)
+            return any(atom_holds(atom, self._sample, self._judge_zones, robot) is True for robot in self._sample.robots or ("robot",))
         expected = self._norm_token(when.get("is"))
         current = self._semantic_value(str(when.get("entity", "")), str(when.get("field", "")))
         return current is not None and current == expected
@@ -944,6 +1003,40 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             field = str(action.get("field", ""))
             value = self._resolve_timeline_value(self._norm_token(action.get("value")), idx)
             self._set_semantic(entity, field, value)
+        for stimulus in entry.stimulus:
+            for agent in stimulus.agents:
+                self._submit_stimulus(agent, stimulus.need, stimulus.intensity, self._sample.t)
+
+    def _submit_stimulus(self, agent: str, need: str, intensity: float, fired_at: float) -> None:
+        """Send one timeline stimulus without blocking the tick, recording `fired_at` once the engine takes it."""
+        task = asyncio.create_task(self._environment_manager.notify_stimulus(agent, need, intensity))
+        self._stimulus_tasks.add(task)
+
+        def _on_done(t: asyncio.Task) -> None:
+            if t not in self._stimulus_tasks:
+                return
+            self._stimulus_tasks.discard(t)
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} failed: {exc!r}")
+            elif not t.result():
+                self.get_logger().warning(f"timeline stimulus {need!r} for {agent!r} was not taken")
+            else:
+                self._stimuli_fired.setdefault(f"stimulus.{agent}.{need}", fired_at)
+                self._semantics_dirty = True
+
+        task.add_done_callback(_on_done)
+
+    def _timeline_semantic_state(self) -> task_generator_msgs.msg.SemanticEntityState:
+        """The `timeline` entity: sim time of the tick each stimulus fired on, per `stimulus.<agent>.<need>`, grow-only."""
+        msg = task_generator_msgs.msg.SemanticEntityState()
+        msg.entity = self._realizer.prefix("timeline")
+        msg.kind = "timeline"
+        msg.discrete_names = list(self._stimuli_fired.keys())
+        msg.discrete_values = [self._stringify_float(t) for t in self._stimuli_fired.values()]
+        return msg
 
     def _evaluate_timeline(self, now: float) -> None:
         """One sim-time tick of timeline evaluation. Captures t0 on the first post-unpause tick."""
@@ -1007,8 +1100,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         peds: dict[str, tuple[float, float]] = {}
         for name, (x, y), _radius in self._human_simulator.pedestrian_discs():
             local = self._environment_manager.ezilear(Pose(Position(x, y), Orientation.identity()))
-            peds[_strip_env(name)] = (local.position.x, local.position.y)
-        clips = {_strip_env(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
+            peds[self._human_simulator.authored_name(name)] = (local.position.x, local.position.y)
+        clips = {self._human_simulator.authored_name(name): playing for name, playing in self._human_simulator.pedestrian_clips().items()}
         self._known_subjects.update(peds)
         self._known_subjects.update(robots)
         return Sample(t=self.sim_time.to_seconds(), robots=robots, peds=peds, field=self._semantic_value, known=frozenset(self._known_subjects), clips=clips, walls=self._judge_walls)
@@ -1033,7 +1126,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def ped_names(self) -> list[str]:
         """Bare names of the pedestrians the human simulator currently tracks."""
-        return [_strip_env(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
+        return [self._human_simulator.authored_name(name) for name, _xy, _radius in self._human_simulator.pedestrian_discs()]
 
     def on_task_submitted(self, manager: "RobotManager") -> None:
         """Republish the episode record with the robot's phases and flush its semantic state."""
@@ -1048,10 +1141,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _robot_phases(self, manager: "RobotManager") -> dict:
         """The runner's phases and condition spans plus `map_poses`, the realized goto pose per phase (null without one)."""
-        from task_generator.tasks.robots.request import GoToPhase
-
         data = manager.runner.serialize()
-        data["map_poses"] = [list(self._environment_manager.realize(s.phase.pose).to_2d()) if isinstance(s.phase, GoToPhase) and s.phase.pose is not None else None for s in manager.runner.phases]
+        data["map_poses"] = [list(self._realizer.realize(s.phase.pose).to_2d()) if isinstance(s.phase, GoToPhase) and s.phase.pose is not None else None for s in manager.runner.phases]
         return data
 
     @staticmethod
@@ -1133,16 +1224,13 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     group="Pedestrians",
                 )
             )
-            # Backend marker overlay. On by default: the canonical Skeletons3D
-            # display cannot render namespaced envs (upstream hri_rviz reads
-            # absolute /humans paths), so this is the working pedestrian view.
             env_displays.append(
                 AdapterDisplay(
                     name="Extra",
                     topic=f"{env_ns}/pedestrian_markers/extra",
                     topic_type="visualization_msgs/MarkerArray",
                     kind=DisplayKind.MARKER_ARRAY,
-                    style_json=StyleSpec().to_json(),
+                    style_json=StyleSpec(enabled=False).to_json(),
                     topic_must_exist=False,
                     group="Pedestrians",
                 )
@@ -1167,7 +1255,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                         topic_type="visualization_msgs/MarkerArray",
                         kind=DisplayKind.MARKER_ARRAY,
                         style_json=latched,
-                        topic_must_exist=True,
+                        topic_must_exist=False,
                         group="Static",
                     )
                 )
@@ -1196,8 +1284,21 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             )
         )
 
+        env_displays.append(
+            AdapterDisplay(
+                name="Affordances",
+                topic=f"{env_ns}/affordance_markers",
+                topic_type="visualization_msgs/MarkerArray",
+                kind=DisplayKind.MARKER_ARRAY,
+                style_json=StyleSpec(latched=True, enabled=False).to_json(),
+                topic_must_exist=False,
+                group="Interaction",
+            )
+        )
+
         env_displays.extend(self._acoustics_simulator.displays())
         entries: list[AdapterEntry] = []
+        assert self._robots_manager is not None
         self.robot_colors.retain(self._robots_manager.managers)
         for mgr in self._robots_manager.managers.values():
             ns_value = str(mgr.namespace)
@@ -1281,7 +1382,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         current_modules = [m.value for m in self.conf.TaskMode.TM_MODULES.value]
         record_world = self._episodes.current.world
         loaded_world = self._world_manager.loaded_world
-        queued_robots = [m.model_name for m in self._robots_manager.managers.values()]
+        queued_robots = [m.model_name for m in self._robots_manager.managers.values()] if self._robots_manager is not None else []
 
         if overrides is None:
             queued_tm_robots = current_robots
@@ -1376,6 +1477,8 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         self._publish_queue_state()
 
     async def _run_reset_cycle(self) -> None:
+        if self._task is None or self._robots_manager is None:
+            raise RuntimeError("task generator not initialized")
         async with self._reset_lock:
             self.markers.clear()
             self._entities.clear()
@@ -1438,6 +1541,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
                     log.info(f"    {p.name}: {_fmt(Parameter.from_parameter_msg(p).value)}")
 
     def _sample_goal_progress(self) -> None:
+        assert self._robots_manager is not None
         for manager in self._robots_manager.managers.values():
             pose = manager.pose
             goal = manager.goal
@@ -1460,6 +1564,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         record.path_length = best.path_length
 
     async def _termination_watcher(self) -> None:
+        assert self._task is not None
         try:
             while True:
                 await asyncio.sleep(0.5)
@@ -1496,13 +1601,14 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
     def _close_condition_scopes(self) -> None:
         """Judge every robot's still open condition scope at episode end."""
+        assert self._robots_manager is not None
         for manager in self._robots_manager.managers.values():
             manager.finish_episode()
         self._publish_semantics_snapshot()
 
     def fail_episode(self, reason: str) -> None:
         """Abort the running episode as FAILED with ``reason``, unless it is already aborting."""
-        if self._task.abort_reason is not None:
+        if self._task is None or self._task.abort_reason is not None:
             return
         self.get_logger().warn(f"failing episode: {reason}")
         self._task.abort_episode(reason)
@@ -1519,6 +1625,10 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.ResetEpisode.Request,
         response: task_generator_msgs.srv.ResetEpisode.Response,
     ) -> task_generator_msgs.srv.ResetEpisode.Response:
+        if self._task is None:
+            response.success = False
+            response.error_msg = "task generator not initialized"
+            return response
         self._episodes.pending_world = request.world
         self._episodes.pending_seed = request.seed
         if self._episodes.action_in_flight:
@@ -1618,7 +1728,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = f"action: unknown value {request.action!r}. Valid: {valid}"
             return response
 
-        def reject(field: str, value: str, enum_cls: type) -> None:
+        def reject(field: str, value: str, enum_cls: type[enum.Enum]) -> None:
             allowed = ", ".join(m.value for m in enum_cls)
             response.success = False
             response.error_msg = f"{field}: unknown value {value!r}. Allowed: {allowed}"
@@ -1759,17 +1869,26 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         return response
 
     def _pose_from_request(self, stamped: geometry_msgs.msg.PoseStamped) -> Pose:
+        """A map-frame request pose, shifted back into the world frame the task modes place entities in."""
+        if not _is_map_frame(stamped.header.frame_id):
+            raise ValueError(f"pose must be in the map frame, got {stamped.header.frame_id!r}")
         p = stamped.pose.position
-        return Pose(Position(p.x, p.y), orientation=Orientation.from_msg(stamped.pose.orientation))
+        return self._realizer.ezilear(Pose(Position(p.x, p.y), orientation=Orientation.from_msg(stamped.pose.orientation)))
 
     async def _cb_spawn_static(
         self,
         request: task_generator_msgs.srv.SpawnStatic.Request,
         response: task_generator_msgs.srv.SpawnStatic.Response,
     ) -> task_generator_msgs.srv.SpawnStatic.Response:
+        if self._task is None:
+            response.success = False
+            response.error_msg = "task generator not initialized"
+            return response
         try:
+            await arena_simulation_setup.tree.assets.Object.ObjectIdentifier.parse(request.model).resolve_path()
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.STATIC, request.model, pose)
+            assert isinstance(obstacle, Obstacle)
             self._entities.add(obstacle)
             self._compromise(f"static {request.model} spawned by hand")
             response.id = obstacle.sim_path
@@ -1784,7 +1903,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.SpawnDynamic.Request,
         response: task_generator_msgs.srv.SpawnDynamic.Response,
     ) -> task_generator_msgs.srv.SpawnDynamic.Response:
+        if self._task is None:
+            response.success = False
+            response.error_msg = "task generator not initialized"
+            return response
         try:
+            await arena_simulation_setup.tree.assets.Human.HumanIdentifier.parse(request.model).resolve_path()
             pose = self._pose_from_request(request.pose) if request.use_pose else None
             obstacle = await self._task.tm_obstacles.extend(ObstacleKind.DYNAMIC, request.model, pose)
             self._compromise(f"dynamic {request.model} spawned by hand")
@@ -1800,7 +1924,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.SpawnRobot.Request,
         response: task_generator_msgs.srv.SpawnRobot.Response,
     ) -> task_generator_msgs.srv.SpawnRobot.Response:
-        if not self.rosparam[bool].get("initialized", False):
+        if not self.rosparam[bool].get("initialized", False) or self._task is None or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
@@ -1825,11 +1949,11 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.MoveEntity.Request,
         response: task_generator_msgs.srv.MoveEntity.Response,
     ) -> task_generator_msgs.srv.MoveEntity.Response:
-        if not self.rosparam[bool].get("initialized", False):
+        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
-        if request.pose.header.frame_id not in ("map", ""):
+        if not _is_map_frame(request.pose.header.frame_id):
             response.success = False
             response.error_msg = f"pose must be in the map frame, got {request.pose.header.frame_id!r}"
             return response
@@ -1858,7 +1982,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
         request: task_generator_msgs.srv.DespawnRobot.Request,
         response: task_generator_msgs.srv.DespawnRobot.Response,
     ) -> task_generator_msgs.srv.DespawnRobot.Response:
-        if not self.rosparam[bool].get("initialized", False):
+        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
             response.success = False
             response.error_msg = "task generator not initialized"
             return response
@@ -1872,11 +1996,49 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             response.error_msg = str(e)
         return response
 
+    async def _cb_submit_task(
+        self,
+        request: task_generator_msgs.srv.SubmitTask.Request,
+        response: task_generator_msgs.srv.SubmitTask.Response,
+    ) -> task_generator_msgs.srv.SubmitTask.Response:
+        if not self.rosparam[bool].get("initialized", False) or self._robots_manager is None:
+            response.success = False
+            response.error_msg = "task generator not initialized"
+            return response
+        manager = self._robots_manager.managers.get(request.robot)
+        if manager is None:
+            response.success = False
+            response.error_msg = f"unknown robot {request.robot!r}, robots: {sorted(self._robots_manager.managers)}"
+            return response
+        try:
+            task = TaskRequest.parse(yaml.safe_load(request.task_yaml) or [])
+            self._ezilear_phases(task.phases)
+            async with self._reset_lock:
+                first = len(manager.runner.phases)
+                if task.phases:
+                    await manager.submit_task(task)
+                else:
+                    manager.stop_task()
+                response.phase_indices = list(range(first, len(manager.runner.phases)))
+            response.success = True
+        except Exception as e:
+            response.success = False
+            response.error_msg = str(e)
+        return response
+
+    def _ezilear_phases(self, phases: Sequence[TaskPhase]) -> None:
+        """Shift map-frame goto poses into scenario coordinates in place."""
+        for phase in phases:
+            if isinstance(phase, GoToPhase) and phase.pose is not None:
+                phase.pose = self._realizer.ezilear(phase.pose)
+            elif isinstance(phase, LoopPhase):
+                self._ezilear_phases(phase.phases)
+
     async def _cb_require_map(
         self,
-        request: object,
-        response: object,
-    ) -> object:
+        request: "Trigger.Request",
+        response: "Trigger.Response",
+    ) -> "Trigger.Response":
         if not self.rosparam[bool].get("initialized", False):
             response.success = False
             response.message = "task generator not initialized"
@@ -1890,7 +2052,7 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
     # ACTION SERVER
 
     def _goal_callback(self, goal_request: object) -> GoalResponse:
-        return GoalResponse.REJECT if self._episodes.action_in_flight else GoalResponse.ACCEPT
+        return GoalResponse.REJECT if self._shutting_down or self._episodes.action_in_flight else GoalResponse.ACCEPT
 
     def _cancel_callback(self, goal_handle: object) -> CancelResponse:
         episode_id = self._episodes.current.episode_id
@@ -1902,28 +2064,30 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             )
         return CancelResponse.ACCEPT
 
-    async def _execute_callback(self, goal_handle: object) -> task_generator_msgs.action.RunEpisode.Result:
-        return await self.loop_future(
+    async def _execute_callback(self, goal_handle: ServerGoalHandle) -> task_generator_msgs.action.RunEpisode.Result:
+        result = await self.loop_future(
             self._run_episode(
                 world=goal_handle.request.world,
                 seed=goal_handle.request.seed,
                 goal_handle=goal_handle,
             )
         )
+        assert isinstance(result, task_generator_msgs.action.RunEpisode.Result)
+        return result
 
     async def _run_episode(
         self,
         *,
         world: str = "",
         seed: int = -1,
-        goal_handle: object | None = None,
+        goal_handle: ServerGoalHandle | None = None,
     ) -> task_generator_msgs.action.RunEpisode.Result:
-        if self._episodes.action_in_flight:
+        if self._shutting_down or self._episodes.action_in_flight:
             if goal_handle is not None:
                 goal_handle.abort()
             return task_generator_msgs.action.RunEpisode.Result(
                 state=task_generator_msgs.action.RunEpisode.Result.SKIPPED,
-                reason="busy",
+                info=RUN_EPISODE_SHUTTING_DOWN if self._shutting_down else RUN_EPISODE_BUSY,
             )
 
         if not world:
@@ -2023,9 +2187,9 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
 
         return result
 
-    def _spawn_episode(self, **kwargs: object) -> None:
+    def _spawn_episode(self, *, world: str = "", seed: int = -1) -> None:
         async def _wrap() -> None:
-            await self._run_episode(**kwargs)
+            await self._run_episode(world=world, seed=seed)
 
         task = asyncio.create_task(_wrap())
         self._episode_task = task
@@ -2170,6 +2334,12 @@ class TaskGenerator(ArenaMixinNode, SafeCallbackNode, rclpy.lifecycle.LifecycleN
             task_generator_msgs.srv.DespawnRobot,
             self.service_namespace("runtime", "despawn_robot"),
             self._cb_despawn_robot,
+        )
+
+        self.create_service(
+            task_generator_msgs.srv.SubmitTask,
+            self.service_namespace("runtime", "submit_task"),
+            self._cb_submit_task,
         )
 
         self.create_service(

@@ -93,7 +93,8 @@ representations.
 attributes of a `ParamGroup`. A group instance declares them on a
 `ROSParamServer` node and exposes the live `ROSParam`, the class keeps the
 declaration (default, `parse` coercer, launch `description`). `PerRole` gives a
-parameter a default per role name, picked by the group's `role`.
+parameter a default per role name, picked by the group's `role`. A parameter
+with `parse` may take the raw ROS value as its default, `parse` turns it into `T`.
 `configure(config, *groups)` builds an attrs config from live values or
 defaults, `declare_launch_arguments(params, prefix=...)` turns the described
 parameters into empty-default launch arguments. The coercers (`finite`,
@@ -117,6 +118,8 @@ and calls `rclpy.try_shutdown()`. A node that decides to exit calls
 `self.request_shutdown(reason)` from any thread to take the same path. Calling
 `rclpy.try_shutdown()` directly invalidates the context while tasks still run.
 After a signal or a request, `SIGINT` stays ignored until the process exits.
+A shutdown that has not finished 120 s after it began dumps every thread to
+stderr and exits the process with status 1.
 
 `spin_node(node)` is the simpler sync equivalent for non-async nodes, and
 `spin_node(node, executor=create_executor())` runs one on the events executor.

@@ -24,6 +24,9 @@ EPISODE_PARAMS: dict[str, str] = {
     'task.episode.goto_pose.signal': 'Signal the robot must send to end a goto_pose phase, such as arrived (empty = Arena judges arrival).',
 }
 
+RUN_EPISODE_BUSY = 'busy'
+RUN_EPISODE_SHUTTING_DOWN = 'shutting down'
+
 DEPRECATED_PARAMS: dict[str, str] = {
     'episodes': 'task.episode.count',
     'auto_reset': 'task.episode.auto_reset',
@@ -59,8 +62,15 @@ def migrate_deprecated_params(node: rclpy.node.Node) -> list[str]:
 
 def Configuration(server: ROSParamServer) -> type:
 
-    def _positive_or_inf(v: float) -> float:
+    def _positive_or_inf(v: object) -> float:
+        if not isinstance(v, (int, float)):
+            raise TypeError(f'expected a number, got {v!r}')
         return v if v >= 0 else float('inf')
+
+    def _modules(v: object) -> set[Constants.TaskMode.TM_Module]:
+        if not isinstance(v, str):
+            raise TypeError(f'expected a comma-separated string, got {v!r}')
+        return {Constants.TaskMode.TM_Module(m) for m in v.split(',') if m != ''}
 
     class Config:
         """
@@ -100,6 +110,8 @@ def Configuration(server: ROSParamServer) -> type:
                 -1,
                 parse=_positive_or_inf,
             )
+
+            LOG_LEVEL = server.ROSParam[str]('log_level', '')
 
         class Obstacles:
             OBSTACLE_MAX_RADIUS = server.ROSParam[float](
@@ -181,7 +193,7 @@ def Configuration(server: ROSParamServer) -> type:
 
             TM_CONFIG = server.ROSParam[str]('task.config', '')
 
-            TM_MODULES = server.ROSParam[set[Constants.TaskMode.TM_Module]]('task.modules', ','.join([m.value for m in Constants.TaskMode.TM_Module.default()]), parse=lambda x: {Constants.TaskMode.TM_Module(m) for m in x.split(',') if m != ''})
+            TM_MODULES = server.ROSParam[set[Constants.TaskMode.TM_Module]]('task.modules', ','.join([m.value for m in Constants.TaskMode.TM_Module.default()]), parse=_modules)
 
     return Config
 

@@ -9,7 +9,7 @@ from types import ModuleType
 
 from arena_cli import common, complete
 from arena_cli.common import Verb, make_verb
-from arena_cli.complete import Flags, Static, Union
+from arena_cli.complete import Flags, LaunchArgs, Static, Union
 
 _NAME = "planners"
 _SDK_SUBDIR = "arena_planners"
@@ -21,7 +21,7 @@ DESCRIPTION = (
     "  rm <name...|--all>   deinit planner's submodules (alias: uninstall <name...>)\n"
     "  ls                   list planners, [x] ready, [ ] pending\n"
     "  check [--all]        verify planner submodules are initialized\n"
-    "  update               refresh initialized planner submodules\n"
+    "  update               refresh initialized planner submodules and relink their weights\n"
     "  uninstall            deinit all planner submodules\n"
     "  test [--preflight] [--lanes N] <name...|--all>  lockstep soak, or a short start-and-drive check, via the benchmark runner, over N lanes with --lanes, each in its own fork (needs the evaluation feature)"
 )
@@ -63,6 +63,14 @@ _PREFLIGHT_STAGE = {
     "config": {"scenario": {"file": "preflight"}},
     "timeout": "20s",
 }
+
+PREFLIGHT_VERDICT = ("--retries", "0", "--strict", "--efficacy", "0.5", "--spawn-budget", "120")
+
+
+def preflight_suite(robots: list[str] | None = None) -> dict:
+    """The preflight suite, one stage per robot when robots are named, else one stage on each contestant's own robot."""
+    stages = [{**_PREFLIGHT_STAGE, "name": f"preflight-{robot}", "robot": robot} for robot in robots] if robots else [_PREFLIGHT_STAGE]
+    return {**_SOAK_SUITE, "launch": {**_SOAK_SUITE["launch"], "env.bootstrap_timeout": 90, "robot.mobile.deadline": 30}, "stages": stages}
 
 
 def _registry() -> ModuleType:
@@ -226,7 +234,15 @@ def cmd_update(arena: Path, _args: argparse.Namespace) -> int:
     sdk = arena / _SDK_SUBDIR
     if not (sdk / ".gitmodules").is_file():
         return 0
-    return _git(["submodule", "update", "--recursive"], sdk, check=False)
+    rc = _git(["submodule", "update", "--recursive"], sdk, check=False)
+    reg = _registry()
+    kinds = reg.kinds(arena)
+    status = reg.submodule_status(arena)
+    ready = [name for name, paths in reg.submodule_paths(arena).items() if all(status.get(p) == "init" for p in paths)]
+    for planner in sorted(ready) + reg.local_planners(arena):
+        if kinds.get(planner) != "nav2":
+            _fetch_weights(arena, planner)
+    return rc
 
 
 def cmd_uninstall(arena: Path, _args: argparse.Namespace) -> int:
@@ -386,7 +402,7 @@ def install(argv: list[str]) -> None:
 def test(argv: list[str]) -> None:
     """Lockstep soak of planners via the benchmark runner.
 
-    `arena planners test [--preflight] [--lanes N] <name...|--all> [sim:=gazebo] [KEY:=VALUE ...]`
+    `arena planners test [--preflight] [--lanes N] <name...|--all> [sim:=...] [KEY:=VALUE ...]`
     Soak: one crowded lockstep stage per planner, stall/rtf/beat table, exit 3 on a stall, 4 when the runner hung.
     `--preflight`: two episodes of map_empty's `preflight` scenario, verdict wedged/weak/ok per planner, exit 3 on either.
     `--all`: every initialized planner. `--lanes N`: spread the planners over N lanes, each in its own fork.
@@ -419,8 +435,8 @@ def test(argv: list[str]) -> None:
     suite = _SOAK_SUITE
     verdict = ["--lockstep-verdict"]
     if preflight:
-        suite = {**_SOAK_SUITE, "launch": {**_SOAK_SUITE["launch"], "env.bootstrap_timeout": 90, "robot.mobile.deadline": 30}, "stages": [_PREFLIGHT_STAGE]}
-        verdict = ["--retries", "0", "--strict", "--efficacy", "0.5", "--spawn-budget", "120"]
+        suite = preflight_suite()
+        verdict = list(PREFLIGHT_VERDICT)
     evaluation.benchmark(["--suite", json.dumps(suite), "--contest", contest, *verdict, *rest, *(["--lanes", str(lanes)] if lanes else [])])
 
 
@@ -441,6 +457,6 @@ COMMANDS: dict[str, Verb] = {
         make_verb("check", check, passthrough=True, help_text="verify planner submodules are initialized", complete=Union(_ALL, Flags({"-q": "quiet"}))),
         make_verb("install", install, passthrough=True, help_text="clone planner's submodules (alias for add)", complete=_SELECT),
         make_verb("uninstall", uninstall, passthrough=True, help_text="deinit all submodules (alias: rm --all)", complete=Static(_names)),
-        make_verb("test", test, passthrough=True, complete=Union(_SELECT, _PREFLIGHT)),
+        make_verb("test", test, passthrough=True, complete=Union(_SELECT, _PREFLIGHT, LaunchArgs("arena_bringup", "arena_runtime.launch.py"))),
     ]
 }

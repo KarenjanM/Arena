@@ -1,8 +1,14 @@
 format: arena-kg/1
-uses: [core@2]
+uses: [core@2, space@1]
 entities:
 - {id: 'room:1_bathroom'}
 - {id: 'sound:hall_siren'}
+- {id: 'room:3_study'}
+- {id: 'purpose:work'}
 facts:
 - {subject: 'room:1_bathroom', verb: contains, object: 'sound:hall_siren'}
+- subject: room:3_study
+  verb: has_purpose
+  object: purpose:work
+  params: {by: llm, model: gemini-3.5-flash, prompt_sha: 12a42fdc3c28fdd0, why: A study or home office is used for working.}
 constraints: []

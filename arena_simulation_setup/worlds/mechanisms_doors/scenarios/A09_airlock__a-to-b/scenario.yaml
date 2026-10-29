@@ -1,0 +1,11 @@
+format: arena-scenario/2
+robots:
+- start: [2.0, 16.25, 0.0]
+  phases:
+  - {goto: [14.0, 16.25, 0.0]}
+conditions:
+- {op: eventually, p: robot in airlock_b, text: Leave the airlock on the far side.}
+- op: never_during
+  p: robot in airlock_gap
+  q: door_al_inner/0.state == closing
+  text: Never be in the chamber while the inner door is closing.

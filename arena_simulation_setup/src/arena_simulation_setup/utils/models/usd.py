@@ -40,6 +40,7 @@ class ModelProvider_USD(ModelProvider.provides(ModelType.USD)):
             try:
                 # print(model_dir)
                 model_path = model.path
+                assert model_path is not None
                 model_dir = model_path.parent
                 async with aiofiles.open(model_path) as f:
                     tree = ET.ElementTree(ET.fromstring(await f.read()))
@@ -92,6 +93,7 @@ class ModelProvider_USD(ModelProvider.provides(ModelType.USD)):
                     ser = ET.tostring(root, encoding="unicode", method="xml")
                     await f.write(ser)
                     await f.flush()
+                    assert isinstance(f.name, str)
                     print("Temporary URDF file for converter:", f.name)
                     subprocess.check_output(
                         [f'{ARENA_DIR}/_meta/tools/sdf2usd', f.name, model_path],
@@ -101,7 +103,7 @@ class ModelProvider_USD(ModelProvider.provides(ModelType.USD)):
 
                 from pxr import Usd
 
-                stage = Usd.Stage.Open(model_path)  # type: ignore
+                stage = Usd.Stage.Open(model_path)
                 for prim in stage.Traverse():
                     if prim.GetTypeName() == "Xform":
                         first_xform_prim = prim
@@ -149,6 +151,7 @@ async def process_dae(dae_file: Path, package_dir: Path) -> Path:
         # Write the XML tree to the temporary file.
         ser = ET.tostring(root, encoding="utf-8", method="xml", xml_declaration=True)
         await tmp_file.write(ser)
+    assert isinstance(tmp_file.name, str)
     return Path(tmp_file.name)
 
     # Write the updated .dae file to a temporary file
@@ -188,4 +191,5 @@ async def process_obj(obj_file: Path, package_dir: Path) -> Path:
     # Write the updated .obj file to a temporary file
     async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix='.obj', mode='w', encoding='utf-8') as temp_file:
         await temp_file.write(new_content)
+    assert isinstance(temp_file.name, str)
     return Path(temp_file.name)

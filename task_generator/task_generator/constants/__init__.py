@@ -15,9 +15,9 @@ class Constants:
     class HumanSimulator(Enum):
         DUMMY = "dummy"
         NONE = "none"
-        ISAAC = "isaac"
         HUNAV = "hunav"
         ARENA = "arena"
+        REPLAY = "replay"
 
     class AcousticsSimulator(Enum):
         NONE = "none"

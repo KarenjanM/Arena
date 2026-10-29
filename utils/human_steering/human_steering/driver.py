@@ -18,26 +18,29 @@ from typing import TYPE_CHECKING
 from human_steering import clips, compose, integrate
 from human_steering.clips import Clip
 
-try:
-    from task_generator.simulators.human.gait import LIMITS, GaitGenerator
-except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
-    GaitGenerator = None  # type: ignore[assignment,misc]
-    LIMITS = ()  # type: ignore[assignment]
-
 if TYPE_CHECKING:
     import rclpy.node
     from arena_people_msgs.msg import Pedestrian, Pedestrians
     from arena_people_msgs.srv import MovePedestrians
     from geometry_msgs.msg import Twist
+    from rclpy.qos import QoSProfile
+    from rclpy.subscription import Subscription
+    from rclpy.task import Future
+    from task_generator.simulators.human.gait import LIMITS, GaitGenerator
     from task_generator_msgs.msg import EpisodeRecord
 else:
+    try:
+        from task_generator.simulators.human.gait import LIMITS, GaitGenerator
+    except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
+        GaitGenerator = None
+        LIMITS = ()
     try:
         from arena_people_msgs.msg import Pedestrian, Pedestrians
         from arena_people_msgs.srv import MovePedestrians
         from geometry_msgs.msg import Twist
         from task_generator_msgs.msg import EpisodeRecord
     except ImportError:  # pragma: no cover - exercised only without a sourced ROS install
-        Pedestrian = Pedestrians = MovePedestrians = Twist = EpisodeRecord = None  # type: ignore[assignment,misc]
+        Pedestrian = Pedestrians = MovePedestrians = Twist = EpisodeRecord = None
 
 STREAM_HZ = 20.0
 RUN_THRESHOLD_MPS = 1.8
@@ -222,7 +225,7 @@ def resolve_namespace(node: rclpy.node.Node, target: str | None = None) -> Names
     return Namespaces(node_ns=node_ns, env_ns=env_ns, map_topic=f"{node_ns}/map")
 
 
-def _stream_qos() -> object:
+def _stream_qos() -> QoSProfile:
     import rclpy.qos
 
     return rclpy.qos.QoSProfile(
@@ -233,7 +236,7 @@ def _stream_qos() -> object:
     )
 
 
-def _episode_qos() -> object:
+def _episode_qos() -> QoSProfile:
     import rclpy.qos
 
     # Mirrors node.py's _EPISODE_QOS exactly: deeper KeepLast for terminal-then-next bursts.
@@ -264,7 +267,7 @@ class Driver:
         self._pending_peds: Pedestrians | None = None
         self._pending_episode_id: int | None = None
         self._pending_cmd_vel: dict[str, tuple[float, float, float, float]] = {}
-        self._cmd_vel_subs: dict[str, object] = {}
+        self._cmd_vel_subs: dict[str, Subscription] = {}
 
         self._engine_time_s = 0.0
         self._last_tick_sim_s: float | None = None
@@ -470,11 +473,11 @@ class Driver:
             qz, qw = _yaw_to_quat_zw(yaw)
             ped.pose.orientation.z = qz
             ped.pose.orientation.w = qw
-        request.pedestrians.append(ped)
+        request.pedestrians = [ped]
         future = self._move_client.call_async(request)
         future.add_done_callback(functools.partial(self._on_teleport_response, name))
 
-    def _on_teleport_response(self, name: str, future: object) -> None:
+    def _on_teleport_response(self, name: str, future: Future) -> None:
         exc = future.exception()
         if exc is not None:
             self._node.get_logger().warning(f"human/move failed for {name!r}: {exc!r}")
@@ -555,9 +558,11 @@ class Driver:
         out = Pedestrians()
         out.header.frame_id = "map"
         out.header.stamp = now.to_msg()
+        peds = []
         for name, intent in held:
             self._intents.expire_teleop(name, now_wall)
-            out.pedestrians.append(self._step_ped(name, intent, dt, now_wall))
+            peds.append(self._step_ped(name, intent, dt, now_wall))
+        out.pedestrians = peds
 
         self._pub.publish(out)
         self._publish_times.append(now_wall)

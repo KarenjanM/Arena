@@ -34,6 +34,7 @@ class NoneAdapter(MobileAdapter):
         robot: RobotManager,
     ) -> None:
         assert isinstance(phase, GoToPhase), f"NoneAdapter only accepts GOTO_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
+        assert phase.pose is not None
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
         goal = GotoPose.Goal()
         goal.target = self._phase_to_pose_stamped(phase, robot)
@@ -51,5 +52,6 @@ class NoneAdapter(MobileAdapter):
         msg = geometry_msgs.msg.PoseStamped()
         msg.header.frame_id = "map"
         msg.header.stamp = robot.node.sim_time.to_msg()
+        assert phase.pose is not None
         msg.pose = phase.pose.to_msg()
         return msg

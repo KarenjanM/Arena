@@ -19,9 +19,8 @@ from PIL import Image
 from scipy import ndimage
 
 from arena_simulation_setup.shared import Obstacle
-from arena_simulation_setup.tree import DynamicPaths, Identifier
-from arena_simulation_setup.tree.assets.Object import ObjectIdentifier
-from arena_simulation_setup.tree.World import Level, WorldIdentifier, WorldView
+from arena_simulation_setup.tree import Identifier
+from arena_simulation_setup.tree.World import Level, WorldIdentifier, WorldView, world_assets
 from arena_simulation_setup.tree.World.model import _PASSAGE_CLEARANCE
 
 DEFAULT_RADIUS = 0.267
@@ -117,8 +116,8 @@ def _robots_dir() -> Path:
 
 
 def resolve_world(raw: str) -> tuple[WorldView, set[str] | None]:
-    """World directory, or name with an optional `[level,...]` filter resolved like the runtime (ARENA_WORLD_PATH, installed worlds, world buckets)."""
-    name, levels = WorldIdentifier.parse(raw)
+    """World directory, or name with an optional `[level,...]` filter resolved like the runtime (ARENA_WORLD_PATH, the writable local root, installed worlds, world buckets)."""
+    name, levels = WorldIdentifier.split_filter(raw)
     path = Path(name).expanduser()
     if path.is_dir():
         return WorldView(path.resolve()), levels
@@ -139,10 +138,7 @@ def nav_at_r(
     """NAV@r per level id, with static entities as occupancy unless `walls_only`, the single-start share when `start` is given, and the components painted to `image`."""
     world = view.load(validate=False, level_filter=levels)
     single = len(world.levels) == 1
-    previous = DynamicPaths.WORLD.path
-    DynamicPaths.LINKED.paths = list(world.sources)
-    _point_objects_at(view.path)
-    try:
+    with world_assets(view, world):
         return {
             level_id: _level_nav_at_r(
                 level_id,
@@ -156,14 +152,6 @@ def nav_at_r(
             )
             for level_id, level in world.levels.items()
         }
-    finally:
-        _point_objects_at(previous)
-
-
-def _point_objects_at(path: Path) -> None:
-    DynamicPaths.WORLD.path = path
-    for resolver in ObjectIdentifier._resolvers:
-        resolver.invalidate()
 
 
 def _level_nav_at_r(
@@ -179,18 +167,24 @@ def _level_nav_at_r(
 ) -> NavAtR:
     entities = list(level.objects)
     walls_grid, origin = level.render_grid(resolution=resolution)
-    clearance = ndimage.distance_transform_edt(walls_grid == _FREE) * resolution
+    distance = ndimage.distance_transform_edt(walls_grid == _FREE)
+    assert isinstance(distance, np.ndarray)
+    clearance = distance * resolution
     walls_traversable = clearance >= radius
     unresolved = 0
     grid = walls_grid
     if not walls_only:
         footprints, unresolved = _footprints(entities)
         grid, _ = level.render_grid(resolution=resolution, asset_color='black', asset_name_color=None, static_objects=footprints)
-        clearance = ndimage.distance_transform_edt(grid == _FREE) * resolution
+        distance = ndimage.distance_transform_edt(grid == _FREE)
+        assert isinstance(distance, np.ndarray)
+        clearance = distance * resolution
     traversable = clearance >= radius
     spawnable = traversable & (clearance >= spawn_clearance)
 
-    labels, count = ndimage.label(traversable, structure=_CONNECTIVITY)
+    labelled = ndimage.label(traversable, structure=_CONNECTIVITY)
+    assert isinstance(labelled, tuple)
+    labels, count = labelled
     cells = np.bincount(labels.ravel(), minlength=count + 1)[1:]
     spawns = np.bincount(labels[spawnable], minlength=count + 1)[1:]
     order = np.argsort(-cells, kind='stable')
@@ -199,7 +193,7 @@ def _level_nav_at_r(
     value = float(np.dot(masses, shares)) if spawns.sum() else math.nan
     rank = np.zeros(count + 1, dtype=np.int64)
     rank[order + 1] = np.arange(1, count + 1)
-    ranked = rank[labels]
+    ranked = rank[labels]  # pyright: ignore[reportCallIssue, reportArgumentType]
 
     if image is not None:
         _paint(walls_grid, grid, ranked).save(image)
@@ -246,6 +240,9 @@ def _footprints(entities: Iterable[Obstacle]) -> tuple[list[tuple[str, shapely.P
     footprints: list[tuple[str, shapely.Polygon]] = []
     unresolved = 0
     for entity, bbox in zip(pending, Identifier._run_sync(_gather()), strict=True):
+        if not isinstance(bbox, Sequence):
+            unresolved += 1
+            continue
         try:
             (x_min, x_max), (y_min, y_max), *z_pair = bbox
         except (TypeError, ValueError):

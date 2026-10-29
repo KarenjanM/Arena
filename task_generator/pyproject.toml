@@ -19,7 +19,7 @@ dependencies = [
     "typing-extensions",
     "watchdog",
 ]
-dynamic = ["description", "license", "maintainers", "scripts"]
+dynamic = ["description", "license", "maintainers", "scripts", "entry-points"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
@@ -34,4 +34,5 @@ markers = [
     "ros: requires a sourced ROS2 environment",
     "slow: long-running tests",
     "clips(*names): needs these Animation assets (skipped when they cannot be resolved)",
+    "network: hits the live upstream host",
 ]

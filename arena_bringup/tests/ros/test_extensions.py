@@ -399,3 +399,45 @@ class TestSetGlobalLogLevelAction:
             ["/foo", "debug"],
             ["**/*", "error"],
         ]
+
+    def test_execute_fallback_lands_above_catch_all(self) -> None:
+        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
+        ctx = _make_context()
+        SetGlobalLogLevelAction("{**/planner_server:info, warn}").execute(ctx)
+        SetGlobalLogLevelAction("+[**/planner_server:error, **/bt_navigator:error]", fallback=True).execute(ctx)
+        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
+            ["**/planner_server", "info"],
+            ["**/planner_server", "error"],
+            ["**/bt_navigator", "error"],
+            ["**/*", "warn"],
+        ]
+
+    def test_execute_fallback_without_catch_all_appends(self) -> None:
+        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction
+
+        ctx = _make_context()
+        SetGlobalLogLevelAction("{/foo:debug}").execute(ctx)
+        SetGlobalLogLevelAction("+[/bar:error]", fallback=True).execute(ctx)
+        assert json.loads(ctx.launch_configurations["NodeLogLevelExtension_log_level"]) == [
+            ["/foo", "debug"],
+            ["/bar", "error"],
+        ]
+
+
+class TestActiveSpec:
+    def test_empty_without_rules(self) -> None:
+        from arena_bringup.extensions.NodeLogLevelExtension import active_spec
+
+        assert active_spec(_make_context()) == ""
+
+    def test_round_trips_rule_set(self) -> None:
+        from arena_bringup.extensions.NodeLogLevelExtension import SetGlobalLogLevelAction, active_spec, parse_log_level_spec
+
+        ctx = _make_context()
+        SetGlobalLogLevelAction("{**/planner_server:info, /dummy/node:debug, warn}").execute(ctx)
+        assert active_spec(ctx) == "{**/planner_server:info, /dummy/node:debug, **/*:warn}"
+        assert parse_log_level_spec(active_spec(ctx)) == (
+            "replace",
+            [("**/planner_server", "info"), ("/dummy/node", "debug"), ("**/*", "warn")],
+        )

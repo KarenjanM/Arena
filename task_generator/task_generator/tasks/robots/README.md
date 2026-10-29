@@ -32,16 +32,19 @@ three axes; e.g. `task.scenario.file` is read by both `TM_Robots.scenario` and
 levels), with start and goal sampled anywhere. Which levels exist is set at load time
 (`world:=name` loads all, `world:=name[0,3]` loads only 0 and 3), not per reset.
 
-Crossing floors is handled below the task mode, in `RobotManager.submit_task`: when a
-`GoToPhase` targets a different level than the one the task starts on, it injects
-elevator-boarding subgoals (`WorldManager.elevator_route` BFS over the elevator graph)
-ahead of it. The starting level comes from the `start` pose a task mode passes along
-with the request (a reset submits before the robot is moved there), or from the
-robot's live pose when none is given, so a request submitted mid-episode is routed
-from where the robot is. A boarding subgoal counts as reached only within the cabin's
-`boarding_radius`, where the whole robot is inside and clear of the cabin door, capped
-by the configured goal tolerance. The robot drives into each cabin, the mechanism shim
-teleports it across, and the next leg becomes reachable.
+Crossing floors is handled below the task mode, in `RobotManager.submit_task`:
+[`route_phases`](../../manager/robot_manager/elevator_routing.py) expands the explicit
+`via` elevators of a `GoToPhase`, then, when the goal is on a different level than the
+one the robot ends up on, the BFS route over the elevator graph
+(`WorldManager.elevator_hops`). Each ride becomes a door-aligned approach leg
+(`ElevatorLegPhase`), an `ElevatorRidePhase` and a door-aligned exit leg. The ride is a
+goto phase whose `target` is the boarding cabin, whose dispatch pose sits at the cabin's
+back wall and whose `until` atom is `robot in <destination cabin>`, so it is met once the
+robot has boarded and the elevator has delivered it, and replay judges it like any other
+phase. The starting level comes from the `start` pose a task mode passes along with the
+request (a reset submits before the robot is moved there), or from the robot's live pose
+when none is given. The mechanism shim teleports the robot across while it waits inside
+the cabin.
 
 ## Task modes (`TM_Robots` subclasses)
 
@@ -54,7 +57,7 @@ an async `done` flag. Shipped modes:
 | `random` | [`random/`](random/) | one random reachable goal per robot per episode |
 | `explore` | [`explore/`](explore/) | extends `random`; when a robot finishes or times out, a fresh random goal is assigned |
 | `guided` | [`guided/`](guided/) | external controller drives the goal sequence. 2D Nav Goal clicks append waypoints, which show as numbered drag handles with Delete, Insert after and Clear chain menus |
-| `stationary` | [`stationary/`](stationary/) | robot stays parked at start pose without goal dispatch |
+| `stationary` | [`stationary/`](stationary/) | robot stays parked without goal dispatch, at `pos_x`/`pos_y`/`pos_theta` or a free pose sampled per episode |
 | `scenario` | [`scenario/`](scenario/) | reads `start`/`goal` pairs from the world's scenario YAML |
 | `characterization` | [`characterization/`](characterization/) | open-loop maneuver sweep: publishes exact `cmd_vel` profiles through the robot's rated envelope (no nav goals), tags each maneuver with `characterization_phase` markers, odom stall watchdog |
 | `null` | [`composite.py`](composite.py) | idle sink for robots unallocated by the fleet manager |
@@ -102,7 +105,8 @@ share one definition. [`request.py`](request.py) re-exports them with
   rejects a signal the robot's adapter cannot send (`Adapter.signals`). With
   neither pose nor target the phase holds the robot where it starts.
 - `ReachPhase`, `PlayGesturePhase`: arm phases, completed by their action
-  result.
+  result. A reach pose's `frame` (the base frame by default) is a robot link,
+  put under the robot's TF prefix unless it already carries it.
 - `TaskRequest(phases, conditions?)`: ordered phase list plus clauses judged
   over the whole request.
 
@@ -186,8 +190,8 @@ fleet's robot names differ from the last allocation.
 - **`RobotManager`** ([`manager/robot_manager/robot_manager.py`](../../manager/robot_manager/robot_manager.py)):
   one per spawned robot. Owns the bound adapters, the task runner with this
   episode's phases, the goal-republish loop, and the tf-backed `pose`
-  property. Entry points used from here: `submit_task`, `move`, `is_done`,
-  `accepts`.
+  property. Entry points used from here: `submit_task`, `stop_task`, `move`,
+  `is_done`, `accepts`.
 - **`RobotsManager`** ([`manager/robot_manager/robots_manager.py`](../../manager/robot_manager/robots_manager.py)):
   diff-driven fleet lifecycle. Parses the `robot` ROS param (comma-
   separated list of robot names, `model[count]`, or `.yaml` setup refs),

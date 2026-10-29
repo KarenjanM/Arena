@@ -265,8 +265,8 @@ def _composed(root: Path, name: str) -> WorldView:
 def test_a_comma_list_splits_outside_the_level_filters() -> None:
     assert composite_parts('hospital_2[0,1], office_1') == ['hospital_2[0,1]', 'office_1']
     assert composite_parts('hospital_2[0,1]') == ['hospital_2[0,1]']
-    assert WorldIdentifier.parse('hospital_2[1],office_1') == ('hospital_2[1],office_1', None)
-    assert WorldIdentifier.parse('hospital_2[0,1]') == ('hospital_2', {'0', '1'})
+    assert WorldIdentifier.split_filter('hospital_2[1],office_1') == ('hospital_2[1],office_1', None)
+    assert WorldIdentifier.split_filter('hospital_2[0,1]') == ('hospital_2', {'0', '1'})
 
 
 def test_a_single_world_is_not_composed(tmp_path: Path) -> None:

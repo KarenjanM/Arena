@@ -13,7 +13,7 @@ if typing.TYPE_CHECKING:
 
 _NS = _REGISTRY_NAMESPACE("stationary")
 
-_UNSET_DESCRIPTION = "NaN in pos_x or pos_y leaves every robot at its configured start pose."
+_UNSET_DESCRIPTION = "NaN in pos_x or pos_y parks every robot at a free pose sampled per episode."
 
 
 def _declare_schema(node: ROSParamServer, ns: Namespace) -> None:

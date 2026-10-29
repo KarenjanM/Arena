@@ -1,6 +1,7 @@
 """colcon build wrapper: package-skip and cmake-args logic for the workspace."""
 
 import os
+import shutil
 import sys
 from typing import NamedTuple
 
@@ -49,6 +50,15 @@ def workspace() -> Workspace:
     )
 
 
+def build_python() -> str:
+    """The interpreter colcon builds Python extensions for, empty when uv finds none."""
+    import subprocess
+
+    from arena_cli.common import _env
+
+    return subprocess.run(["uv", "python", "find"], cwd=_env("ARENA_DIR"), capture_output=True, text=True, check=False).stdout.strip()
+
+
 def resolve_packages(argv: list[str]) -> list[str]:
     """Package names a colcon selection argv resolves to."""
     import subprocess
@@ -87,6 +97,13 @@ def _recursive_mtime(path: str) -> int:
     return int(best)
 
 
+def _changed_build_type(build_dir: str, build_type: str) -> bool:
+    """Whether build_dir holds the leftovers of the other build type, whose installed symlinks block a symlink-install."""
+    if build_type.rsplit(".", 1)[-1] in ("ament_python", "python"):
+        return os.path.isfile(os.path.join(build_dir, "CMakeCache.txt"))
+    return os.path.isfile(os.path.join(build_dir, "colcon_command_prefix_setup_py.sh"))
+
+
 def _mount_point(path: str) -> str:
     path = os.path.realpath(path)
     while not os.path.ismount(path):
@@ -98,8 +115,6 @@ def build_main(argv: list[str]) -> int:
     """Run colcon build with the workspace package-skip and cmake-args logic. Assumes cwd is ARENA_WS_DIR."""
     import subprocess
 
-    from arena_cli.common import _env
-
     args = list(argv)
 
     skip_old_env = os.environ.get("SKIP_OLD")
@@ -110,7 +125,7 @@ def build_main(argv: list[str]) -> int:
 
     ws = workspace()
 
-    python = subprocess.run(["uv", "python", "find"], cwd=_env("ARENA_DIR"), capture_output=True, text=True, check=False).stdout.strip()
+    python = build_python()
     cmake_args = [f"-DPython3_EXECUTABLE={python}"] if python else []
 
     display_args = ["--symlink-install", "--continue-on-error", "--cmake-args", *cmake_args]
@@ -157,6 +172,11 @@ def build_main(argv: list[str]) -> int:
 
             if not up_to_date:
                 build_packages.append(package)
+                build_type = fields[2].strip("()") if len(fields) > 2 else ""
+                if package and _changed_build_type(os.path.join(ws.build_base, package), build_type):
+                    for tree in (os.path.join(ws.build_base, package), os.path.join(ws.install_base, package)):
+                        print(f"CLEANING: {package} changed its build type to {build_type}, rm -rf {tree}", flush=True)
+                        shutil.rmtree(tree, ignore_errors=True)
 
         if not build_packages:
             print("BUILDING: nothing stale, every package is up to date")

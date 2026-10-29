@@ -6,13 +6,14 @@ from arena_viz import DisplayKind, StyleSpec
 from task_generator_msgs.msg import AdapterDisplay, RobotDescriptor
 
 from rviz_utils.renderers._registry import register
+from rviz_utils.renderers._registry import rviz_extra as _rviz_extra
 
 
 @register(DisplayKind.MAP)
 def render_map(d: AdapterDisplay, robot: RobotDescriptor | None) -> dict[str, object] | None:
     style = StyleSpec.from_json(d.style_json)
-    rviz_extra: dict[str, object] = style.extra.get("rviz", {})
-    color_scheme: str = rviz_extra.get("Color Scheme", "map")
+    rviz_extra = _rviz_extra(style)
+    color_scheme = rviz_extra.get("Color Scheme", "map")
     durability = rviz_extra.get("Durability Policy", "Transient Local")
     reliability = rviz_extra.get("Reliability Policy", "Reliable")
     topic: dict[str, object] = {

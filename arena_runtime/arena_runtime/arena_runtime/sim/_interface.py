@@ -78,6 +78,10 @@ class HumanSimulator(typing.Protocol):
 
     async def pedestrian_teleport(self, destinations: Mapping[str, tuple[float, float]]) -> bool: ...
 
+    async def elevator_doors_changed(self, doors: Mapping[str, bool]) -> None: ...
+
+    def set_mechanism_walls(self, key: str, segments: Sequence[tuple[tuple[float, float], tuple[float, float]]] | None) -> None: ...
+
 
 class SimUnavailable(RuntimeError):
     """Sim service call timed out or the sim transport is gone."""
@@ -278,7 +282,6 @@ class MechanismITF:
         from ._mechanism_shim import _DoorRuntime, _ElevatorRuntime
         from ._semantics import SemanticChange, SemanticEntitySnapshot, SemanticsManager
 
-        node: ArenaMixinNode
         _human_simulator: HumanSimulator | None
         _door_runtime: dict[str, _DoorRuntime]
         _elevator_runtime: dict[str, _ElevatorRuntime]
@@ -294,6 +297,9 @@ class MechanismITF:
         _light_outputs: dict[str, tuple[float, float]]
         _light_poses: dict[str, tuple[Position, float]]
         _incident_callback: Callable[[str], None] | None
+
+        @property
+        def node(self) -> ArenaMixinNode: ...
 
     SIM_NAME: typing.ClassVar[str]
 

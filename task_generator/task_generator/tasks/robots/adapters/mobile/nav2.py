@@ -71,8 +71,8 @@ _REDISPATCH_MIN_S = 2.0
 class Nav2Adapter(MobileAdapter):
     kind: ClassVar[str] = "nav2"
 
-    def __init__(self, *args: object, **kwargs: object):
-        super().__init__(*args, **kwargs)
+    def __init__(self, robot_manager: RobotManager, **kwargs: object):
+        super().__init__(robot_manager, **kwargs)
         self._costmap_clients: dict[str, ClientWrapper] = {}
         self._last_redispatch: float = -_REDISPATCH_MIN_S
 
@@ -92,6 +92,7 @@ class Nav2Adapter(MobileAdapter):
         robot: RobotManager,
     ) -> None:
         assert isinstance(phase, GoToPhase), f"Nav2Adapter only accepts GOTO_POSE phases; got {type(phase).__name__} (kind={phase.kind!r})"
+        assert phase.pose is not None
         robot._goal_pos = phase.pose  # pylint: disable=protected-access
         if self.client.is_done() is False:
             self.client.cancel()
@@ -111,6 +112,7 @@ class Nav2Adapter(MobileAdapter):
         msg = geometry_msgs.msg.PoseStamped()
         msg.header.frame_id = "map"
         msg.header.stamp = robot.node.sim_time.to_msg()
+        assert phase.pose is not None
         msg.pose = phase.pose.to_msg()
         return msg
 
@@ -159,6 +161,9 @@ class Nav2Adapter(MobileAdapter):
         phase = robot.active_dispatch_phase()
         if phase is not None:
             await self.dispatch_phase(phase, robot)
+
+    async def on_cabin_open(self, robot: RobotManager) -> None:
+        await self._clear_costmap(robot, "local")
 
     async def _clear_costmap(
         self,

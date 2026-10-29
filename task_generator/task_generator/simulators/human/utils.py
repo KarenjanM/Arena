@@ -25,6 +25,11 @@ class KnownObstacle[ObstacleT]:
     layer: ObstacleLayer = ObstacleLayer.UNUSED
 
 
+class _KnownObstacleOptions(typing.TypedDict, total=False):
+    spawned: bool
+    layer: ObstacleLayer
+
+
 class KnownObstacles[ObstacleT]:
     """
     Helper interface to store known obstacles
@@ -44,7 +49,7 @@ class KnownObstacles[ObstacleT]:
         if name in self._known_obstacles:
             del self._known_obstacles[name]
 
-    def create_or_get(self, name: str, obstacle: ObstacleT, **kwargs: object) -> KnownObstacle[ObstacleT]:
+    def create_or_get(self, name: str, obstacle: ObstacleT, **kwargs: typing.Unpack[_KnownObstacleOptions]) -> KnownObstacle[ObstacleT]:
         """
         Get an existing obstacle or create it if it doesn't exist. To overwrite an existing obstacle, first remove it using forget().
         @name: name of obstacle

@@ -10,6 +10,7 @@ from arena_simulation_setup.tree import (
     NetResolver,
     PathView,
 )
+from arena_simulation_setup.utils.affordance import AffordanceSlot, placed_slots
 from arena_simulation_setup.utils.models import ModelWrapper
 from arena_simulation_setup.utils.models.model_loader import (
     ModelProvider_OBJ,
@@ -44,6 +45,11 @@ class ObjectView(PathView):
         if not ann_path.exists():
             return None
         return yaml.safe_load(ann_path.read_text())
+
+    @cached_property
+    def affordances(self) -> list[AffordanceSlot]:
+        """Placed affordance slots in the obstacle-local frame, empty when unannotated."""
+        return placed_slots((self.annotation or {}).get('affordances') or {})
 
     @cached_property
     def bounds(self) -> list[tuple[float, float]] | None:

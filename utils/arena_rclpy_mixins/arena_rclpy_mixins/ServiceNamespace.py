@@ -4,8 +4,8 @@ from .shared import Namespace
 
 
 class ServiceNamespace(rclpy.node.Node):
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, node_name: str, *args: object, **kwargs: object) -> None:
+        super().__init__(node_name, *args, **kwargs)
 
     def service_namespace(self, *args: str) -> Namespace:
         """

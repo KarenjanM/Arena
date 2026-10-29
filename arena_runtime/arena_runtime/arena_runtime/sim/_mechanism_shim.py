@@ -11,7 +11,7 @@ from collections.abc import Sequence
 import attrs
 import rclpy.impl.rcutils_logger
 from arena_simulation_setup.shared.world import CABIN_DOOR_INSET as DOOR_INSET
-from arena_simulation_setup.shared.world import CABIN_DOOR_WIDTH
+from arena_simulation_setup.shared.world import CABIN_DOOR_THRESHOLD, CABIN_DOOR_WIDTH, ActivationDistance
 from task_generator.shared import Door, Elevator, Orientation, Pose, Position
 
 from ._interface import _BOX_FLOOR_CLEARANCE
@@ -21,8 +21,13 @@ if typing.TYPE_CHECKING:
 
 MECHANISM_TICK_RATE = 30.0  # Hz, sim time
 WALL_THICKNESS = 0.05
+# Sim seconds an unaccounted teleported rider holds a cabin before it resumes service
+TELEPORT_GRACE = 10.0
+HINGE_MAX_ANGLE = math.pi / 2.0
 
 Disc = tuple[str, tuple[float, float], float]
+Segment = tuple[tuple[float, float], tuple[float, float]]
+DoorKind = typing.Literal['sliding', 'teleport', 'sliding_top', 'hinged']
 
 _DOOR_AXES: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
     '+x': ((1.0, 0.0), (0.0, 1.0)),
@@ -52,6 +57,19 @@ def _door_slot(elevator: Elevator) -> tuple[Position, Position]:
         Position(cx - tangent[0] * slot_half, cy - tangent[1] * slot_half, z),
         Position(cx + tangent[0] * slot_half, cy + tangent[1] * slot_half, z),
     )
+
+
+def _elevator_wall_segments(elevator: Elevator) -> list[Segment]:
+    """Back and side cabin walls as map-frame xy segments [back, side_pos, side_neg] for ped navigation."""
+    face_cx, face_cy, _outward, tangent, tan_extent = _door_basis(elevator)
+    back_cx = 2.0 * elevator.position.x - face_cx
+    back_cy = 2.0 * elevator.position.y - face_cy
+    tx, ty = tangent[0] * tan_extent, tangent[1] * tan_extent
+    back_pos = (back_cx + tx, back_cy + ty)
+    back_neg = (back_cx - tx, back_cy - ty)
+    front_pos = (face_cx + tx, face_cy + ty)
+    front_neg = (face_cx - tx, face_cy - ty)
+    return [(back_neg, back_pos), (back_pos, front_pos), (back_neg, front_neg)]
 
 
 def _elevator_wall_geometries(elevator: Elevator) -> list[tuple[str, tuple[float, float, float], Pose]]:
@@ -90,39 +108,143 @@ class _DoorState(enum.StrEnum):
     CLOSING = 'closing'
 
 
+class _CarState(enum.StrEnum):
+    PRESENT = 'present'  # car here, door free to open
+    DEPARTING = 'departing'  # car here, door closed, leaving this tick
+    ABSENT = 'absent'  # car elsewhere in the group, door closed
+    ARRIVING = 'arriving'  # car travelling here, door closed
+
+
 @attrs.define
 class _DoorRuntime:
     door: Door
     closed_pose: Pose
     open_pose: Pose
-    effective_kind: typing.Literal['sliding', 'teleport', 'sliding_top']
+    effective_kind: DoorKind
     state: _DoorState = _DoorState.CLOSED
     progress: float = 0.0  # 0 = closed, 1 = open
     last_trigger_sim_time: float = -math.inf
     last_applied_progress: float = -1.0  # forces first move_box call
+    # A close was refused because an agent is in the slab path, cleared once the path is clear.
+    close_blocked: bool = False
+    # Last wall state pushed to the human simulator (door cannot open for peds right now).
+    ped_wall: bool = False
+
+
+Occupants = tuple[tuple[str, tuple[float, float]], ...]
+
+
+@attrs.define
+class _Arrival:
+    """One committed ride: occupants leaving `source` land in the owning cabin at `eta`."""
+
+    eta: float
+    source: str
+    occupants: Occupants
 
 
 @attrs.define
 class _ElevatorRuntime:
     elevator: Elevator
     door_name: str
+    # Realized destination cabin name(s), comma separated for a multi-destination elevator.
     destination_name: str
-    # Scheduled teleport: ETA when pending_occupants arrive at destination.
-    arriving_eta: float = -math.inf
-    # Occupants staged for teleport at arriving_eta.
-    pending_occupants: tuple[tuple[str, tuple[float, float]], ...] = ()
+    # Rides heading here, ordered by eta.
+    arrivals: list[_Arrival] = attrs.field(factory=list)
     # Tracks just-teleported occupants; value = whether inside-confirmed post-teleport.
     just_arrived: dict[str, bool] = attrs.field(factory=dict)
-    # True while door is in the process of closing to dispatch a teleport.
-    departing: bool = False
+    # Sim time of the last arrival, unconfirmed just_arrived entries expire TELEPORT_GRACE after it.
+    arrived_at: float = -math.inf
+    # Where the group's car is relative to this cabin.
+    car: _CarState = _CarState.PRESENT
+    # The group's first cabin by name, where its car starts.
+    home: bool = True
+    # Every cabin of this cabin's group by name, linked through destinations.
+    group: tuple[str, ...] = ()
+    # Sim time of the oldest unanswered call while the car is elsewhere, inf when none.
+    call_since: float = math.inf
+    # Sim time the current boarders started boarding, inf when none are aboard.
+    boarded_at: float = math.inf
+    # Sim time the car last arrived here, -inf for the car's start.
+    present_since: float = -math.inf
+    # Cabin the departing car heads to.
+    next_stop: str = ''
+    # Two doors of this cabin's group were open at the last tick.
+    door_conflict: bool = False
     # Occupants already dispatched this leg, still in the cabin until their teleport fires.
     dispatched: set[str] = attrs.field(factory=set)
+    door_reported_open: bool = False
+    # Sim time after which still-present dispatched riders are released.
+    dispatch_deadline: float = math.inf
+    # Agents inside the cabin footprint at the last step.
+    live_occupants: tuple[str, ...] = ()
+    # Multi-destination: written target (realized name) overrides the round-robin cursor.
+    target_override: str | None = None
+    rr_index: int = 0
+    # Outside agents in the call radius at the last step.
+    hall_callers: frozenset[str] = frozenset()
+
+    @property
+    def departing(self) -> bool:
+        return self.car == _CarState.DEPARTING
+
+    @property
+    def destinations(self) -> tuple[str, ...]:
+        return tuple(part.strip() for part in self.destination_name.split(',') if part.strip())
+
+    def current_destination(self) -> str:
+        """Destination the next departure goes to: written target, else round-robin, '' if none."""
+        if self.target_override is not None:
+            return self.target_override
+        destinations = self.destinations
+        if not destinations:
+            return ''
+        return destinations[self.rr_index % len(destinations)]
+
+    def resolve_target(self, value: str) -> str:
+        """Map an authored (`name`, `<level>.<name>`) or realized destination to its realized name."""
+        token = value.strip()
+        destinations = self.destinations
+        if token in destinations:
+            return token
+        if '.' in token:
+            level_id, name = token.split('.', 1)
+            matches = [d for d in destinations if d == f"{name}/{level_id}" or d.endswith(f"/{name}/{level_id}")]
+        else:
+            matches = [d for d in destinations if d.endswith(f"/{token}")]
+            if not matches:
+                matches = [d for d in destinations if (d.split('/')[-2:-1] or [''])[0] == token]
+        if len(matches) != 1:
+            raise ValueError('malformed value')
+        return matches[0]
+
+    @property
+    def full(self) -> bool:
+        capacity = self.elevator.capacity
+        return capacity is not None and len(self.live_occupants) >= capacity
+
+    @property
+    def arriving_eta(self) -> float:
+        """ETA of the next arrival, -inf when nothing is in transit here."""
+        return self.arrivals[0].eta if self.arrivals else -math.inf
+
+    @property
+    def pending_occupants(self) -> Occupants:
+        """Every occupant of every queued arrival, in eta order."""
+        return tuple(occ for arrival in self.arrivals for occ in arrival.occupants)
+
+    def queue_arrival(self, arrival: _Arrival) -> None:
+        self.arrivals.append(arrival)
+        self.arrivals.sort(key=lambda a: a.eta)
 
 
 @attrs.define
 class _ElevatorStepResult:
     teleport_job: tuple[str, str, list[tuple[str, tuple[float, float]]]] | None = None
     missing_destination: bool = False
+    # Riders released after TELEPORT_GRACE (dispatched still in the source / never seen at the destination).
+    dispatch_timeout: tuple[str, ...] = ()
+    arrival_timeout: tuple[str, ...] = ()
 
 
 def _reset_door(runtime: _DoorRuntime) -> None:
@@ -131,6 +253,26 @@ def _reset_door(runtime: _DoorRuntime) -> None:
     runtime.progress = 0.0
     runtime.last_trigger_sim_time = -math.inf
     runtime.last_applied_progress = -1.0
+    runtime.close_blocked = False
+
+
+def _reset_elevator(runtime: _ElevatorRuntime) -> None:
+    """Reset an elevator runtime to spawn defaults (car at the group's first cabin, empty queue, round-robin from the first destination)."""
+    runtime.arrivals = []
+    runtime.just_arrived = {}
+    runtime.arrived_at = -math.inf
+    runtime.car = _CarState.PRESENT if runtime.home else _CarState.ABSENT
+    runtime.call_since = math.inf
+    runtime.boarded_at = math.inf
+    runtime.present_since = -math.inf
+    runtime.next_stop = ''
+    runtime.door_conflict = False
+    runtime.dispatched = set()
+    runtime.dispatch_deadline = math.inf
+    runtime.live_occupants = ()
+    runtime.target_override = None
+    runtime.rr_index = 0
+    runtime.hall_callers = frozenset()
 
 
 def reset_mechanisms(mech: MechanismITF) -> None:
@@ -138,11 +280,7 @@ def reset_mechanisms(mech: MechanismITF) -> None:
     for runtime in mech._door_runtime.values():
         _reset_door(runtime)
     for name, runtime in mech._elevator_runtime.items():
-        runtime.arriving_eta = -math.inf
-        runtime.pending_occupants = ()
-        runtime.just_arrived = {}
-        runtime.departing = False
-        runtime.dispatched = set()
+        _reset_elevator(runtime)
         cabin = mech._door_runtime.get(f"{name}/door")
         if cabin is not None:
             _reset_door(cabin)
@@ -151,13 +289,10 @@ def reset_mechanisms(mech: MechanismITF) -> None:
 def _effective_kind(
     logger: rclpy.impl.rcutils_logger.RcutilsLogger,
     door: Door,
-) -> typing.Literal['sliding', 'teleport', 'sliding_top']:
-    """Return the animation kind, falling back to teleport for hinged with a warn-once log."""
+) -> DoorKind:
+    """Return the animation kind (unknown kinds animate as sliding)."""
     if door.kind == 'hinged':
-        logger.warning(
-            f"mechanism shim: door {door.name!r} kind='hinged' not implemented. Falling back to 'teleport'.",
-        )
-        return 'teleport'
+        return 'hinged'
     if door.kind == 'teleport':
         return 'teleport'
     if door.kind == 'sliding_top':
@@ -180,8 +315,30 @@ def _door_geometry(door: Door) -> tuple[tuple[float, float, float], Pose]:
     )
 
 
+def _hinge_angle(door: Door, progress: float) -> float:
+    """Slab yaw at progress: closed yaw rotated by swing_direction * progress * 90 deg about start."""
+    yaw = math.atan2(door.end.y - door.start.y, door.end.x - door.start.x)
+    return yaw + door.swing_direction * progress * HINGE_MAX_ANGLE
+
+
+def _hinged_pose(door: Door, closed_pose: Pose, progress: float) -> Pose:
+    """Slab pose of a hinged door rotated about its start point by progress."""
+    length = math.hypot(door.end.x - door.start.x, door.end.y - door.start.y)
+    angle = _hinge_angle(door, progress)
+    return Pose(
+        position=Position(
+            x=door.start.x + math.cos(angle) * length / 2.0,
+            y=door.start.y + math.sin(angle) * length / 2.0,
+            z=closed_pose.position.z,
+        ),
+        orientation=Orientation.from_yaw(angle),
+    )
+
+
 def _door_open_pose(door: Door, closed_pose: Pose, effective_kind: str) -> Pose:
-    """Return the fully-open pose for a door (Z-drop for teleport, axis-slide for sliding)."""
+    """Return the fully-open pose for a door (Z-drop for teleport, axis-slide for sliding, 90 deg for hinged)."""
+    if effective_kind == 'hinged':
+        return _hinged_pose(door, closed_pose, 1.0)
     if effective_kind == 'teleport':
         return Pose(
             position=Position(
@@ -228,7 +385,7 @@ def _elevator_synthesized_door(elevator: Elevator) -> Door:
         kind='sliding',
         width=CABIN_DOOR_WIDTH,
         height=elevator.size[2],
-        activation_distance=(elevator.activation_distance, elevator.activation_distance),
+        activation_distance=ActivationDistance((elevator.activation_distance, elevator.activation_distance)),
         transition_time=elevator.transition_time,
         hold_time=elevator.hold_time,
     )
@@ -272,10 +429,44 @@ def _near_door_segment(door: Door, positions: list[tuple[float, float]], radius:
     return False
 
 
+def _segment_distance(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+    dx, dy = bx - ax, by - ay
+    seg_len_sq = dx * dx + dy * dy
+    t = 0.0 if seg_len_sq <= 0.0 else min(1.0, max(0.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def _swept_arc_blocked(door: Door, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
+    """True when the sector a hinged slab sweeps between two progress values overlaps any agent disc."""
+    sx, sy = door.start.x, door.start.y
+    length = math.hypot(door.end.x - sx, door.end.y - sy)
+    if length <= 0.0 or not discs:
+        return False
+    half_w = door.width / 2.0
+    lo, hi = min(p_from, p_to), max(p_from, p_to)
+    a_lo, a_hi = _hinge_angle(door, lo), _hinge_angle(door, hi)
+    yaw0 = _hinge_angle(door, 0.0)
+    rel_min, rel_max = sorted((a_lo - yaw0, a_hi - yaw0))
+    for _name, (x, y), radius in discs:
+        for angle in (a_lo, a_hi):
+            ex, ey = sx + math.cos(angle) * length, sy + math.sin(angle) * length
+            if _segment_distance(x, y, sx, sy, ex, ey) <= radius + half_w:
+                return True
+        if rel_max > rel_min:
+            rel = math.atan2(y - sy, x - sx) - yaw0
+            rel = (rel + math.pi) % (2.0 * math.pi) - math.pi
+            if rel_min <= rel <= rel_max and math.hypot(x - sx, y - sy) <= length + half_w + radius:
+                return True
+    return False
+
+
 def _swept_slab_blocked(runtime: _DoorRuntime, p_from: float, p_to: float, discs: Sequence[Disc]) -> bool:
     """True when the slab band swept between the two progress values overlaps any agent disc.
-    Vertical kinds (teleport, sliding_top) occupy the slot itself regardless of progress."""
+    Vertical kinds (teleport, sliding_top) occupy the slot itself regardless of progress,
+    hinged doors sweep a sector about their start point."""
     door = runtime.door
+    if runtime.effective_kind == 'hinged':
+        return _swept_arc_blocked(door, p_from, p_to, discs)
     sx, sy = door.start.x, door.start.y
     ex, ey = door.end.x, door.end.y
     length = math.hypot(ex - sx, ey - sy)
@@ -322,23 +513,28 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
     """Advance door state machine one tick: linear T-delta for sliding, instant snap for teleport.
     The slab never moves through an agent: a blocked close re-triggers the door (it reverses,
     tested against the full remaining path so nobody in the slot is approached), an opening step
-    holds only when the slab would enter an agent in the wall pocket past the door end. Vertical
-    kinds open away from agents and are never open-blocked."""
+    holds when the slab would enter an agent: the swing sector of a hinged door, the wall pocket
+    of a sliding one. Vertical kinds open away from agents and are never open-blocked."""
     door = runtime.door
+    if runtime.close_blocked and (runtime.progress <= 0.0 or not _swept_slab_blocked(runtime, 0.0, runtime.progress, discs)):
+        runtime.close_blocked = False
     fresh = (now - runtime.last_trigger_sim_time) <= door.hold_time
     if runtime.effective_kind == 'teleport':
         if not fresh and _swept_slab_blocked(runtime, runtime.progress, 0.0, discs):
             runtime.last_trigger_sim_time = now
+            runtime.close_blocked = runtime.progress > 0.0
             fresh = True
         runtime.progress = 1.0 if fresh else 0.0
         runtime.state = _DoorState.OPEN if fresh else _DoorState.CLOSED
         return
-    # sliding (incl. sliding_top): per-tick linear T delta over transition_time
+    # sliding (incl. sliding_top) and hinged: per-tick linear T delta over transition_time
     target = 1.0 if fresh else 0.0
     step = dt / max(door.transition_time, 1e-9)
     if target > runtime.progress:
         runtime.state = _DoorState.OPENING
         next_progress = min(1.0, runtime.progress + step)
+        if runtime.effective_kind == 'hinged' and _swept_slab_blocked(runtime, runtime.progress, next_progress, discs):
+            return
         if runtime.effective_kind == 'sliding' and _sliding_entry_blocked(runtime, runtime.progress, next_progress, discs):
             return
         runtime.progress = next_progress
@@ -347,6 +543,7 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
     elif target < runtime.progress:
         if _swept_slab_blocked(runtime, 0.0, runtime.progress, discs):
             runtime.last_trigger_sim_time = now
+            runtime.close_blocked = True
             runtime.state = _DoorState.OPEN if runtime.progress >= 1.0 else _DoorState.OPENING
             return
         runtime.state = _DoorState.CLOSING
@@ -358,7 +555,9 @@ def _advance_state(runtime: _DoorRuntime, dt: float, now: float, discs: Sequence
 
 
 def _interp_pose(runtime: _DoorRuntime) -> Pose:
-    """Linear interpolation between closed and open pose at runtime.progress."""
+    """Pose at runtime.progress: rotation about start for hinged, else linear closed->open."""
+    if runtime.effective_kind == 'hinged':
+        return _hinged_pose(runtime.door, runtime.closed_pose, runtime.progress)
     a = runtime.closed_pose.position
     b = runtime.open_pose.position
     t = runtime.progress
@@ -380,80 +579,140 @@ def _step_elevator(
     outside_trigger: bool,
     now: float,
     outside_names: frozenset[str] = frozenset(),
+    callers: frozenset[str] | None = None,
+    group: typing.Mapping[str, _ElevatorRuntime] | None = None,
 ) -> _ElevatorStepResult:
+    """`callers` are the outside agents in the call radius, None means one anonymous caller on outside_trigger, `group` the other cabins of the car's group by name."""
     result = _ElevatorStepResult()
+    others = group or {}
+    if callers is None:
+        callers = frozenset({''}) if outside_trigger else frozenset()
+    new_callers = callers - runtime.hall_callers
+    runtime.hall_callers = callers
 
     # Update just_arrived tracking: confirm inside observation, clear on real exit.
     current = frozenset(name for name, _ in occupants)
+    runtime.live_occupants = tuple(sorted(current))
     for name in list(runtime.just_arrived):
         if name in current:
             runtime.just_arrived[name] = True
         elif runtime.just_arrived[name] and name in outside_names:
             del runtime.just_arrived[name]
+    if math.isfinite(runtime.arrived_at) and now > runtime.arrived_at + TELEPORT_GRACE:
+        lost = tuple(name for name, confirmed in runtime.just_arrived.items() if not confirmed)
+        for name in lost:
+            del runtime.just_arrived[name]
+        result.arrival_timeout = lost
 
     # Drop dispatched occupants once they have left the cabin (their teleport has fired).
     runtime.dispatched &= current
+    if not runtime.dispatched:
+        runtime.dispatch_deadline = math.inf
+    elif now > runtime.dispatch_deadline:
+        result.dispatch_timeout = tuple(sorted(runtime.dispatched))
+        runtime.dispatched = set()
+        runtime.dispatch_deadline = math.inf
 
-    # Check for a scheduled arrival.
-    if runtime.arriving_eta > -math.inf and now >= runtime.arriving_eta:
-        runtime.arriving_eta = -math.inf
+    # The car lands here.
+    if runtime.arrivals and now >= runtime.arrivals[0].eta:
+        arrival = runtime.arrivals.pop(0)
+        runtime.car = _CarState.PRESENT
+        runtime.call_since = math.inf
+        runtime.boarded_at = math.inf
+        runtime.present_since = now
         door_runtime.last_trigger_sim_time = now
-        if runtime.pending_occupants:
-            src_name = runtime.destination_name
-            result.teleport_job = (src_name, runtime.elevator.name, list(runtime.pending_occupants))
-            runtime.just_arrived = {name: False for name, _ in runtime.pending_occupants}
-            runtime.pending_occupants = ()
+        if arrival.occupants:
+            result.teleport_job = (arrival.source, runtime.elevator.name, list(arrival.occupants))
+            runtime.just_arrived.update({name: False for name, _ in arrival.occupants})
+            runtime.arrived_at = now
         return result
 
-    # While a teleport is in transit, suppress all door triggers.
-    if runtime.arriving_eta > -math.inf:
+    # Our dispatched riders are mid-flight or the car is on its way here: the door stays shut.
+    if runtime.car == _CarState.ARRIVING or runtime.arrivals or runtime.dispatched:
         return result
 
-    # Our dispatched rider is mid-flight: the cabin is away, keep the door shut until they land.
-    if runtime.dispatched:
-        return result
-
-    # Outside trigger opens the door if this elevator accepts outside calls.
-    if outside_trigger and runtime.elevator.accept_outside_calls:
-        door_runtime.last_trigger_sim_time = now
-        runtime.departing = False
-        return result
-
-    # Track new (non-just-arrived) occupants in the cabin.
     new_occupants = current - runtime.just_arrived.keys()
+    accepts = runtime.elevator.accept_outside_calls
 
-    # Departing phase: door closing with occupants, slab gate holds it open while blocked
-    if runtime.departing:
-        if door_runtime.state == _DoorState.CLOSED:
-            if dest_runtime is None:
-                result.missing_destination = True
-                runtime.departing = False
-                door_runtime.last_trigger_sim_time = now
-                return result
-            dest_runtime.arriving_eta = now + runtime.elevator.travel_time
-            dest_runtime.pending_occupants = tuple(occupants)
-            runtime.dispatched = {name for name, _ in occupants}
-            runtime.departing = False
-            runtime.just_arrived = {}
-            return result
-        # Door still closing: hold off.
+    # The car is elsewhere: a caller outside or anyone shut inside calls it here.
+    if runtime.car == _CarState.ABSENT:
+        hall_call = accepts and (bool(new_callers) if runtime.elevator.call_mode == 'edge' else outside_trigger)
+        if (new_occupants or hall_call) and runtime.call_since == math.inf:
+            runtime.call_since = now
         return result
 
-    # Hold door open for just-arrived occupants (post-teleport)
-    if runtime.just_arrived:
+    if new_occupants:
+        runtime.boarded_at = min(runtime.boarded_at, now)
+    else:
+        runtime.boarded_at = math.inf
+    hold_time = runtime.elevator.hold_time
+    pending = min((other.call_since for other in others.values()), default=math.inf)
+    yielding = pending != math.inf and now - max(pending, runtime.present_since + runtime.elevator.transition_time) > hold_time
+
+    # Outside trigger opens the door if this elevator accepts outside calls and has room.
+    if outside_trigger and accepts and not runtime.full:
+        if runtime.elevator.call_mode != 'edge':
+            call = True
+        else:
+            idle_shut = door_runtime.state == _DoorState.CLOSED and runtime.car != _CarState.DEPARTING and not new_occupants
+            call = bool(new_callers) or idle_shut
+        if new_occupants and now - runtime.boarded_at > hold_time:
+            call = False
+        if not new_occupants and yielding:
+            call = False
+        if call:
+            door_runtime.last_trigger_sim_time = now
+            runtime.car = _CarState.PRESENT
+            return result
+
+    # Departing phase: the door has closed behind the riders, the car leaves for next_stop.
+    if runtime.car == _CarState.DEPARTING:
+        if door_runtime.state != _DoorState.CLOSED:
+            return result
+        target = others.get(runtime.next_stop)
+        if target is None and dest_runtime is not None and runtime.next_stop == runtime.current_destination():
+            target = dest_runtime
+        if target is None:
+            result.missing_destination = True
+            runtime.car = _CarState.PRESENT
+            door_runtime.last_trigger_sim_time = now
+            return result
+        eta = now + runtime.elevator.travel_time
+        target.queue_arrival(_Arrival(eta=eta, source=runtime.elevator.name, occupants=tuple(occupants)))
+        target.car = _CarState.ARRIVING
+        runtime.car = _CarState.ABSENT
+        runtime.dispatched = {name for name, _ in occupants}
+        runtime.dispatch_deadline = eta + TELEPORT_GRACE
+        runtime.just_arrived = {}
+        runtime.boarded_at = math.inf
+        if runtime.next_stop == runtime.current_destination() and runtime.target_override is None and len(runtime.destinations) > 1:
+            runtime.rr_index = (runtime.rr_index + 1) % len(runtime.destinations)
+        return result
+
+    # Hold door open for just-arrived occupants (post-teleport), at most TELEPORT_GRACE.
+    if runtime.just_arrived and now <= runtime.arrived_at + TELEPORT_GRACE:
         door_runtime.last_trigger_sim_time = now
         return result
 
-    # No new occupants: let the door close naturally (do not refresh trigger).
-    if not new_occupants:
+    # Boarders aboard: once the door has fully closed, leave for the next destination.
+    if new_occupants:
+        if door_runtime.state == _DoorState.CLOSED:
+            runtime.car = _CarState.DEPARTING
+            runtime.next_stop = runtime.current_destination()
         return result
 
-    # New occupant present, door has fully closed: start departing.
-    if door_runtime.state == _DoorState.CLOSED:
-        runtime.departing = True
+    # Only earlier arrivals inside: keep the door open for them unless a call elsewhere has waited past hold_time.
+    if current and not yielding:
+        door_runtime.last_trigger_sim_time = now
         return result
 
-    # Door is still open or closing: do not refresh, let it close.
+    # Idle car with the door closed answers the oldest call in its group, empty.
+    if pending != math.inf:
+        if door_runtime.state == _DoorState.CLOSED:
+            runtime.car = _CarState.DEPARTING
+            runtime.next_stop = min((other.call_since, name) for name, other in others.items())[1]
+        return result
+
     return result
 
 
@@ -532,15 +791,28 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
         if door_runtime is None:
             continue
         occupants = [named_positions[i] for i in elev_occupant_idx[elev_name]]
-        outside_trigger = _is_triggered(door_runtime.door, outside_xys)
-        dest_runtime = mech._elevator_runtime.get(runtime.destination_name)
+        outside_trigger = _near_door_segment(door_runtime.door, outside_xys, CABIN_DOOR_THRESHOLD) if occupants else _is_triggered(door_runtime.door, outside_xys)
+        callers: frozenset[str] | None = None
+        if runtime.elevator.call_mode == 'edge':
+            radius = CABIN_DOOR_THRESHOLD if occupants else max(door_runtime.door.activation_distance)
+            callers = frozenset(name for i, (name, xy) in enumerate(named_positions) if i not in all_occupant_idx and radius > 0.0 and _near_door_segment(door_runtime.door, [xy], radius))
+        destination = runtime.current_destination()
+        dest_runtime = mech._elevator_runtime.get(destination)
+        group = {name: mech._elevator_runtime[name] for name in runtime.group if name != elev_name and name in mech._elevator_runtime}
         if mech._semantics.elevator_recalled(elev_name, now):
-            door_runtime.last_trigger_sim_time = now  # recall: hold cabin door open
-            runtime.departing = False
-            continue
-        result = _step_elevator(runtime, door_runtime, dest_runtime, occupants, outside_trigger, now, outside_names=outside_names)
+            runtime.live_occupants = tuple(sorted(name for name, _ in occupants))
+            if runtime.car in (_CarState.PRESENT, _CarState.DEPARTING):
+                door_runtime.last_trigger_sim_time = now  # recall: hold cabin door open
+                runtime.car = _CarState.PRESENT
+                continue
+            runtime.call_since = -math.inf
+        result = _step_elevator(runtime, door_runtime, dest_runtime, occupants, outside_trigger, now, outside_names=outside_names, callers=callers, group=group)
         if result.missing_destination:
-            logger.warning(f"Elevator {elev_name!r}: destination {runtime.destination_name!r} unknown; door held open.")
+            logger.warning(f"Elevator {elev_name!r}: destination {destination!r} unknown; door held open.")
+        if result.dispatch_timeout:
+            logger.warning(f"Elevator {elev_name!r}: riders {list(result.dispatch_timeout)} still in the cabin {TELEPORT_GRACE:.0f}s after their ride landed (teleport failed?), releasing the cabin.")
+        if result.arrival_timeout:
+            logger.warning(f"Elevator {elev_name!r}: riders {list(result.arrival_timeout)} never seen in the cabin {TELEPORT_GRACE:.0f}s after arrival (teleport failed?), releasing the cabin.")
         if result.teleport_job is not None:
             teleport_jobs.append(result.teleport_job)
 
@@ -552,6 +824,7 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             runtime.last_trigger_sim_time = now
 
     mech._semantics.apply_plate_drives(now)
+    _update_ped_walls(mech, now, elevator_door_names)
 
     pending: list[typing.Awaitable] = []
     for name, runtime in mech._door_runtime.items():
@@ -561,6 +834,18 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             pending.append(mech.move_box(name, _interp_pose(runtime)))
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
+    _check_door_conflicts(mech)
+
+    if mech._human_simulator is not None:
+        door_changes: dict[str, bool] = {}
+        for elev_name, runtime in mech._elevator_runtime.items():
+            door_runtime = mech._door_runtime.get(runtime.door_name)
+            is_open = door_runtime is not None and door_runtime.state == _DoorState.OPEN
+            if is_open != runtime.door_reported_open:
+                runtime.door_reported_open = is_open
+                door_changes[elev_name] = is_open
+        if door_changes:
+            await mech._human_simulator.elevator_doors_changed(door_changes)
 
     # Run teleport jobs after door updates are dispatched.
     for source_name, dest_name, named_occupants in teleport_jobs:
@@ -569,6 +854,7 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
             continue
         robot_destinations = {k: v for k, v in destinations.items() if k not in ped_names}
         ped_destinations = {k: v for k, v in destinations.items() if k in ped_names}
+        failed: list[str] = []
         for sim_path, (x, y) in robot_destinations.items():
             current = mech.robot_pose(sim_path)
             z = current.position.z if current is not None else 0.0
@@ -579,6 +865,7 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
                 failure = repr(e)
             if failure:
                 _report_incident(mech, f"{sim_path}: elevator teleport {source_name!r} -> {dest_name!r} failed: {failure}")
+                failed.append(sim_path)
         if ped_destinations:
             if mech._human_simulator is not None:
                 try:
@@ -587,8 +874,11 @@ async def _tick(mech: MechanismITF, dt: float) -> None:
                     failure = repr(e)
                 if failure:
                     _report_incident(mech, f"{', '.join(ped_destinations)}: elevator teleport {source_name!r} -> {dest_name!r} failed: {failure}")
+                    failed.extend(ped_destinations)
             else:
                 logger.info(f"Elevator teleport (no-op, no human sim): {len(ped_destinations)} peds {source_name!r} -> {dest_name!r}")
+        if failed:
+            _release_failed_riders(mech, source_name, dest_name, failed)
 
     mech._semantics.step(now)
     await _apply_lights(mech)
@@ -631,6 +921,98 @@ async def _apply_lights(mech: MechanismITF) -> None:
         mech._light_outputs[entity] = output
 
 
+def _check_door_conflicts(mech: MechanismITF) -> None:
+    """Report an elevator group with more than one cabin door not closed, once per occurrence."""
+    for name, runtime in mech._elevator_runtime.items():
+        if not runtime.home:
+            continue
+        unclosed = []
+        for member in runtime.group or (name,):
+            member_rt = mech._elevator_runtime.get(member)
+            door = mech._door_runtime.get(member_rt.door_name) if member_rt is not None else None
+            if door is not None and door.state != _DoorState.CLOSED:
+                unclosed.append(member)
+        conflict = len(unclosed) > 1
+        if conflict and not runtime.door_conflict:
+            _report_incident(mech, f"Elevator group {name!r}: doors of {unclosed} open at once")
+        runtime.door_conflict = conflict
+
+
+def _assign_groups(mech: MechanismITF) -> None:
+    """Group the cabins linked through their destinations, one car per group, a group without a car gets it at its first cabin by name."""
+    runtimes = mech._elevator_runtime
+    parent = {name: name for name in runtimes}
+
+    def find(name: str) -> str:
+        while parent[name] != name:
+            name = parent[name]
+        return name
+
+    for name, runtime in runtimes.items():
+        for dest in runtime.destinations:
+            if dest in parent:
+                parent[find(dest)] = find(name)
+    members: dict[str, list[str]] = {}
+    for name in runtimes:
+        members.setdefault(find(name), []).append(name)
+    for names in members.values():
+        names.sort()
+        holders = [name for name in names if runtimes[name].car != _CarState.ABSENT]
+        keep = holders[0] if holders else names[0]
+        for name in names:
+            runtime = runtimes[name]
+            runtime.group = tuple(names)
+            runtime.home = name == names[0]
+            if name != keep:
+                runtime.car = _CarState.ABSENT
+        if not holders:
+            runtimes[keep].car = _CarState.PRESENT
+
+
+def _release_failed_riders(mech: MechanismITF, source_name: str, dest_name: str, names: Sequence[str]) -> None:
+    """Unseal the source cabin and stop holding the destination door for riders whose teleport failed."""
+    source = mech._elevator_runtime.get(source_name)
+    dest = mech._elevator_runtime.get(dest_name)
+    for name in names:
+        if source is not None:
+            source.dispatched.discard(name)
+        if dest is not None:
+            dest.just_arrived.pop(name, None)
+
+
+def _call_walls(mech: MechanismITF, key: str, segments: list[Segment] | None) -> None:
+    """Forward a wall set to the attached human simulator (no-op without one)."""
+    hs = mech._human_simulator
+    if hs is None:
+        return
+    try:
+        hs.set_mechanism_walls(key, segments)
+    except Exception as e:
+        mech.node.get_logger().warning(f"mechanism shim: set_mechanism_walls({key!r}) failed: {e!r}")
+
+
+def _door_blocks_peds(mech: MechanismITF, name: str, runtime: _DoorRuntime, now: float) -> bool:
+    """True when the door cannot open for pedestrians right now."""
+    if mech._semantics.door_driven(name):
+        return False
+    if max(runtime.door.activation_distance) <= 0.0:
+        return True
+    return not mech._semantics.trigger_allowed(name, now)
+
+
+def _update_ped_walls(mech: MechanismITF, now: float, elevator_door_names: set[str]) -> None:
+    """Push `door:<name>` ped walls to the human simulator on transitions only."""
+    for name, runtime in mech._door_runtime.items():
+        if name in elevator_door_names:
+            continue
+        wall = _door_blocks_peds(mech, name, runtime, now)
+        if wall == runtime.ped_wall:
+            continue
+        runtime.ped_wall = wall
+        door = runtime.door
+        _call_walls(mech, f"door:{name}", [((door.start.x, door.start.y), (door.end.x, door.end.y))] if wall else None)
+
+
 async def shim_spawn_doors(mech: MechanismITF, doors: Sequence[Door]) -> bool:
     """Spawn box geometry for each door and register door runtimes."""
     ok = True
@@ -661,7 +1043,9 @@ async def shim_remove_doors(mech: MechanismITF, names: Sequence[str]) -> bool:
         for prim_name in mech._door_primitives.pop(name, []):
             if not await mech.delete_box(prim_name):
                 ok = False
-        mech._door_runtime.pop(name, None)
+        runtime = mech._door_runtime.pop(name, None)
+        if runtime is not None and runtime.ped_wall:
+            _call_walls(mech, f"door:{name}", None)
     return ok
 
 
@@ -684,8 +1068,11 @@ async def shim_spawn_elevators(mech: MechanismITF, elevators: Sequence[Elevator]
         mech._elevator_runtime[elevator.name] = _ElevatorRuntime(
             elevator=elevator,
             door_name=door.name,
-            destination_name=elevator.destination,
+            destination_name=','.join(elevator.destinations),
+            car=_CarState.ABSENT,
         )
+        _call_walls(mech, f"elevator:{elevator.name}", _elevator_wall_segments(elevator))
+    _assign_groups(mech)
     if synthesized_doors and not await shim_spawn_doors(mech, synthesized_doors):
         ok = False
     return ok
@@ -702,7 +1089,9 @@ async def shim_remove_elevators(mech: MechanismITF, names: Sequence[str]) -> boo
         door_name = mech._elevator_doors.pop(name, None)
         if door_name is not None:
             door_names.append(door_name)
-        mech._elevator_runtime.pop(name, None)
+        if mech._elevator_runtime.pop(name, None) is not None:
+            _call_walls(mech, f"elevator:{name}", None)
+    _assign_groups(mech)
     if door_names and not await shim_remove_doors(mech, door_names):
         ok = False
     return ok

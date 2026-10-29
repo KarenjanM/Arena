@@ -52,7 +52,7 @@ Defined in [`_interface.py`](_interface.py):
 
 ### `MechanismITF`
 
-[`_interface.py:138`](_interface.py#L138): door and elevator orchestration. Provides concrete default implementations driven by an internal sim-time tick loop ([`_mechanism_shim.py`](_mechanism_shim.py)) on top of four box/robot primitives. Any simulator that implements the primitives gets door animation, elevator pair-teleport, and ped/robot teleport for free; simulators with native support can override the four top-level methods.
+[`_interface.py:138`](_interface.py#L138): door and elevator orchestration. Provides concrete default implementations driven by an internal sim-time tick loop ([`_mechanism_shim.py`](_mechanism_shim.py)) on top of four box/robot primitives. Any simulator that implements the primitives gets door animation, elevator rides, and ped/robot teleport for free; simulators with native support can override the four top-level methods.
 
 | Default method | Signature | Purpose |
 | --- | --- | --- |
@@ -89,8 +89,48 @@ The `HumanSimulator` Protocol the shim consumes from the attached human-sim:
 | --- | --- |
 | `pedestrian_discs` | `() -> Iterable[tuple[str, tuple[float, float], float]]` (sync, ground truth: name, xy, radius) |
 | `pedestrian_teleport` | `(Mapping[str, tuple[float, float]]) -> bool` (async) |
+| `elevator_doors_changed` | `(Mapping[str, bool]) -> None` (async, cabin name to door open) |
+
+Optional, looked up with `getattr` so human sims without it keep working:
+
+| Method | Signature |
+| --- | --- |
+| `set_mechanism_walls` | `(key: str, segments: list[((x0, y0), (x1, y1))] \| None) -> None` (map frame, `None` removes the set) |
+
+The shim calls it with `elevator:<name>` (back and side cabin walls) at elevator spawn and `None` at removal,
+and with `door:<name>` (the door segment) only when a door changes between "cannot open for pedestrians"
+(gate effectively locked with no authorized agent near, or `activation_distance <= 0` with no pressed plate
+driving it) and "can open".
 
 The attachment happens in `BaseHumanSimulator.__init__` (see [human simulator](../../../../task_generator/task_generator/simulators/human/README.md)). Without an attached human-sim, the shim still drives doors against `robot_discs` alone and logs a no-op for ped teleports.
+
+Pedestrians ride like robots: the shim counts a ped inside a cabin footprint as an occupant, and when the cabin door has closed behind it the ride hands the destinations to `pedestrian_teleport`. An empty cabin opens for a robot or ped outside within `activation_distance` of its door, a cabin with an occupant only for one within `CABIN_DOOR_THRESHOLD` (0.6 m), so riders queuing for the next trip do not hold a loaded cabin. The shim also tells the human-sim which cabin doors are passable: each tick it collects the cabins whose door turned `open` or left `open` since the last report, starting from closed at spawn and including the close an episode reset causes, and sends them in one `elevator_doors_changed` call, nothing on ticks without a change.
+
+#### Shim behaviour
+
+- Door kinds: `sliding` (slides along start->end), `sliding_top` (lifts), `teleport` (drops away) and
+  `hinged` (rotates about `start` by `swing_direction * progress * 90 deg`). Sliding and hinged slabs are tested
+  against agent discs: an opening step holds when the slab would enter an agent (the swing arc of a hinged
+  door, the wall pocket past the end of a sliding one), so an agent pressed against a half-open sliding slab
+  does not stop it, and a blocked close re-triggers the door and sets `close_blocked` (semantic
+  `blocked_close`) until the remaining path is clear.
+- Elevators: the cabins linked through their destinations form a group served by one car, which starts at
+  the group's first cabin by name and returns there on reset (`_CarState` per cabin: `present`, `departing`,
+  `absent`, `arriving`). Only the cabin holding the car opens its door, so at most one door per group is open,
+  and a tick with two is reported as an incident. A call at a cabin without the car (an agent in the call
+  radius, or anyone shut inside) waits in `call_since`, and the idle car fetches the oldest call with an empty
+  trip. `destination` may hold several realized cabin names (comma separated). A loaded departure goes to
+  `_ElevatorRuntime.current_destination()`: the written `target` if set, else round-robin (one step per
+  departure). `capacity` (live occupants) suppresses outside calls when full.
+  `call_mode: edge` makes outside calls edge-triggered (newcomer in the call radius, or a shut idle cabin),
+  so agents waiting in the lobby do not hold the door open; `level` (default) re-fires every tick.
+  Door holds are bounded: outside callers keep a loaded car open at most `hold_time` after its first boarder
+  entered, an empty car stops answering them once a call elsewhere has waited `hold_time`, and arrivals hold
+  the door at most `TELEPORT_GRACE` (10 s sim time) while a call waits, riding along if still inside when
+  the car leaves. A recall fetches the car to the recalled cabin and holds it there open.
+- Failed rides: a refused/raising robot or ped teleport releases the riders at once (source unsealed, the
+  destination stops waiting), and the riders left in the source cabin call the car back. A silent failure is
+  released after `TELEPORT_GRACE` (10 s sim time) with a warning.
 
 ### `SimLifecycle`
 
@@ -138,7 +178,10 @@ default 0.0333 matching `empty.sdf`). The base raises `NotImplementedError`.
 Gazebo sends one `ControlWorld` request with `pause=True` and `multi_step=n`
 (both fields in the same message, else gz free-runs). A step of more than one
 tick first raises gz `real_time_factor` so the limiter does not pace it, and
-the next unpause restores it. A single-tick step leaves the factor alone. Isaac calls
+the next unpause restores it. A single-tick step leaves the factor alone. A step
+returns once `/clock` carries its target, and the next unpause first waits for
+`/world/default/stats` to report gz paused at or past that target, since gz undoes
+an unpause that lands while a batch is still running. Isaac calls
 `/isaac/StepSimulationN` and awaits `/clock` reaching the projected target.
 MuJoCo calls `/mujoco/Step` with `seconds / 0.002` physics steps (the server
 publishes `/clock` and drains its sensor and control pumps every 20 ms of sim
@@ -149,8 +192,8 @@ The dummy host adds the delta to its synthetic clock, so `sim:=dummy` runs the
 whole control plane without a physics engine. The flatsim host sends
 `control_world` with `multi_step` to its server and awaits `/clock` reaching
 the time the server returns (see [flatsim backend](#flatsim-backend)). The
-dummy host is what
-[`tests/ros/`](../../tests/ros/) exercises, the gate math itself is
+dummy, flatsim and gazebo hosts are what
+[`tests/ros/`](../../tests/ros/) exercises (gazebo against a headless gz server on an empty world), the gate math itself is
 [`lockstep_gates.py`](../lockstep_gates.py) and has ROS-free unit tests.
 
 `arena_node` exposes it as `sim_lifecycle/step` (valid only while holds are
@@ -191,8 +234,9 @@ stamped with the observation time its action was computed for, so a
 lockstep run steps exactly one planner tick per action: obs at the frozen
 boundary, action, step. The `none`, `manual`, and `test_collision` bringups
 keep fire-and-forget goto_pose and stay ungated. `arena cam ... lockstep=true` recording registers `cam`
-(hard, 1/fps) for the take when a lockstep run is active, so the recording
-is gated like any other producer and frame-exact at any target rtf. With no
+(hard, 1/fps) for the take when a lockstep run is active and captures each
+frame at the tick the run froze on for it before beating that stamp, so the
+recording is gated like any other producer and frame-exact at any target rtf. With no
 run active it holds and steps the sim itself. Beats republish
 `LockstepHeartbeat` coverage stamps, and a wall-clock grace watchdog publishes
 forward keepalives through legitimately silent phases (MoveIt planning,
@@ -205,7 +249,10 @@ latest stamp is newer than `T - period_s`, compared at the clock's
 nanosecond resolution: the gate asks whether the producer has covered the
 clock, never whether it landed on a window boundary, so a producer whose
 own grid is phased against the ledger's cannot deadlock the run. Windows
-only pick the step sizes the scheduler takes. A producer driven by the sim
+only pick the step sizes the scheduler takes, and a covered hard channel's
+next check falls at its latest stamp plus `period_s`, so one beat never
+covers more than one period past its stamp, even when physics steps
+overshoot the due tick. A producer driven by the sim
 clock registers `period_s` equal to its own tick length, which paces the
 sim to the producer's true coverage. An elapsed-based rate loop registers
 a period strictly above its interval. The arena_humansim engine ticks off
@@ -219,8 +266,13 @@ while gates hold the pace and wall rate while no channel is registered,
 scheduler will not advance past a tick until every hard channel has a
 `header.stamp` covering it, so the weakest hard producer sets the pace by
 design. `soft` channels are observed and reported only. The scheduler also
-idles while a foreign hold or an unpause window is open (episode resets)
-and rebases its window grid to whatever sim time passed meanwhile.
+idles while a foreign hold is open (episode resets) and rebases its window
+grid to whatever sim time passed meanwhile. An unpause window never unpauses
+the sim during a run: the scheduler keeps stepping for it, also under a
+foreign hold or `pause`, gated on every hard channel except those registered
+in the window holder's env. A failed step is retried under the run's hold
+after 1, 2, 4, 8 and 16 s, rebasing on the clock first, and a sixth
+consecutive failure ends the run and counts one lifecycle failure.
 `sim_lifecycle/lockstep/stop` ends the run and restores the pre-run
 pause state and gz `real_time_factor`, responding as soon as the hold is
 released (the guard against a draining gz chunk re-pausing the world runs
@@ -262,7 +314,7 @@ controller activation lives inside the robot bring-up unpause window.
 | --- | --- | --- | --- |
 | `dummy` | `DummySimulator` | [`dummy_simulator.py`](dummy_simulator.py) | no-op entity verbs; `DummyHost` publishes a synthetic `/clock` (wall time minus paused time plus stepped time, also while paused) and supports `step_seconds` |
 | `flatsim` | `FlatsimSimulator` | [`flatsim_simulator/flatsim_simulator.py`](flatsim_simulator/flatsim_simulator.py) | client of the flatsim server (2D Box2D, no renderer), one world for every env. `FlatsimHost` pauses and steps the server, which owns `/clock`. Optional feature |
-| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI |
+| `gazebo` | `GazeboSimulator` | [`gazebo_simulator/gazebo_simulator.py`](gazebo_simulator/gazebo_simulator.py) | Gazebo (Ignition) via gz-transport. Discovery runs on a port pair per ROS domain (`GZ_DISCOVERY_MSG_PORT` = 5500 + 2 x `ROS_DOMAIN_ID`, `GZ_DISCOVERY_SRV_PORT` one above, below the DDS port blocks), set by `source arena`, by the `arena launch` / `arena env` supervisor for every process it spawns, and by `arena_runtime.launch.py` for everything it starts, so forks and lanes never receive each other's gz discovery. A shell that changes `ROS_DOMAIN_ID` after sourcing re-exports both before calling the `gz` CLI. `pose_to_tf` turns the bridged model pose into `odom -> base` and republishes a ros2_control robot's controller odometry on `odom` with that pose and those frames, so the pose follows teleports and the twist stays the wheel reading |
 | `isaac` | `IsaacSimulator` | [`isaac_simulator.py`](isaac_simulator.py) | Isaac Sim integration |
 | `mujoco` | `MujocoSimulator` | [`mujoco_simulator.py`](mujoco_simulator.py) | MuJoCo server over the `/mujoco` services, see [arena_mujoco](../../../../arena_mujoco/README.md) |
 
@@ -316,9 +368,9 @@ are what Arena sends it.
   the body twist divided by the gain and taken at the pivot, so it tracks the
   command like a wheel-odometry twist does while the IMU reports the body rate.
 - `sim.flatsim.dynamics:=rigid|kinematic`: a runtime argument, the same for
-  every env. `rigid` (default) lets walls, obstacles and pedestrians stop or
-  push the robot, `kinematic` lets it pass through. Collision events come from
-  the task generator's collision tracker in both.
+  every env. `rigid` (default) lets walls and obstacles stop or push the robot
+  while pedestrians touch it without pushing, `kinematic` lets it pass through.
+  Collision events come from the task generator's collision tracker in both.
 - Sensors: `laserscan`, `pointcloud`, `imu` and `contact` specs, each at its
   own update rate rounded to whole physics steps, and every sensor publishes
   once more when an episode reset ends (`republish`). Lidar and camera geometry
@@ -353,7 +405,7 @@ are what Arena sends it.
 
 ```python
 @SimulatorRegistry.register(Constants.SimSimulator.MY_SIM)
-async def lazy_mysim(**kwargs):
+async def lazy_mysim(**kwargs: typing.Unpack[SimKwargs]) -> BaseSim:
     from .my_sim import MySimulator
     return await MySimulator.create(**kwargs)
 ```

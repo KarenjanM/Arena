@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import typing
+
 import numpy as np
 
 from ..gait import LIMITS as _LIMITS
@@ -73,7 +75,11 @@ def saturation(name: str, value: float, eps: float = 1e-4, limits: dict[str, tup
     return 0.0
 
 
-def wrap_pi(a: float | np.ndarray) -> np.ndarray:
+@typing.overload
+def wrap_pi(a: float) -> float: ...
+@typing.overload
+def wrap_pi(a: np.ndarray) -> np.ndarray: ...
+def wrap_pi(a: float | np.ndarray) -> float | np.ndarray:
     return (np.asarray(a) + np.pi) % (2 * np.pi) - np.pi
 
 

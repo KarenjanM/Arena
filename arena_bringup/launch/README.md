@@ -27,8 +27,8 @@ Old flat names (`tm_robots`, `mobile`, `env_n`, ...) still work with a warning, 
 | `robot.hearing.<param>` | node param | node default | Every other `robot.hearing.<param>:=<val>` reaches the hearing nodes as ROS param `<param>`. The launch-facing ones (`robot.hearing.seld.device`, `robot.hearing.srp.hop_s`, ...) are declared by arena_hearing's `hearing.launch.py`, empty = node default. Never forwarded to the robot adapters. |
 | `robot.mobile.<key>:=<val>` | adapter-scoped | - | Override any kwarg the bound mobile adapter accepts. Lands as ROS param `robot.mobile.<key>` and overlays the cap-file YAML. Examples: `robot.mobile.local_planner:=teb`, `robot.mobile.global_planner:=smac`, `robot.mobile.agent:=jackal_pretrained`. |
 | `robot.arm.<key>:=<val>` | adapter-scoped | - | Same shape for the arm cap. |
-| `sim` | string | `gazebo` | Physics simulator: `dummy`, `flatsim`, `gazebo`, `isaac`, or `mujoco`. `dummy` must be explicit. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
-| `sim.flatsim.dynamics` | string | `rigid` | `sim:=flatsim` only, a runtime argument. `rigid` = walls, obstacles and pedestrians stop or push the robot, `kinematic` = the robot passes through. |
+| `sim` | string | `arena settings sim` | Physics simulator: `dummy`, `flatsim`, `gazebo`, `isaac`, or `mujoco`. The default is the setting, else the first installed simulator in `SIM_ORDER` ([defaults.py](../arena_bringup/defaults.py)), else `dummy`. Standalone `arena env` may omit it (adopts the runtime's sim); if given explicitly it must match the running runtime. |
+| `sim.flatsim.dynamics` | string | `rigid` | `sim:=flatsim` only, a runtime argument. `rigid` = walls and obstacles stop or push the robot, pedestrians touch it without pushing, `kinematic` = the robot passes through. |
 | `headless` | bool string | `False` | `true` = hide sim GUI (server-only). `arena launch` also suppresses rviz unless `rviz:=true` is explicit. |
 | `viz` | bool string | `true` | `arena launch` only: run `arena viz --all` after envs are up. Forced `false` when `headless:=true` unless overridden. |
 | `human` | string | `dummy` for `dummy` sim, `arena` (arena_humansim) for `flatsim`/`gazebo`/`isaac`/`mujoco` | Human-simulator backend |
@@ -98,7 +98,12 @@ canonical set: `debug | info | warn | error | fatal` (no aliases).
 `SetGlobalLogLevelAction` is also invoked further down the launch tree (e.g. by
 `task_generator`'s robot launcher to silence nav2 nodes by default) - those
 later calls can use the merge form to layer rules on top of the user's spec
-without clobbering it.
+without clobbering it. With `fallback=True` a merge lands just above the first
+`**/*` catch-all instead, so it covers only nodes no earlier rule names. The
+env passes its active rule set to `task_generator_node` as the `log_level`
+parameter, and the robot launcher starts from it and adds its nav2 and moveit
+quiet rules as a fallback: `log_level:='{**/planner_server:info, warn}'` keeps
+`planner_server` at `info` while the other nav2 nodes stay at `error`.
 
 ## Simulator dispatch
 

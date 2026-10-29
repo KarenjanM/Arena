@@ -7,6 +7,7 @@ import typing
 from collections.abc import Sequence
 
 import attrs
+import rclpy.node
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
 from arena_rclpy_mixins.shared import Namespace
 from arena_runtime._node import NodeInterface
@@ -64,6 +65,11 @@ class PedestrianHearing:
         self._heard[key] = heard
 
 
+class AcousticsSimulatorOptions(typing.TypedDict):
+    node: rclpy.node.Node
+    namespace: Namespace
+
+
 class BaseAcousticsSimulator(NodeInterface, abc.ABC):
     """Node-side counterpart of the acoustics backend. Declares what the task generator must provide for it."""
 
@@ -110,14 +116,14 @@ AcousticsSimulatorRegistry = Registry[Constants.AcousticsSimulator, BaseAcoustic
 
 
 @AcousticsSimulatorRegistry.register(Constants.AcousticsSimulator.NONE)
-async def none(**kwargs: object) -> BaseAcousticsSimulator:
+async def none(**kwargs: typing.Unpack[AcousticsSimulatorOptions]) -> BaseAcousticsSimulator:
     from .noop import NoopAcousticsSimulator
 
     return NoopAcousticsSimulator(**kwargs)
 
 
 @AcousticsSimulatorRegistry.register(Constants.AcousticsSimulator.ARENA)
-async def arena(**kwargs: object) -> BaseAcousticsSimulator:
+async def arena(**kwargs: typing.Unpack[AcousticsSimulatorOptions]) -> BaseAcousticsSimulator:
     from .arena import ArenaAcousticsSimulator
 
     return ArenaAcousticsSimulator(**kwargs)

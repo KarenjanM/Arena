@@ -1,0 +1,23 @@
+format: arena-scenario/2
+objects:
+- {name: west_marker, model: Common/Object/painting_1, pose: [0.3, 3.0, 0.0], humansim: {type: west_marker}}
+humans:
+- {name: waiter_1, model: casual_female_caucasian_young, pose: [15.2, 5.2, 3.1416], agent: {agent_type: ./door_waiter.yaml}}
+- {name: waiter_2, model: worker_male_caucasian_young, pose: [15.2, 6.0, 3.1416], agent: {agent_type: ./door_waiter.yaml}}
+- name: waiter_3
+  model: Office/office_female_caucasian_young
+  pose: [15.2, 6.8, 3.1416]
+  agent: {agent_type: ./door_waiter.yaml}
+robots:
+- start: [23.0, 6.0, 3.1416]
+  phases:
+  - {goto: [3.0, 6.0, 3.1416]}
+timeline:
+- at: 0.0
+  set:
+  - {entity: main_door, field: locked, value: 'true'}
+  - {entity: side_door, field: locked, value: 'true'}
+- {at: 15.0, set: [{entity: main_door, field: locked, value: 'false'}]}
+conditions:
+- {op: eventually, p: robot in west_hall, text: Reach the far hall.}
+- {op: before, p: waiter_1 in west_hall, q: robot in west_hall, text: Let the first waiting person through before the robot.}

@@ -13,6 +13,8 @@ _MEMBERSHIP_ATOM = re.compile(r'^(\S+) in (\S+)$')
 _WITHIN_ATOM = re.compile(r'^(\S+) within (\S+) of (\S+)$')
 _SEES_ATOM = re.compile(r'^(\S+) sees (\S+?)(?: within (\S+))?$')
 _PLAYS_ATOM = re.compile(r'^(\S+) plays (\S+)$')
+_NUMBER = r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?'
+_POINT = re.compile(rf'^({_NUMBER}),({_NUMBER})$')
 _FOR_SUFFIX = re.compile(r'^(.*\S) for (\S+)$')
 _AND = ' and '
 _OR = ' or '
@@ -46,7 +48,7 @@ class MembershipAtom:
 
 @attrs.frozen
 class WithinAtom:
-    """Proximity test, `<subject> within <radius> of <other>`, both subjects robots or peds."""
+    """Proximity test, `<subject> within <radius> of <other>`, each subject a robot, a ped or an `x,y` point."""
 
     subject: str
     radius: float
@@ -100,6 +102,19 @@ def _reject_env_prefix(component: str, label: str) -> None:
         raise ValueError(f'atom {label} must be bare (env-stripped), got {component!r}')
 
 
+def _reject_point(component: str, value: str) -> None:
+    if parse_point(component) is not None:
+        raise ValueError(f'atom takes an x,y point only as a within subject: {value!r}')
+
+
+def parse_point(subject: str) -> tuple[float, float] | None:
+    """The point an `x,y` subject literal names, None for a robot or ped name."""
+    match = _POINT.match(subject)
+    if match is None:
+        return None
+    return float(match.group(1)), float(match.group(2))
+
+
 def parse_atom(value: str) -> Atom:
     """Total parser over the atom surface forms, raises ValueError on any other shape."""
     text = value.strip()
@@ -121,6 +136,7 @@ def parse_atom(value: str) -> Atom:
         subject, zone = match.groups()
         _reject_env_prefix(subject, 'subject')
         _reject_env_prefix(zone, 'zone')
+        _reject_point(subject, value)
         return MembershipAtom(subject=subject, zone=zone)
 
     match = _WITHIN_ATOM.match(text)
@@ -135,12 +151,15 @@ def parse_atom(value: str) -> Atom:
         subject, other, range_text = match.groups()
         _reject_env_prefix(subject, 'subject')
         _reject_env_prefix(other, 'subject')
+        _reject_point(subject, value)
+        _reject_point(other, value)
         return SeesAtom(subject=subject, other=other, range=_non_negative(range_text, 'range', value) if range_text is not None else SEES_RANGE_M)
 
     match = _PLAYS_ATOM.match(text)
     if match:
         subject, clip = match.groups()
         _reject_env_prefix(subject, 'subject')
+        _reject_point(subject, value)
         return PlaysAtom(subject=subject, clip=clip)
 
     raise ValueError(f'atom does not match any surface form: {value!r}')
@@ -199,14 +218,14 @@ def _render_clause(clause: UntilClause) -> str:
 
 
 def atom_subjects(atom: Atom) -> frozenset[str]:
-    """Robot or ped names the atom refers to, `robot` included."""
+    """Robot or ped names the atom refers to, `robot` included, `x,y` points left out."""
     if isinstance(atom, NotAtom):
         return atom_subjects(atom.atom)
     if isinstance(atom, EntityAtom):
         return frozenset()
     if isinstance(atom, (MembershipAtom, PlaysAtom)):
         return frozenset({atom.subject})
-    return frozenset({atom.subject, atom.other})
+    return frozenset(subject for subject in (atom.subject, atom.other) if parse_point(subject) is None)
 
 
 @attrs.define
@@ -252,7 +271,7 @@ class EpisodeCondition(Parseable, Serializable):
             raise ValueError(f"clause op {op!r} does not take a 'q' atom")
 
         text = str(value.pop('text', ''))
-        on_failure = str(value.pop('on_failure', 'continue'))
+        on_failure = typing.cast('OnFailure', str(value.pop('on_failure', 'continue')))
 
         if value:
             raise ValueError(f'unknown clause keys: {sorted(value)}')
@@ -285,6 +304,7 @@ __all__ = [
     'WithinAtom',
     'atom_subjects',
     'parse_atom',
+    'parse_point',
     'parse_until',
     'render_atom',
     'render_until',

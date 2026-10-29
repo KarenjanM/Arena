@@ -3,14 +3,16 @@ from __future__ import annotations
 import asyncio
 import io
 import math
+import shutil
 
 import PIL.Image
 import pytest
 import yaml
 
+from arena_simulation_setup import ASS_DIR
 from arena_simulation_setup.shared.world import Door, Elevator, Schedule, Signal, Sound
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
-from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldMicrophone, Zone, ZoneCeiling, parse_world, write_world
+from arena_simulation_setup.tree.World import FORMAT, Level, WallPath, World, WorldMicrophone, WorldView, Zone, ZoneCeiling, parse_world, write_world
 from arena_simulation_setup.tree.World.legacy import upgrade
 from arena_simulation_setup.tree.World.write import dump_zone
 from arena_simulation_setup.utils.cattrs import converter
@@ -429,3 +431,36 @@ def test_world_microphones_structure_from_world_yaml_shape():
 def test_world_microphones_reject_invalid_construction(microphone, message):
     with pytest.raises(ValueError, match=message):
         _reception(microphone).validate_microphones()
+
+
+def test_load_hands_the_validation_warnings_to_notes(tmp_path):
+    shutil.copy(ASS_DIR / "worlds" / "three_storied_residential" / "world.yaml", tmp_path / "world.yaml")
+    notes: list[str] = []
+    world = WorldView(tmp_path).load(level_filter={"2"}, notes=notes)
+    assert world.level_ids == ["2"]
+    assert any("3_elevator" in note for note in notes)
+
+
+def _cabin_in_wall_face() -> Level:
+    return _world(
+        zones=[{"name": "hall", "polygon": [[2.0, 0.0], [8.0, 0.0], [8.0, 6.0], [2.0, 6.0]]}],
+        walls=[
+            {"path": [[2.0, 0.0], [4.25, 0.0]]},
+            {"path": [[5.75, 0.0], [8.0, 0.0]]},
+            {"path": [[4.0, 0.0], [4.0, -2.0], [6.0, -2.0]]},
+            {"path": [[6.0, 0.0], [6.0, -2.0]]},
+        ],
+        elevators=[{"name": "lift", "position": [5.0, -1.0], "door_side": "+y"}],
+    ).levels["0"]
+
+
+def test_render_grid_keeps_the_wall_jambs_beside_an_elevator_doorway_narrower_than_its_cabin():
+    resolution = 0.05
+    grid, (ox, oy) = _cabin_in_wall_face().render_grid(resolution=resolution)
+
+    def free(x: float, y: float) -> bool:
+        return bool(grid[grid.shape[0] - 1 - int((y - oy) / resolution), int((x - ox) / resolution)] > 0)
+
+    assert free(5.0, 0.0) and free(5.0, -1.0) and free(4.5, -1.5)
+    for x in (4.1, 5.9):
+        assert not all(free(x, y) for y in (-0.05, 0.0, 0.05))

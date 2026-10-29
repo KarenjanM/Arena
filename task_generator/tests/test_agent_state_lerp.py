@@ -9,11 +9,13 @@ import pytest
 
 pytest.importorskip("rclpy")
 
+from arena_humansim.core.interaction_kinds import InteractionType
 from arena_humansim_msgs.msg import AgentFrame, AgentGestures, AgentMeta, AgentState, Gesture
 from geometry_msgs.msg import Point
 from task_generator.manager.realizer import Realizer
-from task_generator.simulators.human.arena_humansim.arena_humansim import ArenaHumanSimulator
+from task_generator.simulators.human.arena_humansim.arena_humansim import ArenaHumanSimulator, Seat, SeatHold
 from task_generator.simulators.human.profile import default_profile
+from task_generator.simulators.human.support import Support
 
 INTERPOLATED = {"header", "x", "y", "theta", "vx", "vy", "gait_phase"}
 
@@ -25,8 +27,9 @@ def _frame(sec: int, nanosec: int = 0, **columns: list) -> AgentFrame:
     return msg
 
 
-def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0), engine_stamp_ns: int | None = None) -> ArenaHumanSimulator:
+def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, origin: tuple[float, float] = (0.0, 0.0), engine_stamp_ns: int | None = None, teleport_stamps: dict[int, int] | None = None) -> ArenaHumanSimulator:
     adapter = object.__new__(ArenaHumanSimulator)
+    adapter._teleport_stamps = dict(teleport_stamps or {})
     adapter._prev_agent_states = prev
     adapter._curr_agent_states = curr
     adapter._engine_stamp_ns = engine_stamp_ns
@@ -35,6 +38,8 @@ def _adapter(prev: AgentFrame | None = None, curr: AgentFrame | None = None, ori
     adapter._agent_types = {}
     adapter._agent_type_paths = {}
     adapter._pose_profiles = {}
+    adapter._seats = {}
+    adapter._seat_holds = {}
     adapter._realizer = Realizer(Realizer._Configuration(x=origin[0], y=origin[1], prefix="env_0"))
     return adapter
 
@@ -91,6 +96,26 @@ def test_lerp_aligns_by_id_and_passes_new_agents_through() -> None:
     assert list(lerped.vx) == pytest.approx([1.25, 5.0, 3.25])
     assert list(lerped.vy) == pytest.approx([0.25, 6.0, 0.5])
     assert list(lerped.theta) == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_lerp_snaps_an_agent_teleported_after_the_prev_frame() -> None:
+    prev = _frame(0, agent_id=[1, 2], x=[10.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    curr = _frame(1, agent_id=[1, 2], x=[40.0, 2.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0])
+    adapter = _adapter(prev, curr, teleport_stamps={1: int(0.5e9)})
+    lerped = adapter._interpolate_agent_states(int(0.5e9))
+
+    assert list(lerped.x) == pytest.approx([40.0, 1.0])
+    assert adapter._teleport_stamps == {1: int(0.5e9)}
+
+
+def test_lerp_forgets_a_teleport_once_the_prev_frame_is_past_it() -> None:
+    prev = _frame(1, agent_id=[1], x=[40.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    curr = _frame(2, agent_id=[1], x=[42.0], y=[0.0], theta=[0.0], vx=[0.0], vy=[0.0])
+    adapter = _adapter(prev, curr, teleport_stamps={1: int(0.5e9)})
+    lerped = adapter._interpolate_agent_states(int(1.5e9))
+
+    assert list(lerped.x) == pytest.approx([41.0])
+    assert adapter._teleport_stamps == {}
 
 
 def test_lerp_takes_the_short_way_across_pi() -> None:
@@ -211,6 +236,15 @@ def test_pedestrians_default_gait_fields_when_the_frame_has_none() -> None:
     frame = _frame(1, agent_id=[1, 2], x=[0.0, 0.0], y=[0.0, 0.0], theta=[0.0, 0.0], vx=[0.0, 0.0], vy=[0.0, 0.0], animation_state=[1, 1])
     peds = _adapter()._agent_states_to_pedestrians(frame).pedestrians
     assert [(p.gait_phase, p.gait_cadence, p.agent_type) for p in peds] == [(0.0, 0.0, ""), (0.0, 0.0, "")]
+
+
+def test_agents_parked_on_their_held_seat_rest_on_it() -> None:
+    adapter = _adapter()
+    adapter._seats = {"env_0/bed": [Seat(x=2.0, y=0.0, height=0.6)], "env_0/stool": [Seat(x=-2.0, y=0.0, height=math.nan)]}
+    adapter._seat_holds = {1: SeatHold(InteractionType.LIE_ON, "env_0/bed", 0), 2: SeatHold(InteractionType.LIE_ON, "env_0/bed", 0), 3: SeatHold(InteractionType.SIT_ON, "env_0/stool", 0)}
+    frame = _frame(1, agent_id=[1, 2, 3, 4], x=[2.0, 2.5, -2.0, 2.0], y=[0.01, 0.0, 0.0, 0.0], theta=[0.0] * 4, vx=[0.0] * 4, vy=[0.0] * 4, animation_state=[0] * 4)
+    peds = adapter._agent_states_to_pedestrians(frame).pedestrians
+    assert {ped.id: adapter._support(ped) for ped in peds} == {1: Support("lie", 0.6), 2: None, 3: None, 4: None}
 
 
 def test_roster_after_removal_covers_the_engines_last_frame() -> None:

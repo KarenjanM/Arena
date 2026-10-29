@@ -25,7 +25,6 @@ import rclpy.time
 from arena_people_msgs.msg import Pedestrians
 from arena_rclpy_mixins import ArenaMixinNode
 from arena_rclpy_mixins.Async import ClientWrapper
-from arena_rclpy_mixins.shared import Namespace
 from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared import Ceiling, Light, cct_to_rgb
 from arena_simulation_setup.tree.assets.Material import MaterialIdentifier
@@ -33,7 +32,7 @@ from arena_simulation_setup.tree.Wall import WallSegment
 from arena_simulation_setup.utils.material import MdlUtil
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from geometry_msgs.msg import Pose as RosPose
-from gz.msgs10 import light_pb2, material_color_pb2
+from gz.msgs10 import light_pb2, material_color_pb2, world_stats_pb2
 from launch import LaunchDescription
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from ros_gz_interfaces.msg import Entity as EntityMsg
@@ -57,10 +56,10 @@ from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
-from arena_runtime.sim import BaseSim, SimLifecycle, SimUnavailable
+from arena_runtime.constants import SimSimulator
+from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import (
     effective_control_yaml,
-    odom_relay_node,
     robot_controllers,
     twist_stamper_node,
 )
@@ -87,6 +86,9 @@ _RTF_BOOST = 1e6
 _SET_PHYSICS_TIMEOUT_MS = 5000
 _SET_PHYSICS_ATTEMPTS = 3
 _CLEANUP_ATTEMPTS = 5
+_WORLD_STATS_TOPIC = '/world/default/stats'
+_BATCH_STALL_S = 5.0
+_BATCH_POLL_S = 0.05
 
 _LATCHED_QOS = QoSProfile(
     depth=1,
@@ -131,6 +133,13 @@ class GazeboHost(SimLifecycle):
         self._logger = logger
         self._dt = physics_dt
         self._rtf_boosted = False
+        self._batch_target: Time | None = None
+        self._stats: world_stats_pb2.WorldStatistics | None = None
+        self._gz_node = gz.transport13.Node()
+        self._gz_node.subscribe(world_stats_pb2.WorldStatistics, _WORLD_STATS_TOPIC, self._on_stats)
+
+    def _on_stats(self, msg: world_stats_pb2.WorldStatistics) -> None:
+        self._stats = msg
 
     async def ensure_ready(self) -> None:
         await self._node.do_launch(
@@ -209,6 +218,9 @@ class GazeboHost(SimLifecycle):
         # returning to free-run: restore gz's realtime pacing
         if self._rtf_boosted:
             self._rtf_boosted = not await self._set_physics_rtf(1.0)
+        if self._batch_target is not None:
+            await self._await_batches_done(self._batch_target)
+            self._batch_target = None
         async with self._semaphore:
             self._logger.debug("Attempting to unpause simulation")
             request = ControlWorld.Request()
@@ -253,7 +265,25 @@ class GazeboHost(SimLifecycle):
             chunk_target = min(target, start_sim + Time.from_float((chunk - 0.5) * self._dt))
             await self._send_multi_step(chunk, seconds)
             await self._node.await_sim_time(chunk_target, freeze_timeout=1.0)
+        self._batch_target = target
         return n * self._dt
+
+    async def _await_batches_done(self, target: Time) -> None:
+        """Wait until gz paused at or past target: an unpause sent while a multi_step batch is pending is undone when the batch ends."""
+        target_s = target.to_seconds()
+        last_sim = -1.0
+        stalled_since = time.monotonic()
+        while True:
+            stats = self._stats
+            sim = stats.sim_time.sec + stats.sim_time.nsec * 1e-9 if stats is not None else -1.0
+            if stats is not None and stats.paused and sim >= target_s:
+                return
+            if sim > last_sim:
+                last_sim, stalled_since = sim, time.monotonic()
+            elif time.monotonic() - stalled_since > _BATCH_STALL_S:
+                self._logger.warning(f"gz did not report a finished step batch within {_BATCH_STALL_S:.0f}s of stalling (sim {sim:.3f}s, target {target_s:.3f}s)")
+                return
+            await asyncio.sleep(_BATCH_POLL_S)
 
     async def _send_multi_step(self, n: int, seconds: float) -> None:
         async with self._semaphore:
@@ -273,6 +303,7 @@ class GazeboHost(SimLifecycle):
 
     async def cleanup_namespace(self, prefix: str) -> int:
         removed = 0
+        targets: list[str] = []
         for attempt in range(_CLEANUP_ATTEMPTS + 1):
             try:
                 names = await _list_models()
@@ -305,12 +336,12 @@ class GazeboHost(SimLifecycle):
 class GazeboSimulator(BaseSim):
     SIM_NAME = 'gazebo'
 
-    def __init__(self, *args: object, namespace: Namespace, **kwargs: object) -> None:
-        super().__init__(*args, namespace=namespace, **kwargs)
+    def __init__(self, **kwargs: typing.Unpack[SimKwargs]) -> None:
+        super().__init__(**kwargs)
 
         self._semaphore = asyncio.Semaphore(5)
 
-        self._logger.info(f"Initializing GazeboSimulator with namespace: {namespace}")
+        self._logger.info(f"Initializing GazeboSimulator with namespace: {self._namespace}")
 
         self.entities: dict[str, Entity] = {}
         self._walls_entities: list[str] = []
@@ -348,6 +379,7 @@ class GazeboSimulator(BaseSim):
             f"/model/{robot.sim_path}",
         )
         if robot.resolved_assembly is not None:
+            assert robot_config.assembly is not None
             catalog = arena_robots.catalog.Catalog()
             args['xacro_wrapper'] = arena_robots.catalog.render_wrapper_xacro(robot_config, robot.resolved_assembly, catalog=catalog)
             args['control_joint_patch'] = arena_robots.catalog.render_control_joints(robot.resolved_assembly, catalog, prefix=robot_config.assembly.prefix)
@@ -365,7 +397,7 @@ class GazeboSimulator(BaseSim):
         return args
 
     def _render_ros2_control_yaml(self, robot: Robot, config_uri: str, *, frame_prefix: str, control_prefix: str) -> str:
-        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, prefix=control_prefix)
+        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix)
 
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         level = obstacles_optim_level(self.node)
@@ -508,13 +540,15 @@ class GazeboSimulator(BaseSim):
     async def _spawn_lights(self, lights: Sequence[Light]) -> bool:
         ok = await self._light_link()
         if any(not light.intrinsic for light in lights):
-            ok = self._scale_default_lights(_default_light_scale([*self._lights.values(), *lights])) and ok
+            scale = _default_light_scale([*self._lights.values(), *lights])
+            assert scale is not None
+            ok = self._scale_default_lights(scale) and ok
             self._default_lights_scaled = self._owns_ambient
         spawns = []
         for light in lights:
             if light.fixture == 'dome' or (light.spec.ambient and not self._owns_ambient):
                 continue
-            level = 0.0 if light.lit is False else light.level
+            level = 0.0 if light.lit is False else light.dim
             names = []
             for params in _light_params(light, level, light.alive(light.dead_fraction)):
                 names.append(self._realizer.realize(f"light_{next(self._wall_counter)}"))
@@ -561,7 +595,7 @@ class GazeboSimulator(BaseSim):
         if not names:
             return
         pose = self._light_poses.get(light.name)
-        params = _light_params(light, level, alive, *(pose if pose is not None else ()))
+        params = _light_params(light, level, alive) if pose is None else _light_params(light, level, alive, *pose)
         if not all([self._light_config(_light_request(name, p)) for name, p in zip(names, params, strict=True)]):
             raise RuntimeError(f"light {light.name!r} did not take its state")
 
@@ -900,7 +934,7 @@ class GazeboSimulator(BaseSim):
                 traceback.print_exc()
                 return False
 
-    async def _resolve_wall_textures(self, material: object) -> dict[str, str]:
+    async def _resolve_wall_textures(self, material: MaterialIdentifier | None) -> dict[str, str]:
         """Resolve a wall material to absolute PBR texture paths, cached per identifier. Empty for unset/unresolvable materials."""
         if material is None:
             return {}
@@ -936,7 +970,7 @@ class GazeboSimulator(BaseSim):
                 if wall_sdf:
                     async with self._semaphore:
                         if not await self._spawn_sdf(wall_name, wall_sdf, Pose()):
-                            raise RuntimeError(f"spawn_walls: {wall_name} ({wall.name}) did not spawn")
+                            raise RuntimeError(f"spawn_walls: {wall_name} (wall from {wall.start} to {wall.end}) did not spawn")
                     self._walls_entities.append(wall_name)
             for obstacle, model in obstacles:
                 obstacle.sim_path = self._realizer.realize(f"wall_obj_{next(self._wall_counter)}")
@@ -1002,6 +1036,9 @@ class GazeboSimulator(BaseSim):
             )
         )
 
+        control_spec = robot_config.model_params.control
+        is_ros2_control = control_spec is not None and control_spec.is_ros2_control
+        ros2_control_spec = control_spec if is_ros2_control else None
         launch_description.add_action(
             launch_ros.actions.Node(
                 package="pose_to_tf",
@@ -1014,23 +1051,22 @@ class GazeboSimulator(BaseSim):
                         "parent_frame": robot.frame.tf(robot_config.model_params.odom_frame),
                         "child_frame": robot.frame.tf(robot_config.model_params.base_frame),
                         "pose_topic": "pose",
+                        "odom_in_topic": (ros2_control_spec.odom_topic if ros2_control_spec is not None and ros2_control_spec.odom_topic != "odom" else ""),
                     }
                 ],
             )
         )
 
-        control_spec = robot_config.model_params.control
-        if control_spec is not None and control_spec.is_ros2_control:
-            if not control_spec.controllers:
+        if is_ros2_control:
+            assert ros2_control_spec is not None
+            if not ros2_control_spec.controllers:
                 raise ValueError(f"control.mode=ros2_control but no controllers declared for {robot.name}")
             launch_description.add_action(
                 twist_stamper_node(
-                    control_spec.cmd_vel_topic,
+                    ros2_control_spec.cmd_vel_topic,
                     robot.frame.tf(robot_config.model_params.base_frame),
                 )
             )
-            if control_spec.odom_topic != "odom":
-                launch_description.add_action(odom_relay_node(control_spec.odom_topic))
 
         launch_description.add_action(
             launch_ros.actions.Node(
@@ -1170,8 +1206,8 @@ class GazeboSimulator(BaseSim):
         self._id_wanted.clear()
 
     @classmethod
-    async def create(cls, *args: object, namespace: Namespace, **kwargs: object) -> "GazeboSimulator":
-        simulator = cls(*args, namespace=namespace, **kwargs)
+    async def create(cls, **kwargs: typing.Unpack[SimKwargs]) -> "GazeboSimulator":
+        simulator = cls(**kwargs)
         await simulator._set_up_services()
         return simulator
 

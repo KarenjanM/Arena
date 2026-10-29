@@ -1,0 +1,152 @@
+format: arena-world/2
+schedules:
+- name: rush_hour
+  semantics:
+  - {preset: schedule, params: {windows: [], regime: rush}}
+- name: fire_alarm
+  semantics:
+  - {preset: schedule, params: {windows: [], regime: alarm}}
+signals:
+- name: xwalk_signal
+  semantics:
+  - preset: signal
+    params:
+      phases:
+      - {name: stop, duration: 12.0}
+      - {name: go, duration: 15.0}
+      stop_phases: [stop]
+      position: [11.0, 6.0]
+      radius: 1.5
+levels:
+- id: '0'
+  zones:
+  - {name: x_west, polygon: [[0.0, 0.0], [10.0, 0.0], [10.0, 12.0], [0.0, 12.0]], floor: Concrete_Smooth}
+  - {name: xwalk, polygon: [[10.0, 0.0], [12.0, 0.0], [12.0, 12.0], [10.0, 12.0]], floor: Concrete_Smooth}
+  - {name: x_east, polygon: [[12.0, 0.0], [22.0, 0.0], [22.0, 12.0], [12.0, 12.0]], floor: Concrete_Smooth}
+  - {name: r_lobby, polygon: [[0.0, 12.0], [10.0, 12.0], [10.0, 24.0], [0.0, 24.0]], floor: Concrete_Smooth}
+  - {name: r_gate, polygon: [[10.0, 17.4], [12.0, 17.4], [12.0, 18.6], [10.0, 18.6]], floor: Concrete_Smooth}
+  - {name: platform, polygon: [[12.0, 12.0], [22.0, 12.0], [22.0, 24.0], [12.0, 24.0]], floor: Concrete_Smooth}
+  - {name: z_west, polygon: [[0.0, 24.0], [6.0, 24.0], [6.0, 36.0], [0.0, 36.0]], floor: Concrete_Smooth}
+  - name: speed_hall
+    polygon: [[6.0, 24.0], [16.0, 24.0], [16.0, 28.0], [6.0, 28.0]]
+    floor: Concrete_Smooth
+    semantics:
+    - {state: max_speed, value: 0.5}
+  - name: quiet_room
+    polygon: [[6.0, 28.0], [16.0, 28.0], [16.0, 32.0], [6.0, 32.0]]
+    floor: Concrete_Smooth
+    semantics:
+    - {predicate: quiet, value: true}
+  - name: lab
+    polygon: [[6.0, 32.0], [16.0, 32.0], [16.0, 36.0], [6.0, 36.0]]
+    floor: Concrete_Smooth
+    semantics:
+    - {predicate: restricted, value: true}
+  - {name: z_east, polygon: [[16.0, 24.0], [22.0, 24.0], [22.0, 36.0], [16.0, 36.0]], floor: Concrete_Smooth}
+  - {name: c_west, polygon: [[0.0, 36.0], [8.0, 36.0], [8.0, 48.0], [0.0, 48.0]], floor: Concrete_Smooth}
+  - name: waiting_room
+    polygon: [[8.0, 38.0], [14.0, 38.0], [14.0, 44.0], [8.0, 44.0]]
+    floor: Concrete_Smooth
+    semantics:
+    - {preset: occupancy_cap, params: {cap: 4}}
+  - {name: c_detour, polygon: [[8.0, 45.0], [14.0, 45.0], [14.0, 48.0], [8.0, 48.0]], floor: Concrete_Smooth}
+  - {name: c_east, polygon: [[14.0, 36.0], [22.0, 36.0], [22.0, 48.0], [14.0, 48.0]], floor: Concrete_Smooth}
+  - {name: ward, polygon: [[0.0, 48.0], [10.0, 48.0], [10.0, 60.0], [0.0, 60.0]], floor: Concrete_Smooth}
+  - name: fire_corridor
+    polygon: [[10.0, 52.8], [20.0, 52.8], [20.0, 55.2], [10.0, 55.2]]
+    floor: Concrete_Smooth
+    semantics:
+    - {predicate: egress, value: true}
+  - {name: assembly, polygon: [[20.0, 48.0], [26.0, 48.0], [26.0, 60.0], [20.0, 60.0]], floor: Concrete_Smooth}
+  - {name: elev_r0_cabin, polygon: [[4.0, 60.0], [6.0, 60.0], [6.0, 62.0], [4.0, 62.0]], floor: false, ceiling: false}
+  - {name: elev_r1_cabin, polygon: [[22.0, 60.0], [24.0, 60.0], [24.0, 62.0], [22.0, 62.0]], floor: false, ceiling: false}
+  walls:
+  - {path: [[0.0, 0.0], [22.0, 0.0]], material: Plaster_Wall}
+  - {path: [[0.0, 0.0], [0.0, 12.0]], material: Plaster_Wall}
+  - {path: [[10.0, 0.0], [10.0, 5.0]], material: Plaster_Wall}
+  - {path: [[10.0, 7.0], [10.0, 12.0]], material: Plaster_Wall}
+  - {path: [[22.0, 0.0], [22.0, 12.0]], material: Plaster_Wall}
+  - {path: [[12.0, 0.0], [12.0, 5.0]], material: Plaster_Wall}
+  - {path: [[12.0, 7.0], [12.0, 12.0]], material: Plaster_Wall}
+  - {path: [[0.0, 12.0], [22.0, 12.0]], material: Plaster_Wall}
+  - {path: [[0.0, 12.0], [0.0, 24.0]], material: Plaster_Wall}
+  - {path: [[10.0, 12.0], [10.0, 17.4]], material: Plaster_Wall}
+  - {path: [[10.0, 18.6], [10.0, 24.0]], material: Plaster_Wall}
+  - {path: [[10.0, 17.4], [12.0, 17.4]], material: Plaster_Wall}
+  - {path: [[10.0, 18.6], [12.0, 18.6]], material: Plaster_Wall}
+  - {path: [[22.0, 12.0], [22.0, 24.0]], material: Plaster_Wall}
+  - {path: [[12.0, 12.0], [12.0, 17.4]], material: Plaster_Wall}
+  - {path: [[12.0, 18.6], [12.0, 24.0]], material: Plaster_Wall}
+  - {path: [[0.0, 24.0], [22.0, 24.0]], material: Plaster_Wall}
+  - {path: [[0.0, 24.0], [0.0, 36.0]], material: Plaster_Wall}
+  - {path: [[6.0, 24.0], [6.0, 25.25]], material: Plaster_Wall}
+  - {path: [[6.0, 26.75], [6.0, 29.25]], material: Plaster_Wall}
+  - {path: [[6.0, 30.75], [6.0, 33.25]], material: Plaster_Wall}
+  - {path: [[6.0, 34.75], [6.0, 36.0]], material: Plaster_Wall}
+  - {path: [[6.0, 28.0], [16.0, 28.0]], material: Plaster_Wall}
+  - {path: [[6.0, 32.0], [16.0, 32.0]], material: Plaster_Wall}
+  - {path: [[22.0, 24.0], [22.0, 36.0]], material: Plaster_Wall}
+  - {path: [[16.0, 24.0], [16.0, 25.25]], material: Plaster_Wall}
+  - {path: [[16.0, 26.75], [16.0, 29.25]], material: Plaster_Wall}
+  - {path: [[16.0, 30.75], [16.0, 33.25]], material: Plaster_Wall}
+  - {path: [[16.0, 34.75], [16.0, 36.0]], material: Plaster_Wall}
+  - {path: [[0.0, 36.0], [22.0, 36.0]], material: Plaster_Wall}
+  - {path: [[0.0, 36.0], [0.0, 48.0]], material: Plaster_Wall}
+  - {path: [[8.0, 36.0], [8.0, 40.25]], material: Plaster_Wall}
+  - {path: [[8.0, 41.75], [8.0, 45.0]], material: Plaster_Wall}
+  - {path: [[8.0, 38.0], [14.0, 38.0]], material: Plaster_Wall}
+  - {path: [[8.0, 44.0], [14.0, 44.0]], material: Plaster_Wall}
+  - {path: [[8.0, 45.0], [14.0, 45.0]], material: Plaster_Wall}
+  - {path: [[22.0, 36.0], [22.0, 48.0]], material: Plaster_Wall}
+  - {path: [[14.0, 36.0], [14.0, 40.25]], material: Plaster_Wall}
+  - {path: [[14.0, 41.75], [14.0, 45.0]], material: Plaster_Wall}
+  - {path: [[0.0, 48.0], [26.0, 48.0]], material: Plaster_Wall}
+  - {path: [[0.0, 48.0], [0.0, 60.0]], material: Plaster_Wall}
+  - {path: [[10.0, 48.0], [10.0, 52.8]], material: Plaster_Wall}
+  - {path: [[10.0, 55.2], [10.0, 60.0]], material: Plaster_Wall}
+  - {path: [[0.0, 60.0], [4.0, 60.0]], material: Plaster_Wall}
+  - {path: [[6.0, 60.0], [10.0, 60.0]], material: Plaster_Wall}
+  - {path: [[10.0, 52.8], [20.0, 52.8]], material: Plaster_Wall}
+  - {path: [[10.0, 55.2], [20.0, 55.2]], material: Plaster_Wall}
+  - {path: [[26.0, 48.0], [26.0, 60.0]], material: Plaster_Wall}
+  - {path: [[20.0, 48.0], [20.0, 52.8]], material: Plaster_Wall}
+  - {path: [[20.0, 55.2], [20.0, 60.0]], material: Plaster_Wall}
+  - {path: [[10.0, 60.0], [22.0, 60.0]], material: Plaster_Wall}
+  - {path: [[24.0, 60.0], [26.0, 60.0]], material: Plaster_Wall}
+  doors:
+  - name: turnstile
+    span: [[11.0, 17.4], [11.0, 18.6]]
+    activation_distance: 1.2
+    semantics:
+    - {preset: gate, params: {authorized: [], locked: false, unlock_on: rush}}
+    - {preset: pressure_plate, params: {position: [11.0, 18.0], radius: 0.0, drives: turnstile}}
+  - name: fire_door
+    span: [[10.0, 52.8], [10.0, 55.2]]
+    kind: hinged
+    activation_distance: 1.5
+    swing_direction: -1
+    semantics:
+    - {preset: pressure_plate, params: {position: [10.0, 54.0], radius: 0.0, drives: fire_door, press_on: alarm}}
+  elevators:
+  - name: elev_r0
+    position: [5.0, 61.0]
+    door_side: -y
+    destinations: [elev_r1]
+    hold_time: 6.0
+    travel_time: 4.0
+    recall_on: alarm
+    call_mode: edge
+  - name: elev_r1
+    position: [23.0, 61.0]
+    door_side: -y
+    destinations: [elev_r0]
+    hold_time: 6.0
+    travel_time: 4.0
+    recall_on: alarm
+    call_mode: edge
+  sounds:
+  - name: ward_siren
+    asset_id: alarm_loop
+    position: [5.0, 56.0]
+    semantics:
+    - {preset: sound, params: {sound_on: alarm}}

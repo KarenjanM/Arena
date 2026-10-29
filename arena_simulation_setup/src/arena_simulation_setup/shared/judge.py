@@ -21,6 +21,7 @@ from arena_simulation_setup.shared.conditions import (
     UntilClause,
     WithinAtom,
     parse_atom,
+    parse_point,
     parse_until,
 )
 
@@ -89,7 +90,10 @@ class Sample:
     walls: WallGrid | None = None
 
     def point(self, subject: str, robot: str) -> tuple[float, float] | None | typing.Literal[False]:
-        """Planar position of a subject, False when it is known but absent, None when it is unknown."""
+        """Planar position of a subject or an `x,y` literal, False when it is known but absent, None when it is unknown."""
+        literal = parse_point(subject)
+        if literal is not None:
+            return literal
         name = robot if subject == 'robot' else subject
         pose = self.robots.get(name)
         if pose is not None:
@@ -190,9 +194,10 @@ class UntilMonitor:
             if clause_holds(clause, sample, zones, self.robot) is not True:
                 self._since[i] = None
                 continue
-            if self._since[i] is None:
-                self._since[i] = sample.t
-            met = met or sample.t - self._since[i] >= clause.dwell
+            since = self._since[i]
+            if since is None:
+                since = self._since[i] = sample.t
+            met = met or sample.t - since >= clause.dwell
         return met
 
 
@@ -215,6 +220,7 @@ def operator_verdict(
 
     if not (p_ok and q_ok):
         return None
+    assert p_series is not None and q_series is not None
     if op == 'before':
         first_p = _first_true(p_series)
         first_q = _first_true(q_series)

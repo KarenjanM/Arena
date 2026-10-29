@@ -216,16 +216,16 @@ def test_parse_semantics_light_preset_expands():
     cfgs = parse_semantics([{'preset': 'light'}])
     assert [(c.role, c.name) for c in cfgs] == [
         ('predicate', 'lit'),
-        ('state', 'level'),
+        ('state', 'dim'),
         ('state', 'dead_fraction'),
     ]
 
 
 def test_parse_semantics_light_preset_params_set_values():
-    cfgs = parse_semantics([{'preset': 'light', 'params': {'light_on': '!blackout', 'level': 0.5, 'dead_fraction': 0.1}}])
+    cfgs = parse_semantics([{'preset': 'light', 'params': {'light_on': '!blackout', 'dim': 0.5, 'dead_fraction': 0.1}}])
     by_name = {c.name: c for c in cfgs}
     assert by_name['lit'].value is None
-    assert by_name['level'].value == 0.5
+    assert by_name['dim'].value == 0.5
     assert by_name['dead_fraction'].value == 0.1
     assert all(c.params == {'light_on': '!blackout'} for c in cfgs)
 

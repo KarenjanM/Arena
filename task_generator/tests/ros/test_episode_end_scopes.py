@@ -57,10 +57,11 @@ def _node_stub(publisher, runner, loop: asyncio.AbstractEventLoop):
     stub._env_id = 0
     stub.sim_time = rclpy.time.Time()
     stub._semantics_dirty = True
+    stub._stimuli_fired = {}
     stub._pub_state_semantics = publisher
     stub.get_logger = lambda: SimpleNamespace(warn=lambda *a, **kw: None)
     stub._robot_fields = TaskGenerator._robot_fields
-    for name in ("_close_condition_scopes", "_publish_semantics_snapshot", "_zone_semantic_states", "_robot_semantic_states", "_iter_zones", "_semantic_entity_state_msg"):
+    for name in ("_close_condition_scopes", "_publish_semantics_snapshot", "_zone_semantic_states", "_robot_semantic_states", "_timeline_semantic_state", "_iter_zones", "_semantic_entity_state_msg"):
         setattr(stub, name, types.MethodType(getattr(TaskGenerator, name), stub))
     return stub
 

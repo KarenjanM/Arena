@@ -1,0 +1,11 @@
+format: arena-scenario/2
+robots:
+- start: [2.0, 8.75, 0.0]
+  phases:
+  - {goto: [14.0, 8.75, 0.0]}
+conditions:
+- {op: eventually, p: robot in teleport_b, text: Reach the far side of the door.}
+- op: never_during
+  p: robot in teleport_gap
+  q: door_teleport/0.state == closing
+  text: Never stand in the threshold while the door is closing.
