@@ -156,11 +156,33 @@ def test_driven_joints_stay_outside_the_possession_claim_set() -> None:
 
 def test_joystick_accumulates_pose_time_and_holds_rate_on_repeated_frames() -> None:
     joystick = JoystickDriver()
-    straight = {"joystick_pitch": 0.75, "joystick_roll": 0.0}
-    left = {"joystick_pitch": 0.75, "joystick_roll": -0.4}
-    assert joystick.advance(1, 0.0, 0.4, 0.0) == straight
+    straight = joystick.advance(1, 0.0, 0.4, 0.0)
+    assert (straight["joystick_pitch"], straight["joystick_roll"]) == (0.6, 0.0)
     assert joystick.advance(1, 0.1, 0.4, 0.1) == straight
-    assert joystick.advance(1, 0.2, 0.4, 0.2) == left
+    left = joystick.advance(1, 0.2, 0.4, 0.2)
+    assert (left["joystick_pitch"], left["joystick_roll"]) == (0.6, -0.4)
+    assert left["r_elbow"] != straight["r_elbow"]
     assert joystick.advance(1, 0.2, 0.4, 0.2) == left
     assert joystick.advance(1, 0.2, 0.4, 0.3) == left
     assert joystick.advance(1, 0.2, 0.4, 0.4) == straight
+
+
+@pytest.mark.parametrize(
+    ("speed", "yaw", "expected"),
+    [(0.0, 0.0, (0.0, 0.0)), (0.4, 0.0, (0.6, 0.0)), (-0.4, 0.0, (-0.6, 0.0)), (0.4, 0.2, (0.6, -0.4)), (0.4, -0.2, (0.6, 0.4)), (0.0, 0.2, (0.0, -0.6)), (0.0, -0.2, (0.0, 0.6))],
+)
+def test_joystick_moves_the_right_arm_with_each_state_and_preserves_other_joints(speed: float, yaw: float, expected: tuple[float, float]) -> None:
+    joystick = JoystickDriver()
+    neutral = joystick.advance(1, 0.0, 0.0, 0.0)
+    angles = joystick.advance(1, yaw, speed, 0.2)
+    hand_joints = {"r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow", "r_r_wrist", "r_wrist"}
+    assert set(angles) == hand_joints | {"joystick_pitch", "joystick_roll"}
+    assert (angles["joystick_pitch"], angles["joystick_roll"]) == expected
+    if expected != (0.0, 0.0):
+        assert angles["r_elbow"] != neutral["r_elbow"]
+    gait = {"l_elbow": 1.5, "r_knee": -0.91, "l_wheel": 2.0, **dict.fromkeys(hand_joints, 0.0)}
+    names, positions = with_driven(list(gait), list(gait.values()), angles)
+    result = dict(zip(names, positions, strict=True))
+    assert len(names) == len(set(names))
+    assert {joint: result[joint] for joint in hand_joints} == {joint: angles[joint] for joint in hand_joints}
+    assert {joint: result[joint] for joint in ("l_elbow", "r_knee", "l_wheel")} == {"l_elbow": 1.5, "r_knee": -0.91, "l_wheel": 2.0}

@@ -104,7 +104,21 @@ class DrivenJoints:
 
 
 class JoystickDriver:
-    """Electric-chair joystick angles from signed forward speed and sampled yaw rate."""
+    """Electric-chair joystick and matching right-arm poses from speed and sampled yaw rate."""
+
+    # Absolute radians for arenian_wheelchair_electric + seated_wheelchair_electric.
+    # Palm follows joystick roll; four-view mesh checks leave 5–7 mm clearance.
+    _HAND_JOINTS = ("r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow", "r_r_wrist", "r_wrist")
+    _HAND_POSES = {
+        # (joystick pitch, roll): shoulder yaw/pitch/roll, elbow, forearm twist, wrist
+        (0.0, 0.0): (1.19558, -0.60731, 1.00868, 1.50426, -0.60197, 0.10176),  # neutral
+        (0.6, 0.0): (1.47985, -0.4042, 1.40343, 1.2382, -0.43725, -0.02839),  # forward
+        (-0.6, 0.0): (0.78838, -0.64308, 0.76448, 1.65762, -0.48019, -0.00116),  # reverse
+        (0.6, -0.4): (1.57441, -0.58008, 1.07303, 1.32812, -0.33197, 0.29005),  # forward left
+        (0.6, 0.4): (1.47733, -0.43338, 1.52064, 1.11716, -0.81707, -0.16962),  # forward right
+        (0.0, -0.6): (1.70538, -0.91595, 0.68625, 1.57246, -0.53479, 0.70789),  # pivot left
+        (0.0, 0.6): (1.1626, -0.58367, 1.17998, 1.27694, -1.14152, -0.1606),  # pivot right
+    }
 
     def __init__(self) -> None:
         self._previous: dict[int, tuple[float, float, float]] = {}
@@ -125,19 +139,20 @@ class JoystickDriver:
 
         pitch = roll = 0.0
         if speed > 0.02:
-            pitch = 0.75
+            pitch = 0.6
             if angular_speed > 0.1:
                 roll = -0.4
             elif angular_speed < -0.1:
                 roll = 0.4
         elif speed < -0.02:
-            pitch = -0.75
+            pitch = -0.6
         else:
             if angular_speed > 0.02:
-                roll = -0.75
+                roll = -0.6
             elif angular_speed < -0.02:
-                roll = 0.75
-        return {"joystick_pitch": pitch, "joystick_roll": roll}
+                roll = 0.6
+        hand = dict(zip(self._HAND_JOINTS, self._HAND_POSES[pitch, roll], strict=True))
+        return {"joystick_pitch": pitch, "joystick_roll": roll, **hand}
 
     def known(self) -> set[int]:
         """Ids with sampled joystick state."""

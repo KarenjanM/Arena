@@ -159,6 +159,20 @@ The publisher enables it through `_joystick_for(model_uri)` when the model's
 `from: velocity`, regardless of agent type. Model support (including negative
 lookups) is cached; all supported models share the same driver instance.
 
+The same driver selects one of seven calibrated right-arm poses from the joystick's
+`(pitch, roll)` pair: neutral, forward, reverse, forward left/right and pivot
+left/right. Its small table holds absolute radians for the three shoulder joints,
+elbow and two wrist joints. `with_driven` replaces those gait angles together with
+the joystick angles, so both change in the same published frame. These poses were
+calibrated for `arenian_wheelchair_electric` with `seated_wheelchair_electric`:
+forward/reverse pitch and pivot roll are 0.6 rad in magnitude, while forward turns
+use 0.4 rad roll. The palm follows the joystick's roll, with the shoulder, elbow
+and wrist angles calibrated together. All poses were checked from four views,
+with approximately 5–7 mm between the hand mesh and the joystick and no
+intersections with its shaft, grip or housing. A changed model or
+seated profile requires recalibration. Fingers keep their existing pose; there is
+no runtime IK, grasping or interpolation.
+
 ### Wrists (v4)
 
 `l/r_r_wrist`, `l/r_wrist`: two DOFs per hand at the distal end of the forearm, chain
@@ -167,10 +181,10 @@ forward, palm toward the thigh. `r_wrist` is forearm pronation (positive turns t
 backward, both sides), `wrist` is the hand hinge (positive = extension, back of the hand
 toward the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
 (`r_wrist`: `(0,0,-1)` left / `(0,0,1)` right, `wrist`: `(1,0,0)` left / `(-1,0,0)`
-right), so the RViz adapter passes both through untouched. Only the `halt` gesture
-writes them, everything else leaves them at 0.0. Recordings that predate them carry no
-wrist values and are read as 0.0 (the loaders zero-fill, same migration as the spine
-stack).
+right), so the RViz adapter passes both through untouched. The `halt` gesture and
+the electric-chair operating poses write them; other default animations leave them
+at 0.0. Recordings that predate them carry no wrist values and are read as 0.0 (the
+loaders zero-fill, same migration as the spine stack).
 
 ### Gait synthesis
 
