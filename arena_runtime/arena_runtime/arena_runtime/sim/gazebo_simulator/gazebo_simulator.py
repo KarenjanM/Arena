@@ -56,6 +56,7 @@ from task_generator.utils.flags import ObstaclesOptim, obstacles_optim_level
 from viewport_control_msgs.msg import ViewportView
 from viewport_control_msgs.srv import ViewportSetProjection, ViewportSetReferenceFrame, ViewportSetView
 
+from arena_runtime.constants import SimSimulator
 from arena_runtime.sim import BaseSim, SimKwargs, SimLifecycle, SimUnavailable
 from arena_runtime.sim._control import (
     effective_control_yaml,
@@ -396,7 +397,7 @@ class GazeboSimulator(BaseSim):
         return args
 
     def _render_ros2_control_yaml(self, robot: Robot, config_uri: str, *, frame_prefix: str, control_prefix: str) -> str:
-        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, prefix=control_prefix)
+        return effective_control_yaml(robot.resolved_assembly, config_uri, robot.sim_path, frame_prefix, sim=SimSimulator.GAZEBO, prefix=control_prefix)
 
     async def obstacle_spawn(self, obstacles: Sequence[Obstacle]) -> Sequence[bool]:
         level = obstacles_optim_level(self.node)
