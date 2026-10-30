@@ -22,7 +22,7 @@ class Roller:
 
 
 def parse_drivers(rig: object, source: str) -> tuple[Roller, ...]:
-    """Distance drivers in file order; velocity drivers are computed by the caller."""
+    """Distance drivers in file order, velocity drivers are left to the caller."""
     if not isinstance(rig, dict):
         raise ValueError(f"{source}: a rig file is a mapping, got {type(rig).__name__}")
     section = rig.get("drivers", {})
@@ -107,7 +107,6 @@ class JoystickDriver:
     """Electric-chair joystick and matching right-arm poses from speed and sampled yaw rate."""
 
     # Absolute radians for arenian_wheelchair_electric + seated_wheelchair_electric.
-    # Palm follows joystick roll; four-view mesh checks leave 5–7 mm clearance.
     _HAND_JOINTS = ("r_y_shoulder", "r_p_shoulder", "r_r_shoulder", "r_elbow", "r_r_wrist", "r_wrist")
     _HAND_POSES = {
         # (joystick pitch, roll): shoulder yaw/pitch/roll, elbow, forearm twist, wrist

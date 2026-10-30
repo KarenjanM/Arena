@@ -157,7 +157,7 @@ including repeated frames. Its per-agent cache is discarded on despawn and reset
 The publisher enables it through `_joystick_for(model_uri)` when the model's
 `rig.yaml` declares both `joystick_pitch` and `joystick_roll` with
 `from: velocity`, regardless of agent type. Model support (including negative
-lookups) is cached; all supported models share the same driver instance.
+lookups) is cached. All supported models share the same driver instance.
 
 The same driver selects one of seven calibrated right-arm poses from the joystick's
 `(pitch, roll)` pair: neutral, forward, reverse, forward left/right and pivot
@@ -170,9 +170,9 @@ its joints, the joystick still moves. These poses were calibrated for
 forward/reverse pitch and pivot roll are 0.6 rad in magnitude, while forward turns
 use 0.4 rad roll. The palm follows the joystick's roll, with the shoulder, elbow
 and wrist angles calibrated together. All poses were checked from four views,
-with approximately 5–7 mm between the hand mesh and the joystick and no
+with 5 to 7 mm between the hand mesh and the joystick and no
 intersections with its shaft, grip or housing. A changed model or
-seated profile requires recalibration. Fingers keep their existing pose; there is
+seated profile requires recalibration. Fingers keep their existing pose, there is
 no runtime IK, grasping or interpolation.
 
 ### Wrists (v4)
@@ -184,7 +184,7 @@ backward, both sides), `wrist` is the hand hinge (positive = extension, back of 
 toward the forearm, both sides). Axes are mirrored in the URDF exactly like the collars
 (`r_wrist`: `(0,0,-1)` left / `(0,0,1)` right, `wrist`: `(1,0,0)` left / `(-1,0,0)`
 right), so the RViz adapter passes both through untouched. The `halt` gesture and
-the electric-chair operating poses write them; other default animations leave them
+the electric-chair operating poses write them, other default animations leave them
 at 0.0. Recordings that predate them carry no wrist values and are read as 0.0 (the
 loaders zero-fill, same migration as the spine stack).
 

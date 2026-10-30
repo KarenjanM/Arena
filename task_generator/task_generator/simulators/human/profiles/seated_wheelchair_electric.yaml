@@ -1,5 +1,5 @@
 # Held electric operating posture (CMU skeleton + Arena bone map).
-# Constant radians: no push strokes; speed gain stays at one.
+# Constant radians: no push strokes, speed gain stays at one.
 # Match this profile between generation and Arena runtime.
 name: seated_wheelchair_electric
 symmetric: false
