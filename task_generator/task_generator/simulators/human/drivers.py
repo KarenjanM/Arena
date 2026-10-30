@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 
 import attrs
@@ -123,8 +123,8 @@ class JoystickDriver:
     def __init__(self) -> None:
         self._previous: dict[int, tuple[float, float, float]] = {}
 
-    def advance(self, agent_id: int, yaw: float, speed: float, pose_sec: float) -> dict[str, float]:
-        """Sample yaw over 0.2 s of pose time, holding the last rate between samples."""
+    def advance(self, agent_id: int, yaw: float, speed: float, pose_sec: float, busy: Collection[str] = ()) -> dict[str, float]:
+        """Sample yaw over 0.2 s of pose time, holding the last rate between samples, no arm pose when `busy` shares a joint with it."""
         previous = self._previous.get(agent_id)
         if previous is None or pose_sec < previous[1]:
             angular_speed = 0.0
@@ -151,8 +151,10 @@ class JoystickDriver:
                 roll = -0.6
             elif angular_speed < -0.02:
                 roll = 0.6
-        hand = dict(zip(self._HAND_JOINTS, self._HAND_POSES[pitch, roll], strict=True))
-        return {"joystick_pitch": pitch, "joystick_roll": roll, **hand}
+        stick = {"joystick_pitch": pitch, "joystick_roll": roll}
+        if not set(busy).isdisjoint(self._HAND_JOINTS):
+            return stick
+        return {**stick, **dict(zip(self._HAND_JOINTS, self._HAND_POSES[pitch, roll], strict=True))}
 
     def known(self) -> set[int]:
         """Ids with sampled joystick state."""

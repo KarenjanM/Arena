@@ -186,3 +186,11 @@ def test_joystick_moves_the_right_arm_with_each_state_and_preserves_other_joints
     assert len(names) == len(set(names))
     assert {joint: result[joint] for joint in hand_joints} == {joint: angles[joint] for joint in hand_joints}
     assert {joint: result[joint] for joint in ("l_elbow", "r_knee", "l_wheel")} == {"l_elbow": 1.5, "r_knee": -0.91, "l_wheel": 2.0}
+
+
+def test_joystick_leaves_the_arm_to_a_source_driving_one_of_its_joints() -> None:
+    joystick = JoystickDriver()
+    free = joystick.advance(1, 0.0, 0.4, 0.0, busy={"l_elbow"})
+    assert "r_elbow" in free
+    held = joystick.advance(1, 0.0, 0.4, 0.1, busy={"r_wrist"})
+    assert held == {"joystick_pitch": 0.6, "joystick_roll": 0.0}

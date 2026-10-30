@@ -285,6 +285,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
         animation = AnimationStates()
         animation.header = out.header
+        generated: set[int] = set()
         for ped in out.pedestrians:
             ped.model_uri = self._ped_model_uris.get(ped.name, "")
             if ped.joint_state.name:
@@ -307,6 +308,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
             ped.joint_state = self._gait.joint_state(angles, stamp=stamp)
+            generated.add(ped.id)
             ped.gait_phase = self._gait.phase(ped.id)
             animation.peds.append(self._animation_state(ped))  # pyright: ignore[reportAttributeAccessIssue]
 
@@ -320,7 +322,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw) if drivers else {}
             if joystick is not None:
                 speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
-                angles.update(joystick.advance(ped.id, yaw, speed, pose_sec))
+                busy = self._gestures.busy_joints(ped.id) if ped.id in generated else set(ped.joint_state.name)
+                angles.update(joystick.advance(ped.id, yaw, speed, pose_sec, busy=busy))
             ped.joint_state.name, ped.joint_state.position = with_driven(ped.joint_state.name, ped.joint_state.position, angles)
 
         possessed = self._possession.possessed(now_sec)

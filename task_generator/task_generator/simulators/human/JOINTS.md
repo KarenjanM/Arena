@@ -163,8 +163,10 @@ The same driver selects one of seven calibrated right-arm poses from the joystic
 `(pitch, roll)` pair: neutral, forward, reverse, forward left/right and pivot
 left/right. Its small table holds absolute radians for the three shoulder joints,
 elbow and two wrist joints. `with_driven` replaces those gait angles together with
-the joystick angles, so both change in the same published frame. These poses were
-calibrated for `arenian_wheelchair_electric` with `seated_wheelchair_electric`:
+the joystick angles, so both change in the same published frame. The arm pose is
+left out while a gesture, possession or a producer's own `joint_state` drives one of
+its joints, the joystick still moves. These poses were calibrated for
+`arenian_wheelchair_electric` with `seated_wheelchair_electric`:
 forward/reverse pitch and pivot roll are 0.6 rad in magnitude, while forward turns
 use 0.4 rad roll. The palm follows the joystick's roll, with the shoulder, elbow
 and wrist angles calibrated together. All poses were checked from four views,
