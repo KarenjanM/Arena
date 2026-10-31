@@ -173,6 +173,17 @@ def test_joystick_accumulates_pose_time_and_holds_rate_on_repeated_frames() -> N
     assert joystick.advance(1, 0.2, 0.4, 0.4) == straight
 
 
+def test_joystick_takes_speed_and_rate_from_one_sample() -> None:
+    joystick = JoystickDriver()
+    joystick.advance(1, 0.0, 0.4, 0.0)
+    turning = joystick.advance(1, 0.2, 0.4, 0.2)
+    assert (turning["joystick_pitch"], turning["joystick_roll"]) == (0.6, -0.4)
+    assert joystick.advance(1, 0.2, 0.0, 0.3) == turning
+    assert joystick.advance(1, 0.2, 0.4, 0.3) == turning
+    stopped = joystick.advance(1, 0.2, 0.0, 0.4)
+    assert (stopped["joystick_pitch"], stopped["joystick_roll"]) == (0.0, 0.0)
+
+
 @pytest.mark.parametrize(
     ("speed", "yaw", "expected"),
     [(0.0, 0.0, (0.0, 0.0)), (0.4, 0.0, (0.6, 0.0)), (-0.4, 0.0, (-0.6, 0.0)), (0.4, 0.2, (0.6, -0.4)), (0.4, -0.2, (0.6, 0.4)), (0.0, 0.2, (0.0, -0.6)), (0.0, -0.2, (0.0, 0.6))],

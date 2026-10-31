@@ -151,9 +151,10 @@ computes these angles in radians, the wheel integrator leaves them untouched and
 renderers resolve their bone-map entries as usual.
 
 `JoystickDriver` in `drivers.py` supplies the electric chair's two joystick
-angles after gait generation, alongside the wheel angles. It estimates yaw rate
-over a 0.2 s pose-timestamp window and holds the last rate between samples,
-including repeated frames. Its per-agent cache is discarded on despawn and reset.
+angles after gait generation, alongside the wheel angles. It samples speed and yaw
+rate together over a 0.2 s pose-timestamp window and holds the resulting stick
+between samples, including repeated frames. Its per-agent cache is discarded on
+despawn and reset.
 The publisher enables it when the model's `rig.yaml` declares both `joystick_pitch`
 and `joystick_roll` with `from: velocity`, regardless of agent type. Any other
 `from: velocity` entry rejects the rig file.

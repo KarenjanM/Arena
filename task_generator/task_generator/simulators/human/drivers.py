@@ -121,40 +121,43 @@ class JoystickDriver:
     }
 
     def __init__(self) -> None:
-        self._previous: dict[int, tuple[float, float, float]] = {}
+        self._previous: dict[int, tuple[float, float, tuple[float, float]]] = {}
 
     def advance(self, agent_id: int, yaw: float, speed: float, pose_sec: float, busy: Collection[str] = ()) -> dict[str, float]:
-        """Sample yaw over 0.2 s of pose time, holding the last rate between samples, no arm pose when `busy` shares a joint with it."""
+        """Stick angles sampled over 0.2 s of pose time and held in between, no arm pose when `busy` shares a joint with it."""
         previous = self._previous.get(agent_id)
         if previous is None or pose_sec < previous[1]:
-            angular_speed = 0.0
-            self._previous[agent_id] = (yaw, pose_sec, angular_speed)
+            stick = self._stick(speed, 0.0)
+            self._previous[agent_id] = (yaw, pose_sec, stick)
         else:
-            previous_yaw, previous_time, angular_speed = previous
+            previous_yaw, previous_time, stick = previous
             dt = pose_sec - previous_time
             if dt >= 0.2 - 1e-9:
-                delta_yaw = math.remainder(yaw - previous_yaw, math.tau)
-                angular_speed = delta_yaw / dt
-                self._previous[agent_id] = (yaw, pose_sec, angular_speed)
+                stick = self._stick(speed, math.remainder(yaw - previous_yaw, math.tau) / dt)
+                self._previous[agent_id] = (yaw, pose_sec, stick)
 
-        pitch = roll = 0.0
-        if speed > 0.02:
-            pitch = 0.6
-            if angular_speed > 0.1:
-                roll = -0.4
-            elif angular_speed < -0.1:
-                roll = 0.4
-        elif speed < -0.02:
-            pitch = -0.6
-        else:
-            if angular_speed > 0.02:
-                roll = -0.6
-            elif angular_speed < -0.02:
-                roll = 0.6
-        stick = {"joystick_pitch": pitch, "joystick_roll": roll}
+        pitch, roll = stick
+        angles = {"joystick_pitch": pitch, "joystick_roll": roll}
         if not set(busy).isdisjoint(self._HAND_JOINTS):
-            return stick
-        return {**stick, **dict(zip(self._HAND_JOINTS, self._HAND_POSES[pitch, roll], strict=True))}
+            return angles
+        return {**angles, **dict(zip(self._HAND_JOINTS, self._HAND_POSES[stick], strict=True))}
+
+    @staticmethod
+    def _stick(speed: float, angular_speed: float) -> tuple[float, float]:
+        """Stick (pitch, roll) for a forward speed and yaw rate."""
+        if speed > 0.02:
+            if angular_speed > 0.1:
+                return 0.6, -0.4
+            if angular_speed < -0.1:
+                return 0.6, 0.4
+            return 0.6, 0.0
+        if speed < -0.02:
+            return -0.6, 0.0
+        if angular_speed > 0.02:
+            return 0.0, -0.6
+        if angular_speed < -0.02:
+            return 0.0, 0.6
+        return 0.0, 0.0
 
     def known(self) -> set[int]:
         """Ids with sampled joystick state."""
