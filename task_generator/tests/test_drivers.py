@@ -6,15 +6,7 @@ import math
 from pathlib import Path
 
 import pytest
-from task_generator.simulators.human.drivers import (
-    DrivenJoints,
-    JoystickDriver,
-    Roller,
-    has_joystick,
-    load_drivers,
-    parse_drivers,
-    with_driven,
-)
+from task_generator.simulators.human.drivers import DrivenJoints, JoystickDriver, Roller, load_drivers, parse_drivers, with_driven
 from task_generator.simulators.human.possession import bare_joint_names_valid
 
 _RIG = """
@@ -38,13 +30,13 @@ def _bundle(root: Path, rig: str | None) -> str:
 
 
 def test_drivers_load_from_the_rig_file_beside_the_actor_sdf(tmp_path: Path) -> None:
-    assert load_drivers(_bundle(tmp_path, _RIG)) == _CHAIR
+    assert load_drivers(_bundle(tmp_path, _RIG)).rollers == _CHAIR
 
 
 def test_models_without_a_rig_file_or_a_drivers_section_have_no_drivers(tmp_path: Path) -> None:
-    assert load_drivers("") == ()
-    assert load_drivers(_bundle(tmp_path / "a", None)) == ()
-    assert load_drivers(_bundle(tmp_path / "b", "skeleton: cmu\n")) == ()
+    assert load_drivers("").rollers == ()
+    assert load_drivers(_bundle(tmp_path / "a", None)).rollers == ()
+    assert load_drivers(_bundle(tmp_path / "b", "skeleton: cmu\n")).rollers == ()
 
 
 @pytest.mark.parametrize(
@@ -63,14 +55,14 @@ def test_malformed_drivers_are_rejected_with_the_expected_form(rig: str, message
 
 
 def test_a_driver_without_lateral_sits_on_the_centerline() -> None:
-    assert parse_drivers({"drivers": {"wheel": {"from": "distance", "radius": 0.1}}}, "rig") == (Roller("wheel", 0.1, 0.0),)
+    assert parse_drivers({"drivers": {"wheel": {"from": "distance", "radius": 0.1}}}, "rig").rollers == (Roller("wheel", 0.1, 0.0),)
 
 
 def test_velocity_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: Path) -> None:
-    assert not has_joystick(_bundle(tmp_path / "manual", _RIG))
-    model_uri = _bundle(tmp_path / "electric", _RIG + _JOYSTICK)
-    assert has_joystick(model_uri)
-    wheels = load_drivers(model_uri)
+    assert not load_drivers(_bundle(tmp_path / "manual", _RIG)).joystick
+    electric = load_drivers(_bundle(tmp_path / "electric", _RIG + _JOYSTICK))
+    assert electric.joystick
+    wheels = electric.rollers
     assert wheels == _CHAIR
     driven = DrivenJoints()
     driven.advance(7, wheels, 0.0, 0.0, 0.0)
@@ -83,6 +75,20 @@ def test_velocity_drivers_preserve_wheel_drivers_and_supplied_angles(tmp_path: P
             "r_wheel": 1.0,
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("section", "match"),
+    [
+        ({"joystick_pitch": {"from": "velocity"}}, "takes both"),
+        ({"joystick_roll": {"from": "velocity"}}, "takes both"),
+        ({"joystick_pitch": {"from": "velocity"}, "joystick_rol": {"from": "velocity"}}, "has no source"),
+        ({"l_wheel": {"from": "velocity"}}, "has no source"),
+    ],
+)
+def test_velocity_drivers_outside_the_full_joystick_are_rejected(section: dict[str, dict[str, str]], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        parse_drivers({"drivers": section}, "rig")
 
 
 def test_straight_travel_turns_both_wheels_by_distance_over_radius() -> None:

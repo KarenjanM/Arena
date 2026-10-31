@@ -40,7 +40,7 @@ from task_generator.constants import Constants
 from task_generator.manager.realizer import Realizer
 from task_generator.shared import Door, DynamicObstacle, Elevator, Obstacle, Orientation, Pose, Position, Region, Robot, Wall
 from task_generator.simulators.human.animation_manager import AnimationManager
-from task_generator.simulators.human.drivers import DrivenJoints, JoystickDriver, Roller, has_joystick, load_drivers, with_driven
+from task_generator.simulators.human.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from task_generator.simulators.human.gestures import Channel, GestureLayer, GestureRequest
 from task_generator.simulators.human.itinerary import semantic_atom
 from task_generator.simulators.human.possession import PossessionTable
@@ -209,14 +209,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._gait_prev_stamp: dict[int, float] = {}
         self._pose_profiles: dict[str, PoseProfile] = {}
         self._driven = DrivenJoints()
-        self._drivers: dict[str, tuple[Roller, ...]] = {}
+        self._drivers: dict[str, Drivers] = {}
         self._bodies: dict[str, BodyMeasurements] = {}
         self._seat_plans: dict[int, SeatPlan] = {}
         self._rests: dict[int, _Rest] = {}
         self._free_poses: dict[int, tuple[np.ndarray, np.ndarray]] = {}
         self._warned_no_squat = False
         self._joystick = JoystickDriver()
-        self._joysticks: dict[str, JoystickDriver | None] = {}
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
         self.node.create_subscription(
@@ -315,15 +314,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         pose_sec = out.header.stamp.sec + out.header.stamp.nanosec * 1e-9
         for ped in out.pedestrians:
             drivers = self._drivers_for(ped.model_uri)
-            joystick = self._joystick_for(ped.model_uri)
-            if not drivers and joystick is None:
+            if not drivers.rollers and not drivers.joystick:
                 continue
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
-            angles = self._driven.advance(ped.id, drivers, ped.pose.position.x, ped.pose.position.y, yaw) if drivers else {}
-            if joystick is not None:
+            angles = self._driven.advance(ped.id, drivers.rollers, ped.pose.position.x, ped.pose.position.y, yaw)
+            if drivers.joystick:
                 speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
                 busy = self._gestures.busy_joints(ped.id) if ped.id in generated else set(ped.joint_state.name)
-                angles.update(joystick.advance(ped.id, yaw, speed, pose_sec, busy=busy))
+                angles.update(self._joystick.advance(ped.id, yaw, speed, pose_sec, busy=busy))
             ped.joint_state.name, ped.joint_state.position = with_driven(ped.joint_state.name, ped.joint_state.position, angles)
 
         possessed = self._possession.possessed(now_sec)
@@ -437,7 +435,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             self._bodies[model_uri] = body
         return body
 
-    def _drivers_for(self, model_uri: str) -> tuple[Roller, ...]:
+    def _drivers_for(self, model_uri: str) -> Drivers:
         """Drivers of a ped model's rig.yaml, read once per model, none when the file is rejected."""
         drivers = self._drivers.get(model_uri)
         if drivers is None:
@@ -445,20 +443,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
                 drivers = load_drivers(model_uri)
             except (ValueError, OSError, yaml.YAMLError) as e:
                 self._logger.warning(f"rig drivers of {model_uri!r} rejected ({e}), its driven joints stay still")
-                drivers = ()
+                drivers = Drivers()
             self._drivers[model_uri] = drivers
         return drivers
-
-    def _joystick_for(self, model_uri: str) -> JoystickDriver | None:
-        """Shared joystick driver for supported models, including cached negative lookups."""
-        if model_uri not in self._joysticks:
-            try:
-                joystick = self._joystick if has_joystick(model_uri) else None
-            except (ValueError, OSError, yaml.YAMLError) as e:
-                self._logger.warning(f"rig joystick drivers of {model_uri!r} rejected ({e}), its joystick stays still")
-                joystick = None
-            self._joysticks[model_uri] = joystick
-        return self._joysticks[model_uri]
 
     def _pose_profile_for(self, agent_type: str) -> PoseProfile:
         """Pose profile of an agent type (a yaml path or a builtin name), resolved once per type, default when empty or unknown."""

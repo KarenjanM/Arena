@@ -10,6 +10,7 @@ import attrs
 import yaml
 
 RIG_FILE = "rig.yaml"
+JOYSTICK_JOINTS = ("joystick_pitch", "joystick_roll")
 
 
 @attrs.frozen
@@ -21,48 +22,48 @@ class Roller:
     lateral: float
 
 
-def parse_drivers(rig: object, source: str) -> tuple[Roller, ...]:
-    """Distance drivers in file order, velocity drivers are left to the caller."""
+@attrs.frozen
+class Drivers:
+    """What a bundle's rig.yaml drives: its rollers, and the joystick when both axes are declared."""
+
+    rollers: tuple[Roller, ...] = ()
+    joystick: bool = False
+
+
+def parse_drivers(rig: object, source: str) -> Drivers:
+    """Drivers of a parsed rig.yaml document, rollers in file order."""
     if not isinstance(rig, dict):
         raise ValueError(f"{source}: a rig file is a mapping, got {type(rig).__name__}")
     section = rig.get("drivers", {})
     if not isinstance(section, dict):
-        raise ValueError(f"{source}: drivers takes {{<wire joint>: {{from: distance, radius: <m>, lateral: <m>}}}}, got {section!r}")
+        raise ValueError(f"{source}: drivers takes {{<wire joint>: {{from: distance, radius: <m>, lateral: <m>}} or {{from: velocity}}}}, got {section!r}")
     rollers: list[Roller] = []
+    velocity: set[str] = set()
     for joint, spec in section.items():
         if isinstance(spec, dict) and spec.get("from") == "velocity":
+            if joint not in JOYSTICK_JOINTS:
+                raise ValueError(f"{source}: velocity driver {joint!r} has no source, those are {JOYSTICK_JOINTS}")
+            velocity.add(joint)
             continue
         if not isinstance(spec, dict) or spec.get("from") != "distance":
-            raise ValueError(f"{source}: driver {joint!r} takes {{from: distance, radius: <m>, lateral: <m>}}, got {spec!r}")
+            raise ValueError(f"{source}: driver {joint!r} takes {{from: distance, radius: <m>, lateral: <m>}} or {{from: velocity}}, got {spec!r}")
         radius = float(spec.get("radius", 0.0))
         if radius <= 0.0:
             raise ValueError(f"{source}: driver {joint!r} needs a radius above 0 m, got {spec.get('radius')!r}")
         rollers.append(Roller(joint=str(joint), radius=radius, lateral=float(spec.get("lateral", 0.0))))
-    return tuple(rollers)
+    if velocity and velocity != set(JOYSTICK_JOINTS):
+        raise ValueError(f"{source}: the joystick takes both of {JOYSTICK_JOINTS}, got {sorted(velocity)}")
+    return Drivers(tuple(rollers), bool(velocity))
 
 
-def load_drivers(model_uri: str) -> tuple[Roller, ...]:
+def load_drivers(model_uri: str) -> Drivers:
     """Drivers of the rig.yaml beside an actor SDF, none without the file."""
     if not model_uri:
-        return ()
+        return Drivers()
     rig_path = Path(model_uri).with_name(RIG_FILE)
     if not rig_path.is_file():
-        return ()
+        return Drivers()
     return parse_drivers(yaml.safe_load(rig_path.read_text()), str(rig_path))
-
-
-def has_joystick(model_uri: str) -> bool:
-    """Whether the model declares both joystick axes as velocity drivers."""
-    if not model_uri:
-        return False
-    rig_path = Path(model_uri).with_name(RIG_FILE)
-    if not rig_path.is_file():
-        return False
-    rig = yaml.safe_load(rig_path.read_text())
-    if not isinstance(rig, dict) or not isinstance(rig.get("drivers", {}), dict):
-        raise ValueError(f"{rig_path}: rig and drivers must be mappings")
-    drivers = rig.get("drivers", {})
-    return all(isinstance(drivers.get(joint), dict) and drivers[joint].get("from") == "velocity" for joint in ("joystick_pitch", "joystick_roll"))
 
 
 def with_driven(names: Iterable[str], positions: Sequence[float], angles: Mapping[str, float]) -> tuple[list[str], list[float]]:

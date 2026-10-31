@@ -154,10 +154,9 @@ renderers resolve their bone-map entries as usual.
 angles after gait generation, alongside the wheel angles. It estimates yaw rate
 over a 0.2 s pose-timestamp window and holds the last rate between samples,
 including repeated frames. Its per-agent cache is discarded on despawn and reset.
-The publisher enables it through `_joystick_for(model_uri)` when the model's
-`rig.yaml` declares both `joystick_pitch` and `joystick_roll` with
-`from: velocity`, regardless of agent type. Model support (including negative
-lookups) is cached. All supported models share the same driver instance.
+The publisher enables it when the model's `rig.yaml` declares both `joystick_pitch`
+and `joystick_roll` with `from: velocity`, regardless of agent type. Any other
+`from: velocity` entry rejects the rig file.
 
 The same driver selects one of seven calibrated right-arm poses from the joystick's
 `(pitch, roll)` pair: neutral, forward, reverse, forward left/right and pivot
