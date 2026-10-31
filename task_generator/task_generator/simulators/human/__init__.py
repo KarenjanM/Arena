@@ -656,6 +656,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def _close_stream_gate(self) -> None:
         self._stream_gate = False
+        self._driven.clear()
         self._joystick.clear()
         self._possession.clear()
         self._warned_unknown.clear()

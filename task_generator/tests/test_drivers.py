@@ -160,6 +160,15 @@ def test_driven_joints_stay_outside_the_possession_claim_set() -> None:
     assert not bare_joint_names_valid(["l_wheel"])
 
 
+def test_cleared_driven_joints_start_a_reused_id_from_zero() -> None:
+    driven = DrivenJoints()
+    driven.advance(7, _CHAIR, 0.0, 0.0, 0.0)
+    assert driven.advance(7, _CHAIR, 3.0, 0.0, 0.0)["l_wheel"] == pytest.approx(10.0)
+    driven.clear()
+    assert driven.known() == set()
+    assert driven.advance(7, _CHAIR, 30.0, 0.0, 0.0) == {"l_wheel": 0.0, "r_wheel": 0.0}
+
+
 def test_joystick_accumulates_pose_time_and_holds_rate_on_repeated_frames() -> None:
     joystick = JoystickDriver()
     straight = joystick.advance(1, 0.0, 0.4, 0.0)

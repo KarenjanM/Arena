@@ -103,6 +103,11 @@ class DrivenJoints:
         self._pose.pop(agent_id, None)
         self._angles.pop(agent_id, None)
 
+    def clear(self) -> None:
+        """Discard all poses and angles when the scenario resets."""
+        self._pose.clear()
+        self._angles.clear()
+
 
 class JoystickDriver:
     """Electric-chair joystick and matching right-arm poses from speed and sampled yaw rate."""
