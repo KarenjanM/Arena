@@ -1087,7 +1087,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
 
             x, y = self._from_engine(ex, ey)
 
-            gestures = [GestureMsg(slot=g.slot, at=Point(x=gx, y=gy, z=g.at.z), clip=g.clip, hand=g.hand, render_pose_override=g.render_pose_override) for g in gestures_by_id.get(agent_id, ()) for gx, gy in (self._from_engine(g.at.x, g.at.y),)]
+            gestures = [GestureMsg(slot=g.slot, at=Point(x=gx, y=gy, z=g.at.z), clip=g.clip, hand=g.hand, render_pose_override=g.render_pose_override, grip=g.grip) for g in gestures_by_id.get(agent_id, ()) for gx, gy in (self._from_engine(g.at.x, g.at.y),)]
 
             # contact kinds (hug, handshake) draw on the formation slot, physics stays put
             override = next((g for g in gestures if g.slot == "body" and g.render_pose_override), None)

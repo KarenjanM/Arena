@@ -152,12 +152,12 @@ def aim_errors(slot: str, target_local: Sequence[float], *, moving: bool, hold_s
         if not parked or st is None or st.clip is None:
             continue
         pos, _ = S.fk(angles, body)
-        side = st.clip.side
-        fore = pos[f"{side}_wrist"] - pos[f"{side}_elbow"]
-        want = world_to_local(tuple(target), pose) - pos["pelvis" if origin == "body" else f"{side}_wrist"]
-        if slot.startswith("halt"):
-            fore, want = fore * [1, 1, 0], want * [1, 1, 0]
-        errs.append(math.degrees(math.acos(float(np.clip(S.unit(fore) @ S.unit(want), -1.0, 1.0)))))
+        for side in st.clip.sides:
+            fore = pos[f"{side}_wrist"] - pos[f"{side}_elbow"]
+            want = world_to_local(tuple(target), pose) - pos["pelvis" if origin == "body" else f"{side}_wrist"]
+            if slot.startswith("halt"):
+                fore, want = fore * [1, 1, 0], want * [1, 1, 0]
+            errs.append(math.degrees(math.acos(float(np.clip(S.unit(fore) @ S.unit(want), -1.0, 1.0)))))
     if not errs:
         return None
     return {"median_deg": float(np.median(errs)), "max_deg": float(np.max(errs)), "ticks": len(errs)}

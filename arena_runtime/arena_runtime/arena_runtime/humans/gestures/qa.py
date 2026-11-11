@@ -140,13 +140,13 @@ def run(case: Case, *, agent_id: int = 1) -> Result:
             rest_times.append(t)
         parked = arm_st is not None and arm_st.phase == "hold" and arm_st.clip is not None and arm_st.t >= arm_st.clip.hold_end / arm_st.clip.fps and not arm_st.release_pending
         if parked and cue is not None and arm_st is not None and arm_st.clip is not None:
-            side = arm_st.clip.side
-            ch = next((c for c in cue.channels if c.slot in ("arm", "arm_l", "arm_r")), None)
+            ch = next((c for c in cue.channels if c.slot in ("arm", "arm_l", "arm_r", "receive", "receive_l", "receive_r")), None)
             if ch is not None:
                 target = world_to_local(ch.at, cue.pose)
-                forearm = S.unit(pos[f"{side}_wrist"] - pos[f"{side}_elbow"])
-                want = S.unit(target - pos[f"{side}_wrist"])
-                max_hold_aim = max(max_hold_aim, math.degrees(math.acos(float(np.clip(forearm @ want, -1.0, 1.0)))))
+                for side in arm_st.clip.sides:
+                    forearm = S.unit(pos[f"{side}_wrist"] - pos[f"{side}_elbow"])
+                    want = S.unit(target - pos[f"{side}_wrist"])
+                    max_hold_aim = max(max_hold_aim, math.degrees(math.acos(float(np.clip(forearm @ want, -1.0, 1.0)))))
         prev, prev_pos = angles, pos
         frames.append({"angles": dict(angles), "t": t})
     missing = [w for w in case.rest_windows if not any(w[0] <= rt <= w[1] for rt in rest_times)]

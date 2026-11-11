@@ -30,10 +30,33 @@ RELEASE_STRETCH = 1.25  # lowering arcs play this much slower than the recorded 
 BREATH_HZ = 0.3
 BREATH_AMP_RAD = math.radians(1.5)
 
-SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point", "halt": "halt", "halt_l": "halt", "halt_r": "halt", "body": "clip"}
-SLOT_OVERLAY = {"head": "head", "arm": "arm", "arm_l": "arm", "arm_r": "arm", "halt": "arm", "halt_l": "arm", "halt_r": "arm", "body": "body"}
+SLOT_KIND = {"head": "look", "arm": "point", "arm_l": "point", "arm_r": "point", "halt": "halt", "halt_l": "halt", "halt_r": "halt", "receive": "receive", "receive_r": "receive", "receive_l": "receive", "body": "clip"}
+SLOT_OVERLAY = {
+    "head": "head",
+    "arm": "arm",
+    "arm_l": "arm",
+    "arm_r": "arm",
+    "halt": "arm",
+    "halt_l": "arm",
+    "halt_r": "arm",
+    "receive": "arm",
+    "receive_l": "arm",
+    "receive_r": "arm",
+    "body": "body",
+}
 OVERLAYS = ("head", "arm", "body")
-AIMED_SLOTS = ("head", "arm", "arm_l", "arm_r", "halt", "halt_l", "halt_r")
+AIMED_SLOTS = (
+    "head",
+    "arm",
+    "arm_l",
+    "arm_r",
+    "halt",
+    "halt_l",
+    "halt_r",
+    "receive",
+    "receive_l",
+    "receive_r",
+)
 ZERO3 = np.zeros(3)
 
 
@@ -68,6 +91,7 @@ class Channel:
     clip: str = ""
     hand: str = ""
     lock: bool = False  # play from frame 0 instead of the per-agent stagger
+    grip: bool = False  # receive: target hand shape, faded between open and GRIP
 
     @property
     def opts(self) -> dict:
@@ -97,7 +121,7 @@ class GestureClip:
     fps: float
     hold_start: int
     hold_end: int  # frame the layer parks on, its pose is what ``hold`` continues from
-    side: str
+    side: str  # l, r, both, or empty for clips without an arm selection
     hold: object
     report: dict
     release: Sequence[dict] | None = None  # lowering arc from the park pose, None = keep the previous one
@@ -105,6 +129,11 @@ class GestureClip:
     loop: bool = False  # loop the whole clip on the hold instead of parking on ``hold_end``
     reverse: bool = False  # loop out and back
     loop_from: int = 0  # a looping clip wraps back to this frame, the frames before it are an intro played once
+
+    @property
+    def sides(self) -> tuple[str, ...]:
+        """The concrete arm sides controlled by this clip."""
+        return ("l", "r") if self.side == "both" else (self.side,) if self.side else ()
 
 
 class Gesture(typing.Protocol):
@@ -140,6 +169,13 @@ def _load_halt() -> Callable[[AnimationManager], Gesture]:
     from .halt import HaltGesture
 
     return lambda _manager: HaltGesture()
+
+
+@GESTURES.register("receive")
+def _load_receive() -> Callable[[AnimationManager], Gesture]:
+    from .receive import ReceiveGesture
+
+    return lambda _manager: ReceiveGesture()
 
 
 @GESTURES.register("look")
@@ -204,6 +240,9 @@ class _Slot:
         "channel",
         "clip",
         "follower",
+        "grip",
+        "grip_from",
+        "grip_since",
         "hold",
         "joints",
         "kind",
@@ -217,7 +256,7 @@ class _Slot:
         "t",
     )
 
-    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict, locked: bool = False) -> None:
+    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict, locked: bool = False, grip: bool = False) -> None:
         self.slot = slot
         self.channel = channel
         self.kind = kind
@@ -225,6 +264,9 @@ class _Slot:
         self.opts = opts
         self.bound = bound
         self.locked = locked
+        self.grip = grip
+        self.grip_from = 0.0
+        self.grip_since = 0.0
         self.phase = "requested"  # requested | ramp | hold | transition | release
         self.clip: GestureClip | None = None
         self.follower: HeadFollower | None = None
@@ -236,6 +278,12 @@ class _Slot:
         self.release_pending = False
         self.breath_origin: float | None = None  # age at which the breathing clock started
         self.breath_ease_s = 0.0
+
+    @property
+    def grip_weight(self) -> float:
+        """Current grip amount, interpolated from the last switch over FADE_S."""
+        alpha = min(1.0, max(0.0, (self.age - self.grip_since) / FADE_S))
+        return (1.0 - alpha) * self.grip_from + alpha * float(self.grip)
 
 
 class _Agent:
@@ -265,11 +313,25 @@ class GestureLayer:
         return {name: (st.kind, st.channel, st.phase, str(st.opts.get("clip", ""))) for name, st in ag.slots.items()}
 
     def sides(self, agent_id: int) -> dict[str, str]:
-        """Overlay slot -> the arm ("l" or "r") its live gesture clip moves, for clips that pick one."""
+        """Overlay slot -> arm selection (l, r or both) of its live clip."""
         ag = self._agents.get(agent_id)
         if ag is None:
             return {}
         return {name: st.clip.side for name, st in ag.slots.items() if st.clip is not None and st.clip.side}
+
+    def grips(self, agent_id: int) -> dict[str, tuple[str, bool]]:
+        """Receive overlay slot -> (l/r/both selection, grip), releasing slots included."""
+        ag = self._agents.get(agent_id)
+        if ag is None:
+            return {}
+        return {name: (st.clip.side, st.grip) for name, st in ag.slots.items() if st.kind == "receive" and st.clip is not None and st.clip.side}
+
+    def grip_weights(self, agent_id: int) -> dict[str, tuple[str, float]]:
+        """Receive overlay slot -> (l/r/both selection, current grip amount)."""
+        ag = self._agents.get(agent_id)
+        if ag is None:
+            return {}
+        return {name: (st.clip.side, st.grip_weight) for name, st in ag.slots.items() if st.kind == "receive" and st.clip is not None and st.clip.side}
 
     def busy_joints(self, agent_id: int) -> set[str]:
         """Joints the agent's live gesture slots blend over, releasing ones included."""
@@ -360,6 +422,10 @@ class GestureLayer:
             assert ag is not None
             self._release(agent_id, ag, st, restart=True)
             return
+        if st.grip != ch.grip:
+            st.grip_from = st.grip_weight
+            st.grip_since = st.age
+            st.grip = ch.grip
         st.release_pending = False
         if st.follower is not None:
             st.local = local
@@ -396,7 +462,7 @@ class GestureLayer:
             self._agents[agent_id] = ag
         gesture = self._gesture(kind)
         bound = gesture.bind(ch.slot, local, {**ch.opts, "moving": moving})
-        st = _Slot(overlay, ch.slot, kind, local, ch.opts, bound, locked=ch.lock)
+        st = _Slot(overlay, ch.slot, kind, local, ch.opts, bound, locked=ch.lock, grip=ch.grip)
         ag.slots[overlay] = st
         if kind == "look":
             st.follower = self._look().follower(local)

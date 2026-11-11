@@ -41,7 +41,7 @@ from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.animation_manager import AnimationManager
 from arena_runtime.humans.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from arena_runtime.humans.gestures import Channel, GestureLayer, GestureRequest
-from arena_runtime.humans.hands import POINT_CLIP, clip_pose
+from arena_runtime.humans.hands import POINT_CLIP, clip_pose, receive_hand
 from arena_runtime.humans.itinerary import semantic_atom
 from arena_runtime.humans.possession import PossessionTable
 from arena_runtime.humans.profile import PoseProfile, agent_type_pose_section, default_profile, resolve_pose_profile
@@ -322,7 +322,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             support = self._support(ped)
             channels = [g for g in ped.gestures if g.clip != SIT_CLIP or (support is not None and support.kind == "sit")]
             gesture = GestureRequest(
-                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), clip=self._seat_clip(ped, support) if g.clip == SIT_CLIP and support is not None else g.clip, hand=g.hand, lock=g.render_pose_override) for g in channels),
+                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), clip=self._seat_clip(ped, support) if g.clip == SIT_CLIP and support is not None else g.clip, hand=g.hand, lock=g.render_pose_override, grip=g.grip) for g in channels),
                 pose=(ped.pose.position.x, ped.pose.position.y, yaw),
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
             )
@@ -396,7 +396,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         return state
 
     def _hands(self, agent_id: int, now: float) -> dict[str, float]:
-        """Digit DOFs of a generated ped's playing body clips, empty leaves its hands in their neutral stance."""
+        """Clip hand shapes plus the active receive hand's interpolated grip pose."""
         phases = self._gestures.phases(agent_id)
         sides = self._gestures.sides(agent_id)
 
@@ -404,7 +404,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             kind, _channel, _phase, clip = phases.get(slot, ("", "", "", ""))
             return f"{POINT_CLIP}_{sides[slot]}" if kind == POINT_CLIP and slot in sides else clip
 
-        return clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now)
+        pose = clip_pose(((hand(slot), weight) for slot, _overlay, _playhead, weight in self._gait.overlays(agent_id)), now)
+        for side, weight in self._gestures.grip_weights(agent_id).values():
+            pose.update(receive_hand(side, weight))
+        return pose
 
     def _support(self, ped: Pedestrian) -> Support | None:
         """Seat or bed the ped rests on, None while it is on its feet."""

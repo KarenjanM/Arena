@@ -4,11 +4,12 @@ World-frame attention channels from the `arena_peds` bus become upper-body overl
 
 ## Wire
 
-Every `Pedestrian.gestures[]` entry is one channel: `slot` names the body part (`head`, `arm`, `arm_l`, `arm_r`, `halt`, `halt_l`, `halt_r`, `body`),
-`at` is a world-frame point (aimed slots), `clip` an animation name (`body`), `hand` the dominant hand (`arm`, `halt`),
+Every `Pedestrian.gestures[]` entry is one channel: `slot` names the body part (`head`, `arm`, `arm_l`, `arm_r`, `halt`, `halt_l`, `halt_r`, `receive`, `receive_l`, `receive_r`, `body`),
+`at` is a world-frame point (aimed slots), `clip` an animation name (`body`), `hand` the dominant hand (`arm`, `halt`, `receive`),
 `render_pose_override` makes `at` a display-only position for the ped (`body`, contact clips).
 `BaseHumanSimulator.publish_arena_peds` builds one `GestureRequest(channels, pose, moving)` per ped with a
-`Channel(slot, at, clip, hand)` per entry (`Channel.opts` presents them to the generators as a dict)
+`Channel(slot, at, clip, hand, grip=...)` per entry (`Channel.opts` presents generator options as a dict;
+grip is tracked separately by the layer)
 and passes it to `AnimationManager.compute(..., gesture=...)`, which calls the layer through `gesture_hook`.
 
 | slot | kind | wire | hand |
@@ -17,6 +18,7 @@ and passes it to `AnimationManager.compute(..., gesture=...)`, which calls the l
 | `arm` | `point` | `at`, `hand` (default `r`) | resolved once at slot start: `hand` within the 20 deg midline band, else the target-side arm |
 | `arm_l` / `arm_r` | `point` | `at` | forced left / right |
 | `halt` / `halt_l` / `halt_r` | `halt` | as `arm` | the `point` swing held at a fixed 15 deg elevation on the target's bearing, palm pushed out at the target (forearm pronation plus 70 deg wrist extension, opening with the forearm's rise), shares the `arm` overlay |
+| `receive` / `receive_l` / `receive_r` | `receive` | as `arm` | reach toward the target with a straight wrist, palm or thumb side upward, shares the `arm` overlay |
 | `body` | `clip` | `clip` | |
 
 `clip` plays the manager's cached Animation asset of that name as an overlay over the joints its
@@ -27,11 +29,74 @@ the slot holds from the first tick and fades back into the gait on release.
 The engine publishes exactly the active channels each tick. Nothing is implicit: no head channel = the head idles
 while the arm points.
 
+### Receive orientation
+
+Select the hand orientation when constructing the generator:
+
+```python
+ReceiveGesture()                        # default: orientation="palm_up"
+ReceiveGesture(orientation="palm_up")    # palm faces upward
+ReceiveGesture(orientation="thumb_up")   # thumb side faces upward, palm sideways
+ReceiveGesture(hands=2)                 # receive controls both arms in one clip
+```
+
+The selected direction is aligned with the projection of upward perpendicular to the forearm,
+subject to the existing wrist limits. Wrist extension stays zero in both modes. The same selection
+applies to the reach, retargeting and release. Other orientation values raise `ValueError`.
+The gesture layer's `_load_receive` factory currently uses the defaults; pass `orientation="thumb_up"`
+or `hands=2` there to configure its receive generator. The ROS `Gesture` message has no per-request
+orientation or hand-count field. No separate receive profile system is introduced.
+
+### Two-handed receive
+
+`ReceiveGesture(hands=2)` makes the general `receive` channel generate both arms. The explicit
+`receive_l` and `receive_r` channels retain their forced single-arm meaning, even with that configuration.
+All three still map to the single `arm` overlay; publishing two arm channels does not bypass the
+existing first-channel-wins rule.
+
+The native pointing generator produces each arm against an upright torso. Receive then synchronizes
+the ramp, settled segment and release separately, and merges only each arm's own joints into one
+`GestureClip`. The shared torso is zeroed; it is blended while stationary and left to locomotion
+while moving. `side="both"` identifies the combined clip, and `clip.sides` returns `("l", "r")`.
+Its blend mask includes both arms and wrists. Breathing and the shared grip fade affect both hands.
+
+The hold stores both native arm states, allowing a target update to continue both arms from their
+previous held poses. The combined report preserves both arm reports and measures held-pose aim
+errors and capsule clearance with both arms present. A flagged pose is reported using the existing
+layer warning mechanism; this is not a coupled collision-avoidance optimizer.
+
+Both arms aim toward the same handover point. This provides a two-handed receiving motion, not
+object-specific palm contact positions or a physical grasp. Wrist limits and the existing upright
+torso approximation during locomotion still apply.
+
+### Receive grip
+
+`Gesture.grip` and `Channel.grip` default to `false`. For a receive channel, `false` selects
+straight fingers and zero spread; `true` selects `hands.GRIP` on the arm chosen by the slot.
+The fingers interpolate between these poses over `FADE_S` (0.25 s) of simulation time:
+
+```python
+Channel("receive_r", at=(2.0, 0.0, 1.2), grip=True)
+```
+
+`grip` is separate from `Channel.opts`. Changing only this flag keeps the same arm slot,
+clip and playhead. Each change starts from the current interpolated pose, so reversing
+mid-transition does not jump. Repeated identical requests do not restart the fade.
+A fresh receive with `grip=true` also closes from the open pose over `FADE_S`.
+The grip state and fade clock survive target updates and remain active during release
+until the slot ends. Other gesture kinds ignore the flag. Humansim forwards it from
+`GestureIntent` through both gesture message types to the runtime channel.
+
+`GestureLayer.grips` exposes the requested booleans; `grip_weights` exposes the current
+0..1 amounts used by `hands.receive_hand`. `GRIP` is a fixed finger-pose preset. The
+interpolation does not adapt it to an object's shape or prevent finger/object intersections.
+
 ## Slots
 
 Every overlay lives in a named slot on the manager (`set_ped_blend(..., slot="arm")`), each with its own
 playhead, envelope and `on_end`. Slots are applied in insertion order. `head` drives the `head` overlay, the
-three arm channels share the `arm` overlay, so at most one arm points at a time. The layer keeps one `_Agent`
+point, halt and receive channels share the `arm` overlay, so at most one arm channel runs at a time.
+That channel may control both physical arms for two-handed receive. The layer keeps one `_Agent`
 per ped with a `_Slot` per (agent, overlay), and each slot runs its own phase machine, independent of the other:
 
 - start: a channel appears (or reappears). `Gesture.bind(slot, local, opts)` freezes the
@@ -95,7 +160,7 @@ are logged once per (ped, kind) and the clip still plays.
 
 Blend joints come from `Gesture.joints(side, moving)`. `point` blends the pointing arm always and the spine
 (yaw, pitch, roll of waist, spine, chest) only while the ped is idle, so walking gaits keep their torso sway. `halt` adds the
-wrist pair of its arm, the only kind that touches the wrists. `look` blends the head triple.
+wrist pair of its arm, as does `receive`. `look` blends the head triple.
 When `moving` flips on a live slot the layer recomputes the set and swaps it in place through
 `AnimationManager.set_overlay_joints(..., fade_s=FADE_S)`: leaving joints ramp their weight to 0 and entering
 joints ramp to 1, playhead and envelope untouched, no reinstall.

@@ -14,3 +14,6 @@ string hand
 
 # body: `at` is a render-only position override (xy), not a gaze/point target
 bool render_pose_override
+
+# receive: close the selected hand, false keeps it open
+bool grip

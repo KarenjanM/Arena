@@ -1,4 +1,4 @@
-"""Hand shapes as digit DOFs of the body clips that declare one and of point gestures, every other hand holding its neutral stance."""
+"""Hand shapes for body clips, pointing and receive gestures; other hands hold their neutral stance."""
 
 from __future__ import annotations
 
@@ -23,6 +23,13 @@ RAISED = 0.1
 POINT = (0.9, RAISED, 1.5, 1.5, 1.5)
 POINT_CLIP = "point"
 COUNT_EASE_S = 0.18
+
+
+def receive_hand(side: str, weight: float) -> dict[str, float]:
+    """Receive hand shape for l/r/both, between straight fingers (0) and GRIP (1)."""
+    if side == "both":
+        return {**receive_hand("l", weight), **receive_hand("r", weight)}
+    return blend(shape(side, (0.0,) * len(DIGITS)), shape(side, GRIP), weight)
 
 
 def blend(base: Mapping[str, float], over: Mapping[str, float], weight: float) -> dict[str, float]:
