@@ -140,7 +140,7 @@ def run(case: Case, *, agent_id: int = 1) -> Result:
             rest_times.append(t)
         parked = arm_st is not None and arm_st.phase == "hold" and arm_st.clip is not None and arm_st.t >= arm_st.clip.hold_end / arm_st.clip.fps and not arm_st.release_pending
         if parked and cue is not None and arm_st is not None and arm_st.clip is not None:
-            ch = next((c for c in cue.channels if c.slot in ("arm", "arm_l", "arm_r", "receive", "receive_l", "receive_r")), None)
+            ch = next((c for c in cue.channels if c.slot in ("arm", "arm_l", "arm_r", "receive", "receive_l", "receive_r", "receive_both")), None)
             if ch is not None:
                 target = world_to_local(ch.at, cue.pose)
                 for side in arm_st.clip.sides:

@@ -30,14 +30,14 @@ class Log:
 
 @pytest.fixture(scope="module")
 def receive():
-    return ReceiveGesture(hands=2)
+    return ReceiveGesture()
 
 
 @pytest.mark.parametrize("orientation", ["palm_up", "thumb_up"])
 @pytest.mark.parametrize("moving", [False, True])
 def test_one_clip_controls_both_arms_against_one_torso(orientation, moving):
-    gesture = ReceiveGesture(orientation, hands=2)
-    options = gesture.bind("receive", TARGET, {"moving": moving})
+    gesture = ReceiveGesture(orientation)
+    options = gesture.bind("receive_both", TARGET, {"moving": moving})
     clip = gesture.start(TARGET, options)
     assert clip.side == "both" and clip.sides == ("l", "r")
     assert clip.hold_end == len(clip.frames) - 1
@@ -57,17 +57,25 @@ def test_one_clip_controls_both_arms_against_one_torso(orientation, moving):
     assert set(gesture.breathing("both")) == {f"{s}_{joint}" for s in ("l", "r") for joint in ("p_shoulder", "elbow")}
 
 
-@pytest.mark.parametrize("side", ["l", "r"])
-def test_explicit_receive_slots_keep_their_forced_single_arm(receive, side):
+@pytest.mark.parametrize("side", ["l", "r", "both"])
+def test_explicit_receive_slots_select_the_requested_side(receive, side):
     options = receive.bind(f"receive_{side}", TARGET, {})
-    assert options["hands"] == 1 and options["hand"] == side
+    assert options["side"] == side
     clip = receive.start(TARGET, options)
-    assert clip.side == side and clip.sides == (side,)
+    assert clip.side == side
+    assert clip.sides == (("l", "r") if side == "both" else (side,))
+
+
+@pytest.mark.parametrize("dominant", ["l", "r"])
+def test_general_receive_resolves_one_hand_from_handedness(receive, dominant):
+    options = receive.bind("receive", TARGET, {"dominant": dominant})
+    assert options["side"] == dominant
+    assert receive.start(TARGET, options).side == dominant
 
 
 @pytest.mark.parametrize("moving", [False, True])
 def test_retarget_preserves_both_starting_arm_poses(receive, moving):
-    options = receive.bind("receive", TARGET, {"moving": moving})
+    options = receive.bind("receive_both", TARGET, {"moving": moving})
     first = receive.start(TARGET, options)
     second = receive.retarget(first.hold, np.array([2.0, 0.25, 1.3]), options)
     assert second.side == "both"
@@ -98,7 +106,7 @@ def test_one_receive_channel_owns_one_overlay_and_grips_both_hands(receive):
     layer = GestureLayer(manager, log)
     layer._gestures["receive"] = receive
     manager.gesture_hook = layer
-    channel = Channel("receive", tuple(TARGET))
+    channel = Channel("receive_both", tuple(TARGET))
 
     def tick(ch, moving=False):
         return manager.compute(1, 0, 0.0, 0.05, gesture=GestureRequest((ch,), (0.0, 0.0, 0.0), moving))
@@ -129,7 +137,7 @@ def test_one_receive_channel_owns_one_overlay_and_grips_both_hands(receive):
 def test_duplicate_receive_arm_channels_are_still_rejected(receive):
     log = Log()
     layer = GestureLayer(None, log)
-    first = Channel("receive", tuple(TARGET))
+    first = Channel("receive_both", tuple(TARGET))
     duplicate = Channel("receive_l", tuple(TARGET))
     wanted = layer._wanted(1, GestureRequest((first, duplicate), (0.0, 0.0, 0.0), False))
     assert wanted == {"arm": first}
@@ -142,7 +150,7 @@ def test_a_head_channel_can_run_beside_the_combined_arm_clip(receive):
     layer = GestureLayer(manager, log)
     layer._gestures["receive"] = receive
     manager.gesture_hook = layer
-    request = GestureRequest((Channel("receive", tuple(TARGET)), Channel("head", tuple(TARGET))), (0.0, 0.0, 0.0), False)
+    request = GestureRequest((Channel("receive_both", tuple(TARGET)), Channel("head", tuple(TARGET))), (0.0, 0.0, 0.0), False)
     for _ in range(30):
         manager.compute(1, 0, 0.0, 0.05, gesture=request)
     assert set(layer._agents[1].slots) == {"head", "arm"}
@@ -151,7 +159,7 @@ def test_a_head_channel_can_run_beside_the_combined_arm_clip(receive):
     assert not log.warnings
 
 
-@pytest.mark.parametrize("hands", [0, 3, True, "2"])
-def test_invalid_hand_counts_are_rejected(hands):
-    with pytest.raises(ValueError, match="hands"):
-        ReceiveGesture(hands=hands)
+@pytest.mark.parametrize("side", ["left", "right", 2, True])
+def test_invalid_receive_sides_are_rejected(receive, side):
+    with pytest.raises(ValueError, match="side"):
+        receive.start(TARGET, {"side": side})

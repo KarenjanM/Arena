@@ -569,8 +569,8 @@ class PointAtGenerator:
     >>> clip.save("point_at.npy")
     """
 
-    def __init__(self, template: str = DEFAULT_TEMPLATE, height: float = 1.65, options: PointAtOptions | None = None):
-        self.body = S.Body(height)
+    def __init__(self, template: str = DEFAULT_TEMPLATE, height: float = 1.65, options: PointAtOptions | None = None, body: S.Body | None = None):
+        self.body = body if body is not None else S.Body(height)
         self.template = load_template(template, height)
         self.opts = options or PointAtOptions()
         # the template's own aim, used to anchor every assist term so that
@@ -670,7 +670,7 @@ class PointAtGenerator:
         # moves (torso assist, shrug) and a delta fixed to it would let the aim
         # ride along with the torso.  World-frame keeps the emitted arm path an
         # exact rigid rotation of the recorded one.
-        _, fr_a_src = S.fk(self._source_pose(anchor, side), self.body)
+        _, fr_a_src = S.fk(self._source_pose(anchor, side, upright=opts.upright), self.body)
         r_src_anchor = fr_a_src[f"{side}_collar"] @ S.arm_rot(*(self._arm_track(anchor, side)[n] for n in tri))
 
         def delta_for(posed: dict) -> np.ndarray:
@@ -724,7 +724,7 @@ class PointAtGenerator:
         emit = C.UNWRAP_LIMITS if opts.unwrap_shoulder else C.EMIT_LIMITS
 
         for k, (i, w) in enumerate(zip(idx, w_track, strict=True)):
-            src_ang = self._source_pose(i, side)
+            src_ang = self._source_pose(i, side, upright=opts.upright)
             prev_tri = None if not frames_out else tuple(frames_out[-1]["angles"][n] for n in tri)
             deltas = self._frame_deltas(i, aim0, side, d_yaw, d_pitch, bend, opts)
 
@@ -812,6 +812,39 @@ class PointAtGenerator:
         return clip
 
     # -- gesture chaining -------------------------------------------------
+    def retarget(
+        self,
+        prev: HoldPose,
+        target: Sequence[float] | np.ndarray | None = None,
+        azimuth: float | None = None,
+        elevation: float | None = None,
+        deg: bool = True,
+        options: PointAtOptions | None = None,
+        transition_s: float = 0.4,
+    ) -> PointAtClip:
+        """Continue from a held pose into a freshly solved hold on this body."""
+        clip = self.point_at(target=target, azimuth=azimuth, elevation=elevation, deg=deg, options=options)
+        if clip.side != prev.side:
+            raise ValueError("hand switch")
+        settled = clip.frames[clip.hold_range[0] : clip.peak + 1]
+        end = settled[0]["angles"]
+        count = max(1, int(round(transition_s / self.template.dt)))
+        tri = [f"{prev.side}_{axis}_shoulder" for axis in ("y", "p", "r")]
+        before = S.arm_rot(*(prev.angles[name] for name in tri))
+        after = S.arm_rot(*(end[name] for name in tri))
+        frames = []
+        warm = (prev.angles[tri[0]], prev.angles[tri[1]], prev.angles[tri[2]])
+        for k in range(count):
+            w = float(0.5 - 0.5 * np.cos(np.pi * k / count))
+            angles = dict(end) | {name: (1 - w) * value + w * end[name] for name, value in prev.angles.items()}
+            warm = _triple_in_limits(prev.side, S.arm_rot_inverse(S.slerp_rot(before, after, w)), prev=warm)
+            angles.update(zip(tri, warm, strict=True))
+            frames.append({**settled[0], "angles": angles})
+        clip.frames = [{**frame, "t": k * self.template.dt} for k, frame in enumerate(frames + settled)]
+        clip.envelope = np.r_[np.zeros(count), np.ones(len(settled))]
+        clip.report = {**clip.report, "transition_frames": count}
+        return clip
+
     def aim_of(self, target: Sequence[float] | np.ndarray) -> np.ndarray:
         """Unit aim direction :meth:`point_at` would use for ``target``."""
         return self._resolve_aim(target, None, None, True)[0]
@@ -889,7 +922,7 @@ class PointAtGenerator:
         for i, w in zip(idx, w_track, strict=True):
             if not (0.05 < w < 0.97):
                 continue
-            src_ang = self._source_pose(i, side)
+            src_ang = self._source_pose(i, side, upright=opts.upright)
             deltas = self._frame_deltas(i, aim0, side, d_yaw, d_pitch, bend, opts)
             posed = dict(src_ang)
             for name, dval in deltas.items():
@@ -961,7 +994,7 @@ class PointAtGenerator:
             f"{side}_elbow": a[f"{s}_elbow"],
         }
 
-    def _source_pose(self, i: int, side: str) -> dict:
+    def _source_pose(self, i: int, side: str, *, upright: bool = False) -> dict:
         """Template frame with the gesture moved onto the pointing arm.
 
         Starts from the residual track (the gesture projected out of the arm
@@ -971,6 +1004,8 @@ class PointAtGenerator:
         """
         pose = dict(self.template.base[i])
         pose.update(self._arm_track(i, side))
+        if upright:
+            pose.update({name: 0.0 for seg in C.SPINE_SEGMENTS for name in (f"r_{seg}", f"y_{seg}", seg)})
         return pose
 
     def _frame_deltas(self, i: int, aim0: np.ndarray, side: str, d_yaw: float, d_pitch: float, bend: float, opts: PointAtOptions) -> dict[str, float]:
@@ -979,11 +1014,11 @@ class PointAtGenerator:
         against what the template does for its *own* target, so an unchanged
         target gives zero."""
         tpl = self.template
-        src = self._source_pose(i, side)
+        src = self._source_pose(i, side, upright=opts.upright)
         deltas: dict[str, float] = {}
         for seg, fy, fp in zip(C.SPINE_SEGMENTS, YAW_SPLIT, PITCH_SPLIT, strict=True):
-            deltas[f"y_{seg}"] = fy * d_yaw
-            deltas[seg] = fp * d_pitch
+            deltas[f"y_{seg}"] = 0.0 if opts.upright else fy * d_yaw
+            deltas[seg] = 0.0 if opts.upright else fp * d_pitch
         leaned = dict(src)
         for name, dv in deltas.items():
             leaned[name] = C.clamp(name, src[name] + dv) if opts.clamp_limits else src[name] + dv
@@ -999,7 +1034,7 @@ class PointAtGenerator:
 
     def _solve_frame(self, i: int, aim0: np.ndarray, side: str, d_yaw: float, d_pitch: float, bend: float, target_point: np.ndarray | None, opts: PointAtOptions, warm: tuple[float, float, float], fixed_phi: float | None, swivel_pref: float | None = None) -> tuple[dict, dict, dict[str, float]]:
         """Fully-pointing pose for one source frame, plus its deltas vs source."""
-        src = self._source_pose(i, side)
+        src = self._source_pose(i, side, upright=opts.upright)
         deltas = self._frame_deltas(i, aim0, side, d_yaw, d_pitch, bend, opts)
         posed = dict(src)
         for name, dv in deltas.items():

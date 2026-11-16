@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from arena_runtime.humans.pointing import HoldPose, PointAtClip, PointAtOptions
+from arena_runtime.humans.pointing import HoldPose, PointAtClip, PointAtGenerator, PointAtOptions
 from arena_runtime.humans.pointing import skeleton as S
 from arena_runtime.humans.pointing.contract import SPINE_SEGMENTS, arm_dofs
 from arena_runtime.humans.pointing.table import BakedPointAt
@@ -21,8 +21,8 @@ DOMINANT = {"left": "l", "right": "r", "l": "l", "r": "r"}
 class PointGesture:
     SLOT_HAND = {"arm_l": "l", "arm_r": "r"}
 
-    def __init__(self) -> None:
-        self._gen = BakedPointAt(height=BODY_HEIGHT)
+    def __init__(self, generator: PointAtGenerator | None = None) -> None:
+        self._gen = generator if generator is not None else BakedPointAt(height=BODY_HEIGHT)
 
     def _aim(self, local: np.ndarray) -> tuple[np.ndarray, dict]:
         """Aim direction for ``local`` and the generator kwargs that reproduce it."""

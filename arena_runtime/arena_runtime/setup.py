@@ -17,7 +17,7 @@ setup(
         include=[f'{package_name}*']
     ),
     package_dir={'': '.'},
-    package_data={package_name: ['humans/profiles/*.yaml']},
+    package_data={package_name: ['humans/profiles/*.yaml', 'humans/gestures/profiles/handover/*.yaml']},
     data_files=[
         ('share/ament_index/resource_index/packages',
          ['resource/' + package_name]),

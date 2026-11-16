@@ -120,19 +120,21 @@ def load_body(model_uri: str) -> BodyMeasurements | None:
     return BodyMeasurements(clearance=human.pelvis_clearance(skin, np.array(forward)), legs=human.legs(skin), proportions=proportions)
 
 
-def _skeleton(legs: Legs, proportions: Proportions | None = None) -> S.Body:
-    """The pointing skeleton with the character's legs and, given them, its trunk and arms (the template's otherwise)."""
+def skeleton(legs: Legs, proportions: Proportions | None = None) -> S.Body:
+    """A floor-relative pointing skeleton with measured legs and optional trunk and arm proportions."""
     body = S.Body()
     body.thigh, body.tibia, body.hip_height = legs.thigh, legs.shin, legs.thigh + legs.shin
     if proportions is not None:
         body.torso_height, body.spine_segment = proportions.shoulders, proportions.shoulders / 3
         body.neck_length, body.neck_shoulder, body.waist_length = proportions.head, proportions.shoulder_width, 2 * proportions.hip_width
         body.upperarm, body.forearm = proportions.upperarm, proportions.forearm
+    body.hip_height += legs.hip + legs.ankle
+    body.arm_reach = body.upperarm + body.forearm
     return body
 
 
 def _leg_fk(angles: Mapping[str, float], legs: Legs) -> tuple[dict, S.Body]:
-    body = _skeleton(legs)
+    body = skeleton(legs)
     pos, _ = S.fk(dict.fromkeys(JOINT_NAMES, 0.0) | dict(angles), body)
     return pos, body
 
@@ -377,7 +379,7 @@ def supported_pose(support: Support, body: BodyMeasurements, angles: Mapping[str
 
 # m, joint centre to the skin a lying or kneeling body rests on; the pelvis takes the model's measurement
 _FLESH = {"waist": 0.11, "spine": 0.11, "chest": 0.11, "torso": 0.11, "neck": 0.07, "head": 0.1, "shoulder": 0.06, "elbow": 0.045, "wrist": 0.04, "hip": 0.09, "knee": 0.055}
-_PALM = 0.45  # of the wrist to fingertip reach, to the palm's centre
+PALM_CENTER_FRACTION = 0.45  # of the wrist to fingertip reach, to the palm's centre
 _HAND_FLESH = (0.03, 0.01)  # m, under the palm's centre and the fingertips
 _TOE = 0.15  # m, ankle to the ball of the foot, as the skeleton's foot point
 
@@ -395,7 +397,7 @@ def _contacts(angles: Mapping[str, float], body: BodyMeasurements) -> tuple[np.n
     Joints carry their flesh; the hands their palm and fingertips; the feet a heel and toe point on the sole, which turn
     with the foot as the renderers' sole points do.
     """
-    pos, frames = S.fk(dict.fromkeys(JOINT_NAMES, 0.0) | dict(angles), _skeleton(body.legs, body.proportions))
+    pos, frames = S.fk(dict.fromkeys(JOINT_NAMES, 0.0) | dict(angles), skeleton(body.legs, body.proportions))
     points = [pos[k] for k in pos if k.split("_")[-1] in _FLESH]
     flesh = [_FLESH[k.split("_")[-1]] for k in pos if k.split("_")[-1] in _FLESH]
     points.append(pos["pelvis"])
@@ -403,7 +405,7 @@ def _contacts(angles: Mapping[str, float], body: BodyMeasurements) -> tuple[np.n
     soles = []
     for side in ("l", "r"):
         hand = frames[f"{side}_hand"]
-        for reach, depth in zip((_PALM * body.proportions.hand, body.proportions.hand), _HAND_FLESH, strict=True):
+        for reach, depth in zip((PALM_CENTER_FRACTION * body.proportions.hand, body.proportions.hand), _HAND_FLESH, strict=True):
             points.append(pos[f"{side}_wrist"] + hand @ (S.DOWN * reach))
             flesh.append(depth)
         foot, down = frames[f"{side}_foot"], frames[f"{side}_foot"] @ (S.DOWN * body.legs.ankle)

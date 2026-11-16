@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import math
+import typing
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
-from arena_runtime.humans.pointing import HoldPose
+from arena_runtime.humans.pointing import HoldPose, PointAtGenerator
 from arena_runtime.humans.pointing import skeleton as S
 from arena_runtime.humans.pointing.contract import ROS_JOINT_ORDER, SPINE_SEGMENTS, arm_dofs, clamp, wrap_pi, wrist_dofs
+from arena_runtime.humans.support import skeleton
 
 from . import BODY_HEIGHT, GestureClip, resample
 from .point import PointGesture
+
+if typing.TYPE_CHECKING:
+    from arena_runtime.humans.support import BodyMeasurements
 
 
 @dataclass(frozen=True)
@@ -23,23 +28,19 @@ class _TwoHandHold:
 
 
 class ReceiveGesture(PointGesture):
-    SLOT_HAND = {"receive_l": "l", "receive_r": "r"}
+    SLOT_SIDE = {"receive_l": "l", "receive_r": "r", "receive_both": "both"}
 
-    def __init__(self, orientation: str = "palm_up", *, hands: int = 1) -> None:
+    def __init__(self, orientation: str = "palm_up", *, body: BodyMeasurements | None = None) -> None:
         if orientation not in ("palm_up", "thumb_up"):
             raise ValueError(f"unknown receive orientation {orientation!r}; expected 'palm_up' or 'thumb_up'")
-        if type(hands) is not int or hands not in (1, 2):
-            raise ValueError("receive hands must be 1 or 2")
-        super().__init__()
-        self._body = S.Body(BODY_HEIGHT)
+        self._body = skeleton(body.legs, body.proportions) if body is not None else S.Body(BODY_HEIGHT)
+        super().__init__(PointAtGenerator(body=self._body) if body is not None else None)
         self._orientation = orientation
-        self._hands = hands
 
     def bind(self, slot: str, local: np.ndarray, opts: dict) -> dict:
-        """Explicit receive_l/r stay single-handed; receive uses the configured count."""
-        if slot not in self.SLOT_HAND and self._hands == 2:
-            return {**opts, "hands": 2}
-        return {**super().bind(slot, local, opts), "hands": 1}
+        """Freeze l/r/both from the channel, resolving one hand for the general receive channel."""
+        side = self.SLOT_SIDE.get(slot) or self.resolve_hand(local, opts)
+        return {**opts, "side": side}
 
     def joints(self, side: str, moving: bool) -> set[str]:
         if side == "both":
@@ -52,13 +53,18 @@ class ReceiveGesture(PointGesture):
         return super().breathing(side)
 
     def start(self, local: np.ndarray, opts: dict) -> GestureClip:
-        if opts.get("hands", self._hands) == 2:
+        side = opts.get("side", opts.get("hand", "auto"))
+        if side == "auto":
+            side = self.resolve_hand(local, opts)
+        if side not in ("l", "r", "both"):
+            raise ValueError("receive side must be l, r or both")
+        if side == "both":
             # Both arm solutions use the same upright torso. Independent torso
             # assists cannot be merged without changing the other arm's aim.
             left = self._start_one(local, {**opts, "hand": "l", "moving": True})
             right = self._start_one(local, {**opts, "hand": "r", "moving": True})
             return self._combine(left, right, local)
-        return self._start_one(local, opts)
+        return self._start_one(local, {**opts, "hand": side})
 
     def _start_one(self, local: np.ndarray, opts: dict) -> GestureClip:
         clip = super().start(local, opts)
@@ -67,14 +73,16 @@ class ReceiveGesture(PointGesture):
 
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         if isinstance(hold, _TwoHandHold):
-            if opts.get("hands", self._hands) != 2:
-                raise ValueError("receive hand count changed")
+            if opts.get("side", "both") != "both":
+                raise ValueError("receive side changed")
             left = self._retarget_one(hold.left, local, {**opts, "hand": "l", "moving": True})
             right = self._retarget_one(hold.right, local, {**opts, "hand": "r", "moving": True})
             return self._combine(left, right, local)
-        if opts.get("hands", self._hands) == 2:
+        assert isinstance(hold, HoldPose)
+        side = opts.get("side", hold.side)
+        if side == "both":
             raise ValueError("two-handed receive requires a two-arm hold")
-        return self._retarget_one(hold, local, opts)
+        return self._retarget_one(hold, local, {**opts, "hand": side})
 
     def _retarget_one(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         clip = super().retarget(hold, local, opts)
@@ -110,7 +118,7 @@ class ReceiveGesture(PointGesture):
         release = None
         if left.release is not None and right.release is not None:
             count = max(len(left.release), len(right.release))
-            release = merge([resample(clip.release, count) for clip in clips])
+            release = merge([resample(left.release, count), resample(right.release, count)])
         elif left.release is not None or right.release is not None:
             raise ValueError("receive arm clips must both supply a release arc")
 
@@ -130,6 +138,7 @@ class ReceiveGesture(PointGesture):
             "aim_error_deg": max(errors),
             "arms": {"l": left.report, "r": right.report},
         }
+        assert isinstance(left.hold, HoldPose) and isinstance(right.hold, HoldPose)
         return GestureClip(frames=frames, fps=left.fps, hold_start=ramp, hold_end=ramp + settled - 1, side="both", hold=_TwoHandHold(left.hold, right.hold), report=report, release=release)
 
     def _forearm(self, frame: dict, side: str, opts: dict) -> np.ndarray:
