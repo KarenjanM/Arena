@@ -22,7 +22,7 @@ class HandoverPose:
     side: str
     orientation: str
 
-    def channel(self, pose: tuple[float, float, float] = (0.0, 0.0, 0.0), *, grip: bool = False) -> Channel:
+    def channel(self, pose: tuple[float, float, float] = (0.0, 0.0, 0.0), *, grip: float = 0.0) -> Channel:
         """A receive channel with the preferred point transformed into the world frame."""
         x, y, yaw = pose
         ahead, left, height = self.at

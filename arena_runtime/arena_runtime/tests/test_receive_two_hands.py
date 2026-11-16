@@ -100,7 +100,8 @@ def test_different_arm_timelines_share_ramp_hold_and_release_boundaries(receive)
     assert [f["t"] for f in clip.frames] == pytest.approx(np.arange(len(clip.frames)) / clip.fps)
 
 
-def test_one_receive_channel_owns_one_overlay_and_grips_both_hands(receive):
+@pytest.mark.parametrize("grip", [0.4, 1.0])
+def test_one_receive_channel_owns_one_overlay_and_grips_both_hands(receive, grip):
     log = Log()
     manager = AnimationManager(logger=log, fps=20.0, clips=NoClips())
     layer = GestureLayer(manager, log)
@@ -119,18 +120,18 @@ def test_one_receive_channel_owns_one_overlay_and_grips_both_hands(receive):
     assert [name for name, *_ in manager.overlays(1)] == ["arm"]
     assert slot.joints == receive.joints("both", False)
     for _ in range(7):
-        tick(attrs.evolve(channel, grip=True))
+        tick(attrs.evolve(channel, grip=grip))
     assert layer._agents[1].slots["arm"] is slot and slot.clip is clip
     side, weight = layer.grip_weights(1)["arm"]
-    assert side == "both" and weight == pytest.approx(1.0)
+    assert side == "both" and weight == pytest.approx(grip)
     fingers = receive_hand(side, weight)
     for s in ("l", "r"):
-        assert fingers[f"{s}_curl_index"] == GRIP[1]
-    tick(attrs.evolve(channel, grip=True), moving=True)
+        assert fingers[f"{s}_curl_index"] == pytest.approx(grip * GRIP[1])
+    tick(attrs.evolve(channel, grip=grip), moving=True)
     assert layer._agents[1].slots["arm"] is slot
     assert slot.clip.side == "both"
     assert not slot.joints & SPINE
-    assert layer.grip_weights(1)["arm"][1] == pytest.approx(1.0)
+    assert layer.grip_weights(1)["arm"][1] == pytest.approx(grip)
     assert not log.warnings
 
 

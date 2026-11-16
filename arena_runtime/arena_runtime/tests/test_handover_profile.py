@@ -19,7 +19,8 @@ def test_profile_preserves_requested_hand_and_transforms_with_the_pedestrian():
     assert left.channel(pose).slot == "receive_l"
     assert right.channel(pose).slot == "receive_r"
     assert world_to_local(left.channel(pose).at, pose) == pytest.approx(left.at)
-    assert not left.channel(pose).grip and left.channel(pose, grip=True).grip
+    assert left.channel(pose).grip == 0.0
+    assert left.channel(pose, grip=0.4).grip == 0.4
 
 
 def test_profile_changes_with_object_and_body_geometry():

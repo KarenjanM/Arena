@@ -61,7 +61,7 @@ from arena_runtime.humans.gestures.profiles.handover.handover_profile import han
 
 profile = handover_profile("bottle", body, handedness="l")
 pose = (2.0, 3.0, 0.0)  # pedestrian x, y and yaw, standing on the world floor
-request = GestureRequest((profile.channel(pose, grip=False),), pose, moving=False, body=body)
+request = GestureRequest((profile.channel(pose, grip=0.0),), pose, moving=False, body=body)
 ```
 
 The point is derived from elbow height and forearm/hand length, with half the object's extent
@@ -107,25 +107,32 @@ torso approximation during locomotion still apply.
 
 ### Receive grip
 
-`Gesture.grip` and `Channel.grip` default to `false`. For a receive channel, `false` selects
-straight fingers and zero spread; `true` selects `hands.GRIP` on the arm chosen by the slot.
-The fingers interpolate between these poses over `FADE_S` (0.25 s) of simulation time:
+`Gesture.grip` and `Channel.grip` default to `0.0`. For a receive channel, `0.0` selects
+straight fingers and zero spread; `1.0` selects `hands.GRIP` on the arm chosen by the slot.
+Intermediate values select partial closure, with the same amount on both hands for
+`receive_both`. Values outside 0..1, including non-finite values, are rejected by `Channel`
+and `GestureIntent`. Each change fades to the requested pose over `FADE_S` (0.25 s) of simulation time:
 
 ```python
-Channel("receive_r", at=(2.0, 0.0, 1.2), grip=True)
+Channel("receive_r", at=(2.0, 0.0, 1.2), grip=0.4)
 ```
 
-`grip` is separate from `Channel.opts`. Changing only this flag keeps the same arm slot,
+`grip` is separate from `Channel.opts`. Changing only this value keeps the same arm slot,
 clip and playhead. Each change starts from the current interpolated pose, so reversing
 mid-transition does not jump. Repeated identical requests do not restart the fade.
-A fresh receive with `grip=true` also closes from the open pose over `FADE_S`.
+A fresh receive with a nonzero `grip` also closes from the open pose over `FADE_S`.
 The grip state and fade clock survive target updates and remain active during release
-until the slot ends. Other gesture kinds ignore the flag. Humansim forwards it from
+until the slot ends. Other gesture kinds ignore the value. Humansim forwards it from
 `GestureIntent` through both gesture message types to the runtime channel.
 
-`GestureLayer.grips` exposes the requested booleans; `grip_weights` exposes the current
+`GestureLayer.grips` exposes the requested closure values; `grip_weights` exposes the current
 0..1 amounts used by `hands.receive_hand`. `GRIP` is a fixed finger-pose preset. The
-interpolation does not adapt it to an object's shape or prevent finger/object intersections.
+interpolation describes finger curling, not grip force or an opening in metres. It does not
+adapt to an object's shape or prevent finger/object intersections.
+
+Both ROS `Gesture` message types now use `float32 grip` in place of `bool grip`.
+Rebuild `arena_people_msgs` and `arena_humansim_msgs` and their dependent packages before
+using the updated ROS interface. Python callers using `False`/`True` are converted to `0.0`/`1.0`.
 
 ## Slots
 

@@ -94,8 +94,12 @@ class Channel:
     clip: str = ""
     hand: str = ""
     lock: bool = False  # play from frame 0 instead of the per-agent stagger
-    grip: bool = False  # receive: target hand shape, faded between open and GRIP
+    grip: float = attrs.field(default=0.0, converter=float)  # receive: closure from open (0) to GRIP (1)
     orientation: str = ""  # receive profile, empty keeps the generator's default
+
+    def __attrs_post_init__(self) -> None:
+        if not 0.0 <= self.grip <= 1.0:
+            raise ValueError("grip must be between 0.0 and 1.0")
 
     @property
     def opts(self) -> dict:
@@ -264,7 +268,7 @@ class _Slot:
         "t",
     )
 
-    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict, gesture: Gesture, locked: bool = False, grip: bool = False) -> None:
+    def __init__(self, slot: str, channel: str, kind: str, local: np.ndarray, opts: dict, bound: dict, gesture: Gesture, locked: bool = False, grip: float = 0.0) -> None:
         self.slot = slot
         self.channel = channel
         self.kind = kind
@@ -273,9 +277,9 @@ class _Slot:
         self.bound = bound
         self.gesture = gesture
         self.locked = locked
-        self.grip = grip
-        self.grip_from = 0.0
-        self.grip_since = 0.0
+        self.grip = grip  # requested closure, 0..1
+        self.grip_from = 0.0  # closure when the current fade started
+        self.grip_since = 0.0  # slot age when the current fade started
         self.phase = "requested"  # requested | ramp | hold | transition | release
         self.clip: GestureClip | None = None
         self.follower: HeadFollower | None = None
@@ -290,9 +294,9 @@ class _Slot:
 
     @property
     def grip_weight(self) -> float:
-        """Current grip amount, interpolated from the last switch over FADE_S."""
+        """Current grip amount, interpolated from the last target change over FADE_S."""
         alpha = min(1.0, max(0.0, (self.age - self.grip_since) / FADE_S))
-        return (1.0 - alpha) * self.grip_from + alpha * float(self.grip)
+        return (1.0 - alpha) * self.grip_from + alpha * self.grip
 
 
 class _Agent:
@@ -328,8 +332,8 @@ class GestureLayer:
             return {}
         return {name: st.clip.side for name, st in ag.slots.items() if st.clip is not None and st.clip.side}
 
-    def grips(self, agent_id: int) -> dict[str, tuple[str, bool]]:
-        """Receive overlay slot -> (l/r/both selection, grip), releasing slots included."""
+    def grips(self, agent_id: int) -> dict[str, tuple[str, float]]:
+        """Receive overlay slot -> (l/r/both selection, requested closure), releasing slots included."""
         ag = self._agents.get(agent_id)
         if ag is None:
             return {}
