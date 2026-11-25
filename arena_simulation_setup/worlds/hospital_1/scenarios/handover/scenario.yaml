@@ -1,0 +1,23 @@
+format: arena-scenario/2
+humans:
+- name: receiver
+  model: arenian
+  pose: [10.0, 15.0, -1.5707963268]
+  agent: {agent_type: ./receiver.yaml}
+  waypoints: [[10.0, 15.0]]
+robots:
+- start: [10.0, 12.0, 1.5707963268]
+  phases:
+  - goto: receiver
+    pose: [10.0, 14.19, 1.5707963268]
+    tolerance_radius: 0.9
+    hold_time: 0.8
+    until: "robot within 0.07 of 10,14.19"
+    on_failure: stop_task
+  - reach: [0.385, 0.14, 0.995, 0.5, -0.5, 0.5, -0.5]
+    frame: base_link
+    position_tolerance: 0.02
+    orientation_tolerance: 0.08
+    on_failure: stop_task
+  - {until: "robot within 0.9 of receiver for 1.2"}
+  - {reach: stow}

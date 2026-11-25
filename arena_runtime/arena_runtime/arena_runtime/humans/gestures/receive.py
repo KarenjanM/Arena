@@ -11,11 +11,12 @@ import numpy as np
 
 from arena_runtime.humans.pointing import HoldPose, PointAtGenerator
 from arena_runtime.humans.pointing import skeleton as S
-from arena_runtime.humans.pointing.contract import ROS_JOINT_ORDER, SPINE_SEGMENTS, arm_dofs, clamp, wrap_pi, wrist_dofs
-from arena_runtime.humans.support import skeleton
+from arena_runtime.humans.pointing.contract import LIMITS, ROS_JOINT_ORDER, SPINE_SEGMENTS, arm_dofs, clamp, wrap_pi, wrist_dofs
+from arena_runtime.humans.pointing.generator import _solve_wire_triple, _triple_in_limits
+from arena_runtime.humans.support import PALM_CENTER_FRACTION, TYPICAL_PROPORTIONS, skeleton
 
-from . import BODY_HEIGHT, GestureClip, resample
-from .point import PointGesture
+from . import BODY_HEIGHT, GestureClip, ease_to_rest, resample
+from .point import FPS, PointGesture
 
 if typing.TYPE_CHECKING:
     from arena_runtime.humans.support import BodyMeasurements
@@ -35,6 +36,7 @@ class ReceiveGesture(PointGesture):
             raise ValueError(f"unknown receive orientation {orientation!r}; expected 'palm_up' or 'thumb_up'")
         self._body = skeleton(body.legs, body.proportions) if body is not None else S.Body(BODY_HEIGHT)
         super().__init__(PointAtGenerator(body=self._body) if body is not None else None)
+        self._palm_length = PALM_CENTER_FRACTION * (body.proportions if body is not None else TYPICAL_PROPORTIONS).hand
         self._orientation = orientation
 
     def bind(self, slot: str, local: np.ndarray, opts: dict) -> dict:
@@ -58,6 +60,8 @@ class ReceiveGesture(PointGesture):
             side = self.resolve_hand(local, opts)
         if side not in ("l", "r", "both"):
             raise ValueError("receive side must be l, r or both")
+        if opts.get("handover") is not None:
+            return self._handover_clip(local, side, opts["handover"])
         if side == "both":
             # Both arm solutions use the same upright torso. Independent torso
             # assists cannot be merged without changing the other arm's aim.
@@ -72,6 +76,9 @@ class ReceiveGesture(PointGesture):
         return self._orient_hand(clip, opts, lambda _fore: twist, ramp=True)
 
     def retarget(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
+        if opts.get("handover") is not None:
+            assert isinstance(hold, dict)
+            return self._handover_clip(local, opts["side"], opts["handover"], start=hold)
         if isinstance(hold, _TwoHandHold):
             if opts.get("side", "both") != "both":
                 raise ValueError("receive side changed")
@@ -83,6 +90,67 @@ class ReceiveGesture(PointGesture):
         if side == "both":
             raise ValueError("two-handed receive requires a two-arm hold")
         return self._retarget_one(hold, local, {**opts, "hand": side})
+
+    def _handover_clip(self, local: np.ndarray, side: str, offsets: tuple[float, float], *, start: dict[str, float] | None = None) -> GestureClip:
+        """Ease straight-wrist palm positions between the ready pose and the transfer target."""
+        sides = ("l", "r") if side == "both" else (side,)
+        rest = dict.fromkeys(ROS_JOINT_ORDER, 0.0)
+        positions, frames = S.fk(rest, self._body)
+        goals = {arm: local + np.array([0.0, S.REFLECT[arm] * offsets[0], offsets[1]]) for arm in sides}
+
+        def palm_centres(pose: dict[str, float]) -> dict[str, np.ndarray]:
+            pos, axes = S.fk(pose, self._body)
+            return {arm: pos[f"{arm}_wrist"] + self._palm_length * (axes[f"{arm}_forearm"] @ S.DOWN) for arm in sides}
+
+        def solve(targets: dict[str, np.ndarray], previous: dict[str, float]) -> dict[str, float]:
+            pose = rest.copy()
+            for arm in sides:
+                yaw, pitch, roll = f"{arm}_y_shoulder", f"{arm}_p_shoulder", f"{arm}_r_shoulder"
+                warm = (previous[yaw], previous[pitch], previous[roll])
+                shoulder = positions[f"{arm}_shoulder"]
+                delta = targets[arm] - shoulder
+                direction = S.unit(delta) if np.linalg.norm(delta) > 1e-8 else S.DOWN
+                upper = self._body.upperarm
+                lower = self._body.forearm + self._palm_length
+                maximum_bend = LIMITS[f"{arm}_elbow"][1]
+                minimum = math.sqrt(upper**2 + lower**2 + 2 * upper * lower * math.cos(maximum_bend))
+                length = float(np.clip(np.linalg.norm(delta), minimum, 0.997 * (upper + lower)))
+                along = (upper**2 - lower**2 + length**2) / (2 * length)
+                pole = S.DOWN + np.array([0.0, 0.30 * S.REFLECT[arm], 0.0])
+                down = S.perp_component(direction, pole)
+                if np.linalg.norm(down) < 1e-8:
+                    down = S.perp_component(direction, -S.FWD)
+                elbow = along * direction + math.sqrt(max(0.0, upper**2 - along**2)) * down
+                upper_dir = S.unit(elbow)
+                fore_dir = S.unit(length * direction - elbow)
+                bend = math.acos(float(np.clip(upper_dir @ fore_dir, -1, 1)))
+                collar = frames[f"{arm}_collar"]
+                triple = _solve_wire_triple(collar, upper_dir, fore_dir, bend, warm)
+                angles = _triple_in_limits(arm, triple, warm)
+                pose[yaw], pose[pitch], pose[roll] = angles
+                pose[f"{arm}_elbow"] = clamp(f"{arm}_elbow", bend)
+                fore = collar @ S.arm_rot(*angles) @ S.rot_axis(S.ELBOW_AXIS, bend)
+                twist, _ = wrist_dofs(arm)
+                pose[twist] = clamp(twist, self._palm_twist(fore, arm))
+            return pose
+
+        if start is None:
+            park = solve(goals, rest)
+            motion = list(reversed(ease_to_rest(park, round(0.65 * FPS) + 1)))
+        else:
+            origin = palm_centres(start)
+            park = start
+            motion = [{"angles": park}]
+            count = round(0.55 * FPS)
+            for i in range(1, count + 1):
+                weight = 0.5 - 0.5 * math.cos(math.pi * i / count)
+                targets = {arm: (1 - weight) * origin[arm] + weight * goals[arm] for arm in sides}
+                park = solve(targets, park)
+                motion.append({"angles": park})
+        error = max(float(np.linalg.norm(point - goals[arm])) for arm, point in palm_centres(park).items())
+        report = {"ok": error <= 0.04, "palm_error_m": error}
+        hold = len(motion) - 1
+        return GestureClip(motion, FPS, hold, hold, side, park, report, release=ease_to_rest(park, round(0.65 * FPS) + 1))
 
     def _retarget_one(self, hold: object, local: np.ndarray, opts: dict) -> GestureClip:
         clip = super().retarget(hold, local, opts)

@@ -202,10 +202,12 @@ def test_pedestrians_carry_gait_phase_cadence_and_agent_type() -> None:
     assert [peds[i].gait_phase for i in (1, 2, 3)] == pytest.approx([2.5, 0.0, 7.0])
     assert [peds[i].gait_cadence for i in (1, 2, 3)] == pytest.approx([1.2, 0.0, 1.9])
     assert [peds[i].agent_type for i in (1, 2, 3)] == ["elder", "", ""]
+    assert adapter._agent_hands == {1: "r", 2: "l"}
 
     adapter._agent_meta_callback(AgentMeta(agent_id=[3], name=["c"], handedness=[""], agent_type=["robot"]))
     peds = {ped.id: ped for ped in adapter._agent_states_to_pedestrians(frame).pedestrians}
     assert [peds[i].agent_type for i in (1, 2, 3)] == ["", "", "robot"]
+    assert adapter._agent_hands == {3: "r"}
 
     adapter._agent_meta_callback(AgentMeta(agent_id=[1, 2], name=["a", "b"], handedness=["", ""]))
     assert adapter._agent_types == {1: "", 2: ""}

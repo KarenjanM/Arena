@@ -464,7 +464,10 @@ class AnimationManager:
         overlay = self._ped_blend.get(agent_id, {}).get(slot)
         if overlay is None:
             return None
-        return self._sample_single_animation(self._overlay_playhead.get((agent_id, slot), 0.0), overlay.anim)
+        playhead = self._overlay_playhead.get((agent_id, slot), 0.0)
+        if not overlay.loop:
+            playhead = min(playhead, overlay.anim.duration - 1.0 / overlay.anim.fps)
+        return self._sample_single_animation(playhead, overlay.anim)
 
     def set_overlay_joints(self, agent_id: int, slot: str, joints: set[str], fade_s: float = 0.0) -> None:
         """Change a live overlay's blend set in place: leaving joints ramp to 0 and entering joints ramp to 1 over fade_s, playhead and envelope untouched."""
@@ -666,7 +669,8 @@ class AnimationManager:
                 overlay_anim.duration - 1.0 / overlay_anim.fps,
             )
 
-        self._overlay_playhead[(agent_id, slot)] = overlay_t
+        # Keep advancing past the last sample so sub-frame ticks reach the end.
+        self._overlay_playhead[(agent_id, slot)] = overlay_t if overlay.loop else min(raw_t, overlay_anim.duration)
 
         weight = overlay.weight * self._envelope(overlay, raw_t)
 

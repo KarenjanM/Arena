@@ -73,6 +73,10 @@ The profile resolves this once into `side="l"`, `"r"` or `"both"`, and its chann
 not literature-calibrated thresholds; mass is recorded but does not yet affect the pose. The palm
 offset uses the same 0.45-of-hand-length approximation as body support placement.
 
+The [parameter provenance and literature audit](profiles/handover/README.md) records
+which numerical values appear in primary studies and why they are not universal
+thresholds for this prototype or a calibration of `grip`.
+
 This profile is a Python entry point for the later handover trigger. It does not yet consume an
 object-kind ROS message, sample variation or add a torso-bend parameter. The generated receive
 still aims along the forearm rather than solving palm contact at the preferred point. Finger grip

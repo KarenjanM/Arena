@@ -19,7 +19,7 @@ import rclpy.time
 import tf2_ros
 import yaml
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
-from arena_people_msgs.msg import AnimationSlot, AnimationState, AnimationStates, Pedestrian, Pedestrians
+from arena_people_msgs.msg import AnimationSlot, AnimationState, AnimationStates, Handover, Pedestrian, Pedestrians
 from arena_people_msgs.srv import MovePedestrians
 from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.registry import AsyncFactoryRegistry as Registry
@@ -41,6 +41,7 @@ from arena_runtime.env.realizer import Realizer
 from arena_runtime.humans.animation_manager import AnimationManager
 from arena_runtime.humans.drivers import DrivenJoints, Drivers, JoystickDriver, load_drivers, with_driven
 from arena_runtime.humans.gestures import Channel, GestureLayer, GestureRequest
+from arena_runtime.humans.handover import HandoverTrigger
 from arena_runtime.humans.hands import POINT_CLIP, clip_pose, receive_hand
 from arena_runtime.humans.itinerary import semantic_atom
 from arena_runtime.humans.possession import PossessionTable
@@ -239,6 +240,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._joystick = JoystickDriver()
         self._gestures = GestureLayer(self._gait, self._logger)
         self._gait.gesture_hook = self._gestures
+        self._handover = HandoverTrigger()
+        self._agent_hands: dict[int, typing.Literal["l", "r"]] = {}
+        self.node.create_subscription(Handover, self._namespace("human", "handover"), self._on_handover, 10)
         self.node.create_subscription(
             Pedestrians,
             self._namespace("arena_peds"),
@@ -277,6 +281,12 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         """Fire-once, best-effort registration of this adapter's lockstep channels in its env."""
         await register_channels(self.node, channels, env=str(self._namespace))
 
+    async def _on_handover(self, msg: Handover) -> None:
+        try:
+            self._handover.command(msg.pedestrian_name, msg.phase, (msg.at.x, msg.at.y, msg.at.z), msg.object_kind, self._now_s())
+        except ValueError as exc:
+            self._logger.warning(f"human/handover for {msg.pedestrian_name!r}: {exc}")
+
     def publish_arena_peds(self, msg: Pedestrians) -> None:
         """Stamp the header, substitute possessed peds, fill the joint angles of peds missing them, compile them into body poses, then publish."""
         now = self.node.get_clock().now()
@@ -290,6 +300,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         if out.header.stamp.sec == 0 and out.header.stamp.nanosec == 0:
             out.header.stamp = stamp
 
+        self._handover.retain(ped.name for ped in out.pedestrians)
         current_ids: set[int] = {ped.id for ped in out.pedestrians}
         for stale in self._joystick.known() - current_ids:
             self._joystick.forget(stale)
@@ -320,12 +331,27 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             yaw = Orientation.from_msg(ped.pose.orientation).to_yaw()
             speed = ped.twist.linear.x * math.cos(yaw) + ped.twist.linear.y * math.sin(yaw)
             support = self._support(ped)
-            channels = [g for g in ped.gestures if g.clip != SIT_CLIP or (support is not None and support.kind == "sit")]
+            channels = tuple(
+                Channel(
+                    slot=g.slot,
+                    at=(g.at.x, g.at.y, g.at.z),
+                    clip=self._seat_clip(ped, support) if g.clip == SIT_CLIP and support is not None else g.clip,
+                    hand=g.hand,
+                    lock=g.render_pose_override,
+                    grip=g.grip,
+                )
+                for g in ped.gestures
+                if g.clip != SIT_CLIP or (support is not None and support.kind == "sit")
+            )
+            pose = (ped.pose.position.x, ped.pose.position.y, yaw)
+            body = self._body_for(ped.model_uri)
+            if (handover := self._handover.active(ped.name, now_sec)) is not None:
+                channels = handover.apply(channels, pose, body, self._agent_hands.get(ped.id, "r"))
             gesture = GestureRequest(
-                channels=tuple(Channel(slot=g.slot, at=(g.at.x, g.at.y, g.at.z), clip=self._seat_clip(ped, support) if g.clip == SIT_CLIP and support is not None else g.clip, hand=g.hand, lock=g.render_pose_override, grip=g.grip) for g in channels),
-                pose=(ped.pose.position.x, ped.pose.position.y, yaw),
+                channels=channels,
+                pose=pose,
                 moving=ped.animation_state in (Pedestrian.WALKING, Pedestrian.RUNNING),
-                body=self._body_for(ped.model_uri),
+                body=body,
             )
             phase = float(ped.gait_phase) if ped.gait_phase != 0.0 else None
             angles = self._gait.compute(ped.id, ped.animation_state, speed, dt, gesture=gesture, phase=phase, profile=self._pose_profile_for(ped.agent_type))
@@ -730,6 +756,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._driven.clear()
         self._joystick.clear()
         self._possession.clear()
+        self._handover.clear()
         self._warned_unknown.clear()
         self._warned_bad_joints.clear()
         self._warned_stale = False

@@ -621,9 +621,14 @@ class ArenaHumanSimulator(BaseHumanSimulator):
         self._agent_gestures = grouped
 
     def _agent_meta_callback(self, msg: AgentMetaMsg):
-        """Latest agent type per engine agent."""
+        """Latest agent types and dominant hands from the engine."""
         types = msg.agent_type if len(msg.agent_type) == len(msg.agent_id) else [""] * len(msg.agent_id)
         self._agent_types = dict(zip(msg.agent_id, types, strict=True))
+        self._agent_hands = (
+            {agent_id: "l" if hand == "l" else "r" for agent_id, hand in zip(msg.agent_id, msg.handedness, strict=True)}
+            if len(msg.handedness) == len(msg.agent_id)
+            else {}
+        )
 
     def _remember_agent_type_path(self, agent_type: str) -> None:
         """File a path-based agent type under the name the engine reports for it."""
@@ -1682,6 +1687,7 @@ class ArenaHumanSimulator(BaseHumanSimulator):
             self._curr_agent_states = None
             self._agent_gestures = {}
             self._agent_types = {}
+            self._agent_hands = {}
             self._seat_violation_reported = False
             self._apply_interactions({}, {})
             self._arena_pedestrians = Pedestrians()

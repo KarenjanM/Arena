@@ -1,0 +1,12 @@
+name: handover_receiver
+extends: adult
+mode: behavior_tree
+handedness: {right: 1.0}
+
+initial_sequence: waiting
+sequences:
+  waiting:
+    steps:
+      stand_still:
+        duration: {mean: 1000.0, std: 0.0}
+    then: waiting

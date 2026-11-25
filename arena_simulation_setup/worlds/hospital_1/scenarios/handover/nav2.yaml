@@ -1,0 +1,5 @@
+controller_server:
+  ros__parameters:
+    goal_checker:
+      xy_goal_tolerance: 0.05
+      yaw_goal_tolerance: 0.05

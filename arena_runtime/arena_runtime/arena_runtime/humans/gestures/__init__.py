@@ -96,6 +96,8 @@ class Channel:
     lock: bool = False  # play from frame 0 instead of the per-agent stagger
     grip: float = attrs.field(default=0.0, converter=float)  # receive: closure from open (0) to GRIP (1)
     orientation: str = ""  # receive profile, empty keeps the generator's default
+    retarget_eps: float = RETARGET_EPS_M  # minimum target change in metres for a held arm
+    handover: tuple[float, float] | None = None  # outward and vertical offsets from the target to each palm, in metres
 
     def __attrs_post_init__(self) -> None:
         if not 0.0 <= self.grip <= 1.0:
@@ -111,6 +113,8 @@ class Channel:
             opts["clip"] = self.clip
         if self.orientation:
             opts["orientation"] = self.orientation
+        if self.handover is not None:
+            opts["handover"] = self.handover
         return opts
 
 
@@ -446,7 +450,7 @@ class GestureLayer:
             st.local = local
             st.phase = "hold"
             return
-        if st.phase == "hold" and float(np.linalg.norm(local - st.local)) > RETARGET_EPS_M:
+        if st.phase == "hold" and float(np.linalg.norm(local - st.local)) > ch.retarget_eps:
             self._retarget(agent_id, st, local)
 
     @staticmethod
@@ -520,13 +524,21 @@ class GestureLayer:
         """Step a look slot's follower and show it as a one-frame overlay."""
         follower = st.follower
         assert follower is not None
+        aim = self._look().aim(st.local)
+        engaged = 0.0 if st.phase == "release" else 1.0
+        arm = ag.slots.get("arm")
+        if arm is not None and arm.phase == "release" and arm.bound.get("handover") is not None:
+            follower.aim = aim
+            if engaged < follower.engaged:
+                follower.weight_rate = min(0.0, follower.weight_rate)
+            follower.engaged = engaged
         follower.step(dt)
         if st.phase == "release" and follower.weight < SETTLED_WEIGHT:
             self._manager.clear_ped_blend(agent_id, slot=st.slot)
             self._end_slot(agent_id, ag, st)
             return
-        st.hold = follower.aim = self._look().aim(st.local)
-        follower.engaged = 0.0 if st.phase == "release" else 1.0
+        st.hold = follower.aim = aim
+        follower.engaged = engaged
         anim = self._manager.register_transient(f"gesture:{st.kind}:{agent_id}:{st.slot}", [follower.frame()], loop=True, owner=agent_id)
         self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, blend_weight=follower.weight, slot=st.slot, carry_ramps=True)
 
@@ -633,26 +645,31 @@ class GestureLayer:
         if clip is None:
             self._end_slot(agent_id, ag, st)
             return
+        handover = st.bound.get("handover") is not None
         min_t = clip.hold_start / clip.fps + HOLD_MIN_S
-        if st.t < min_t and not restart:
+        if st.t < min_t and not restart and not handover:
             st.release_pending = True
             return
         st.phase = "release"
         st.release_pending = False
         anim_name = f"gesture:{st.kind}:{agent_id}:{st.slot}"
         current = self._manager.animations.get(anim_name)
-        # a looping clip releases from wherever its loop is, a parked one from its park pose
-        shown = self._manager.overlay_pose(agent_id, st.slot) if clip.loop else None
+        shown = self._manager.overlay_pose(agent_id, st.slot) if clip.loop or handover else None
         park_all = shown if shown is not None else self._park(st, current.frames) if current is not None else clip.frames[clip.hold_end]["angles"]
-        n = min(int(round(TRANSITION_S * clip.fps)), len(st.release_frames) - 1)
-        park = {j: park_all[j] for j in park_all if j in st.release_frames[0]["angles"]} if n > 0 else {}
-        tail = blend_into(park, st.release_frames, n)
+        blend_weight = 1.0
+        if handover:
+            blend_weight = next((weight for slot, _, _, weight in self._manager.overlays(agent_id) if slot == st.slot), 1.0)
+            tail = ease_to_rest(park_all, len(st.release_frames))
+        else:
+            n = min(int(round(TRANSITION_S * clip.fps)), len(st.release_frames) - 1)
+            park = {j: park_all[j] for j in park_all if j in st.release_frames[0]["angles"]} if n > 0 else {}
+            tail = blend_into(park, st.release_frames, n)
         if len(tail) < 2:
             self._manager.clear_ped_blend(agent_id, FADE_S, slot=st.slot)
             self._end_slot(agent_id, ag, st)
             return
         anim = self._manager.register_transient(f"{anim_name}:release", tail, fps=clip.fps, loop=False, owner=agent_id)
-        self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, fade_out_s=FADE_S, on_end=functools.partial(self._released, slot=st.slot), slot=st.slot, carry_ramps=True)
+        self._manager.set_ped_blend(agent_id, anim, blend_joints=st.joints, blend_weight=blend_weight, fade_out_s=FADE_S, on_end=functools.partial(self._released, slot=st.slot), slot=st.slot, carry_ramps=True)
 
     def _released(self, agent_id: int, slot: str) -> None:
         ag = self._agents.get(agent_id)

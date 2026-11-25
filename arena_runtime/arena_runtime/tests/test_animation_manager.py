@@ -103,6 +103,19 @@ def test_envelope_weight_scales(mgr):
     assert step(mgr, 1, 30)["r_elbow"] == pytest.approx(0.5)  # looping: no fade-out, no end
 
 
+def test_release_ends_when_runtime_ticks_are_shorter_than_clip_frames(mgr: AnimationManager) -> None:
+    overlay = mgr.register_transient("release", const_frames(1.0, 10))
+    ended: list[int] = []
+    mgr.set_ped_blend(1, overlay, blend_joints=ARMS, fade_out_s=0.25, on_end=ended.append)
+    angles = step(mgr, 1, 14, dt=1.0 / 30.0)
+    assert angles["l_elbow"] == pytest.approx((overlay.duration - 14.0 / 30.0) / 0.25)
+    assert ended == []
+
+    step(mgr, 1, 3, dt=1.0 / 30.0)
+    assert ended == [1]
+    assert mgr.overlays(1) == []
+
+
 def test_on_end_fires_once_without_fade(mgr):
     ov = mgr.register_transient("ov", const_frames(1.0, 10))  # 0.5 s
     ended = []
